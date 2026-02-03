@@ -62,6 +62,7 @@ export interface EditorState extends CanvasState, ProjectState {
     deletePage: (pageId: string) => void;
     duplicatePage: (pageId: string) => void;
     renamePage: (pageId: string, newTitle: string) => void;
+    initializeWireDefaults: () => void;
     resetProject: () => void;
 }
 
@@ -428,6 +429,28 @@ export const useEditorStore = create<EditorState>()(
                 };
 
                 return { pages: newPages };
+            }),
+
+            initializeWireDefaults: () => set((state) => {
+                const isFresh =
+                    state.pages.length === 1 &&
+                    state.pages[0]?.sections.length === 0 &&
+                    Object.keys(state.sections).length === 0 &&
+                    state.activeTemplate === null;
+
+                if (!isFresh) return state;
+
+                return {
+                    pages: [
+                        { id: "page-1", title: "Page 1", sections: [] },
+                        { id: "page-2", title: "Page 2", sections: [] },
+                        { id: "page-3", title: "Page 3", sections: [] }
+                    ],
+                    sections: {},
+                    selectedSectionId: null,
+                    draggingSectionId: null,
+                    activeTemplate: null
+                };
             }),
 
             resetProject: () => set(() => ({

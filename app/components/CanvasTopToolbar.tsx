@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, MoonIcon, SunIcon, Download } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useEditorStore } from "../store/useEditorStore";
 import { exportProject } from "../lib/exportProject";
 
@@ -16,9 +16,14 @@ export default function CanvasTopToolbar() {
   const [theme, setTheme] = useState("light");
   const { pages, sections } = useEditorStore();
 
+  useEffect(() => {
+    const isDark = document.documentElement.classList.contains("dark");
+    setTheme(isDark ? "dark" : "light");
+  }, []);
+
   const handleChnageTheme = () => {
-    document.documentElement.classList.toggle("dark");
-    setTheme(theme === "light" ? "dark" : "light");
+    const isDark = document.documentElement.classList.toggle("dark");
+    setTheme(isDark ? "dark" : "light");
   };
 
   const handleExport = async () => {

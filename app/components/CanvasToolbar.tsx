@@ -3,16 +3,12 @@
 interface CanvasToolbarProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
-  activeDevice: "desktop" | "tablet" | "mobile";
-  onDeviceChange: (device: "desktop" | "tablet" | "mobile") => void;
   onReset: () => void;
 }
 
 export default function CanvasToolbar({
   zoom,
   onZoomChange,
-  activeDevice,
-  onDeviceChange,
   onReset,
 }: CanvasToolbarProps) {
   const zoomLevels = [5, 10, 25, 50, 75, 100, 125, 150, 200];
@@ -34,91 +30,7 @@ export default function CanvasToolbar({
   };
 
   return (
-    <div className="fixed bottom-4 right-4 flex items-center gap-2 bg-secondary rounded-[var(--radius)] border border-border p-1">
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onDeviceChange("desktop")}
-          className={`p-2 rounded transition-all ${
-            activeDevice === "desktop"
-              ? "bg-background text-foreground shadow-md"
-              : "text-foreground hover:bg-accent hover:text-foreground"
-          }`}
-          title="Desktop view"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <rect x="2" y="3" width="20" height="14" rx="2" strokeWidth={1.5} />
-            <line
-              x1="8"
-              y1="21"
-              x2="16"
-              y2="21"
-              strokeWidth={1.5}
-              strokeLinecap="round"
-            />
-            <line x1="12" y1="17" x2="12" y2="21" strokeWidth={1.5} />
-          </svg>
-        </button>
-        <button
-          onClick={() => onDeviceChange("tablet")}
-          className={`p-2 rounded transition-all ${
-            activeDevice === "tablet"
-              ? "bg-background text-foreground shadow-md"
-              : "text-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-          }`}
-          title="Tablet view"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="2" strokeWidth={1.5} />
-            <line
-              x1="12"
-              y1="18"
-              x2="12"
-              y2="18"
-              strokeWidth={2}
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-        <button
-          onClick={() => onDeviceChange("mobile")}
-          className={`p-2 rounded transition-all ${
-            activeDevice === "mobile"
-              ? "bg-background text-foreground shadow-md"
-              : "text-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-          }`}
-          title="Mobile view"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <rect x="7" y="2" width="10" height="20" rx="2" strokeWidth={1.5} />
-            <line
-              x1="12"
-              y1="18"
-              x2="12"
-              y2="18"
-              strokeWidth={2}
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-
-      <div className="w-px h-6 bg-[#e0d9ce]" />
-
+    <div className="fixed bottom-4 left-5 flex items-center gap-2 bg-secondary rounded-[var(--radius)] border border-border p-1">
       <div className="flex items-center gap-1 px-2">
         <button
           onClick={handleZoomOut}
@@ -143,7 +55,7 @@ export default function CanvasToolbar({
 
         <button
           onClick={onReset}
-          className="min-w-[52px] px-2 py-1 text-sm font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors text-center"
+          className="min-w-13 px-2 py-1 text-sm font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors text-center"
           title="Reset zoom"
         >
           {Math.round(zoom)}%

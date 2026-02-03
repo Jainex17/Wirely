@@ -3,16 +3,8 @@ import {
   defaultDropAnimationSideEffects,
   type DropAnimation,
 } from "@dnd-kit/core";
-import { useEditorStore, TemplateType } from "../store/useEditorStore";
+import { TemplateType } from "../store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
-import CanvasTopToolbar from "./CanvasTopToolbar";
-import SectionCustomizePopup from "./SectionCustomizePopup";
-import TemplateSelectionModal from "./TemplateSelectionModal";
-import Sidebar from "./Sidebar";
-import PageRenderer from "./PageRenderer";
-import SectionRenderer from "./SectionRenderer";
-import AddSectionSidebar from "./AddSectionSidebar";
-import type { SectionType } from "../lib/sectionLayouts";
 
 const DEVICE_DIMENSIONS = {
   desktop: { width: 1440, height: 900, label: "Desktop" },
@@ -72,66 +64,11 @@ interface CanvasProps {
 
 export default function Canvas({
   canvasRef,
-  panOffset,
   zoom,
-  activeDevice,
-  activeDragId,
-  overSectionId,
-  activeDragPageId,
-  draggedSectionHeight,
-  selectedSectionId,
-  showTemplateModal,
-  templateModalPageId,
-  openPageMenuId,
   onCanvasClick,
-  onSectionSelect,
-  onHeightCapture,
   onZoomChange,
-  onDeviceChange,
   onReset,
-  onTemplateSelect,
-  onLayoutSelect,
-  onUpdateSection,
-  onTogglePageMenu,
-  onClosePageMenu,
-  onRenamePage,
-  onDuplicatePage,
-  onDeletePage,
-  onAddPage,
-  onShowTemplateModal,
-  onCloseTemplateModal,
-  onPreviewPage,
-  onDeleteSection,
-  onExportPage
 }: CanvasProps) {
-  const {
-    pages,
-    sections,
-    addSectionSidebar,
-    setAddSectionSidebar,
-    addSection: addSectionToStore,
-  } = useEditorStore();
-  const currentDevice = DEVICE_DIMENSIONS[activeDevice];
-  const selectedSectionData = selectedSectionId
-    ? sections[selectedSectionId]
-    : null;
-
-  const handleAddSection = (sectionType: SectionType, layoutId: string) => {
-    const pageId = addSectionSidebar.pageId;
-    if (!pageId) return;
-    const sectionId = `${sectionType}-${pageId}-${Date.now()}`;
-    addSectionToStore(
-      pageId,
-      {
-        id: sectionId,
-        type: sectionType,
-        layoutId,
-        content: {},
-      },
-      addSectionSidebar.position,
-    );
-    setAddSectionSidebar({ isOpen: false });
-  };
 
   return (
     <div
@@ -139,102 +76,11 @@ export default function Canvas({
       className="relative w-screen h-screen overflow-hidden select-none"
       onClick={onCanvasClick}
     >
-      <div
-        className="absolute"
-        style={{
-          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom / 100})`,
-          transformOrigin: "0 0",
-          left: "50%",
-          top: "100px",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex flex-row"
-          style={{
-            gap: `${120}px`,
-            marginLeft: `-${(pages.length * (currentDevice.width + 120)) / 2}px`,
-          }}
-        >
-          {pages.map((page) => (
-            <PageRenderer
-              key={page.id}
-              page={page}
-              currentDevice={currentDevice}
-              activeDragId={activeDragId}
-              overSectionId={overSectionId}
-              activeDragPageId={activeDragPageId}
-              selectedSectionId={selectedSectionId}
-              openPageMenuId={openPageMenuId}
-              draggedSectionHeight={draggedSectionHeight}
-              onSectionSelect={onSectionSelect}
-              onHeightCapture={onHeightCapture}
-              onTogglePageMenu={onTogglePageMenu}
-              onClosePageMenu={onClosePageMenu}
-              onRenamePage={onRenamePage}
-              onDuplicatePage={onDuplicatePage}
-              onDeletePage={onDeletePage}
-              onShowTemplateModal={onShowTemplateModal}
-              onExportPage={onExportPage}
-              onPreviewPage={onPreviewPage}
-            />
-          ))}
-        </div>
-      </div>
-
-      <Sidebar onAddPage={onAddPage} />
-
-      <SectionCustomizePopup
-        key={selectedSectionId || "popup"}
-        isOpen={!!selectedSectionId}
-        section={selectedSectionData || null}
-        onLayoutSelect={onLayoutSelect}
-        onUpdate={onUpdateSection}
-        onDelete={() => selectedSectionId && onDeleteSection(selectedSectionId)}
-        onClose={() => onSectionSelect("")}
-      />
-
-      <CanvasTopToolbar />
-
       <CanvasToolbar
         zoom={zoom}
         onZoomChange={onZoomChange}
-        activeDevice={activeDevice}
-        onDeviceChange={onDeviceChange}
         onReset={onReset}
       />
-
-      <DragOverlay dropAnimation={dropAnimation}>
-        {activeDragId ? (
-          <div
-            style={{
-              width: currentDevice.width,
-              height: draggedSectionHeight || undefined,
-              overflow: "hidden",
-              transform: `scale(${zoom / 100})`,
-              transformOrigin: "top left",
-              pointerEvents: "none",
-            }}
-            className="shadow-2xl ring-2 ring-blue-500 rounded-lg bg-white cursor-grabbing opacity-80"
-          >
-            <SectionRenderer sectionId={activeDragId} />
-          </div>
-        ) : null}
-      </DragOverlay>
-
-      <TemplateSelectionModal
-        isOpen={showTemplateModal}
-        onSelect={onTemplateSelect}
-        onClose={onCloseTemplateModal}
-        pageId={templateModalPageId}
-      />
-
-      {addSectionSidebar.isOpen && (
-        <AddSectionSidebar
-          onClose={() => setAddSectionSidebar({ isOpen: false })}
-          onLayoutSelect={handleAddSection}
-        />
-      )}
     </div>
   );
 }
