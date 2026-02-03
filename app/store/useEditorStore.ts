@@ -65,7 +65,7 @@ const generateEmptyState = (): Pick<ProjectState, 'pages' | 'sections' | 'select
 };
 
 const DEFAULT_CANVAS_STATE = {
-    zoom: 20,
+    zoom: 50,
     panOffset: { x: 0, y: 0 },
     activeDevice: "desktop" as DeviceType,
     isDragging: false,
