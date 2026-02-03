@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
 import EditorWorkspace from "@/app/components/EditorWorkspace";
 import WirePromptSidebar from "@/app/components/WirePromptSidebar";
-import { useEditorStore } from "@/app/store/useEditorStore";
 
 interface WireEditorProps {
   wireId: string;
@@ -11,23 +9,23 @@ interface WireEditorProps {
 }
 
 export default function WireEditor({ wireId, prompt }: WireEditorProps) {
-  const initializeWireDefaults = useEditorStore(
-    (state) => state.initializeWireDefaults,
-  );
-
-  const handleInitialize = useCallback(() => {
-    const existing = localStorage.getItem("openwire-editor-storage");
-    if (!existing) {
-      initializeWireDefaults();
-    }
-  }, [initializeWireDefaults]);
-
   return (
-    <EditorWorkspace
-      sidebarMode="wire"
-      onInitialize={handleInitialize}
-      promptPrefill={prompt}
-      rightSidebar={<WirePromptSidebar promptPrefill={prompt} wireId={wireId} />}
-    />
+    <div className="h-screen w-screen flex flex-col bg-muted p-3 gap-3">
+      <div className="w-full h-14 bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+        hello
+      </div>
+      <div className="w-full h-full flex gap-3">
+        <div className="w-[70%] h-full min-w-0 bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+          <EditorWorkspace sidebarMode="wire" promptPrefill={prompt} />
+        </div>
+        <div className="w-[30%] h-full min-w-[320px] bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+          <WirePromptSidebar
+            variant="panel"
+            promptPrefill={prompt}
+            wireId={wireId}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

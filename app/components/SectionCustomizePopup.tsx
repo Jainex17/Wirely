@@ -78,18 +78,10 @@ export default function SectionCustomizePopup({
       ? section.type.charAt(0).toUpperCase() + section.type.slice(1)
       : "");
   const [name, setName] = useState(initialName);
-  const [description, setDescription] = useState(
-    (section?.content?.description as string) || "",
-  );
 
   const handleNameChange = (val: string) => {
     setName(val);
     onUpdate({ name: val });
-  };
-
-  const handleDescriptionChange = (val: string) => {
-    setDescription(val);
-    onUpdate({ content: { ...section?.content, description: val } });
   };
 
   const handleSchemeSelect = (color: string) => {

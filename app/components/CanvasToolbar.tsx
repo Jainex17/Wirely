@@ -30,7 +30,7 @@ export default function CanvasToolbar({
   };
 
   return (
-    <div className="fixed bottom-4 left-5 flex items-center gap-2 bg-secondary rounded-[var(--radius)] border border-border p-1">
+    <div className="absolute bottom-4 left-5 flex items-center gap-2 bg-secondary rounded-[var(--radius)] border border-border p-1 z-20">
       <div className="flex items-center gap-1 px-2">
         <button
           onClick={handleZoomOut}

@@ -1,11 +1,10 @@
 "use client";
 
 interface CardProps {
-  id: string;
   title: string;
 }
 
-export default function Card({ id, title }: CardProps) {
+export default function Card({ title }: CardProps) {
   return (
     <div
       className="bg-white border-2 border-gray-300 rounded-lg shadow-lg p-6"

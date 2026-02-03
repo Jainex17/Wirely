@@ -10,112 +10,36 @@ import {
   type ReactNode,
   type ReactElement,
 } from "react";
-import {
-  DndContext,
-  pointerWithin,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragStartEvent,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  useEditorStore,
-  TemplateType,
-  SectionData,
-} from "../store/useEditorStore";
-import { useDragAndDrop } from "../hooks/useDragAndDrop";
+import { useEditorStore } from "../store/useEditorStore";
 import Canvas from "./Canvas";
 import PagePreviewModal from "./PagePreviewModal";
-import { exportSinglePage } from "../lib/exportProject";
 
 const MIN_ZOOM = 5;
 const MAX_ZOOM = 200;
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
-  rightSidebar?: ReactNode;
-  onInitialize?: () => void;
   promptPrefill?: string;
 }
 
 export default function EditorWorkspace({
   sidebarMode = "default",
-  rightSidebar,
-  onInitialize,
   promptPrefill,
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const sectionHeightsRef = useRef<Map<string, number>>(new Map());
-  const [draggedSectionHeight, setDraggedSectionHeight] = useState<
-    number | null
-  >(null);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [templateModalPageId, setTemplateModalPageId] = useState<string | null>(
-    null,
-  );
-  const [openPageMenuId, setOpenPageMenuId] = useState<string | null>(null);
   const [previewPageId, setPreviewPageId] = useState<string | null>(null);
-
-  useEffect(() => {
-    onInitialize?.();
-  }, [onInitialize]);
-
-  const captureSectionHeight = useCallback((id: string, height: number) => {
-    sectionHeightsRef.current.set(id, height);
-  }, []);
-
-  const {
-    activeDragId,
-    activeDragPageId,
-    overSectionId,
-    handleDragStart,
-    handleDragOver,
-    handleDragEnd,
-  } = useDragAndDrop();
 
   const {
     zoom,
     panOffset,
     activeDevice,
-    selectedSectionId,
     setZoom,
     setPanOffset,
-    setActiveDevice,
     setSelectedSection,
-    updateSectionLayout,
-    updateSectionData,
-    loadTemplate,
-    loadTemplateToPage,
-    addPage,
-    deletePage,
-    duplicatePage,
     renamePage,
-    removeSection,
+    deletePage,
     pages,
-    sections,
   } = useEditorStore();
-
-  const handleTemplateSelect = useCallback(
-    (templateType: TemplateType, pageId?: string | null) => {
-      if (pageId) {
-        loadTemplateToPage(pageId, templateType);
-      } else {
-        loadTemplate(templateType);
-      }
-      setShowTemplateModal(false);
-      setTemplateModalPageId(null);
-    },
-    [loadTemplate, loadTemplateToPage],
-  );
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-  );
 
   const handleZoomChange = useCallback(
     (newZoom: number) => {
@@ -129,40 +53,9 @@ export default function EditorWorkspace({
     setPanOffset({ x: 0, y: 0 });
   }, [setZoom, setPanOffset]);
 
-  const handleSectionSelect = useCallback(
-    (id: string) => {
-      setSelectedSection(id === "" ? null : id);
-    },
-    [setSelectedSection],
-  );
-
-  const handleLayoutSelect = useCallback(
-    (layoutId: string) => {
-      if (selectedSectionId) {
-        updateSectionLayout(selectedSectionId, layoutId);
-      }
-    },
-    [selectedSectionId, updateSectionLayout],
-  );
-
-  const handleUpdateSection = useCallback(
-    (data: Partial<Record<string, unknown>>) => {
-      if (selectedSectionId) {
-        updateSectionData(selectedSectionId, data);
-      }
-    },
-    [selectedSectionId, updateSectionData],
-  );
-
   const handleCanvasClick = useCallback(() => {
     setSelectedSection(null);
-    setOpenPageMenuId(null);
   }, [setSelectedSection]);
-
-  const handleShowTemplateModal = useCallback((pageId: string) => {
-    setShowTemplateModal(true);
-    setTemplateModalPageId(pageId);
-  }, []);
 
   const handlePreviewPage = useCallback((pageId: string) => {
     setPreviewPageId(pageId);
@@ -171,79 +64,6 @@ export default function EditorWorkspace({
   const handleClosePreview = useCallback(() => {
     setPreviewPageId(null);
   }, []);
-
-  const handleDeleteSection = useCallback(
-    (sectionId: string) => {
-      const page = pages.find((p) => p.sections.includes(sectionId));
-      if (page) {
-        removeSection(page.id, sectionId);
-      }
-    },
-    [pages, removeSection],
-  );
-
-  const handleTogglePageMenu = useCallback((pageId: string) => {
-    setOpenPageMenuId((prev) => (prev === pageId ? null : pageId));
-  }, []);
-
-  const handleClosePageMenu = useCallback(() => {
-    setOpenPageMenuId(null);
-  }, []);
-
-  const handleAddPage = useCallback(() => {
-    addPage();
-  }, [addPage]);
-
-  const handleExportPage = useCallback(
-    (pageId: string) => {
-      const page = pages.find((p) => p.id === pageId);
-      if (!page) return;
-
-      const pageSections = page.sections.reduce(
-        (acc, sectionId) => {
-          if (sections[sectionId]) {
-            acc[sectionId] = sections[sectionId];
-          }
-
-          return acc;
-        },
-        {} as Record<string, SectionData>,
-      );
-
-      exportSinglePage(page, pageSections);
-    },
-    [pages, sections],
-  );
-
-  const handleCloseTemplateModal = useCallback(() => {
-    setShowTemplateModal(false);
-    setTemplateModalPageId(null);
-  }, []);
-
-  const handleDragStartWithHeight = (event: DragStartEvent) => {
-    const { active } = event;
-    const sectionId = active.id as string;
-
-    const sectionElement = document.querySelector(
-      `[data-section-id="${sectionId}"]`,
-    );
-    if (sectionElement) {
-      const dragSectionHeight = sectionElement.clientHeight;
-      setDraggedSectionHeight(dragSectionHeight);
-    } else {
-      const storedHeight = sectionHeightsRef.current.get(sectionId);
-      if (storedHeight) {
-        setDraggedSectionHeight(storedHeight);
-      }
-    }
-
-    handleDragStart(event);
-  };
-
-  const handleDragEndWithCleanup = (event: DragEndEvent) => {
-    setDraggedSectionHeight(null);
-    handleDragEnd(event);
-  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -298,71 +118,36 @@ export default function EditorWorkspace({
       }
     };
 
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        handleClosePreview();
-      }
-    };
-
     canvas.addEventListener("wheel", handleWheel, { passive: false });
-    document.addEventListener("keydown", handleEsc);
 
     return () => {
       canvas.removeEventListener("wheel", handleWheel);
-      document.removeEventListener("keydown", handleEsc);
     };
   }, []);
 
-  const resolvedRightSidebar =
-    rightSidebar && isValidElement(rightSidebar) && promptPrefill !== undefined
-      ? cloneElement(rightSidebar as ReactElement<any>, { promptPrefill })
-      : rightSidebar;
-
   return (
-    <div data-sidebar-mode={sidebarMode} className="relative">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={pointerWithin}
-        onDragStart={handleDragStartWithHeight}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEndWithCleanup}
-      >
-        <Canvas
-          canvasRef={canvasRef}
-          panOffset={panOffset}
-          zoom={zoom}
-          activeDevice={activeDevice}
-          activeDragId={activeDragId}
-          overSectionId={overSectionId}
-          activeDragPageId={activeDragPageId}
-          draggedSectionHeight={draggedSectionHeight}
-          selectedSectionId={selectedSectionId}
-          showTemplateModal={showTemplateModal}
-          templateModalPageId={templateModalPageId}
-          openPageMenuId={openPageMenuId}
-          onCanvasClick={handleCanvasClick}
-          onSectionSelect={handleSectionSelect}
-          onHeightCapture={captureSectionHeight}
-          onZoomChange={handleZoomChange}
-          onDeviceChange={setActiveDevice}
-          onReset={handleReset}
-          onTemplateSelect={handleTemplateSelect}
-          onLayoutSelect={handleLayoutSelect}
-          onUpdateSection={handleUpdateSection}
-          onTogglePageMenu={handleTogglePageMenu}
-          onClosePageMenu={handleClosePageMenu}
-          onRenamePage={renamePage}
-          onDuplicatePage={duplicatePage}
-          onDeletePage={deletePage}
-          onAddPage={handleAddPage}
-          onExportPage={handleExportPage}
-          onShowTemplateModal={handleShowTemplateModal}
-          onCloseTemplateModal={handleCloseTemplateModal}
-          onPreviewPage={handlePreviewPage}
-          onDeleteSection={handleDeleteSection}
-        />
-      </DndContext>
-      {resolvedRightSidebar}
+    <div data-sidebar-mode={sidebarMode} className="relative w-full h-full">
+      <Canvas
+        canvasRef={canvasRef}
+        panOffset={panOffset}
+        zoom={zoom}
+        activeDevice={activeDevice}
+        onCanvasClick={handleCanvasClick}
+        onRenamePage={renamePage}
+        onDeletePage={deletePage}
+        onPreviewPage={handlePreviewPage}
+        onZoomChange={handleZoomChange}
+        onReset={handleReset}
+      />
+      <PagePreviewModal
+        isOpen={previewPageId !== null}
+        onClose={handleClosePreview}
+        page={
+          previewPageId
+            ? pages.find((p) => p.id === previewPageId) || null
+            : null
+        }
+      />
     </div>
   );
 }

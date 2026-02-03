@@ -1,10 +1,8 @@
-import {
-  DragOverlay,
-  defaultDropAnimationSideEffects,
-  type DropAnimation,
-} from "@dnd-kit/core";
-import { TemplateType } from "../store/useEditorStore";
+"use client";
+
+import { useEditorStore } from "../store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
+import PageRenderer from "./PageRenderer";
 
 const DEVICE_DIMENSIONS = {
   desktop: { width: 1440, height: 900, label: "Desktop" },
@@ -12,70 +10,71 @@ const DEVICE_DIMENSIONS = {
   mobile: { width: 375, height: 812, label: "Mobile" },
 } as const;
 
-const dropAnimation: DropAnimation = {
-  sideEffects: defaultDropAnimationSideEffects({
-    styles: {
-      active: {
-        opacity: "0.3",
-      },
-    },
-  }),
-  duration: 150,
-  easing: "cubic-bezier(0.25, 1, 0.5, 1)",
-};
-
 interface CanvasProps {
   canvasRef: React.RefObject<HTMLDivElement | null>;
   panOffset: { x: number; y: number };
   zoom: number;
   activeDevice: keyof typeof DEVICE_DIMENSIONS;
-  activeDragId: string | null;
-  overSectionId: string | null;
-  activeDragPageId: string | null;
-  draggedSectionHeight: number | null;
-  selectedSectionId: string | null;
-  showTemplateModal: boolean;
-  templateModalPageId?: string | null;
-  openPageMenuId: string | null;
   onCanvasClick: () => void;
-  onSectionSelect: (id: string) => void;
-  onHeightCapture: (id: string, height: number) => void;
-  onZoomChange: (zoom: number) => void;
-  onDeviceChange: (device: keyof typeof DEVICE_DIMENSIONS) => void;
-  onReset: () => void;
-  onTemplateSelect: (
-    templateType: TemplateType,
-    pageId?: string | null,
-  ) => void;
-  onLayoutSelect: (layoutId: string) => void;
-  onUpdateSection: (data: Partial<Record<string, unknown>>) => void;
-  onTogglePageMenu: (pageId: string) => void;
-  onClosePageMenu: () => void;
   onRenamePage: (pageId: string, newTitle: string) => void;
-  onDuplicatePage: (pageId: string) => void;
   onDeletePage: (pageId: string) => void;
-  onAddPage: () => void;
-  onShowTemplateModal: (pageId: string) => void;
-  onCloseTemplateModal: () => void;
   onPreviewPage: (pageId: string) => void;
-  onExportPage: (pageId: string) => void;
-  onDeleteSection: (sectionId: string) => void;
+  onZoomChange: (zoom: number) => void;
+  onReset: () => void;
 }
 
 export default function Canvas({
   canvasRef,
+  panOffset,
   zoom,
+  activeDevice,
   onCanvasClick,
+  onRenamePage,
+  onDeletePage,
+  onPreviewPage,
   onZoomChange,
   onReset,
 }: CanvasProps) {
+  const pages = useEditorStore((state) => state.pages);
+  const currentDevice = DEVICE_DIMENSIONS[activeDevice];
 
   return (
     <div
       ref={canvasRef}
-      className="relative w-screen h-screen overflow-hidden select-none"
+      className="relative w-full h-full overflow-hidden select-none"
       onClick={onCanvasClick}
     >
+      <div
+        className="absolute"
+        style={{
+          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom / 100})`,
+          transformOrigin: "0 0",
+          left: "50%",
+          top: "100px",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="flex flex-row"
+          style={{
+            gap: "120px",
+            marginLeft: `-${(pages.length * (currentDevice.width + 120)) / 2}px`,
+          }}
+        >
+          {pages.length === 0 ? null : (
+            pages.map((page) => (
+              <PageRenderer
+                key={page.id}
+                page={page}
+                onRenamePage={onRenamePage}
+                onDeletePage={onDeletePage}
+                onPreviewPage={onPreviewPage}
+                currentDevice={currentDevice}
+              />
+            ))
+          )}
+        </div>
+      </div>
       <CanvasToolbar
         zoom={zoom}
         onZoomChange={onZoomChange}

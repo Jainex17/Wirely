@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 interface WirePromptSidebarProps {
   wireId: string;
   promptPrefill?: string;
+  variant?: "floating" | "panel";
 }
 
 export default function WirePromptSidebar({
   wireId,
   promptPrefill,
+  variant = "floating",
 }: WirePromptSidebarProps) {
   const [prompt, setPrompt] = useState(promptPrefill ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,8 +33,13 @@ export default function WirePromptSidebar({
     console.info("Wire prompt submitted", { wireId, prompt });
   };
 
+  const containerClassName =
+    variant === "panel"
+      ? "h-full w-full p-6 flex flex-col gap-4"
+      : "fixed right-5 top-5 bottom-5 w-96 bg-card border border-border rounded-lg p-6 flex flex-col gap-4";
+
   return (
-    <aside className="fixed right-5 top-5 bottom-5 w-96 bg-card border border-border rounded-lg p-6 flex flex-col gap-4">
+    <aside className={containerClassName}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Input
           value={prompt}

@@ -14,7 +14,7 @@ import { exportProject } from "../lib/exportProject";
 
 export default function CanvasTopToolbar() {
   const [theme, setTheme] = useState("light");
-  const { pages, sections } = useEditorStore();
+  const { pages } = useEditorStore();
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains("dark");
@@ -28,7 +28,7 @@ export default function CanvasTopToolbar() {
 
   const handleExport = async () => {
     try {
-      await exportProject(pages, sections);
+      await exportProject(pages);
     } catch (error) {
       console.error("Failed to export project:", error);
       alert("Failed to export project. Please try again.");
