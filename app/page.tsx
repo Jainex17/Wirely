@@ -2,7 +2,6 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 const createWireId = () => {
@@ -35,34 +34,40 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
-      <div className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-lg p-8 md:p-12">
-        <div className="space-y-3">
-          <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-            Openwire Studio
-          </p>
-          <h1 className="text-3xl md:text-4xl font-semibold">
-            Generate three design directions in seconds.
+    <main className="relative overflow-hidden bg-background text-foreground">
+      <div className="relative h-[90vh] z-10 flex flex-col items-center justify-center px-6 pb-16 pt-24">
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
+          <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
+            Let&apos;s build something, jainex.
           </h1>
-          <p className="text-muted-foreground">
-            Drop in a prompt, get three layout options, and refine on the
-            canvas.
+          <p className="mt-4 max-w-2xl text-base text-foreground/70 md:text-lg">
+            Describe your next launch, and we&apos;ll draft three bold directions
+            grounded in your palette.
           </p>
+
+          <form onSubmit={handleSubmit} className="mt-10 w-full max-w-3xl">
+            <div className="glass-panel flex flex-col gap-3 rounded-3xl px-4 py-4">
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder={placeholder}
+                rows={4}
+                className="w-full resize-none border-0 bg-transparent px-2 text-base text-foreground placeholder:text-foreground/50 focus:outline-none focus:border-transparent focus-visible:ring-0 overflow-hidden"
+              />
+
+              <div className="flex items-center gap-2 justify-end">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="h-10 rounded-full px-5 text-sm"
+                >
+                  {isSubmitting ? "Starting..." : "Submit"}
+                </Button>
+              </div>
+            </div>
+          </form>
         </div>
-        <form
-          onSubmit={handleSubmit}
-          className="mt-8 flex flex-col gap-3 md:flex-row"
-        >
-          <Input
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder={placeholder}
-            className="flex-1"
-          />
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Starting..." : "Generate"}
-          </Button>
-        </form>
+
       </div>
     </main>
   );
