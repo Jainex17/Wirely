@@ -83,7 +83,7 @@ export default function PageOptionsMenu({
       </div>
 
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent>
+        <DialogContent className="border-none">
           <DialogHeader>
             <DialogTitle>Rename Page</DialogTitle>
             <DialogDescription>Enter a new name for this page.</DialogDescription>
