@@ -5,7 +5,7 @@ import { Monitor, XIcon } from "lucide-react";
 interface PagePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  page: { title: string; iframeUrl?: string } | null;
+  page: { title: string; iframeUrl?: string; iframeHtml?: string } | null;
 }
 
 export default function PagePreviewModal({
@@ -16,6 +16,8 @@ export default function PagePreviewModal({
   if (!isOpen || !page) return null;
 
   const iframeSrc = page.iframeUrl ?? "/login";
+  const hasHtml =
+    typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
 
   return (
     <div
@@ -41,8 +43,11 @@ export default function PagePreviewModal({
         <div className="relative flex-1 bg-foreground overflow-hidden shadow-2xl rounded-b-xl">
           <iframe
             title={`Preview ${page.title}`}
-            src={iframeSrc}
-            className="h-full w-full border-0"
+            src={hasHtml ? undefined : iframeSrc}
+            srcDoc={hasHtml ? page.iframeHtml : undefined}
+            className="h-full w-full border-0 pointer-events-none"
+            sandbox=""
+            referrerPolicy="no-referrer"
           />
         </div>
       </div>

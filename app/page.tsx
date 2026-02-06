@@ -27,10 +27,10 @@ export default function Home() {
     setIsSubmitting(true);
     const id = createWireId();
     const trimmedPrompt = prompt.trim();
-    const query = trimmedPrompt
-      ? `?prompt=${encodeURIComponent(trimmedPrompt)}`
-      : "";
-    router.push(`/wire/${id}${query}`);
+    if (trimmedPrompt) {
+      sessionStorage.setItem(`wirePrompt:${id}`, trimmedPrompt);
+    }
+    router.push(`/wire/${id}`);
   };
 
   return (

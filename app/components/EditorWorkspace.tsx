@@ -19,12 +19,10 @@ const MAX_ZOOM = 200;
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
-  promptPrefill?: string;
 }
 
 export default function EditorWorkspace({
   sidebarMode = "default",
-  promptPrefill,
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [previewPageId, setPreviewPageId] = useState<string | null>(null);

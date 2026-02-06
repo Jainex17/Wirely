@@ -24,6 +24,7 @@ export interface PageData {
     id: string;
     title: string;
     iframeUrl?: string;
+    iframeHtml?: string;
     sections: string[];
 }
 
@@ -49,6 +50,7 @@ export interface EditorState extends CanvasState, ProjectState {
     moveSection: (pageId: string, sectionId: string, direction: 'up' | 'down') => void;
     reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
     renamePage: (pageId: string, newTitle: string) => void;
+    setPageHtml: (pageId: string, html: string, title?: string) => void;
     deletePage: (pageId: string) => void;
     resetProject: () => void;
 }
@@ -182,6 +184,21 @@ export const useEditorStore = create<EditorState>()(
                 newPages[pageIndex] = {
                     ...newPages[pageIndex],
                     title: newTitle
+                };
+
+                return { pages: newPages };
+            }),
+
+            setPageHtml: (pageId, html, title) => set((state) => {
+                const pageIndex = state.pages.findIndex(p => p.id === pageId);
+                if (pageIndex === -1) return state;
+
+                const newPages = [...state.pages];
+                newPages[pageIndex] = {
+                    ...newPages[pageIndex],
+                    title: title ?? newPages[pageIndex].title,
+                    iframeHtml: html,
+                    iframeUrl: undefined,
                 };
 
                 return { pages: newPages };

@@ -8,6 +8,7 @@ interface PageRendererProps {
     id: string;
     title: string;
     iframeUrl?: string;
+    iframeHtml?: string;
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
@@ -27,6 +28,8 @@ export default React.memo(function PageRenderer({
   currentDevice,
 }: PageRendererProps) {
   const iframeSrc = page.iframeUrl ?? "/login";
+  const hasHtml =
+    typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
   const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
 
   return (
@@ -53,9 +56,12 @@ export default React.memo(function PageRenderer({
       >
         <iframe
           title={page.title}
-          src={iframeSrc}
+          src={hasHtml ? undefined : iframeSrc}
+          srcDoc={hasHtml ? page.iframeHtml : undefined}
           className="h-full w-full border-0 pointer-events-none"
           loading="lazy"
+          sandbox=""
+          referrerPolicy="no-referrer"
         />
       </div>
     </div>
