@@ -58,7 +58,7 @@ export interface EditorState extends CanvasState, ProjectState {
 const generateEmptyState = (): Pick<ProjectState, 'pages' | 'sections' | 'selectedSectionId' | 'draggingSectionId'> => {
     return {
         pages: [
-            { id: "page-login", title: "Login", iframeUrl: "/login", sections: [] },
+            { id: "page-home", title: "Generated Page", sections: [] },
         ],
         sections: {},
         selectedSectionId: null,
@@ -231,6 +231,28 @@ export const useEditorStore = create<EditorState>()(
         }),
         {
             name: 'openwire-editor-storage',
+            version: 1,
+            migrate: (persistedState) => {
+                if (!persistedState || typeof persistedState !== 'object') return persistedState;
+                const state = persistedState as {
+                    pages?: PageData[];
+                    sections?: Record<string, SectionData>;
+                };
+
+                if (!Array.isArray(state.pages)) return persistedState;
+
+                return {
+                    ...persistedState,
+                    pages: state.pages.map((page) => {
+                        const hadLoginFallback = page?.iframeUrl === '/login';
+                        return {
+                            ...page,
+                            iframeUrl: hadLoginFallback ? undefined : page.iframeUrl,
+                            title: hadLoginFallback && page.title === 'Login' ? 'Generated Page' : page.title,
+                        };
+                    }),
+                };
+            },
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 pages: state.pages,
