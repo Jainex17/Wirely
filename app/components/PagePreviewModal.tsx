@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { Monitor, XIcon } from "lucide-react";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
@@ -18,6 +19,14 @@ export default function PagePreviewModal({
 
   const hasHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
+  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+
+  const handleLoad = React.useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    doc.documentElement.style.overflow = "hidden";
+    doc.body.style.overflow = "hidden";
+  }, []);
 
   return (
     <div
@@ -43,11 +52,15 @@ export default function PagePreviewModal({
         <div className="relative flex-1 bg-foreground overflow-hidden shadow-2xl rounded-b-xl">
           {hasHtml ? (
             <iframe
+              ref={iframeRef}
               title={`Preview ${page.title}`}
               srcDoc={page.iframeHtml}
               className="h-full w-full border-0 pointer-events-none"
+              style={{ overflow: "hidden" }}
               sandbox="allow-same-origin allow-scripts"
               referrerPolicy="no-referrer"
+              onLoad={handleLoad}
+              scrolling="no"
             />
           ) : (
             <GeneratingPreviewPlaceholder />

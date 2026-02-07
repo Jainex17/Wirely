@@ -1,67 +1,45 @@
-import { streamText } from "ai";
-import { google } from "@ai-sdk/google";
+import { generateText, streamText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import {
+  composeGenerateSystemPrompt,
+  composeRepairSystemPrompt,
+  getWireStylePresetById,
+  selectWireStylePreset,
+  type WireStylePreset,
+} from "@/app/lib/wirePrompt";
+import {
+  normalizeGeneratedHtml,
+  parseWireOutput,
+  userExplicitlyRequestedImages,
+} from "@/app/lib/wireOutput";
+import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
 
 const OPENROUTER_MODELS = Array.from(
   new Set(["qwen/qwen3-coder:free", "z-ai/glm-4.5-air:free"]),
 );
+
+const GEMINI_MODEL_NAME = "gemini-2.5-flash";
+
 type WireMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-const SYSTEM_PROMPT = `
-You are an expert product designer + frontend engineer.
-Generate a single, production-quality marketing page from the user's request.
-Aim for the quality bar of tools like Lovable, v0, and Bolt: polished layout, strong visual hierarchy, clean spacing, crisp typography, and intentional motion.
-Return plain text only with exactly two sections in this order:
+type WireRequestMode = "generate" | "repair";
 
-DETAILS:
-- 1 to 2 sentences describing the layout, copy, and visual direction.
-- Plain text only. No markdown, no lists, no code fences.
+type WireQualityContext = {
+  stylePresetId?: string;
+  violations?: string[];
+};
 
-HTML:
-- A full HTML document starting with <!doctype html>.
-- Use semantic HTML5 structure (header, main, section, footer).
-- Use Tailwind CSS utility classes for all styling.
-- Include <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script> in <head>.
-- Include <script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script> in <head>.
-- Include responsive meta viewport.
-- Do not include a <style> tag.
-- Do not use inline style attributes (no style="...").
-- Do not include markdown or code fences.
-
-Design quality requirements:
-- Translate the request into a clear product intent, audience, and tone before writing HTML.
-- Choose one clear visual direction and execute it consistently.
-- Avoid generic templates and default styling. Make it look intentionally designed.
-- Do not use the common "dark + purple gradient SaaS" look unless the user explicitly asks for it.
-- Use a strong, readable type scale and consistent spacing rhythm.
-- Include meaningful states: hover/focus transitions for interactive elements.
-- Build the page component-by-component with at least: hero, feature/value section, proof/social section, and a final CTA.
-- Keep copy concise, benefit-driven, and realistic.
-- Avoid lorem ipsum and filler labels.
-- Ensure AA-friendly contrast and accessible landmarks/labels.
-- Keep composition clean: fewer but stronger visual moves, no noisy ornaments.
-- Avoid oversized clip-path blobs and extremely long inline SVG paths.
-- Prefer elegant cards, grids, separators, and subtle gradients made with Tailwind classes.
-- Typography rule: avoid Inter, Roboto, Arial, and generic system-only font stacks.
-- Do not use <img> or background images unless the user explicitly asks for images.
-
-Iframe/runtime constraints:
-- This HTML runs inside an iframe srcdoc. Keep it fully self-contained.
-- Use CDN or inline assets only; do not use local file paths.
-- Keep JavaScript minimal and optional. No frameworks/build tools/import maps.
-- Prefer static, reliable markup that renders correctly without user interaction.
-- Do not rely on popups, top-level navigation, or parent-window access.
-- Keep the page responsive for desktop and mobile.
-- Keep output concise and maintainable: target 140-260 lines of HTML.
-
-Final validation before responding:
-- Verify there is NO <style> tag and NO inline style attributes.
-- Verify all visual styling comes from Tailwind classes.
-- Verify output matches exactly DETAILS then HTML.
-`.trim();
+type WireRequestBody = {
+  wireId?: string;
+  messages?: unknown;
+  mode?: WireRequestMode;
+  draftHtml?: string;
+  qualityContext?: WireQualityContext;
+};
 
 const insufficientFundsResponse = () =>
   new Response("Can't process request due to insufficient funds.", {
@@ -171,17 +149,112 @@ const parseMessages = (value: unknown): WireMessage[] => {
     .filter((item): item is WireMessage => item !== null);
 };
 
-const streamWithOpenRouter = async (
-  apiKey: string | undefined,
-  messages: WireMessage[],
-) => {
+const parseMode = (value: unknown): WireRequestMode =>
+  value === "repair" ? "repair" : "generate";
+
+const parseQualityContext = (value: unknown): WireQualityContext => {
+  if (!value || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  const stylePresetId =
+    typeof record.stylePresetId === "string" ? record.stylePresetId : undefined;
+  const violations = Array.isArray(record.violations)
+    ? record.violations.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : undefined;
+
+  return { stylePresetId, violations };
+};
+
+const getLatestUserPrompt = (messages: WireMessage[]) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user") {
+      return message.content;
+    }
+  }
+  return "";
+};
+
+const buildRepairContent = (html: string, details: string) =>
+  `DETAILS:\n${details}\n\nHTML:\n${html}`;
+
+const buildRepairPrompt = ({
+  userPrompt,
+  draftHtml,
+  violations,
+}: {
+  userPrompt: string;
+  draftHtml: string;
+  violations: string[];
+}) => {
+  const violationsBlock =
+    violations.length > 0
+      ? violations.map((item) => `- ${item}`).join("\n")
+      : "- improve_structure_and_quality";
+
+  return [
+    "User request:",
+    userPrompt || "(no explicit user prompt available)",
+    "",
+    "Violations to fix:",
+    violationsBlock,
+    "",
+    "Draft HTML to repair:",
+    draftHtml,
+  ].join("\n");
+};
+
+const logQualityTelemetry = ({
+  text,
+  stylePreset,
+  allowImages,
+  userPrompt,
+  modelName,
+}: {
+  text: string;
+  stylePreset: WireStylePreset;
+  allowImages: boolean;
+  userPrompt: string;
+  modelName: string;
+}) => {
+  const parsed = parseWireOutput(text);
+  const normalized = normalizeGeneratedHtml(parsed.html, { allowImages });
+  const quality = evaluateWireHtmlQuality({
+    html: normalized.html,
+    allowImages,
+    userPrompt,
+    stylePresetId: stylePreset.id,
+  });
+
+  console.info("[wire] quality_score", {
+    modelName,
+    stylePresetId: stylePreset.id,
+    score: quality.score,
+    violation_count: quality.violations.length,
+    needs_repair: quality.needsRepair,
+  });
+};
+
+const streamWithOpenRouter = async ({
+  apiKey,
+  messages,
+  systemPrompt,
+  stylePreset,
+  allowImages,
+  userPrompt,
+}: {
+  apiKey: string | undefined;
+  messages: WireMessage[];
+  systemPrompt: string;
+  stylePreset: WireStylePreset;
+  allowImages: boolean;
+  userPrompt: string;
+}) => {
   if (!apiKey) {
-    console.error("[wire] OpenRouter error", {
-      modelName: "unknown",
-      message: "Missing OpenRouter API key",
-    });
     throw new Error("Missing OpenRouter API key");
   }
+
   const provider = createOpenRouter({ apiKey });
   let lastError: unknown;
 
@@ -191,7 +264,7 @@ const streamWithOpenRouter = async (
       return streamText({
         model: provider(modelName),
         messages,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         onError: ({ error }) => {
           console.error("[wire] OpenRouter stream error", {
             modelName,
@@ -202,9 +275,12 @@ const streamWithOpenRouter = async (
           });
         },
         onFinish: ({ text }) => {
-          console.info("[wire] OpenRouter response", {
+          logQualityTelemetry({
+            text,
+            stylePreset,
+            allowImages,
+            userPrompt,
             modelName,
-            textPreview: text.slice(0, 500),
           });
         },
       });
@@ -227,49 +303,226 @@ const streamWithOpenRouter = async (
   throw lastError ?? new Error("OpenRouter models unavailable");
 };
 
+const generateWithOpenRouter = async ({
+  apiKey,
+  systemPrompt,
+  prompt,
+}: {
+  apiKey: string | undefined;
+  systemPrompt: string;
+  prompt: string;
+}) => {
+  if (!apiKey) {
+    throw new Error("Missing OpenRouter API key");
+  }
+
+  const provider = createOpenRouter({ apiKey });
+  let lastError: unknown;
+
+  for (const modelName of OPENROUTER_MODELS) {
+    try {
+      console.info("[wire] OpenRouter repair attempt", { modelName });
+      const result = await generateText({
+        model: provider(modelName),
+        system: systemPrompt,
+        prompt,
+      });
+
+      return { text: result.text, modelName };
+    } catch (error) {
+      lastError = error;
+      console.error("[wire] OpenRouter repair error", {
+        modelName,
+        status: getStatusCode(error),
+        message: getErrorMessage(error),
+      });
+
+      if (isInsufficientFunds(error)) {
+        throw error;
+      }
+      if (!isModelError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("OpenRouter repair models unavailable");
+};
+
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body = (await request.json()) as WireRequestBody;
   const messages = parseMessages(body?.messages);
-  const geminiModelName = "gemini-2.5-flash";
+  const mode = parseMode(body?.mode);
+  const wireId = typeof body?.wireId === "string" ? body.wireId : "";
+  const latestUserPrompt = getLatestUserPrompt(messages);
+  const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
+  const qualityContext = parseQualityContext(body?.qualityContext);
+
+  const defaultStylePreset = selectWireStylePreset({
+    wireId,
+    userPrompt: latestUserPrompt,
+  });
+  const stylePreset =
+    getWireStylePresetById(qualityContext.stylePresetId) ?? defaultStylePreset;
+
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
+  const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
+
+  if (mode === "repair") {
+    const draftHtml = typeof body?.draftHtml === "string" ? body.draftHtml : "";
+    if (!draftHtml.trim()) {
+      return Response.json(
+        { error: "Missing draftHtml for repair mode." },
+        { status: 400 },
+      );
+    }
+
+    const normalizedDraft = normalizeGeneratedHtml(draftHtml, { allowImages });
+    const mergedViolations = Array.from(
+      new Set([
+        ...normalizedDraft.violations,
+        ...(qualityContext.violations ?? []),
+      ]),
+    );
+
+    console.info("[wire] repair_invoked", {
+      mode,
+      stylePresetId: stylePreset.id,
+      violation_count: mergedViolations.length,
+    });
+
+    const repairSystemPrompt = composeRepairSystemPrompt({
+      stylePreset,
+      allowImages,
+      violations: mergedViolations,
+    });
+    const repairPrompt = buildRepairPrompt({
+      userPrompt: latestUserPrompt,
+      draftHtml: normalizedDraft.html,
+      violations: mergedViolations,
+    });
+
+    try {
+      const result = await generateText({
+        model: googleProvider(GEMINI_MODEL_NAME),
+        system: repairSystemPrompt,
+        prompt: repairPrompt,
+      });
+
+      console.info("[wire] repair_success", {
+        modelName: GEMINI_MODEL_NAME,
+        stylePresetId: stylePreset.id,
+      });
+
+      return Response.json({
+        content: result.text,
+        modelName: GEMINI_MODEL_NAME,
+        stylePresetId: stylePreset.id,
+        fallbackUsed: false,
+      });
+    } catch (error) {
+      console.error("[wire] Gemini repair error", {
+        modelName: GEMINI_MODEL_NAME,
+        status: getStatusCode(error),
+        message: getErrorMessage(error),
+        responseBody: getErrorBody(error),
+        error: serializeError(error),
+      });
+
+      try {
+        const openRouterResult = await generateWithOpenRouter({
+          apiKey: openrouterApiKey,
+          systemPrompt: repairSystemPrompt,
+          prompt: repairPrompt,
+        });
+
+        console.info("[wire] repair_success", {
+          modelName: openRouterResult.modelName,
+          stylePresetId: stylePreset.id,
+        });
+
+        return Response.json({
+          content: openRouterResult.text,
+          modelName: openRouterResult.modelName,
+          stylePresetId: stylePreset.id,
+          fallbackUsed: false,
+        });
+      } catch (repairError) {
+        console.error("[wire] repair_fallback", {
+          status: getStatusCode(repairError),
+          message: getErrorMessage(repairError),
+          fallback_used: true,
+        });
+
+        return Response.json({
+          content: buildRepairContent(
+            normalizedDraft.html,
+            "Polished the draft with deterministic safeguards after repair fallback.",
+          ),
+          modelName: "fallback-normalizer",
+          stylePresetId: stylePreset.id,
+          fallbackUsed: true,
+        });
+      }
+    }
+  }
+
+  const systemPrompt = composeGenerateSystemPrompt({
+    stylePreset,
+    allowImages,
+  });
+
+  console.info("[wire] generation_attempt", {
+    mode,
+    stylePresetId: stylePreset.id,
+  });
 
   try {
-    console.info("[wire] Gemini attempt", { modelName: geminiModelName });
     const result = streamText({
-      model: google(geminiModelName, { apiKey: googleApiKey }),
+      model: googleProvider(GEMINI_MODEL_NAME),
       messages,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       onError: ({ error }) => {
         console.error("[wire] Gemini stream error", {
-          modelName: geminiModelName,
+          modelName: GEMINI_MODEL_NAME,
           status: getStatusCode(error),
           message: getErrorMessage(error),
           responseBody: getErrorBody(error),
           error: serializeError(error),
         });
       },
-      onFinish: ({ text, finishReason, usage, response }) => {
-        console.info("[wire] Gemini response", {
-          modelName: geminiModelName,
+      onFinish: ({ text }) => {
+        logQualityTelemetry({
           text,
-          finishReason,
-          usage,
-          responseBody: response?.body,
+          stylePreset,
+          allowImages,
+          userPrompt: latestUserPrompt,
+          modelName: GEMINI_MODEL_NAME,
         });
       },
     });
+
     return result.toDataStreamResponse();
   } catch (error) {
     console.error("[wire] Gemini error", {
-      modelName: geminiModelName,
+      modelName: GEMINI_MODEL_NAME,
       status: getStatusCode(error),
       message: getErrorMessage(error),
       responseBody: getErrorBody(error),
       error: serializeError(error),
     });
+
     try {
-      const result = await streamWithOpenRouter(openrouterApiKey, messages);
+      const result = await streamWithOpenRouter({
+        apiKey: openrouterApiKey,
+        messages,
+        systemPrompt,
+        stylePreset,
+        allowImages,
+        userPrompt: latestUserPrompt,
+      });
+
       return result.toDataStreamResponse();
     } catch (openRouterError) {
       console.error("[wire] OpenRouter fallback error", {
@@ -278,6 +531,7 @@ export async function POST(request: Request) {
         responseBody: getErrorBody(openRouterError),
         error: serializeError(openRouterError),
       });
+
       if (isInsufficientFunds(openRouterError)) {
         return insufficientFundsResponse();
       }

@@ -36,6 +36,8 @@ export default React.memo(function PageRenderer({
   const syncIframeHeight = React.useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
+    doc.documentElement.style.overflow = "hidden";
+    doc.body.style.overflow = "hidden";
     const nextHeight = Math.max(
       currentDevice.height,
       doc.documentElement?.scrollHeight ?? 0,
@@ -85,9 +87,11 @@ export default React.memo(function PageRenderer({
             srcDoc={page.iframeHtml}
             onLoad={handleLoad}
             className="h-full w-full border-0 pointer-events-none"
+            style={{ overflow: "hidden" }}
             loading="lazy"
             sandbox="allow-same-origin allow-scripts"
             referrerPolicy="no-referrer"
+            scrolling="no"
           />
         ) : (
           <GeneratingPreviewPlaceholder />
