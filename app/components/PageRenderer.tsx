@@ -73,7 +73,7 @@ export default React.memo(function PageRenderer({
         />
       </div>
       <div
-        className="bg-white rounded-[var(--radius)] relative border border-border shadow-lg overflow-hidden"
+        className="bg-transparent rounded-[var(--radius)] relative border border-border shadow-lg overflow-hidden"
         style={{
           width: `${currentDevice.width}px`,
           minHeight: `${currentDevice.height}px`,

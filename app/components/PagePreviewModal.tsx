@@ -15,18 +15,18 @@ export default function PagePreviewModal({
   onClose,
   page,
 }: PagePreviewModalProps) {
-  if (!isOpen || !page) return null;
-
-  const hasHtml =
-    typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const hasHtml =
+    typeof page?.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
 
   const handleLoad = React.useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    doc.documentElement.style.overflow = "hidden";
-    doc.body.style.overflow = "hidden";
+    doc.documentElement.style.overflow = "auto";
+    doc.body.style.overflow = "auto";
   }, []);
+
+  if (!isOpen || !page) return null;
 
   return (
     <div
@@ -49,18 +49,17 @@ export default function PagePreviewModal({
             <XIcon width={18} className="text-foreground" />
           </button>
         </div>
-        <div className="relative flex-1 bg-foreground overflow-hidden shadow-2xl rounded-b-xl">
+        <div className="relative flex-1 bg-transparent overflow-hidden shadow-2xl rounded-b-xl">
           {hasHtml ? (
             <iframe
               ref={iframeRef}
               title={`Preview ${page.title}`}
               srcDoc={page.iframeHtml}
-              className="h-full w-full border-0 pointer-events-none"
-              style={{ overflow: "hidden" }}
+              className="h-full w-full border-0"
+              style={{ overflow: "auto" }}
               sandbox="allow-same-origin allow-scripts"
               referrerPolicy="no-referrer"
               onLoad={handleLoad}
-              scrolling="no"
             />
           ) : (
             <GeneratingPreviewPlaceholder />

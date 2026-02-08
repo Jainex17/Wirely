@@ -29,6 +29,10 @@ export const evaluateWireHtmlQuality = ({
 
   const hasHtmlTag = /<html[\s>]/i.test(html) && /<\/html>/i.test(html);
   const hasBodyTag = /<body[\s>]/i.test(html) && /<\/body>/i.test(html);
+  const hasBodyBackgroundClass =
+    /<body[^>]*class\s*=\s*(".*?\bbg-[^"]*?"|'.*?\bbg-[^']*?')/i.test(html);
+  const hasBodyTextClass =
+    /<body[^>]*class\s*=\s*(".*?\btext-[^"]*?"|'.*?\btext-[^']*?')/i.test(html);
   const hasMainTag = /<main[\s>]/i.test(html) && /<\/main>/i.test(html);
   const hasHeaderTag = /<header[\s>]/i.test(html);
   const hasFooterTag = /<footer[\s>]/i.test(html);
@@ -41,6 +45,10 @@ export const evaluateWireHtmlQuality = ({
   if (!hasHeaderTag) {
     violations.push("missing_header_landmark");
     score -= 6;
+  }
+  if (!hasBodyBackgroundClass || !hasBodyTextClass) {
+    violations.push("missing_explicit_body_theme");
+    score -= 8;
   }
   if (!hasFooterTag) {
     violations.push("missing_footer_landmark");

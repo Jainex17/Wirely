@@ -150,6 +150,7 @@ export const composeGenerateSystemPrompt = ({
 }: ComposeWirePromptOptions) => `
 You are an expert product designer and frontend engineer.
 Generate a single production-quality marketing page from the user's request.
+Apply the "frontend-design" skill mindset: commit to a bold design direction, prioritize memorable visual identity, and avoid generic AI-looking UI decisions.
 Return plain text only with exactly two sections in this order:
 
 DETAILS:
@@ -163,6 +164,7 @@ HTML:
 - Include ${TAILWIND_CDN} in <head>.
 - Include ${ELEMENTS_CDN} in <head>.
 - Include <meta name="viewport" content="width=device-width, initial-scale=1.0">.
+- Set explicit base styling on <body> with Tailwind classes, including background and text color (do not rely on parent/container background).
 - Do not include <style> tags.
 - Do not use inline style attributes.
 - No markdown or code fences.
@@ -177,12 +179,17 @@ Style preset (must follow):
 - Avoid: ${stylePreset.avoid}
 
 Quality requirements:
+- Do design thinking first: infer purpose, audience, tone, and one unforgettable differentiator.
+- Make the aesthetic intentional and distinctive (not template-like or default SaaS).
 - Avoid generic templates and repetitive card boilerplate.
 - Build complete flow: hero, value/features, proof/social, final CTA.
 - Include meaningful hover/focus states for interactive controls.
 - Keep copy concise, realistic, and benefit-focused.
 - Ensure contrast and accessibility landmarks are clear.
 - Avoid Inter, Roboto, Arial, and generic system-only font stacks.
+- Pair a distinctive display font with a refined readable body font.
+- Use a clear palette with dominant colors and controlled accents.
+- Use depth/atmosphere (gradients, texture, pattern, or layered surfaces) when appropriate to the chosen tone.
 - Avoid emoji-only iconography.
 - Avoid giant clip-path blobs and noisy ornamental effects.
 ${buildImageRule(allowImages)}
@@ -207,6 +214,7 @@ export const composeRepairSystemPrompt = ({
 }: ComposeRepairPromptOptions) => `
 You are repairing an existing generated HTML page.
 Preserve the original intent and structure, but fix quality and compliance issues.
+Apply the "frontend-design" skill mindset while repairing: keep a strong aesthetic point-of-view and remove generic UI patterns.
 Return plain text only with exactly two sections: DETAILS then HTML.
 
 Repair constraints:
@@ -222,6 +230,11 @@ Style preset to preserve:
 - Intent: ${stylePreset.intent}
 - Palette: ${stylePreset.palette}
 - Composition: ${stylePreset.composition}
+
+Repair quality guardrails:
+- Strengthen typography and hierarchy with intentional font pairing and scale contrast.
+- Preserve or improve one memorable visual motif instead of flattening the design.
+- Keep interaction states purposeful and polished, without noisy constant motion.
 
 Violations to fix:
 ${violations.length > 0 ? violations.map((item) => `- ${item}`).join("\n") : "- Improve quality and consistency while preserving intent."}
