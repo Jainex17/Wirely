@@ -1,12 +1,14 @@
 import { createNeonAuth } from "@neondatabase/neon-js/auth/next/server";
 
 const baseUrl = process.env.NEON_AUTH_BASE_URL || process.env.NEON_AUTH_LOGIN_URL;
-const cookieSecret =
-  process.env.NEON_AUTH_COOKIE_SECRET ||
-  "dev-only-neon-auth-cookie-secret-change-this-value-1234";
+const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET;
 
 if (!baseUrl) {
   throw new Error("Missing NEON_AUTH_BASE_URL.");
+}
+
+if (!cookieSecret) {
+  throw new Error("Missing NEON_AUTH_COOKIE_SECRET.");
 }
 
 if (cookieSecret.length < 32) {

@@ -21,5 +21,5 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     redirect(nextPath);
   }
 
-  return <LoginClient nextPath={resolvedParams.next} />;
+  return <LoginClient nextPath={nextPath} />;
 }

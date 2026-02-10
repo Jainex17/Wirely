@@ -66,7 +66,7 @@ export async function POST(request: Request, context: RouteContext) {
       htmlContent?: unknown;
       stylePresetId?: unknown;
       modelName?: unknown;
-      qualityw?: unknown;
+      qualityScore?: unknown;
       violationCount?: unknown;
       isRepair?: unknown;
     };

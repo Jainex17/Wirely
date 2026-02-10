@@ -1,14 +1,15 @@
 import { auth } from "@/lib/auth/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const neonAuthMiddleware = auth.middleware({
   loginUrl: "/login",
 });
 
-export default function middleware(request: Request) {
-  const url = new URL(request.url);
-  const pathname = url.pathname;
-  const hasOAuthVerifier = url.searchParams.has("neon_auth_session_verifier");
+export default function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const hasOAuthVerifier = request.nextUrl.searchParams.has(
+    "neon_auth_session_verifier",
+  );
 
   const needsAuthMiddleware =
     pathname.startsWith("/wire") ||
