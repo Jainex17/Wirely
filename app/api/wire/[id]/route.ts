@@ -14,14 +14,18 @@ import {
   userExplicitlyRequestedImages,
 } from "@/app/lib/wireOutput";
 import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
+import {
+  DEFAULT_WIRE_MODEL,
+  OPENROUTER_FREE_MODELS,
+  getWireModelProvider,
+  isWireModelName,
+  type WireModelName,
+} from "@/app/lib/wireModels";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { getProjectForUser } from "@/lib/db/queries/projects";
 
-const OPENROUTER_MODELS = Array.from(
-  new Set(["qwen/qwen3-coder:free", "z-ai/glm-4.5-air:free"]),
-);
-
-const GEMINI_MODEL_NAME = "gemini-2.5-flash";
+const OPENROUTER_MODELS = Array.from(new Set(OPENROUTER_FREE_MODELS));
+const GEMINI_MODEL_NAME = DEFAULT_WIRE_MODEL;
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -41,6 +45,7 @@ type WireRequestBody = {
   mode?: WireRequestMode;
   draftHtml?: string;
   qualityContext?: WireQualityContext;
+  modelName?: unknown;
 };
 
 interface RouteContext {
@@ -51,6 +56,23 @@ const insufficientFundsResponse = () =>
   new Response("Can't process request due to insufficient funds.", {
     status: 402,
   });
+
+const selectedModelFailureResponse = ({
+  modelName,
+  error,
+}: {
+  modelName: string;
+  error: unknown;
+}) => {
+  if (isInsufficientFunds(error)) {
+    return insufficientFundsResponse();
+  }
+
+  return new Response(
+    `Generation failed with ${modelName}. Try another model.`,
+    { status: 502 },
+  );
+};
 
 const getErrorMessage = (error: unknown) => {
   if (!error) return "";
@@ -242,6 +264,128 @@ const logQualityTelemetry = ({
   });
 };
 
+const streamWithSelectedModel = async ({
+  modelName,
+  googleApiKey,
+  openrouterApiKey,
+  messages,
+  systemPrompt,
+  stylePreset,
+  allowImages,
+  userPrompt,
+}: {
+  modelName: WireModelName;
+  googleApiKey: string | undefined;
+  openrouterApiKey: string | undefined;
+  messages: WireMessage[];
+  systemPrompt: string;
+  stylePreset: WireStylePreset;
+  allowImages: boolean;
+  userPrompt: string;
+}) => {
+  const providerType = getWireModelProvider(modelName);
+  if (!providerType) {
+    throw new Error("Unsupported model");
+  }
+
+  if (providerType === "gemini") {
+    const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
+    return streamText({
+      model: googleProvider(modelName),
+      messages,
+      system: systemPrompt,
+      onError: ({ error }) => {
+        console.error("[wire] Gemini stream error", {
+          modelName,
+          status: getStatusCode(error),
+          message: getErrorMessage(error),
+          responseBody: getErrorBody(error),
+          error: serializeError(error),
+        });
+      },
+      onFinish: ({ text }) => {
+        logQualityTelemetry({
+          text,
+          stylePreset,
+          allowImages,
+          userPrompt,
+          modelName,
+        });
+      },
+    });
+  }
+
+  if (!openrouterApiKey) {
+    throw new Error("Missing OpenRouter API key");
+  }
+
+  const openRouterProvider = createOpenRouter({ apiKey: openrouterApiKey });
+  return streamText({
+    model: openRouterProvider(modelName),
+    messages,
+    system: systemPrompt,
+    onError: ({ error }) => {
+      console.error("[wire] OpenRouter stream error", {
+        modelName,
+        status: getStatusCode(error),
+        message: getErrorMessage(error),
+        responseBody: getErrorBody(error),
+        error: serializeError(error),
+      });
+    },
+    onFinish: ({ text }) => {
+      logQualityTelemetry({
+        text,
+        stylePreset,
+        allowImages,
+        userPrompt,
+        modelName,
+      });
+    },
+  });
+};
+
+const generateWithSelectedModel = async ({
+  modelName,
+  googleApiKey,
+  openrouterApiKey,
+  systemPrompt,
+  prompt,
+}: {
+  modelName: WireModelName;
+  googleApiKey: string | undefined;
+  openrouterApiKey: string | undefined;
+  systemPrompt: string;
+  prompt: string;
+}) => {
+  const providerType = getWireModelProvider(modelName);
+  if (!providerType) {
+    throw new Error("Unsupported model");
+  }
+
+  if (providerType === "gemini") {
+    const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
+    const result = await generateText({
+      model: googleProvider(modelName),
+      system: systemPrompt,
+      prompt,
+    });
+    return { text: result.text, modelName };
+  }
+
+  if (!openrouterApiKey) {
+    throw new Error("Missing OpenRouter API key");
+  }
+
+  const openRouterProvider = createOpenRouter({ apiKey: openrouterApiKey });
+  const result = await generateText({
+    model: openRouterProvider(modelName),
+    system: systemPrompt,
+    prompt,
+  });
+  return { text: result.text, modelName };
+};
+
 const streamWithOpenRouter = async ({
   apiKey,
   messages,
@@ -368,6 +512,15 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const body = (await request.json()) as WireRequestBody;
+  const requestedModelRaw = body?.modelName;
+  if (requestedModelRaw !== undefined && !isWireModelName(requestedModelRaw)) {
+    return Response.json({ error: "Unsupported modelName." }, { status: 400 });
+  }
+
+  const requestedModelName = isWireModelName(requestedModelRaw)
+    ? requestedModelRaw
+    : undefined;
+
   const messages = parseMessages(body?.messages);
   const mode = parseMode(body?.mode);
   const wireId = id;
@@ -407,6 +560,7 @@ export async function POST(request: Request, context: RouteContext) {
       mode,
       stylePresetId: stylePreset.id,
       violation_count: mergedViolations.length,
+      requestedModelName,
     });
 
     const repairSystemPrompt = composeRepairSystemPrompt({
@@ -419,6 +573,37 @@ export async function POST(request: Request, context: RouteContext) {
       draftHtml: normalizedDraft.html,
       violations: mergedViolations,
     });
+
+    if (requestedModelName) {
+      try {
+        const strictResult = await generateWithSelectedModel({
+          modelName: requestedModelName,
+          googleApiKey,
+          openrouterApiKey,
+          systemPrompt: repairSystemPrompt,
+          prompt: repairPrompt,
+        });
+
+        return Response.json({
+          content: strictResult.text,
+          modelName: strictResult.modelName,
+          stylePresetId: stylePreset.id,
+          fallbackUsed: false,
+        });
+      } catch (error) {
+        console.error("[wire] selected model repair error", {
+          modelName: requestedModelName,
+          status: getStatusCode(error),
+          message: getErrorMessage(error),
+          responseBody: getErrorBody(error),
+          error: serializeError(error),
+        });
+        return selectedModelFailureResponse({
+          modelName: requestedModelName,
+          error,
+        });
+      }
+    }
 
     try {
       const result = await generateText({
@@ -488,12 +673,43 @@ export async function POST(request: Request, context: RouteContext) {
   const systemPrompt = composeGenerateSystemPrompt({
     stylePreset,
     allowImages,
+    userPrompt: latestUserPrompt,
   });
 
   console.info("[wire] generation_attempt", {
     mode,
     stylePresetId: stylePreset.id,
+    requestedModelName,
   });
+
+  if (requestedModelName) {
+    try {
+      const selectedResult = await streamWithSelectedModel({
+        modelName: requestedModelName,
+        googleApiKey,
+        openrouterApiKey,
+        messages,
+        systemPrompt,
+        stylePreset,
+        allowImages,
+        userPrompt: latestUserPrompt,
+      });
+
+      return selectedResult.toDataStreamResponse();
+    } catch (error) {
+      console.error("[wire] selected model stream error", {
+        modelName: requestedModelName,
+        status: getStatusCode(error),
+        message: getErrorMessage(error),
+        responseBody: getErrorBody(error),
+        error: serializeError(error),
+      });
+      return selectedModelFailureResponse({
+        modelName: requestedModelName,
+        error,
+      });
+    }
+  }
 
   try {
     const result = streamText({

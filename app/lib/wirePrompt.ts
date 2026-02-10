@@ -17,6 +17,7 @@ interface SelectWireStylePresetOptions {
 interface ComposeWirePromptOptions {
   stylePreset: WireStylePreset;
   allowImages: boolean;
+  userPrompt?: string;
 }
 
 interface ComposeRepairPromptOptions extends ComposeWirePromptOptions {
@@ -144,12 +145,52 @@ const buildImageRule = (allowImages: boolean) =>
     ? "- Images are allowed because the user explicitly requested them."
     : "- Do not use <img>, picture, svg image assets, or background images.";
 
+const isDashboardPrompt = (prompt: string) => {
+  const text = prompt.toLowerCase();
+  return /(dashboard|admin|analytics|metrics|kpi|reporting|scorecard|table|sidebar|panel|workspace)/.test(
+    text,
+  );
+};
+
+const buildIntentGuardrails = (userPrompt?: string) => {
+  const text = (userPrompt ?? "").toLowerCase();
+  const dashboardRequested = isDashboardPrompt(text);
+  const hasUnified = /\bunified\b/.test(text);
+  const hasActive = /\bactive\b/.test(text);
+  const hasFoundational = /\bfoundational\b/.test(text);
+  const hasGeoScore = /(geo score|score)/.test(text);
+  const hasTargetQuery = /(target query|query)/.test(text);
+
+  if (!dashboardRequested) {
+    return `
+Intent alignment:
+- First classify the user's requested artifact type and match it exactly (landing page, dashboard, app workspace, etc.).
+- Never default to marketing sections when the user asks for a product UI or internal tool.
+- If the user specifies components or structure, implement all requested parts explicitly before adding extras.
+`.trim();
+  }
+
+  return `
+Intent alignment (dashboard mode):
+- The requested artifact is a dashboard/application UI, not a marketing landing page.
+- Do not produce hero/value-prop/CTA marketing sections.
+- Implement a left sidebar navigation with clear active state and at least 3 navigation items.
+- Main panel must be data-dense and include KPI cards plus at least 2 chart blocks.
+- Include a table in the main content with data rows.
+${hasUnified && hasActive && hasFoundational ? "- Include switchable views/tabs for Unified, Active, and Foundational in the main dashboard." : "- If user asks for multiple named views, provide clear switching controls between those views."}
+${hasTargetQuery ? "- The table must include a Target Query column." : "- Include practical metric columns in table form."}
+${hasGeoScore ? "- The table must include a GEO Score column with realistic percentage values." : "- Include a score/status column in the table."}
+- Keep the layout responsive for desktop and mobile.
+`.trim();
+};
+
 export const composeGenerateSystemPrompt = ({
   stylePreset,
   allowImages,
+  userPrompt,
 }: ComposeWirePromptOptions) => `
 You are an expert product designer and frontend engineer.
-Generate a single production-quality marketing page from the user's request.
+Generate a single production-quality interface that matches the user's requested artifact type.
 Apply the "frontend-design" skill mindset: commit to a bold design direction, prioritize memorable visual identity, and avoid generic AI-looking UI decisions.
 Return plain text only with exactly four sections in this order:
 
@@ -193,7 +234,7 @@ Quality requirements:
 - Do design thinking first: infer purpose, audience, tone, and one unforgettable differentiator.
 - Make the aesthetic intentional and distinctive (not template-like or default SaaS).
 - Avoid generic templates and repetitive card boilerplate.
-- Build complete flow: hero, value/features, proof/social, final CTA.
+- Match structure to user intent. Use marketing flow only when user explicitly asks for a landing/marketing page.
 - Include meaningful hover/focus states for interactive controls.
 - Keep copy concise, realistic, and benefit-focused.
 - Ensure contrast and accessibility landmarks are clear.
@@ -204,6 +245,7 @@ Quality requirements:
 - Avoid emoji-only iconography.
 - Avoid giant clip-path blobs and noisy ornamental effects.
 ${buildImageRule(allowImages)}
+${buildIntentGuardrails(userPrompt)}
 
 Iframe/runtime constraints:
 - HTML runs in iframe srcdoc; keep it self-contained and deterministic.

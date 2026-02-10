@@ -20,10 +20,17 @@ import {
 } from "@/app/lib/wireOutput";
 import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
 import { selectWireStylePreset } from "@/app/lib/wirePrompt";
+import {
+  DEFAULT_WIRE_MODEL,
+  WIRE_MODEL_OPTIONS,
+  isWireModelName,
+  type WireModelName,
+} from "@/app/lib/wireModels";
 
 interface WirePromptSidebarProps {
   wireId: string;
   variant?: "floating" | "panel";
+  initialModelName?: WireModelName;
   initialMessages?: Message[];
 }
 
@@ -61,6 +68,7 @@ const formatTimestamp = (value: string) => {
 export default function WirePromptSidebar({
   wireId,
   variant = "floating",
+  initialModelName = DEFAULT_WIRE_MODEL,
   initialMessages = [],
 }: WirePromptSidebarProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "versions">("chat");
@@ -74,6 +82,8 @@ export default function WirePromptSidebar({
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(
     null,
   );
+  const [activeModelName, setActiveModelName] =
+    useState<WireModelName>(initialModelName);
   const autoRunRef = useRef(false);
   const latestPromptRef = useRef("");
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
@@ -157,7 +167,8 @@ export default function WirePromptSidebar({
       if (!response.ok) {
         const text = await response.text();
         setErrorMessage(
-          text?.trim() || "Can't process request due to insufficient funds.",
+          text?.trim() ||
+            `Generation failed with ${activeModelName}. Try another model.`,
         );
         stop();
         return;
@@ -165,7 +176,9 @@ export default function WirePromptSidebar({
       setErrorMessage(null);
     },
     onError: () => {
-      setErrorMessage("Can't process request due to insufficient funds.");
+      setErrorMessage(
+        `Generation failed with ${activeModelName}. Try another model.`,
+      );
       stop();
     },
     onFinish: async (message) => {
@@ -204,6 +217,7 @@ export default function WirePromptSidebar({
         promptText: activePrompt,
         assistantContent: message.content,
         htmlContent: initialNormalized.html,
+        modelName: activeModelName,
         stylePresetId: stylePreset.id,
         qualityScore: initialQuality.score,
         violationCount: initialQuality.violations.length,
@@ -230,6 +244,7 @@ export default function WirePromptSidebar({
           },
           body: JSON.stringify({
             wireId,
+            modelName: activeModelName,
             mode: "repair",
             messages: [{ role: "user", content: activePrompt }],
             draftHtml: initialNormalized.html,
@@ -241,7 +256,11 @@ export default function WirePromptSidebar({
         });
 
         if (!repairResponse.ok) {
-          throw new Error("Repair request failed.");
+          const failureText = (await repairResponse.text()).trim();
+          throw new Error(
+            failureText ||
+              `Repair failed with ${activeModelName}. Try another model.`,
+          );
         }
 
         const payload = (await repairResponse.json()) as RepairResponse;
@@ -290,8 +309,13 @@ export default function WirePromptSidebar({
             "Auto-polish fallback kept output stable; regenerate for a different direction.",
           );
         }
-      } catch {
-        setQualityNotice("Rendered normalized draft after repair fallback.");
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : `Repair failed with ${activeModelName}. Try another model.`;
+        setErrorMessage(message);
+        setQualityNotice("Repair skipped after selected model failure.");
       } finally {
         setIsPolishing(false);
       }
@@ -307,10 +331,14 @@ export default function WirePromptSidebar({
 
       latestPromptRef.current = trimmed;
       setQualityNotice(null);
+      setErrorMessage(null);
       setPrompt("");
-      await append({ role: "user", content: trimmed });
+      await append(
+        { role: "user", content: trimmed },
+        { body: { modelName: activeModelName } },
+      );
     },
-    [append, isLoading, isPolishing, prompt],
+    [activeModelName, append, isLoading, isPolishing, prompt],
   );
 
   const handleRestoreVersion = useCallback(
@@ -343,14 +371,26 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     if (autoRunRef.current) return;
+    const storedModel = sessionStorage.getItem(`wireModel:${wireId}`);
+    const resolvedModel = isWireModelName(storedModel)
+      ? storedModel
+      : activeModelName;
+    if (isWireModelName(storedModel)) {
+      setActiveModelName(storedModel);
+    }
+    sessionStorage.removeItem(`wireModel:${wireId}`);
+
     const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
-    if (!storedPrompt) return;
     autoRunRef.current = true;
+    if (!storedPrompt) return;
     latestPromptRef.current = storedPrompt;
     sessionStorage.removeItem(`wirePrompt:${wireId}`);
     setPrompt("");
-    void append({ role: "user", content: storedPrompt });
-  }, [append, wireId]);
+    void append(
+      { role: "user", content: storedPrompt },
+      { body: { modelName: resolvedModel } },
+    );
+  }, [activeModelName, append, wireId]);
 
   useEffect(() => {
     void loadVersions();
@@ -427,6 +467,15 @@ export default function WirePromptSidebar({
     });
   }, [messages]);
 
+  const geminiModelOptions = useMemo(
+    () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "gemini"),
+    [],
+  );
+  const openRouterModelOptions = useMemo(
+    () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "openrouter"),
+    [],
+  );
+
   return (
     <aside className={containerClassName}>
       <div className="grid grid-cols-2 rounded-xl border border-white/10 p-1">
@@ -477,22 +526,49 @@ export default function WirePromptSidebar({
             ) : null}
           </div>
 
-          <form onSubmit={handleSubmit} className="relative">
-            <textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Ask a follow-up..."
-              rows={4}
-              className="w-full resize-none bg-neutral-900/60 border border-white/10 text-neutral-100 placeholder:text-neutral-500 rounded-2xl px-4 py-3 pr-12 leading-5 focus:outline-none focus:ring-2 focus:ring-white/10"
-            />
-            <Button
-              type="submit"
-              disabled={isLoading || isPolishing}
-              className="absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full p-0 bg-neutral-200 text-neutral-900 hover:bg-white"
-              aria-label="Send"
-            >
-              {isLoading || isPolishing ? "…" : "→"}
-            </Button>
+          <form onSubmit={handleSubmit} className="shrink-0">
+            <div className="relative rounded-2xl border border-white/10 bg-neutral-900/60 p-3">
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Ask a follow-up..."
+                rows={4}
+                className="w-full resize-none rounded-xl border-none bg-transparent pr-28 pl-1 text-neutral-100 placeholder:text-neutral-500 leading-5 focus:outline-none focus:ring-0"
+              />
+              <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                <select
+                  value={activeModelName}
+                  onChange={(event) =>
+                    setActiveModelName(event.target.value as WireModelName)
+                  }
+                  disabled={isLoading || isPolishing}
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none focus:ring-2 focus:ring-white/20"
+                >
+                  <optgroup label="Gemini">
+                    {geminiModelOptions.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="OpenRouter">
+                    {openRouterModelOptions.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <Button
+                  type="submit"
+                  disabled={isLoading || isPolishing}
+                  className="h-9 w-9 rounded-full p-0 bg-neutral-200 text-neutral-900 hover:bg-white"
+                  aria-label="Send"
+                >
+                  {isLoading || isPolishing ? "…" : "→"}
+                </Button>
+              </div>
+            </div>
           </form>
         </>
       ) : (

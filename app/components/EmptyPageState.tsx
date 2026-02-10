@@ -1,3 +1,5 @@
+import { Plus } from "lucide-react";
+
 interface EmptyPageStateProps {
   onShowTemplateModal: () => void;
 }
@@ -13,9 +15,7 @@ export default function EmptyPageState({ onShowTemplateModal }: EmptyPageStatePr
         className="group flex flex-col items-center gap-6 p-12 rounded-2xl transition-all duration-300"
       >
         <div className="w-24 h-24 rounded-full bg-blue-500 cursor-pointer flex items-center justify-center shadow-lg shadow-blue-500/25 group-hover:scale-110 transition-transform">
-          <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <Plus className="w-10 h-10 text-white" />
         </div>
         <div className="text-center">
           <h3 className="text-xl font-bold text-gray-900 mb-2">Choose a Template</h3>

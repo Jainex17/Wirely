@@ -1,0 +1,36 @@
+// app/components/LoadingSkeleton.tsx
+const LoadingSkeleton = () => {
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8 animate-pulse">
+      {/* Header Skeleton */}
+      <div className="h-10 bg-gray-800 rounded w-3/4 mx-auto mb-8"></div>
+
+      {/* Form Skeleton */}
+      <div className="bg-[#111111] border border-[#333333] rounded-xl p-4 mb-8">
+        <div className="h-24 bg-gray-700 rounded w-full mb-4"></div>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 bg-gray-700 rounded"></div>
+            <div className="h-8 w-24 bg-gray-700 rounded"></div>
+          </div>
+          <div className="h-8 w-20 bg-gray-700 rounded"></div>
+        </div>
+      </div>
+
+      {/* Recent Projects Header Skeleton */}
+      <div className="flex justify-between items-center mb-4">
+        <div className="h-6 bg-gray-800 rounded w-1/4"></div>
+        <div className="h-6 bg-gray-800 rounded w-20"></div>
+      </div>
+
+      {/* Project List Skeleton */}
+      <div className="space-y-2">
+        <div className="h-16 bg-[#1a1a1a] rounded-lg"></div>
+        <div className="h-16 bg-[#1a1a1a] rounded-lg"></div>
+        <div className="h-16 bg-[#1a1a1a] rounded-lg"></div>
+      </div>
+    </div>
+  );
+};
+
+export default LoadingSkeleton;

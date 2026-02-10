@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getProjectDetailForUser,
   updateProjectForUser,
+  deleteProjectForUser,
 } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
 
@@ -61,5 +62,29 @@ export async function PATCH(request: Request, context: RouteContext) {
   } catch (error) {
     console.error("[projects:update]", error);
     return NextResponse.json({ error: "Failed to update project." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const sessionUser = await getRequestSessionUser();
+    if (!sessionUser) {
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    }
+
+    const { projectId } = await context.params;
+    const deleted = await deleteProjectForUser({
+      projectId,
+      userId: sessionUser.id,
+    });
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[projects:delete]", error);
+    return NextResponse.json({ error: "Failed to delete project." }, { status: 500 });
   }
 }

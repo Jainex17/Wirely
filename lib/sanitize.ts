@@ -1,7 +1,12 @@
 import DOMPurify from 'dompurify';
 
 export const sanitizeHtml = (dirty: string): string => {
-  return DOMPurify.sanitize(dirty, {
+  if (typeof window === 'undefined') {
+    return dirty.replace(/<[^>]*>/g, '');
+  }
+  
+  const purifyInstance = DOMPurify(window);
+  return purifyInstance.sanitize(dirty, {
     ALLOWED_TAGS: [
       'b', 'i', 'em', 'strong', 'a', 'p', 'br', 'span',
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6',

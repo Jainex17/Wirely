@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Hand, MousePointer2 } from "lucide-react";
+import { Hand, MousePointer2, Minus, Plus } from "lucide-react";
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -69,19 +69,7 @@ export default function CanvasToolbar({
           className="p-1.5 text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Zoom out"
         >
-          <svg
-            className="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M20 12H4"
-            />
-          </svg>
+          <Minus className="w-3.5 h-3.5" />
         </button>
 
         <button
@@ -98,19 +86,7 @@ export default function CanvasToolbar({
           className="p-1.5 text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Zoom in"
         >
-          <svg
-            className="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

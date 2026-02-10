@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
+import { DEFAULT_WIRE_MODEL, isWireModelName } from "@/app/lib/wireModels";
 import WireEditor from "./WireEditor";
 
 interface WirePageProps {
@@ -26,6 +27,9 @@ export default async function WirePage({ params }: WirePageProps) {
   const initialPageHtml = latestVersion?.htmlContent ?? "";
   const initialPageTitle = projectDetail.pages[0]?.title ?? "Generated Page";
   const projectTitle = projectDetail.project.title;
+  const initialModelName = isWireModelName(latestVersion?.modelName)
+    ? latestVersion.modelName
+    : DEFAULT_WIRE_MODEL;
 
   return (
     <WireEditor
@@ -40,6 +44,7 @@ export default async function WirePage({ params }: WirePageProps) {
         projectTitle,
         pageHtml: initialPageHtml,
       }}
+      initialModelName={initialModelName}
       initialMessages={projectDetail.messages.map((message) => ({
         id: message.id,
         role: message.role,

@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/app/store/useEditorStore";
+import type { WireModelName } from "@/app/lib/wireModels";
 
 interface WireEditorProps {
   wireId: string;
@@ -28,6 +29,7 @@ interface WireEditorProps {
     projectTitle: string;
     pageHtml: string;
   };
+  initialModelName: WireModelName;
   initialMessages: Message[];
 }
 
@@ -35,6 +37,7 @@ export default function WireEditor({
   wireId,
   sessionUser,
   initialProject,
+  initialModelName,
   initialMessages,
 }: WireEditorProps) {
   const router = useRouter();
@@ -83,8 +86,8 @@ export default function WireEditor({
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-muted p-3 gap-3">
-      <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between">
+    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-3 overflow-hidden">
+      <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div>
             <Button
@@ -112,9 +115,9 @@ export default function WireEditor({
                 type="button"
                 className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
               >
-                <p className="max-w-[220px] truncate text-sm font-medium text-foreground">
+                <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                   {name}
-                </p>
+                </span>
                 <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
                   {initials || "U"}
                 </div>
@@ -135,7 +138,7 @@ export default function WireEditor({
           </DropdownMenu>
         </div>
       </header>
-      <div className="w-full flex-1 min-h-[calc(100vh-8.5rem)] flex gap-3">
+      <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-3">
         <div className="w-[70%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
           <EditorWorkspace sidebarMode="wire" />
         </div>
@@ -143,6 +146,7 @@ export default function WireEditor({
           <WirePromptSidebar
             variant="panel"
             wireId={wireId}
+            initialModelName={initialModelName}
             initialMessages={initialMessages}
           />
         </div>

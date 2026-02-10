@@ -3,13 +3,39 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth/client";
+import {
+  DEFAULT_WIRE_MODEL,
+  WIRE_MODEL_OPTIONS,
+  type WireModelName,
+} from "@/app/lib/wireModels";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Github,
+  LayoutGrid,
+  File,
+  ArrowUp,
+  ChevronDown,
+  Circle,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
+import Link from "next/link";
+import AppHeader from "@/app/components/AppHeader";
 
 interface MeResponse {
   user: {
@@ -24,7 +50,7 @@ interface ProjectsResponse {
   projects: Array<{
     id: string;
     title: string;
-    status: "active" | "archived";
+    status: "active" | "archived" | "draft";
     createdAt: string;
     updatedAt: string;
   }>;
@@ -34,26 +60,26 @@ export default function Home() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [historyItems, setHistoryItems] = useState<ProjectsResponse["projects"]>([]);
+  const [historyItems, setHistoryItems] = useState<
+    ProjectsResponse["projects"]
+  >([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [selectedModel, setSelectedModel] =
+    useState<WireModelName>(DEFAULT_WIRE_MODEL);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const placeholder = useMemo(
-    () => "Describe the site you want to generate...",
+  const placeholder = useMemo(() => "Ask Wirely to build...", []);
+  const geminiModels = useMemo(
+    () => WIRE_MODEL_OPTIONS.filter((item) => item.provider === "gemini"),
     [],
   );
-  const userDisplayName = user?.name || user?.email || "User";
-  const initials = useMemo(
-    () =>
-      userDisplayName
-        .split(" ")
-        .map((part) => part[0] ?? "")
-        .join("")
-        .slice(0, 2)
-        .toUpperCase(),
-    [userDisplayName],
+  const openRouterModels = useMemo(
+    () => WIRE_MODEL_OPTIONS.filter((item) => item.provider === "openrouter"),
+    [],
   );
 
   useEffect(() => {
@@ -100,7 +126,9 @@ export default function Home() {
 
         const payload = (await response.json()) as ProjectsResponse;
         if (!isCancelled) {
-          setHistoryItems(payload.projects ?? []);
+          setHistoryItems(
+            payload.projects?.map((p) => ({ ...p, status: "draft" })) ?? [],
+          );
         }
       } catch {
         if (!isCancelled) setHistoryItems([]);
@@ -151,6 +179,7 @@ export default function Home() {
       if (trimmedPrompt) {
         sessionStorage.setItem(`wirePrompt:${projectId}`, trimmedPrompt);
       }
+      sessionStorage.setItem(`wireModel:${projectId}`, selectedModel);
 
       router.push(`/wire/${projectId}`);
     } catch {
@@ -159,131 +188,254 @@ export default function Home() {
     }
   };
 
-  const handleLogout = async () => {
-    if (isLoggingOut) return;
-    setIsLoggingOut(true);
+  const timeAgo = (date: string) => {
+    const seconds = Math.floor(
+      (new Date().getTime() - new Date(date).getTime()) / 1000,
+    );
+    let interval = seconds / 31536000;
+    if (interval > 1) {
+      return Math.floor(interval) + " years ago";
+    }
+    interval = seconds / 2592000;
+    if (interval > 1) {
+      return Math.floor(interval) + " months ago";
+    }
+    interval = seconds / 86400;
+    if (interval > 1) {
+      return Math.floor(interval) + "d ago";
+    }
+    interval = seconds / 3600;
+    if (interval > 1) {
+      return Math.floor(interval) + " hours ago";
+    }
+    interval = seconds / 60;
+    if (interval > 1) {
+      return Math.floor(interval) + " minutes ago";
+    }
+    return Math.floor(seconds) + " seconds ago";
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setHistoryItems([]);
+    setIsLoggingOut(false);
+  };
+
+  const handleDeleteProject = (projectId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setProjectToDelete(projectId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
 
     try {
-      await authClient.signOut();
+      const response = await fetch(`/api/projects/${projectToDelete}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        setHistoryItems((prev) => prev.filter((p) => p.id !== projectToDelete));
+      } else {
+        alert("Failed to delete project");
+      }
+    } catch {
+      alert("Failed to delete project");
     } finally {
-      setUser(null);
-      router.push("/login");
-      router.refresh();
-      setIsLoggingOut(false);
+      setProjectToDelete(null);
+      setIsDeleteDialogOpen(false);
     }
   };
 
   return (
-    <main className="min-h-dvh bg-muted p-3 text-foreground">
-      <header className="h-14 rounded-lg border border-border bg-card px-5 shadow-sm">
-        <div className="flex h-full w-full max-w-6xl items-center justify-between">
-          <p className="text-base font-semibold text-foreground">Wirely</p>
+    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-3 overflow-hidden">
+      <AppHeader
+        user={user}
+        title="Wirely"
+        onLogout={handleLogout}
+        isLoggingOut={isLoggingOut}
+      />
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <h1 className="text-4xl font-medium text-center mt-8 text-foreground">
+            What do you want to create?
+          </h1>
 
-          {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
-                >
-                  <p className="max-w-[220px] truncate text-sm font-medium text-foreground">
-                    {userDisplayName}
-                  </p>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-                    {initials || "U"}
+          <div className="mt-8">
+            <form onSubmit={handleSubmit}>
+              <div className="bg-card border border-border rounded-xl p-4">
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder={placeholder}
+                  rows={4}
+                  className="w-full bg-transparent text-lg text-foreground placeholder:text-muted-foreground focus:outline-none resize-none"
+                />
+                <div className="flex justify-between items-center mt-4">
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="bg-transparent border-border hover:bg-muted"
+                        >
+                          <Circle size={16} className="text-primary mr-2" />
+                          {WIRE_MODEL_OPTIONS.find(
+                            (m) => m.id === selectedModel,
+                          )?.label || selectedModel}{" "}
+                          <ChevronDown size={16} className="ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-card border-border">
+                        {geminiModels.map((model) => (
+                          <DropdownMenuItem
+                            key={model.id}
+                            onClick={() => setSelectedModel(model.id)}
+                          >
+                            {model.label}
+                          </DropdownMenuItem>
+                        ))}
+                        {openRouterModels.map((model) => (
+                          <DropdownMenuItem
+                            key={model.id}
+                            onClick={() => setSelectedModel(model.id)}
+                          >
+                            {model.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44 border-0 shadow-none">
-                <DropdownMenuItem onClick={() => router.push("/profile")}>
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                  variant="destructive"
-                >
-                  {isLoggingOut ? "Logging out..." : "Logout"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Button variant="outline" onClick={() => router.push("/login")}>
-              Login
-            </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting || prompt.trim().length < 10}
+                    className={
+                      prompt.trim().length >= 10
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+                        : "bg-muted text-muted-foreground"
+                    }
+                  >
+                    <ArrowUp size={16} />
+                  </Button>
+                </div>
+              </div>
+            </form>
+            <div className="text-center text-sm text-muted-foreground mt-2">
+              Select a model and start building{" "}
+            </div>
+          </div>
+
+          {(isLoadingHistory || historyItems.length > 0) && (
+            <div className="mt-16">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-medium text-muted-foreground">
+                  Recent Projects
+                </h2>
+              </div>
+              {isLoadingHistory ? (
+                <div className="animate-pulse mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="p-4 bg-muted rounded-lg h-32"
+                    >
+                      <div className="h-5 bg-muted-foreground/20 rounded w-3/4 mb-4"></div>
+                      <div className="flex items-center justify-between mt-auto">
+                        <div className="h-4 bg-muted-foreground/20 rounded w-12"></div>
+                        <div className="h-4 bg-muted-foreground/20 rounded w-16"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {historyItems.map((project) => (
+                    <div key={project.id}>
+                      <Link
+                        href={`/wire/${project.id}`}
+                        className="flex flex-col p-4 bg-card rounded-lg h-full min-h-[120px] transition-colors"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-medium line-clamp-2 flex-1">{project.title}</span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                onClick={(e) => e.preventDefault()}
+                                className="p-1 hover:bg-muted-foreground/10 rounded transition-colors ml-2 flex-shrink-0"
+                              >
+                                <MoreHorizontal size={16} />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              className="bg-card border-border"
+                            >
+                              <DropdownMenuItem
+                                onClick={(e) =>
+                                  handleDeleteProject(
+                                    project.id,
+                                    e as unknown as React.MouseEvent,
+                                  )
+                                }
+                                className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
+                              >
+                                <Trash2 size={16} className="mr-2" />
+                                Delete Project
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div className="flex items-center justify-between mt-auto text-muted-foreground text-sm">
+                          <span>Draft</span>
+                          <span>{timeAgo(project.updatedAt)}</span>
+                        </div>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
-      </header>
-
-      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center px-6 py-12">
-        <div className="flex w-full max-w-5xl flex-col items-center text-center">
-          <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
-            Let&apos;s build something, {userDisplayName}.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base text-foreground/70 md:text-lg">
-            Describe your page idea and generate your first draft in seconds.
-          </p>
-
-          <form onSubmit={handleSubmit} className="mt-10 w-full max-w-3xl">
-            <div className="rounded-2xl border border-border bg-card p-4">
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder={placeholder}
-                rows={5}
-                className="mb-4 w-full resize-none border-0 bg-transparent text-base text-foreground placeholder:text-foreground/50 focus:outline-none focus-visible:ring-0"
-              />
-              <div className="mt-3 flex justify-end">
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="h-10 rounded-full px-5 text-sm"
-                >
-                  {isSubmitting ? "Starting..." : "Submit"}
-                </Button>
-              </div>
-              {errorMessage ? (
-                <p className="mt-3 text-sm text-red-500">{errorMessage}</p>
-              ) : null}
-            </div>
-          </form>
-
-          {user ? (
-            <section className="mt-10 w-full max-w-3xl rounded-2xl border border-border bg-card p-5 text-left">
-              <h2 className="text-base font-semibold text-foreground/85">Previous history</h2>
-              {isLoadingHistory ? (
-                <p className="mt-2 text-sm text-foreground/60">Loading...</p>
-              ) : historyItems.length === 0 ? (
-                <p className="mt-2 text-sm text-foreground/60">No previous projects yet.</p>
-              ) : (
-                <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {historyItems.slice(0, 8).map((project) => (
-                    <li key={project.id}>
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/wire/${project.id}`)}
-                        className="h-full w-full rounded-xl border border-border bg-background px-5 py-5 text-left transition-colors hover:bg-muted/30"
-                      >
-                        <p className="truncate text-base font-medium text-foreground">
-                          {project.title}
-                        </p>
-                        <p className="mt-2 text-sm text-foreground/60">
-                          Updated{" "}
-                          {new Date(project.updatedAt).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
-        </div>
       </div>
-    </main>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent className="bg-card border border-border rounded-lg shadow-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground text-xl">
+              Delete Project
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete this project? This action cannot
+              be undone and all associated data will be permanently removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel
+              onClick={() => {
+                setProjectToDelete(null);
+                setIsDeleteDialogOpen(false);
+              }}
+              className="bg-card border border-border text-foreground hover:bg-secondary"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <Trash2 size={16} className="mr-2" />
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

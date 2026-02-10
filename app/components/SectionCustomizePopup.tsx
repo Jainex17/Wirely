@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ChevronLeft, X, LayoutTemplate, Trash2, Layout } from "lucide-react";
 
 interface SectionCustomizePopupProps {
   isOpen: boolean;
@@ -108,19 +109,7 @@ export default function SectionCustomizePopup({
                 onClick={() => setView("main")}
                 className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary transition-colors"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
+                <ChevronLeft className="w-4 h-4" />
               </button>
             )}
             <span className="font-semibold text-foreground capitalize">
@@ -135,19 +124,7 @@ export default function SectionCustomizePopup({
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -171,22 +148,7 @@ export default function SectionCustomizePopup({
                   onClick={() => setView("layout")}
                   className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border rounded hover:border-ring hover:text-primary transition-all group text-foreground"
                 >
-                  <svg
-                    className="w-4 h-4 text-foreground group-hover:text-primary"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <rect
-                      x="3"
-                      y="3"
-                      width="18"
-                      height="18"
-                      rx="2"
-                      strokeWidth={1.5}
-                    />
-                    <line x1="3" y1="9" x2="21" y2="9" strokeWidth={1.5} />
-                  </svg>
+                  <LayoutTemplate className="w-4 h-4 text-foreground group-hover:text-primary" />
                   <span className="text-sm font-medium">Layout</span>
                 </button>
                 <button
@@ -205,19 +167,7 @@ export default function SectionCustomizePopup({
                 onClick={() => setShowDeleteConfirm(true)}
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-destructive/10 border border-destructive rounded hover:bg-destructive/20 hover:border-destructive transition-all group text-destructive"
               >
-                <svg
-                  className="w-4 h-4 text-destructive"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
+                <Trash2 className="w-4 h-4 text-destructive" />
                 <span className="text-sm font-medium">Delete Section</span>
               </button>
             </div>
@@ -230,21 +180,7 @@ export default function SectionCustomizePopup({
                   className="flex items-center gap-3 p-3 text-left rounded border border-border hover:border-ring hover:bg-secondary transition-all group"
                 >
                   <div className="w-10 h-10 rounded bg-secondary flex-shrink-0 group-hover:bg-secondary transition-colors flex items-center justify-center text-muted-foreground group-hover:text-primary">
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <rect
-                        x="4"
-                        y="4"
-                        width="16"
-                        height="16"
-                        rx="2"
-                        strokeWidth={1.5}
-                      />
-                    </svg>
+                    <Layout className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="text-sm font-medium text-foreground group-hover:text-foreground">

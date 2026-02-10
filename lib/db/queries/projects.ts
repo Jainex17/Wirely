@@ -237,3 +237,20 @@ export const listProjectVersionsForUser = async ({
     .orderBy(desc(projectVersions.createdAt))
     .limit(limit);
 };
+
+export const deleteProjectForUser = async ({
+  projectId,
+  userId,
+}: {
+  projectId: string;
+  userId: string;
+}) => {
+  const db = getDb();
+
+  const [deleted] = await db
+    .delete(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+    .returning();
+
+  return deleted ?? null;
+};
