@@ -1,3 +1,6 @@
+import { notFound, redirect } from "next/navigation";
+import { getServerSessionUser } from "@/lib/auth/session";
+import { getProjectDetailForUser } from "@/lib/db/queries/projects";
 import WireEditor from "./WireEditor";
 
 interface WirePageProps {
@@ -6,5 +9,40 @@ interface WirePageProps {
 
 export default async function WirePage({ params }: WirePageProps) {
   const resolvedParams = await params;
-  return <WireEditor wireId={resolvedParams.id} />;
+  const sessionUser = await getServerSessionUser();
+  if (!sessionUser) {
+    redirect(`/login?next=/wire/${resolvedParams.id}`);
+  }
+
+  const projectDetail = await getProjectDetailForUser(
+    resolvedParams.id,
+    sessionUser.id,
+  );
+  if (!projectDetail) {
+    notFound();
+  }
+
+  const latestVersion = projectDetail.versions[0];
+  const initialPageHtml = latestVersion?.htmlContent ?? "";
+  const initialPageTitle = projectDetail.pages[0]?.title ?? "Generated Page";
+
+  return (
+    <WireEditor
+      wireId={resolvedParams.id}
+      sessionUser={{
+        name: sessionUser.name,
+        email: sessionUser.email,
+      }}
+      initialProject={{
+        pageId: projectDetail.pages[0]?.id ?? "page-home",
+        pageTitle: initialPageTitle,
+        pageHtml: initialPageHtml,
+      }}
+      initialMessages={projectDetail.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+      }))}
+    />
+  );
 }

@@ -15,7 +15,7 @@ export const Footer1 = ({ activeDevice, sectionId }: FooterProps) => {
                         <div className="flex items-center gap-2 text-white font-bold text-2xl">
                             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">O</div>
                             <span className="hover:outline hover:outline-2 hover:outline-blue-500">
-                                <EditableText sectionId={sectionId} field="brand" defaultValue="OPENWIRE" />
+                                <EditableText sectionId={sectionId} field="brand" defaultValue="WIRELY" />
                             </span>
                         </div>
                         <p className="text-gray-400 text-sm max-w-xs leading-relaxed hover:outline hover:outline-2 hover:outline-blue-500">
@@ -49,7 +49,7 @@ export const Footer1 = ({ activeDevice, sectionId }: FooterProps) => {
                 </div>
                 <div className="mt-16 pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center gap-4 text-gray-500 text-sm">
                     <p className="hover:outline hover:outline-2 hover:outline-blue-500">
-                        <EditableText sectionId={sectionId} field="copyright" defaultValue="&copy; 2024 OpenWire Inc. All rights reserved." />
+                        <EditableText sectionId={sectionId} field="copyright" defaultValue="&copy; 2024 Wirely Inc. All rights reserved." />
                     </p>
                     <div className="flex gap-6">
                         <span className="hover:outline hover:outline-2 hover:outline-blue-500">
@@ -71,7 +71,7 @@ export const Footer2 = ({ activeDevice, sectionId }: FooterProps) => {
             <div className="max-w-4xl mx-auto text-center">
                 <div className="flex items-center justify-center gap-2 mb-6">
                     <span className="font-bold text-2xl tracking-tighter text-gray-900 hover:outline hover:outline-2 hover:outline-blue-500">
-                        <EditableText sectionId={sectionId} field="brand" defaultValue="OpenWire" />
+                        <EditableText sectionId={sectionId} field="brand" defaultValue="Wirely" />
                     </span>
                 </div>
                 <ul className="flex flex-wrap justify-center gap-6 mb-8 text-gray-600 font-medium">
@@ -88,7 +88,7 @@ export const Footer2 = ({ activeDevice, sectionId }: FooterProps) => {
                     <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center hover:bg-gray-100 text-gray-500">li</div>
                 </div>
                 <p className="text-gray-400 text-sm hover:outline hover:outline-2 hover:outline-blue-500">
-                    <EditableText sectionId={sectionId} field="copyright" defaultValue="&copy; 2024 OpenWire. All rights reserved." />
+                    <EditableText sectionId={sectionId} field="copyright" defaultValue="&copy; 2024 Wirely. All rights reserved." />
                 </p>
             </div>
         </div>
@@ -102,7 +102,7 @@ export const Footer3 = ({ activeDevice, sectionId }: FooterProps) => {
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-white rounded-full"></div>
                     <span className="font-bold text-xl hover:outline hover:outline-2 hover:outline-blue-500">
-                        <EditableText sectionId={sectionId} field="brand" defaultValue="OpenWire" />
+                        <EditableText sectionId={sectionId} field="brand" defaultValue="Wirely" />
                     </span>
                 </div>
                 <div className="flex gap-8 text-sm text-gray-300">

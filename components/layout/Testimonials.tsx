@@ -46,7 +46,7 @@ export const Testimonials2 = ({ activeDevice, sectionId }: SectionProps) => {
             <div className="max-w-4xl mx-auto text-center">
                 <div className="w-20 h-20 bg-gray-200 rounded-full mx-auto mb-8"></div>
                 <blockquote className="text-2xl md:text-4xl font-medium text-gray-900 leading-tight mb-8 hover:outline hover:outline-2 hover:outline-blue-500">
-                    <EditableText sectionId={sectionId} field="quote" defaultValue='"We&apos;ve tried every tool out there, and nothing comes close to the ease of use and power that OpenWire provides. It&apos;s simply in a league of its own."' />
+                    <EditableText sectionId={sectionId} field="quote" defaultValue='"We&apos;ve tried every tool out there, and nothing comes close to the ease of use and power that Wirely provides. It&apos;s simply in a league of its own."' />
                 </blockquote>
                 <cite className="not-italic">
                     <div className="font-bold text-lg text-gray-900 hover:outline hover:outline-2 hover:outline-blue-500">

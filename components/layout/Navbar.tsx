@@ -57,7 +57,7 @@ export const Navbar1 = ({
               <h1 className="text-2xl font-bold">
                 <EditableText
                   sectionId={sectionId}
-                  defaultValue="OpenWire"
+                  defaultValue="Wirely"
                   field="logo"
                 />
               </h1>
@@ -813,7 +813,7 @@ export const Navbar2 = ({
                 <EditableText
                   sectionId={sectionId}
                   field="logo"
-                  defaultValue="OpenWire"
+                  defaultValue="Wirely"
                 />
               </span>
             </div>
@@ -973,7 +973,7 @@ export const Navbar3 = ({
           <EditableText
             sectionId={sectionId}
             field="logo"
-            defaultValue="OpenWire"
+            defaultValue="Wirely"
           />
         </span>
       </div>

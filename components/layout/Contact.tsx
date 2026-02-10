@@ -27,7 +27,7 @@ export const Contact1 = ({ activeDevice, sectionId }: SectionProps) => {
                         <div className="space-y-8">
                             {[
                                 { icon: "📍", label: "Office", value: "123 Innovation Street, San Francisco, CA 94102" },
-                                { icon: "📧", label: "Email", value: "hello@openwire.io" },
+                                { icon: "📧", label: "Email", value: "hello@wirely.io" },
                                 { icon: "📞", label: "Phone", value: "+1 (555) 123-4567" },
                             ].map((item, i) => (
                                 <div key={i} className="flex gap-4">
@@ -119,9 +119,9 @@ export const Contact2 = ({ activeDevice, sectionId }: SectionProps) => {
 
                 <div className={`grid gap-6 mb-12 ${activeDevice === 'mobile' ? 'grid-cols-1' : 'grid-cols-3'}`}>
                     {[
-                        { title: "Sales", desc: "Discuss plans and pricing", email: "sales@openwire.io" },
-                        { title: "Support", desc: "Get help with your account", email: "support@openwire.io" },
-                        { title: "Partnerships", desc: "Explore collaboration", email: "partners@openwire.io" },
+                        { title: "Sales", desc: "Discuss plans and pricing", email: "sales@wirely.io" },
+                        { title: "Support", desc: "Get help with your account", email: "support@wirely.io" },
+                        { title: "Partnerships", desc: "Explore collaboration", email: "partners@wirely.io" },
                     ].map((item, i) => (
                         <Card key={i} className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors cursor-pointer">
                             <CardContent className="p-6 text-center">
@@ -188,7 +188,7 @@ export const Contact3 = ({ activeDevice, sectionId }: SectionProps) => {
                     <div className="flex-1 space-y-6">
                         {[
                             { icon: "💬", title: "Chat with us", desc: "We're online Mon-Fri 9am-6pm", action: "Start a chat" },
-                            { icon: "📧", title: "Email us", desc: "We'll respond within 24 hours", action: "hello@openwire.io" },
+                            { icon: "📧", title: "Email us", desc: "We'll respond within 24 hours", action: "hello@wirely.io" },
                             { icon: "📞", title: "Call us", desc: "Mon-Fri from 9am to 6pm", action: "+1 (555) 123-4567" },
                         ].map((item, i) => (
                             <div key={i} className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">

@@ -139,7 +139,7 @@ export const FAQ3 = ({ activeDevice, sectionId }: SectionProps) => {
         {
             title: "General",
             faqs: [
-                { q: "What is OpenWire?", a: "OpenWire is a modern website builder for developers and designers." },
+                { q: "What is Wirely?", a: "Wirely is a modern website builder for developers and designers." },
                 { q: "Who is it for?", a: "Anyone who wants to build beautiful websites without the hassle." },
             ]
         },

@@ -189,7 +189,7 @@ export const Features5 = ({ activeDevice, sectionId }: SectionProps) => {
                 <div className={`flex ${activeDevice === 'mobile' ? 'flex-col gap-12' : 'items-start gap-20'}`}>
                     <div className="flex-shrink-0 max-w-md sticky top-24">
                         <span className="text-blue-600 font-semibold text-sm uppercase tracking-wider hover:outline hover:outline-2 hover:outline-blue-500">
-                            <EditableText sectionId={sectionId} field="badge" defaultValue="Why OpenWire" />
+                            <EditableText sectionId={sectionId} field="badge" defaultValue="Why Wirely" />
                         </span>
                         <h2 className="text-4xl font-bold text-gray-900 mt-4 mb-6 hover:outline hover:outline-2 hover:outline-blue-500">
                             <EditableText sectionId={sectionId} field="title" defaultValue="Features that set us apart" />

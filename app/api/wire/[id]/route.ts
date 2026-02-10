@@ -14,6 +14,8 @@ import {
   userExplicitlyRequestedImages,
 } from "@/app/lib/wireOutput";
 import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
+import { getRequestSessionUser } from "@/lib/auth/session";
+import { getProjectForUser } from "@/lib/db/queries/projects";
 
 const OPENROUTER_MODELS = Array.from(
   new Set(["qwen/qwen3-coder:free", "z-ai/glm-4.5-air:free"]),
@@ -40,6 +42,10 @@ type WireRequestBody = {
   draftHtml?: string;
   qualityContext?: WireQualityContext;
 };
+
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
 
 const insufficientFundsResponse = () =>
   new Response("Can't process request due to insufficient funds.", {
@@ -349,11 +355,22 @@ const generateWithOpenRouter = async ({
   throw lastError ?? new Error("OpenRouter repair models unavailable");
 };
 
-export async function POST(request: Request) {
+export async function POST(request: Request, context: RouteContext) {
+  const sessionUser = await getRequestSessionUser();
+  if (!sessionUser) {
+    return Response.json({ error: "Unauthenticated" }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const project = await getProjectForUser(id, sessionUser.id);
+  if (!project) {
+    return Response.json({ error: "Project not found." }, { status: 404 });
+  }
+
   const body = (await request.json()) as WireRequestBody;
   const messages = parseMessages(body?.messages);
   const mode = parseMode(body?.mode);
-  const wireId = typeof body?.wireId === "string" ? body.wireId : "";
+  const wireId = id;
   const latestUserPrompt = getLatestUserPrompt(messages);
   const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
   const qualityContext = parseQualityContext(body?.qualityContext);

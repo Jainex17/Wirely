@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { useChat } from "ai/react";
+import type { Message } from "ai";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/app/store/useEditorStore";
 import {
@@ -22,6 +23,7 @@ import { selectWireStylePreset } from "@/app/lib/wirePrompt";
 interface WirePromptSidebarProps {
   wireId: string;
   variant?: "floating" | "panel";
+  initialMessages?: Message[];
 }
 
 type RepairResponse = {
@@ -34,6 +36,7 @@ type RepairResponse = {
 export default function WirePromptSidebar({
   wireId,
   variant = "floating",
+  initialMessages = [],
 }: WirePromptSidebarProps) {
   const [prompt, setPrompt] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -49,8 +52,9 @@ export default function WirePromptSidebar({
     isLoading,
     stop,
   } = useChat({
-    api: `/api/wire/${wireId}`,
+    api: `/api/projects/${wireId}/generate`,
     body: { wireId },
+    initialMessages,
     onResponse: async (response) => {
       if (!response.ok) {
         const text = await response.text();
@@ -96,6 +100,54 @@ export default function WirePromptSidebar({
       setPageHtml(targetPageId, initialNormalized.html, "Generated Page");
       setQualityNotice(null);
 
+      const persistVersion = async ({
+        assistantContent,
+        htmlContent,
+        modelName,
+        stylePresetId,
+        qualityScore,
+        violationCount,
+        isRepair,
+      }: {
+        assistantContent: string;
+        htmlContent: string;
+        modelName?: string;
+        stylePresetId?: string;
+        qualityScore?: number;
+        violationCount?: number;
+        isRepair: boolean;
+      }) => {
+        try {
+          await fetch(`/api/projects/${wireId}/versions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              promptText: activePrompt,
+              assistantContent,
+              htmlContent,
+              modelName,
+              stylePresetId,
+              qualityScore,
+              violationCount,
+              isRepair,
+            }),
+          });
+        } catch (error) {
+          console.error("[wire] version_persist_failed", error);
+        }
+      };
+
+      await persistVersion({
+        assistantContent: message.content,
+        htmlContent: initialNormalized.html,
+        stylePresetId: stylePreset.id,
+        qualityScore: initialQuality.score,
+        violationCount: initialQuality.violations.length,
+        isRepair: false,
+      });
+
       console.info("[wire] quality_gate", {
         stage: "initial",
         score: initialQuality.score,
@@ -109,7 +161,7 @@ export default function WirePromptSidebar({
 
       setIsPolishing(true);
       try {
-        const repairResponse = await fetch(`/api/wire/${wireId}`, {
+        const repairResponse = await fetch(`/api/projects/${wireId}/generate`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -157,6 +209,18 @@ export default function WirePromptSidebar({
         if (shouldUseRepairedVersion) {
           setPageHtml(targetPageId, repairedNormalized.html, "Generated Page");
         }
+
+        await persistVersion({
+          assistantContent: payload.content ?? "",
+          htmlContent: shouldUseRepairedVersion
+            ? repairedNormalized.html
+            : initialNormalized.html,
+          modelName: payload.modelName,
+          stylePresetId: payload.stylePresetId ?? stylePreset.id,
+          qualityScore: repairedQuality.score,
+          violationCount: repairedQuality.violations.length,
+          isRepair: true,
+        });
 
         if (!shouldUseRepairedVersion || payload.fallbackUsed) {
           setQualityNotice(

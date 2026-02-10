@@ -50,7 +50,7 @@ export const exportProject = async (pages: PageData[]) => {
   });
 
   const content = await zip.generateAsync({ type: "blob" });
-  saveAs(content, "openwire-export.zip");
+  saveAs(content, "wirely-export.zip");
 };
 
 export const exportSinglePage = async (page: PageData) => {
@@ -60,5 +60,5 @@ export const exportSinglePage = async (page: PageData) => {
   zip.file("index.html", html);
 
   const content = await zip.generateAsync({ type: "blob" });
-  saveAs(content, "openwire-export.zip");
+  saveAs(content, "wirely-export.zip");
 };
