@@ -8,8 +8,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -22,6 +20,16 @@ interface MeResponse {
   };
 }
 
+interface ProjectsResponse {
+  projects: Array<{
+    id: string;
+    title: string;
+    status: "active" | "archived";
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
 export default function Home() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
@@ -29,12 +37,24 @@ export default function Home() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [historyItems, setHistoryItems] = useState<ProjectsResponse["projects"]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const placeholder = useMemo(
     () => "Describe the site you want to generate...",
     [],
   );
   const userDisplayName = user?.name || user?.email || "User";
+  const initials = useMemo(
+    () =>
+      userDisplayName
+        .split(" ")
+        .map((part) => part[0] ?? "")
+        .join("")
+        .slice(0, 2)
+        .toUpperCase(),
+    [userDisplayName],
+  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -62,6 +82,39 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setHistoryItems([]);
+      return;
+    }
+
+    let isCancelled = false;
+    const loadHistory = async () => {
+      setIsLoadingHistory(true);
+      try {
+        const response = await fetch("/api/projects", { cache: "no-store" });
+        if (!response.ok) {
+          if (!isCancelled) setHistoryItems([]);
+          return;
+        }
+
+        const payload = (await response.json()) as ProjectsResponse;
+        if (!isCancelled) {
+          setHistoryItems(payload.projects ?? []);
+        }
+      } catch {
+        if (!isCancelled) setHistoryItems([]);
+      } finally {
+        if (!isCancelled) setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+    return () => {
+      isCancelled = true;
+    };
+  }, [user]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting) return;
@@ -75,7 +128,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ title: "Generated Page" }),
+        body: JSON.stringify({ prompt: prompt.trim() }),
       });
 
       if (response.status === 401) {
@@ -121,28 +174,30 @@ export default function Home() {
   };
 
   return (
-    <main className="relative overflow-hidden bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-foreground/70">
-            Wirely
-          </p>
+    <main className="min-h-dvh bg-muted p-3 text-foreground">
+      <header className="h-14 rounded-lg border border-border bg-card px-5 shadow-sm">
+        <div className="flex h-full w-full max-w-6xl items-center justify-between">
+          <p className="text-base font-semibold text-foreground">Wirely</p>
 
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="max-w-[220px] justify-start">
-                  <span className="truncate">{userDisplayName}</span>
-                </Button>
+                <button
+                  type="button"
+                  className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+                >
+                  <p className="max-w-[220px] truncate text-sm font-medium text-foreground">
+                    {userDisplayName}
+                  </p>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+                    {initials || "U"}
+                  </div>
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel className="truncate">
-                  {userDisplayName}
-                </DropdownMenuLabel>
-                <DropdownMenuLabel className="pt-0 text-xs font-normal text-muted-foreground truncate">
-                  {user.email || "No email"}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
+              <DropdownMenuContent align="end" className="w-44 border-0 shadow-none">
+                <DropdownMenuItem onClick={() => router.push("/profile")}>
+                  Profile
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={handleLogout}
                   disabled={isLoggingOut}
@@ -160,27 +215,25 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="relative h-[90vh] z-10 flex flex-col items-center justify-center px-6 pb-16 pt-24">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center text-center">
-          <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
-            Let&apos;s build something, jainex.
+      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center px-6 py-12">
+        <div className="flex w-full max-w-5xl flex-col items-center text-center">
+          <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-5xl lg:text-6xl">
+            Let&apos;s build something, {userDisplayName}.
           </h1>
           <p className="mt-4 max-w-2xl text-base text-foreground/70 md:text-lg">
-            Describe your next launch, and we&apos;ll draft three bold directions
-            grounded in your palette.
+            Describe your page idea and generate your first draft in seconds.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-10 w-full max-w-3xl">
-            <div className="glass-panel flex flex-col gap-3 rounded-3xl px-4 py-4">
+            <div className="rounded-2xl border border-border bg-card p-4">
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder={placeholder}
-                rows={4}
-                className="w-full resize-none border-0 bg-transparent px-2 text-base text-foreground placeholder:text-foreground/50 focus:outline-none focus:border-transparent focus-visible:ring-0 overflow-hidden"
+                rows={5}
+                className="mb-4 w-full resize-none border-0 bg-transparent text-base text-foreground placeholder:text-foreground/50 focus:outline-none focus-visible:ring-0"
               />
-
-              <div className="flex items-center gap-2 justify-end">
+              <div className="mt-3 flex justify-end">
                 <Button
                   type="submit"
                   disabled={isSubmitting}
@@ -190,12 +243,46 @@ export default function Home() {
                 </Button>
               </div>
               {errorMessage ? (
-                <p className="px-2 text-sm text-red-500">{errorMessage}</p>
+                <p className="mt-3 text-sm text-red-500">{errorMessage}</p>
               ) : null}
             </div>
           </form>
-        </div>
 
+          {user ? (
+            <section className="mt-10 w-full max-w-3xl rounded-2xl border border-border bg-card p-5 text-left">
+              <h2 className="text-base font-semibold text-foreground/85">Previous history</h2>
+              {isLoadingHistory ? (
+                <p className="mt-2 text-sm text-foreground/60">Loading...</p>
+              ) : historyItems.length === 0 ? (
+                <p className="mt-2 text-sm text-foreground/60">No previous projects yet.</p>
+              ) : (
+                <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {historyItems.slice(0, 8).map((project) => (
+                    <li key={project.id}>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/wire/${project.id}`)}
+                        className="h-full w-full rounded-xl border border-border bg-background px-5 py-5 text-left transition-colors hover:bg-muted/30"
+                      >
+                        <p className="truncate text-base font-medium text-foreground">
+                          {project.title}
+                        </p>
+                        <p className="mt-2 text-sm text-foreground/60">
+                          Updated{" "}
+                          {new Date(project.updatedAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+        </div>
       </div>
     </main>
   );

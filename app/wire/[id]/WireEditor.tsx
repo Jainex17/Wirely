@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Message } from "ai";
+import { ArrowLeft } from "lucide-react";
 import EditorWorkspace from "@/app/components/EditorWorkspace";
 import WirePromptSidebar from "@/app/components/WirePromptSidebar";
+import { Button } from "@/components/ui/button";
+import { authClient } from "@/lib/auth/client";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/app/store/useEditorStore";
 
 interface WireEditorProps {
@@ -15,6 +25,7 @@ interface WireEditorProps {
   initialProject: {
     pageId: string;
     pageTitle: string;
+    projectTitle: string;
     pageHtml: string;
   };
   initialMessages: Message[];
@@ -26,6 +37,8 @@ export default function WireEditor({
   initialProject,
   initialMessages,
 }: WireEditorProps) {
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
 
   useEffect(() => {
@@ -56,24 +69,70 @@ export default function WireEditor({
     [name],
   );
 
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    try {
+      await authClient.signOut();
+    } finally {
+      router.push("/login");
+      router.refresh();
+      setIsLoggingOut(false);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex flex-col bg-muted p-3 gap-3">
       <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => router.push("/")}
+              aria-label="Back to home"
+              title="Back to home"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </div>
+          <div>
             <h1 className="text-base font-semibold text-foreground">
-              Wireframe Workspace
+              {initialProject.projectTitle}
             </h1>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm font-medium text-foreground">{name}</p>
-            <p className="text-xs text-muted-foreground">Design Operator</p>
-          </div>
-          <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
-            {initials || "U"}
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+              >
+                <p className="max-w-[220px] truncate text-sm font-medium text-foreground">
+                  {name}
+                </p>
+                <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
+                  {initials || "U"}
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 border-0 shadow-none">
+              <DropdownMenuItem onClick={() => router.push("/profile")}>
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                variant="destructive"
+              >
+                {isLoggingOut ? "Logging out..." : "Logout"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
       <div className="w-full flex-1 min-h-[calc(100vh-8.5rem)] flex gap-3">

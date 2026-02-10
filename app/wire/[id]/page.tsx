@@ -25,6 +25,7 @@ export default async function WirePage({ params }: WirePageProps) {
   const latestVersion = projectDetail.versions[0];
   const initialPageHtml = latestVersion?.htmlContent ?? "";
   const initialPageTitle = projectDetail.pages[0]?.title ?? "Generated Page";
+  const projectTitle = projectDetail.project.title;
 
   return (
     <WireEditor
@@ -36,6 +37,7 @@ export default async function WirePage({ params }: WirePageProps) {
       initialProject={{
         pageId: projectDetail.pages[0]?.id ?? "page-home",
         pageTitle: initialPageTitle,
+        projectTitle,
         pageHtml: initialPageHtml,
       }}
       initialMessages={projectDetail.messages.map((message) => ({

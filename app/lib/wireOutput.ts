@@ -1,4 +1,6 @@
 const DETAILS_MARKER = "DETAILS:";
+const CHANGES_APPLIED_MARKER = "CHANGES_APPLIED:";
+const FOLLOW_UP_QUESTIONS_MARKER = "FOLLOW_UP_QUESTIONS:";
 const HTML_MARKER = "HTML:";
 
 const REQUIRED_VIEWPORT =
@@ -12,6 +14,8 @@ const REQUIRED_ELEMENTS =
 export interface WireParsedOutput {
   raw: string;
   details: string;
+  changesApplied: string[];
+  followUpQuestions: string[];
   html: string;
 }
 
@@ -51,12 +55,22 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   const source = stripCodeFences(raw ?? "");
   const upperSource = source.toUpperCase();
   const detailsIndex = upperSource.indexOf(DETAILS_MARKER);
+  const changesAppliedIndex = upperSource.indexOf(CHANGES_APPLIED_MARKER);
+  const followUpQuestionsIndex = upperSource.indexOf(FOLLOW_UP_QUESTIONS_MARKER);
   const htmlIndex = upperSource.indexOf(HTML_MARKER);
+  const nextSectionIndex = (startIndex: number, candidates: number[]) => {
+    const next = candidates
+      .filter((index) => index > startIndex)
+      .sort((a, b) => a - b)[0];
+    return next ?? source.length;
+  };
 
   if (detailsIndex === -1 && htmlIndex === -1) {
     return {
       raw: source,
       details: "",
+      changesApplied: [],
+      followUpQuestions: [],
       html: extractHtmlFallback(source),
     };
   }
@@ -64,8 +78,36 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   const details = (() => {
     if (detailsIndex === -1) return "";
     const start = detailsIndex + DETAILS_MARKER.length;
-    const end = htmlIndex === -1 ? source.length : htmlIndex;
+    const end = nextSectionIndex(start, [
+      changesAppliedIndex,
+      followUpQuestionsIndex,
+      htmlIndex,
+    ]);
     return source.slice(start, end).trim();
+  })();
+
+  const changesApplied = (() => {
+    if (changesAppliedIndex === -1) return [];
+    const start = changesAppliedIndex + CHANGES_APPLIED_MARKER.length;
+    const end = nextSectionIndex(start, [followUpQuestionsIndex, htmlIndex]);
+    return source
+      .slice(start, end)
+      .split("\n")
+      .map((line) => line.replace(/^\s*[-*\d.)]+\s*/, "").trim())
+      .filter((line) => line.length > 0)
+      .slice(0, 4);
+  })();
+
+  const followUpQuestions = (() => {
+    if (followUpQuestionsIndex === -1) return [];
+    const start = followUpQuestionsIndex + FOLLOW_UP_QUESTIONS_MARKER.length;
+    const end = nextSectionIndex(start, [htmlIndex]);
+    return source
+      .slice(start, end)
+      .split("\n")
+      .map((line) => line.replace(/^\s*[-*\d.)]+\s*/, "").trim())
+      .filter((line) => line.length > 0)
+      .slice(0, 3);
   })();
 
   const html = (() => {
@@ -77,6 +119,8 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   return {
     raw: source,
     details,
+    changesApplied,
+    followUpQuestions,
     html: html || extractHtmlFallback(source),
   };
 };

@@ -1,7 +1,5 @@
 import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-
-neonConfig.fetchConnectionCache = true;
+import { Pool } from "@neondatabase/serverless";
 
 let cachedDb: ReturnType<typeof drizzle> | null = null;
 

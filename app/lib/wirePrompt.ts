@@ -151,11 +151,22 @@ export const composeGenerateSystemPrompt = ({
 You are an expert product designer and frontend engineer.
 Generate a single production-quality marketing page from the user's request.
 Apply the "frontend-design" skill mindset: commit to a bold design direction, prioritize memorable visual identity, and avoid generic AI-looking UI decisions.
-Return plain text only with exactly two sections in this order:
+Return plain text only with exactly four sections in this order:
 
 DETAILS:
 - 1 to 2 sentences describing layout, copy direction, and style choice.
 - Plain text only. No markdown, no lists, no code fences.
+
+CHANGES_APPLIED:
+- 2 to 4 concise bullet lines describing what changed in this iteration versus the previous one.
+- If this is the first iteration, still provide 2 to 4 bullet lines describing key design decisions introduced.
+- Focus on concrete visual/content changes (palette, layout, sections, hierarchy, CTA, spacing).
+- Plain text only. No markdown tables, no code fences.
+
+FOLLOW_UP_QUESTIONS:
+- Exactly 3 concise follow-up questions for the user to refine the next iteration.
+- Each question must be on its own line and end with a question mark.
+- Plain text only. No markdown, no code fences.
 
 HTML:
 - A full HTML document starting with <!doctype html>.
@@ -202,7 +213,7 @@ Iframe/runtime constraints:
 - Keep output maintainable, around 140-260 lines.
 
 Final validation before responding:
-- Output contains DETAILS then HTML, in that order.
+- Output contains DETAILS, CHANGES_APPLIED, FOLLOW_UP_QUESTIONS, then HTML, in that order.
 - HTML has no <style> tag and no inline style attributes.
 - Visual styling is from Tailwind utility classes.
 `.trim();
@@ -215,7 +226,7 @@ export const composeRepairSystemPrompt = ({
 You are repairing an existing generated HTML page.
 Preserve the original intent and structure, but fix quality and compliance issues.
 Apply the "frontend-design" skill mindset while repairing: keep a strong aesthetic point-of-view and remove generic UI patterns.
-Return plain text only with exactly two sections: DETAILS then HTML.
+Return plain text only with exactly four sections: DETAILS, CHANGES_APPLIED, FOLLOW_UP_QUESTIONS, then HTML.
 
 Repair constraints:
 - Keep Tailwind utility classes as the styling system.
@@ -235,6 +246,8 @@ Repair quality guardrails:
 - Strengthen typography and hierarchy with intentional font pairing and scale contrast.
 - Preserve or improve one memorable visual motif instead of flattening the design.
 - Keep interaction states purposeful and polished, without noisy constant motion.
+- Include 2 to 4 concrete bullet lines in CHANGES_APPLIED describing what this repair changed.
+- Include exactly 3 concise follow-up questions in FOLLOW_UP_QUESTIONS for the next user prompt.
 
 Violations to fix:
 ${violations.length > 0 ? violations.map((item) => `- ${item}`).join("\n") : "- Improve quality and consistency while preserving intent."}

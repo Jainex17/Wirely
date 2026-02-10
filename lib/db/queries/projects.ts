@@ -216,3 +216,24 @@ export const appendProjectVersion = async ({
 
   return version ?? null;
 };
+
+export const listProjectVersionsForUser = async ({
+  projectId,
+  userId,
+  limit = 30,
+}: {
+  projectId: string;
+  userId: string;
+  limit?: number;
+}) => {
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const db = getDb();
+  return db
+    .select()
+    .from(projectVersions)
+    .where(eq(projectVersions.projectId, projectId))
+    .orderBy(desc(projectVersions.createdAt))
+    .limit(limit);
+};

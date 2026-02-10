@@ -12,7 +12,6 @@ export default function middleware(request: Request) {
 
   const needsAuthMiddleware =
     pathname.startsWith("/wire") ||
-    pathname.startsWith("/api/projects") ||
     (pathname === "/" && hasOAuthVerifier);
 
   if (!needsAuthMiddleware) {
@@ -23,5 +22,5 @@ export default function middleware(request: Request) {
 }
 
 export const config = {
-  matcher: ["/", "/wire/:path*", "/api/projects/:path*"],
+  matcher: ["/", "/wire/:path*"],
 };
