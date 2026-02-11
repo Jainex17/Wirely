@@ -161,7 +161,7 @@ export default function WirePromptSidebar({
 
   const { messages, append, isLoading, stop } = useChat({
     api: `/api/projects/${wireId}/generate`,
-    body: { wireId },
+    body: { wireId, modelName: activeModelName },
     initialMessages,
     onResponse: async (response) => {
       if (!response.ok) {
