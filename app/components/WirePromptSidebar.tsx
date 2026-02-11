@@ -10,9 +10,10 @@ import {
 } from "react";
 import { useChat } from "ai/react";
 import type { Message } from "ai";
-import { History, MessageSquare, RefreshCw, RotateCcw } from "lucide-react";
+import { Eye, History, MessageSquare, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/app/store/useEditorStore";
+import PagePreviewModal from "@/app/components/PagePreviewModal";
 import {
   normalizeGeneratedHtml,
   parseWireOutput,
@@ -79,6 +80,9 @@ export default function WirePromptSidebar({
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [versionError, setVersionError] = useState<string | null>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(
+    null,
+  );
+  const [previewVersion, setPreviewVersion] = useState<ProjectVersion | null>(
     null,
   );
   const [activeModelName, setActiveModelName] =
@@ -657,7 +661,20 @@ export default function WirePromptSidebar({
                     "Generated variation"}
                 </p>
 
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPreviewVersion(version)}
+                    className={`h-8 ${
+                      variant === "panel"
+                        ? "border-border bg-transparent text-foreground hover:bg-accent"
+                        : "border-white/20 bg-transparent text-neutral-100 hover:bg-white/10"
+                    }`}
+                  >
+                    <Eye className="mr-2 h-3.5 w-3.5" />
+                    Preview
+                  </Button>
                   <Button
                     size="sm"
                     onClick={() => void handleRestoreVersion(version)}
@@ -679,6 +696,18 @@ export default function WirePromptSidebar({
           </div>
         </div>
       )}
+      <PagePreviewModal
+        isOpen={previewVersion !== null}
+        onClose={() => setPreviewVersion(null)}
+        page={
+          previewVersion
+            ? {
+                title: `Version ${formatTimestamp(previewVersion.createdAt)}`,
+                iframeHtml: previewVersion.htmlContent,
+              }
+            : null
+        }
+      />
     </aside>
   );
 }

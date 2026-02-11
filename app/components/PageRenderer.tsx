@@ -4,6 +4,36 @@ import { useEditorStore } from "../store/useEditorStore";
 import PageOptionsMenu from "./PageOptionsMenu";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
+const stabilizeViewportHeightClasses = (
+  html: string,
+  viewportHeight: number,
+) => {
+  if (!html) return html;
+
+  const safeViewportHeight = Math.max(1, Math.round(viewportHeight));
+  const vhToPx = (value: string) => {
+    const parsed = Number.parseFloat(value);
+    if (Number.isNaN(parsed)) return `${safeViewportHeight}px`;
+    return `${Math.max(1, Math.round((parsed / 100) * safeViewportHeight))}px`;
+  };
+
+  return html
+    .replace(
+      /\bmin-h-(screen|dvh|svh|lvh)\b/g,
+      `min-h-[${safeViewportHeight}px]`,
+    )
+    .replace(/\bh-(screen|dvh|svh|lvh)\b/g, `h-[${safeViewportHeight}px]`)
+    .replace(
+      /\bmax-h-(screen|dvh|svh|lvh)\b/g,
+      `max-h-[${safeViewportHeight}px]`,
+    )
+    .replace(
+      /(min-h|max-h|h)-\[(\d*\.?\d+)(vh|dvh|svh|lvh)\]/g,
+      (_match, prefix: string, rawValue: string) =>
+        `${prefix}-[${vhToPx(rawValue)}]`,
+    );
+};
+
 interface PageRendererProps {
   page: {
     id: string;
@@ -32,6 +62,16 @@ export default React.memo(function PageRenderer({
   const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
   const hasHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
+  const canvasSrcDoc = React.useMemo(
+    () =>
+      hasHtml
+        ? stabilizeViewportHeightClasses(
+            page.iframeHtml ?? "",
+            currentDevice.height,
+          )
+        : "",
+    [hasHtml, page.iframeHtml, currentDevice.height],
+  );
   const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
   const syncIframeHeight = React.useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -53,9 +93,8 @@ export default React.memo(function PageRenderer({
   }, [syncIframeHeight]);
 
   React.useEffect(() => {
-    if (hasHtml) return;
     setIframeHeight(currentDevice.height);
-  }, [currentDevice.height, hasHtml, page.id]);
+  }, [currentDevice.height, page.id, page.iframeHtml]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -84,7 +123,7 @@ export default React.memo(function PageRenderer({
           <iframe
             ref={iframeRef}
             title={page.title}
-            srcDoc={page.iframeHtml}
+            srcDoc={canvasSrcDoc}
             onLoad={handleLoad}
             className="h-full w-full border-0 pointer-events-none"
             style={{ overflow: "hidden" }}

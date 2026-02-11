@@ -38,7 +38,7 @@ export default function EditorWorkspace({
   );
 
   const handleReset = useCallback(() => {
-    setZoom(11);
+    setZoom(64);
     setPanOffset({ x: 0, y: 0 });
   }, [setZoom, setPanOffset]);
 
