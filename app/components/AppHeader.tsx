@@ -17,6 +17,7 @@ interface AppHeaderProps {
   user: {
     name: string | null;
     email: string | null;
+    avatarUrl: string | null;
   } | null;
   title?: string;
   showBackButton?: boolean;
@@ -86,9 +87,18 @@ export default function AppHeader({
                 <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                   {name}
                 </span>
-                <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
-                  {initials || "U"}
-                </div>
+                {user?.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt=""
+                    className="h-7 w-7 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
+                    {initials || "U"}
+                  </div>
+                )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent

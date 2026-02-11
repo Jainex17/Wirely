@@ -48,7 +48,6 @@ type ProjectVersion = {
   htmlContent: string;
   stylePresetId: string | null;
   modelName: string | null;
-  qualityScore: number | null;
   violationCount: number;
   isRepair: boolean;
   createdAt: string;
@@ -118,7 +117,6 @@ export default function WirePromptSidebar({
       htmlContent,
       modelName,
       stylePresetId,
-      qualityScore,
       violationCount,
       isRepair,
     }: {
@@ -127,7 +125,6 @@ export default function WirePromptSidebar({
       htmlContent: string;
       modelName?: string;
       stylePresetId?: string;
-      qualityScore?: number;
       violationCount?: number;
       isRepair: boolean;
     }) => {
@@ -143,7 +140,6 @@ export default function WirePromptSidebar({
             htmlContent,
             modelName,
             stylePresetId,
-            qualityScore,
             violationCount,
             isRepair,
           }),
@@ -219,7 +215,6 @@ export default function WirePromptSidebar({
         htmlContent: initialNormalized.html,
         modelName: activeModelName,
         stylePresetId: stylePreset.id,
-        qualityScore: initialQuality.score,
         violationCount: initialQuality.violations.length,
         isRepair: false,
       });
@@ -299,7 +294,6 @@ export default function WirePromptSidebar({
             : initialNormalized.html,
           modelName: payload.modelName,
           stylePresetId: payload.stylePresetId ?? stylePreset.id,
-          qualityScore: repairedQuality.score,
           violationCount: repairedQuality.violations.length,
           isRepair: true,
         });
@@ -358,7 +352,6 @@ export default function WirePromptSidebar({
           assistantContent: `Manual restore from version ${version.id}`,
           htmlContent: version.htmlContent,
           stylePresetId: version.stylePresetId ?? undefined,
-          qualityScore: version.qualityScore ?? undefined,
           violationCount: version.violationCount,
           isRepair: false,
         });
@@ -398,7 +391,7 @@ export default function WirePromptSidebar({
 
   const containerClassName =
     variant === "panel"
-      ? "h-full w-full p-4 flex flex-col gap-4 bg-transparent text-neutral-100"
+      ? "h-full w-full p-4 flex flex-col gap-4 bg-transparent text-foreground"
       : "fixed right-5 top-5 bottom-5 w-80 p-4 flex flex-col gap-4 bg-transparent text-neutral-100";
 
   const renderedMessages = useMemo(() => {
@@ -408,7 +401,11 @@ export default function WirePromptSidebar({
         return (
           <div
             key={key}
-            className="ml-auto max-w-[85%] rounded-2xl bg-neutral-200 text-neutral-900 px-4 py-3 text-sm"
+            className={`ml-auto max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+              variant === "panel"
+                ? "bg-primary text-primary-foreground"
+                : "bg-neutral-200 text-neutral-900"
+            }`}
           >
             {message.content}
           </div>
@@ -418,47 +415,19 @@ export default function WirePromptSidebar({
       if (message.role === "assistant") {
         const parsed = parseWireOutput(message.content);
         const details = parsed.details;
-        if (
-          !details &&
-          parsed.changesApplied.length === 0 &&
-          parsed.followUpQuestions.length === 0
-        ) {
+        if (!details) {
           return null;
         }
         return (
           <div
             key={key}
-            className="max-w-[85%] rounded-2xl bg-neutral-800/60 px-4 py-3 text-sm text-neutral-100"
+            className={`max-w-[90%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
+              variant === "panel"
+                ? "bg-muted text-foreground"
+                : "bg-neutral-800/60 text-neutral-200"
+            }`}
           >
-            {details ? <p>{details}</p> : null}
-            {parsed.changesApplied.length > 0 ? (
-              <div className="mt-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-300">
-                  Changes made
-                </p>
-                <ul className="mt-1 space-y-1 text-xs text-neutral-200">
-                  {parsed.changesApplied.map((change) => (
-                    <li key={`${key}-change-${change}`} className="leading-5">
-                      - {change}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {parsed.followUpQuestions.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {parsed.followUpQuestions.map((question) => (
-                  <button
-                    key={`${key}-${question}`}
-                    type="button"
-                    onClick={() => setPrompt(question)}
-                    className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-neutral-200 transition-colors hover:bg-white/10"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            {details}
           </div>
         );
       }
@@ -478,14 +447,20 @@ export default function WirePromptSidebar({
 
   return (
     <aside className={containerClassName}>
-      <div className="grid grid-cols-2 rounded-xl border border-white/10 p-1">
+      <div className={`grid grid-cols-2 rounded-xl border p-1 ${
+        variant === "panel" ? "border-border bg-muted" : "border-white/10"
+      }`}>
         <button
           type="button"
           onClick={() => setActiveTab("chat")}
           className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
             activeTab === "chat"
-              ? "bg-neutral-200 text-neutral-900"
-              : "text-neutral-300 hover:bg-white/5"
+              ? variant === "panel"
+                ? "bg-primary text-primary-foreground"
+                : "bg-neutral-200 text-neutral-900"
+              : variant === "panel"
+                ? "text-muted-foreground hover:bg-accent"
+                : "text-neutral-300 hover:bg-white/5"
           }`}
         >
           <MessageSquare className="h-4 w-4" />
@@ -496,8 +471,12 @@ export default function WirePromptSidebar({
           onClick={() => setActiveTab("versions")}
           className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
             activeTab === "versions"
-              ? "bg-neutral-200 text-neutral-900"
-              : "text-neutral-300 hover:bg-white/5"
+              ? variant === "panel"
+                ? "bg-primary text-primary-foreground"
+                : "bg-neutral-200 text-neutral-900"
+              : variant === "panel"
+                ? "text-muted-foreground hover:bg-accent"
+                : "text-neutral-300 hover:bg-white/5"
           }`}
         >
           <History className="h-4 w-4" />
@@ -510,39 +489,80 @@ export default function WirePromptSidebar({
           <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
             {renderedMessages}
             {errorMessage ? (
-              <div className="max-w-[85%] rounded-2xl bg-neutral-800/60 px-4 py-3 text-sm text-neutral-100">
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-neutral-800/60 text-neutral-100"
+              }`}>
                 {errorMessage}
               </div>
             ) : null}
             {isLoading ? (
-              <div className="max-w-[85%] rounded-2xl bg-neutral-800/40 px-4 py-3 text-sm text-neutral-200">
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-neutral-800/40 text-neutral-200"
+              }`}>
                 Generating...
               </div>
             ) : null}
             {isPolishing ? (
-              <div className="max-w-[85%] rounded-2xl bg-neutral-800/40 px-4 py-3 text-sm text-neutral-200">
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-neutral-800/40 text-neutral-200"
+              }`}>
                 Polishing design...
               </div>
             ) : null}
           </div>
 
           <form onSubmit={handleSubmit} className="shrink-0">
-            <div className="relative rounded-2xl border border-white/10 bg-neutral-900/60 p-3">
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Ask a follow-up..."
-                rows={4}
-                className="w-full resize-none rounded-xl border-none bg-transparent pr-28 pl-1 text-neutral-100 placeholder:text-neutral-500 leading-5 focus:outline-none focus:ring-0"
-              />
-              <div className="absolute bottom-3 right-3 flex items-center gap-2">
+            <div className={`rounded-xl border ${
+              variant === "panel"
+                ? "border-border bg-card shadow-sm"
+                : "border-white/10 bg-neutral-900/60"
+            }`}>
+              <div className="flex items-end gap-2 px-3 py-2">
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="Ask..."
+                  rows={1}
+                  className={`flex-1 resize-none border-none bg-transparent py-1.5 text-sm leading-5 focus:outline-none focus:ring-0 min-h-[28px] ${
+                    variant === "panel"
+                      ? "text-foreground placeholder:text-muted-foreground/60"
+                      : "text-neutral-100 placeholder:text-neutral-500"
+                  }`}
+                />
+                <Button
+                  type="submit"
+                  disabled={isLoading || isPolishing || !prompt.trim()}
+                  size="sm"
+                  className={`h-7 px-3 rounded-md text-xs font-medium transition-all ${
+                    variant === "panel"
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                      : "bg-neutral-200 text-neutral-900 hover:bg-white disabled:opacity-40"
+                  }`}
+                  aria-label="Send"
+                >
+                  {isLoading || isPolishing ? "..." : "Send"}
+                </Button>
+              </div>
+              <div className={`flex items-center justify-end px-3 py-1.5 border-t ${
+                variant === "panel" ? "border-border/40 bg-muted/30" : "border-white/5 bg-neutral-900/40"
+              }`}>
                 <select
                   value={activeModelName}
                   onChange={(event) =>
                     setActiveModelName(event.target.value as WireModelName)
                   }
                   disabled={isLoading || isPolishing}
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-neutral-900 px-3 text-sm text-neutral-100 outline-none focus:ring-2 focus:ring-white/20"
+                  className={`h-6 px-1.5 text-[10px] rounded border bg-transparent outline-none cursor-pointer transition-colors ${
+                    variant === "panel"
+                      ? "border-border text-muted-foreground hover:border-muted-foreground/50"
+                      : "border-white/10 text-neutral-400 hover:text-neutral-200"
+                  }`}
                 >
                   <optgroup label="Gemini">
                     {geminiModelOptions.map((model) => (
@@ -559,14 +579,6 @@ export default function WirePromptSidebar({
                     ))}
                   </optgroup>
                 </select>
-                <Button
-                  type="submit"
-                  disabled={isLoading || isPolishing}
-                  className="h-9 w-9 rounded-full p-0 bg-neutral-200 text-neutral-900 hover:bg-white"
-                  aria-label="Send"
-                >
-                  {isLoading || isPolishing ? "…" : "→"}
-                </Button>
               </div>
             </div>
           </form>
@@ -574,13 +586,17 @@ export default function WirePromptSidebar({
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm text-neutral-300">Saved generations</p>
+            <p className={`text-sm ${variant === "panel" ? "text-muted-foreground" : "text-neutral-300"}`}>Saved generations</p>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => void loadVersions()}
               disabled={isLoadingVersions}
-              className="h-8 w-8 text-neutral-300 hover:bg-white/10 hover:text-white"
+              className={`h-8 w-8 ${
+                variant === "panel"
+                  ? "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  : "text-neutral-300 hover:bg-white/10 hover:text-white"
+              }`}
               title="Refresh versions"
             >
               <RefreshCw
@@ -590,13 +606,21 @@ export default function WirePromptSidebar({
           </div>
 
           {versionError ? (
-            <div className="rounded-xl bg-neutral-800/60 px-4 py-3 text-sm text-neutral-200">
+            <div className={`rounded-xl px-4 py-3 text-sm ${
+              variant === "panel"
+                ? "bg-destructive/10 text-destructive"
+                : "bg-neutral-800/60 text-neutral-200"
+            }`}>
               {versionError}
             </div>
           ) : null}
 
           {!versionError && versions.length === 0 && !isLoadingVersions ? (
-            <div className="rounded-xl bg-neutral-800/40 px-4 py-3 text-sm text-neutral-300">
+            <div className={`rounded-xl px-4 py-3 text-sm ${
+              variant === "panel"
+                ? "bg-muted text-muted-foreground"
+                : "bg-neutral-800/40 text-neutral-300"
+            }`}>
               No versions yet. Generate a page to start history.
             </div>
           ) : null}
@@ -605,27 +629,29 @@ export default function WirePromptSidebar({
             {versions.map((version) => (
               <div
                 key={version.id}
-                className="rounded-xl border border-white/10 bg-neutral-900/40 px-3 py-3"
+                className={`rounded-xl border px-3 py-3 ${
+                  variant === "panel"
+                    ? "border-border bg-card"
+                    : "border-white/10 bg-neutral-900/40"
+                }`}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs text-neutral-400">
+                  <p className={`text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}>
                     {formatTimestamp(version.createdAt)}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <div className={`flex items-center gap-2 text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}>
                     {version.isRepair ? (
-                      <span className="rounded bg-white/10 px-2 py-0.5">
+                      <span className={`rounded px-2 py-0.5 ${
+                        variant === "panel" ? "bg-secondary" : "bg-white/10"
+                      }`}>
                         Repair
                       </span>
                     ) : null}
-                    {typeof version.qualityScore === "number" ? (
-                      <span className="rounded bg-white/10 px-2 py-0.5">
-                        Score {version.qualityScore}
-                      </span>
-                    ) : null}
+
                   </div>
                 </div>
 
-                <p className="line-clamp-2 text-sm text-neutral-200">
+                <p className={`line-clamp-2 text-sm ${variant === "panel" ? "text-foreground" : "text-neutral-200"}`}>
                   {version.promptText?.trim() ||
                     version.assistantDetails?.trim() ||
                     "Generated variation"}
@@ -636,7 +662,11 @@ export default function WirePromptSidebar({
                     size="sm"
                     onClick={() => void handleRestoreVersion(version)}
                     disabled={restoringVersionId === version.id}
-                    className="h-8 bg-neutral-200 text-neutral-900 hover:bg-white"
+                    className={`h-8 ${
+                      variant === "panel"
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                        : "bg-neutral-200 text-neutral-900 hover:bg-white"
+                    }`}
                   >
                     <RotateCcw className="mr-2 h-3.5 w-3.5" />
                     {restoringVersionId === version.id

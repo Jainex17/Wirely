@@ -83,7 +83,6 @@ export const projectVersions = pgTable(
     htmlContent: text("html_content").notNull(),
     stylePresetId: text("style_preset_id"),
     modelName: text("model_name"),
-    qualityScore: integer("quality_score"),
     violationCount: integer("violation_count").default(0).notNull(),
     isRepair: boolean("is_repair").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

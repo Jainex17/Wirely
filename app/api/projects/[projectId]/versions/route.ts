@@ -66,7 +66,6 @@ export async function POST(request: Request, context: RouteContext) {
       htmlContent?: unknown;
       stylePresetId?: unknown;
       modelName?: unknown;
-      qualityScore?: unknown;
       violationCount?: unknown;
       isRepair?: unknown;
     };
@@ -126,10 +125,6 @@ export async function POST(request: Request, context: RouteContext) {
           : undefined,
       modelName:
         typeof payload.modelName === "string" ? payload.modelName : undefined,
-      qualityScore:
-        typeof payload.qualityScore === "number"
-          ? Math.round(payload.qualityScore)
-          : undefined,
       violationCount:
         typeof payload.violationCount === "number"
           ? payload.violationCount

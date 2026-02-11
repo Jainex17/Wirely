@@ -181,7 +181,6 @@ export const appendProjectVersion = async ({
   htmlContent,
   stylePresetId,
   modelName,
-  qualityScore,
   violationCount,
   isRepair,
 }: {
@@ -192,7 +191,6 @@ export const appendProjectVersion = async ({
   htmlContent: string;
   stylePresetId?: string;
   modelName?: string;
-  qualityScore?: number;
   violationCount?: number;
   isRepair: boolean;
 }) => {
@@ -208,7 +206,6 @@ export const appendProjectVersion = async ({
       htmlContent,
       stylePresetId,
       modelName,
-      qualityScore,
       violationCount: violationCount ?? 0,
       isRepair,
     })
