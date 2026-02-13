@@ -197,11 +197,11 @@ const logQualityTelemetry = ({
     stylePresetId: stylePreset.id,
   });
 
-  console.info("[wire] quality_score", {
+  console.info("[wire] quality_assessment", {
     modelName,
     stylePresetId: stylePreset.id,
     score: quality.score,
-    violation_count: quality.violations.length,
+    violations: quality.violations.length,
   });
 };
 

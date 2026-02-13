@@ -21,14 +21,14 @@ interface ComposeWirePromptOptions {
 }
 
 const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
-const ELEMENTS_CDN =
-  `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
+const ELEMENTS_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
 
 export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
   {
     id: "editorial-light",
     name: "Editorial Light",
-    intent: "Confident, premium product storytelling with sharp content hierarchy.",
+    intent:
+      "Confident, premium product storytelling with sharp content hierarchy.",
     typography:
       "Use a refined serif display + neutral sans pair from Google Fonts. Avoid generic defaults.",
     palette:
@@ -59,8 +59,7 @@ export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
       "Humanist sans pairing with strong weight contrast for headings.",
     palette:
       "Warm neutrals with one saturated accent and quiet secondary tones.",
-    composition:
-      "Simple blocks, strong CTA funnel, concise content modules.",
+    composition: "Simple blocks, strong CTA funnel, concise content modules.",
     motion: "Minimal transitions; prioritize clarity over effects.",
     avoid: "Avoid heavy shadows and crowded card walls.",
   },
@@ -68,10 +67,8 @@ export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
     id: "brutalist-clean",
     name: "Brutalist Clean",
     intent: "Bold, high-contrast, modern statement design with clarity.",
-    typography:
-      "Use expressive display type and compact readable body type.",
-    palette:
-      "Black/white dominant with one high-impact accent color.",
+    typography: "Use expressive display type and compact readable body type.",
+    palette: "Black/white dominant with one high-impact accent color.",
     composition:
       "Strong borders, blocks, and directional rhythm with intentional tension.",
     motion: "Confident but brief hover/focus interactions.",
@@ -85,8 +82,7 @@ export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
       "Use elegant display type with clean sans body, both from Google Fonts.",
     palette:
       "Deep neutral dark base with cyan/amber or emerald accents, not purple-first.",
-    composition:
-      "Layered surfaces, soft borders, and balanced density.",
+    composition: "Layered surfaces, soft borders, and balanced density.",
     motion: "Refined transitions, no continuous decorative motion.",
     avoid: "Avoid purple-magenta neon unless user explicitly requests it.",
   },
@@ -100,7 +96,11 @@ const scorePresetFromPrompt = (prompt: string) => {
   if (/(luxury|premium|elegant|exclusive)/.test(text)) {
     return "premium-dark";
   }
-  if (/(enterprise|b2b|saas|platform|developer|api|dashboard|analytics)/.test(text)) {
+  if (
+    /(enterprise|b2b|saas|platform|developer|api|dashboard|analytics)/.test(
+      text,
+    )
+  ) {
     return "technical-grid";
   }
   if (/(bold|brutalist|experimental|poster|editorial)/.test(text)) {
@@ -127,9 +127,7 @@ export const selectWireStylePreset = ({
 }: SelectWireStylePresetOptions): WireStylePreset => {
   const explicitPresetId = scorePresetFromPrompt(userPrompt);
   if (explicitPresetId) {
-    return (
-      getWireStylePresetById(explicitPresetId) ?? WIRE_STYLE_PRESETS[0]
-    );
+    return getWireStylePresetById(explicitPresetId) ?? WIRE_STYLE_PRESETS[0];
   }
   const hashBase = `${wireId ?? "wire"}:${userPrompt}`;
   const index = hashString(hashBase) % WIRE_STYLE_PRESETS.length;
@@ -184,7 +182,8 @@ export const composeGenerateSystemPrompt = ({
   stylePreset,
   allowImages,
   userPrompt,
-}: ComposeWirePromptOptions) => `
+}: ComposeWirePromptOptions) =>
+  `
 You are an expert product designer and frontend engineer.
 Generate a single production-quality interface that matches the user's requested artifact type.
 Apply the "frontend-design" skill mindset: commit to a bold design direction, prioritize memorable visual identity, and avoid generic AI-looking UI decisions.
@@ -236,6 +235,7 @@ ${buildIntentGuardrails(userPrompt)}
 
 Iframe/runtime constraints:
 - HTML runs in iframe srcdoc; keep it self-contained and deterministic.
+- The iframe is visible on a white default background. If you choose a dark theme/layout, set an explicit dark background class on 'body' (e.g., 'bg-slate-950') so the page background is dark, not white.
 - Use CDN or inline assets only. No local file paths.
 - Keep JS minimal and optional. No frameworks/build tools/import maps.
 - Do not rely on window.top/window.parent access or popups.

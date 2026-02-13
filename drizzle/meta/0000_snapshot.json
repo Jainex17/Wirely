@@ -279,19 +279,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "quality_score": {
-          "name": "quality_score",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "violation_count": {
-          "name": "violation_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",

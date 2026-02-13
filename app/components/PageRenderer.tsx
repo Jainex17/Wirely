@@ -139,7 +139,7 @@ export default React.memo(function PageRenderer({
             title={page.title}
             srcDoc={canvasSrcDoc}
             onLoad={handleLoad}
-            className="h-full w-full border-0 pointer-events-none"
+            className="h-full w-full border-0 pointer-events-none bg-white"
             style={{ overflow: "hidden" }}
             loading="lazy"
             sandbox="allow-same-origin allow-scripts"

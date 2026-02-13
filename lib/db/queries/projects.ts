@@ -207,7 +207,6 @@ export const appendProjectVersion = async ({
   htmlContent,
   stylePresetId,
   modelName,
-  violationCount,
 }: {
   projectId: string;
   pageId: string;
@@ -216,7 +215,6 @@ export const appendProjectVersion = async ({
   htmlContent: string;
   stylePresetId?: string;
   modelName?: string;
-  violationCount?: number;
 }) => {
   const db = getDb();
 
@@ -230,7 +228,6 @@ export const appendProjectVersion = async ({
       htmlContent,
       stylePresetId,
       modelName,
-      violationCount: violationCount ?? 0,
     })
     .returning();
 

@@ -82,7 +82,6 @@ export const projectVersions = pgTable(
     htmlContent: text("html_content").notNull(),
     stylePresetId: text("style_preset_id"),
     modelName: text("model_name"),
-    violationCount: integer("violation_count").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

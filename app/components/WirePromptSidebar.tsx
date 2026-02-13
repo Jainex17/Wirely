@@ -50,7 +50,6 @@ type ProjectVersion = {
   htmlContent: string;
   stylePresetId: string | null;
   modelName: string | null;
-  violationCount: number;
   createdAt: string;
 };
 
@@ -138,7 +137,6 @@ export default function WirePromptSidebar({
       htmlContent,
       modelName,
       stylePresetId,
-      violationCount,
       pageId,
       pageTitle,
     }: {
@@ -147,7 +145,6 @@ export default function WirePromptSidebar({
       htmlContent: string;
       modelName?: string;
       stylePresetId?: string;
-      violationCount?: number;
       pageId?: string;
       pageTitle?: string;
     }) => {
@@ -163,7 +160,6 @@ export default function WirePromptSidebar({
             htmlContent,
             modelName,
             stylePresetId,
-            violationCount,
             pageId,
             pageTitle,
           }),
@@ -205,7 +201,8 @@ export default function WirePromptSidebar({
     },
     onFinish: async (message) => {
       const targetPageId =
-        pendingTargetPageIdRef.current ?? useEditorStore.getState().pages[0]?.id;
+        pendingTargetPageIdRef.current ??
+        useEditorStore.getState().pages[0]?.id;
       if (!targetPageId) {
         clearPendingGeneration();
         return;
@@ -250,7 +247,6 @@ export default function WirePromptSidebar({
           htmlContent: initialNormalized.html,
           modelName: activeModelName,
           stylePresetId: stylePreset.id,
-          violationCount: initialQuality.violations.length,
           pageId: targetPageId,
           pageTitle: targetPage?.title,
         });
@@ -258,7 +254,7 @@ export default function WirePromptSidebar({
         console.info("[wire] quality_gate", {
           stage: "initial",
           score: initialQuality.score,
-          violationCount: initialQuality.violations.length,
+          violations: initialQuality.violations.length,
         });
       } finally {
         clearPendingGeneration();
@@ -373,7 +369,6 @@ export default function WirePromptSidebar({
           assistantContent: `Manual restore from version ${version.id}`,
           htmlContent: version.htmlContent,
           stylePresetId: version.stylePresetId ?? undefined,
-          violationCount: version.violationCount,
           pageId: targetPageId,
           pageTitle: "Generated Page",
         });
@@ -469,9 +464,11 @@ export default function WirePromptSidebar({
 
   return (
     <aside className={containerClassName}>
-      <div className={`grid grid-cols-2 rounded-xl border p-1 ${
-        variant === "panel" ? "border-border bg-muted" : "border-white/10"
-      }`}>
+      <div
+        className={`grid grid-cols-2 rounded-xl border p-1 ${
+          variant === "panel" ? "border-border bg-muted" : "border-white/10"
+        }`}
+      >
         <button
           type="button"
           onClick={() => setActiveTab("chat")}
@@ -511,40 +508,48 @@ export default function WirePromptSidebar({
           <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
             {renderedMessages}
             {errorMessage ? (
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                variant === "panel"
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-neutral-800/60 text-neutral-100"
-              }`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                  variant === "panel"
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-neutral-800/60 text-neutral-100"
+                }`}
+              >
                 {errorMessage}
               </div>
             ) : null}
             {qualityNotice ? (
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                variant === "panel"
-                  ? "bg-secondary text-secondary-foreground"
-                  : "bg-neutral-800/60 text-neutral-100"
-              }`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                  variant === "panel"
+                    ? "bg-secondary text-secondary-foreground"
+                    : "bg-neutral-800/60 text-neutral-100"
+                }`}
+              >
                 {qualityNotice}
               </div>
             ) : null}
             {isLoading ? (
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                variant === "panel"
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-neutral-800/40 text-neutral-200"
-              }`}>
-                Generating...
+              <div
+                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                  variant === "panel"
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-neutral-800/40 text-neutral-200"
+                }`}
+              >
+                Thinking...
               </div>
             ) : null}
           </div>
 
           <form onSubmit={handleSubmit} className="shrink-0">
-            <div className={`rounded-xl border ${
-              variant === "panel"
-                ? "border-border bg-card shadow-sm"
-                : "border-white/10 bg-neutral-900/60"
-            }`}>
+            <div
+              className={`rounded-xl border ${
+                variant === "panel"
+                  ? "border-border bg-card shadow-sm"
+                  : "border-white/10 bg-neutral-900/60"
+              }`}
+            >
               <div className="flex items-end gap-2 px-3 py-2">
                 <textarea
                   value={prompt}
@@ -571,55 +576,14 @@ export default function WirePromptSidebar({
                   {isLoading ? "..." : "Send"}
                 </Button>
               </div>
-              <div className={`px-3 pb-2 flex items-center justify-between gap-2 ${
-                variant === "panel"
-                  ? "text-muted-foreground"
-                  : "text-neutral-400"
-              }`}>
-                <p className="text-[10px]">
-                  {pageCount} page{pageCount === 1 ? "" : "s"} on canvas
-                </p>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleGenerateNewPage()}
-                    disabled={isLoading || !prompt.trim()}
-                    className={`h-7 px-2.5 text-[11px] ${
-                      variant === "panel"
-                        ? "border-border bg-transparent text-foreground hover:bg-accent"
-                        : "border-white/20 bg-transparent text-neutral-100 hover:bg-white/10"
-                    }`}
-                  >
-                    <Sparkles className="mr-1 h-3 w-3" />
-                    New page
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleGenerateNewPageFromLastPrompt()}
-                    disabled={isLoading || !latestUserPrompt}
-                    className={`h-7 px-2.5 text-[11px] ${
-                      variant === "panel"
-                        ? "border-border bg-transparent text-foreground hover:bg-accent"
-                        : "border-white/20 bg-transparent text-neutral-100 hover:bg-white/10"
-                    }`}
-                    title={
-                      latestUserPrompt
-                        ? "Create a new page with your last prompt"
-                        : "Generate once to enable same-prompt page creation"
-                    }
-                  >
-                    <CopyPlus className="mr-1 h-3 w-3" />
-                    Same prompt
-                  </Button>
-                </div>
-              </div>
-              <div className={`flex items-center justify-end px-3 py-1.5 border-t ${
-                variant === "panel" ? "border-border/40 bg-muted/30" : "border-white/5 bg-neutral-900/40"
-              }`}>
+
+              <div
+                className={`flex items-center justify-end px-3 py-1.5 border-t ${
+                  variant === "panel"
+                    ? "border-border/40 bg-muted/30"
+                    : "border-white/5 bg-neutral-900/40"
+                }`}
+              >
                 <select
                   value={activeModelName}
                   onChange={(event) =>
@@ -654,7 +618,11 @@ export default function WirePromptSidebar({
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
           <div className="mb-3 flex items-center justify-between">
-            <p className={`text-sm ${variant === "panel" ? "text-muted-foreground" : "text-neutral-300"}`}>Saved generations</p>
+            <p
+              className={`text-sm ${variant === "panel" ? "text-muted-foreground" : "text-neutral-300"}`}
+            >
+              Saved generations
+            </p>
             <Button
               variant="ghost"
               size="icon"
@@ -674,21 +642,25 @@ export default function WirePromptSidebar({
           </div>
 
           {versionError ? (
-            <div className={`rounded-xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-destructive/10 text-destructive"
-                : "bg-neutral-800/60 text-neutral-200"
-            }`}>
+            <div
+              className={`rounded-xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-neutral-800/60 text-neutral-200"
+              }`}
+            >
               {versionError}
             </div>
           ) : null}
 
           {!versionError && versions.length === 0 && !isLoadingVersions ? (
-            <div className={`rounded-xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-muted text-muted-foreground"
-                : "bg-neutral-800/40 text-neutral-300"
-            }`}>
+            <div
+              className={`rounded-xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-neutral-800/40 text-neutral-300"
+              }`}
+            >
               No versions yet. Generate a page to start history.
             </div>
           ) : null}
@@ -704,12 +676,16 @@ export default function WirePromptSidebar({
                 }`}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className={`text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}>
+                  <p
+                    className={`text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}
+                  >
                     {formatTimestamp(version.createdAt)}
                   </p>
                 </div>
 
-                <p className={`line-clamp-2 text-sm ${variant === "panel" ? "text-foreground" : "text-neutral-200"}`}>
+                <p
+                  className={`line-clamp-2 text-sm ${variant === "panel" ? "text-foreground" : "text-neutral-200"}`}
+                >
                   {version.promptText?.trim() ||
                     version.assistantDetails?.trim() ||
                     "Generated variation"}

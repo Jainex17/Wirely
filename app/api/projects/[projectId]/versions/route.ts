@@ -70,7 +70,6 @@ export async function POST(request: Request, context: RouteContext) {
       htmlContent?: unknown;
       stylePresetId?: unknown;
       modelName?: unknown;
-      violationCount?: unknown;
       pageId?: unknown;
       pageTitle?: unknown;
     };
@@ -171,10 +170,6 @@ export async function POST(request: Request, context: RouteContext) {
           : undefined,
       modelName:
         typeof payload.modelName === "string" ? payload.modelName : undefined,
-      violationCount:
-        typeof payload.violationCount === "number"
-          ? payload.violationCount
-          : undefined,
     });
 
     return NextResponse.json({ version }, { status: 201 });

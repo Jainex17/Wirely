@@ -8,6 +8,13 @@
       "when": 1770531530161,
       "tag": "0000_complex_vanisher",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771000000000,
+      "tag": "0001_drop_quality_columns",
+      "breakpoints": true
     }
   ]
 }
