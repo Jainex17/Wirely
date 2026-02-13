@@ -96,7 +96,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
     .from(projectVersions)
     .where(eq(projectVersions.projectId, projectId))
     .orderBy(desc(projectVersions.createdAt))
-    .limit(20);
+    .limit(200);
 
   return {
     project,
@@ -105,6 +105,32 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
     messages,
     versions,
   };
+};
+
+export const createProjectPage = async ({
+  projectId,
+  title,
+  sortOrder,
+  id,
+}: {
+  projectId: string;
+  title: string;
+  sortOrder: number;
+  id?: string;
+}) => {
+  const db = getDb();
+
+  const [page] = await db
+    .insert(projectPages)
+    .values({
+      ...(id ? { id } : {}),
+      projectId,
+      title,
+      sortOrder,
+    })
+    .returning();
+
+  return page ?? null;
 };
 
 export const updateProjectForUser = async ({
@@ -182,7 +208,6 @@ export const appendProjectVersion = async ({
   stylePresetId,
   modelName,
   violationCount,
-  isRepair,
 }: {
   projectId: string;
   pageId: string;
@@ -192,7 +217,6 @@ export const appendProjectVersion = async ({
   stylePresetId?: string;
   modelName?: string;
   violationCount?: number;
-  isRepair: boolean;
 }) => {
   const db = getDb();
 
@@ -207,7 +231,6 @@ export const appendProjectVersion = async ({
       stylePresetId,
       modelName,
       violationCount: violationCount ?? 0,
-      isRepair,
     })
     .returning();
 

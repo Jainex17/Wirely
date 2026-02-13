@@ -24,10 +24,12 @@ interface WireEditorProps {
     email: string | null;
   };
   initialProject: {
-    pageId: string;
-    pageTitle: string;
     projectTitle: string;
-    pageHtml: string;
+    pages: Array<{
+      id: string;
+      title: string;
+      pageHtml: string;
+    }>;
   };
   initialModelName: WireModelName;
   initialMessages: Message[];
@@ -45,20 +47,15 @@ export default function WireEditor({
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
 
   useEffect(() => {
-    hydrateProject([
-      {
-        id: initialProject.pageId,
-        title: initialProject.pageTitle,
-        iframeHtml: initialProject.pageHtml,
+    hydrateProject(
+      initialProject.pages.map((page) => ({
+        id: page.id,
+        title: page.title,
+        iframeHtml: page.pageHtml,
         sections: [],
-      },
-    ]);
-  }, [
-    hydrateProject,
-    initialProject.pageHtml,
-    initialProject.pageId,
-    initialProject.pageTitle,
-  ]);
+      })),
+    );
+  }, [hydrateProject, initialProject.pages]);
 
   const name = sessionUser.name ?? sessionUser.email ?? "User";
   const initials = useMemo(

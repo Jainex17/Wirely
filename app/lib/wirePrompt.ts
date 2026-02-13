@@ -20,10 +20,6 @@ interface ComposeWirePromptOptions {
   userPrompt?: string;
 }
 
-interface ComposeRepairPromptOptions extends ComposeWirePromptOptions {
-  violations: string[];
-}
-
 const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
 const ELEMENTS_CDN =
   `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
@@ -250,39 +246,4 @@ Final validation before responding:
 - DETAILS is 2 sentences maximum, no bullet points or section headers.
 - HTML has no <style> tag and no inline style attributes.
 - Visual styling is from Tailwind utility classes.
-`.trim();
-
-export const composeRepairSystemPrompt = ({
-  stylePreset,
-  allowImages,
-  violations,
-}: ComposeRepairPromptOptions) => `
-You are repairing an existing generated HTML page.
-Preserve the original intent and structure, but fix quality and compliance issues.
-Apply the "frontend-design" skill mindset while repairing: keep a strong aesthetic point-of-view and remove generic UI patterns.
-Return plain text only with exactly two sections: DETAILS, then HTML.
-
-Repair constraints:
-- Keep Tailwind utility classes as the styling system.
-- Ensure ${TAILWIND_CDN} and ${ELEMENTS_CDN} are in <head>.
-- Remove <style> tags and inline style attributes.
-- Keep semantic HTML5 structure.
-- Keep it responsive and iframe-safe.
-${buildImageRule(allowImages)}
-
-Style preset to preserve:
-- Preset: ${stylePreset.name} (${stylePreset.id})
-- Intent: ${stylePreset.intent}
-- Palette: ${stylePreset.palette}
-- Composition: ${stylePreset.composition}
-
-Repair quality guardrails:
-- Strengthen typography and hierarchy with intentional font pairing and scale contrast.
-- Preserve or improve one memorable visual motif instead of flattening the design.
-- Keep interaction states purposeful and polished, without noisy constant motion.
-
-Violations to fix:
-${violations.length > 0 ? violations.map((item) => `- ${item}`).join("\n") : "- Improve quality and consistency while preserving intent."}
-
-Do not re-ideate from scratch. Repair and elevate the provided draft.
 `.trim();

@@ -24,8 +24,27 @@ export default async function WirePage({ params }: WirePageProps) {
   }
 
   const latestVersion = projectDetail.versions[0];
-  const initialPageHtml = latestVersion?.htmlContent ?? "";
-  const initialPageTitle = projectDetail.pages[0]?.title ?? "Generated Page";
+  const latestVersionByPageId = new Map<string, (typeof projectDetail.versions)[number]>();
+  for (const version of projectDetail.versions) {
+    if (!latestVersionByPageId.has(version.pageId)) {
+      latestVersionByPageId.set(version.pageId, version);
+    }
+  }
+
+  const initialPages =
+    projectDetail.pages.length > 0
+      ? projectDetail.pages.map((page) => ({
+          id: page.id,
+          title: page.title,
+          pageHtml: latestVersionByPageId.get(page.id)?.htmlContent ?? "",
+        }))
+      : [
+          {
+            id: "page-home",
+            title: "Generated Page",
+            pageHtml: "",
+          },
+        ];
   const projectTitle = projectDetail.project.title;
   const initialModelName = isWireModelName(latestVersion?.modelName)
     ? latestVersion.modelName
@@ -39,10 +58,8 @@ export default async function WirePage({ params }: WirePageProps) {
         email: sessionUser.email,
       }}
       initialProject={{
-        pageId: projectDetail.pages[0]?.id ?? "page-home",
-        pageTitle: initialPageTitle,
         projectTitle,
-        pageHtml: initialPageHtml,
+        pages: initialPages,
       }}
       initialModelName={initialModelName}
       initialMessages={projectDetail.messages.map((message) => ({

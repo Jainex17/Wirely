@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseWireOutput } from "@/app/lib/wireOutput";
 import {
   appendConversationMessage,
+  createProjectPage,
   appendProjectVersion,
   getProjectDetailForUser,
   getProjectForUser,
@@ -12,6 +13,9 @@ import { getRequestSessionUser } from "@/lib/auth/session";
 interface RouteContext {
   params: Promise<{ projectId: string }>;
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(_: Request, context: RouteContext) {
   try {
@@ -67,7 +71,8 @@ export async function POST(request: Request, context: RouteContext) {
       stylePresetId?: unknown;
       modelName?: unknown;
       violationCount?: unknown;
-      isRepair?: unknown;
+      pageId?: unknown;
+      pageTitle?: unknown;
     };
 
     const promptText =
@@ -86,8 +91,49 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    const requestedPageIdRaw =
+      typeof payload.pageId === "string" ? payload.pageId.trim() : undefined;
+    const requestedPageId =
+      requestedPageIdRaw && UUID_PATTERN.test(requestedPageIdRaw)
+        ? requestedPageIdRaw
+        : undefined;
+
     const detail = await getProjectDetailForUser(projectId, sessionUser.id);
-    const page = detail?.pages[0];
+    let page =
+      requestedPageId
+        ? detail?.pages.find((item) => item.id === requestedPageId)
+        : undefined;
+
+    if (!page && requestedPageId) {
+      const createdPage = await createProjectPage({
+        projectId,
+        id: requestedPageId,
+        title:
+          typeof payload.pageTitle === "string" && payload.pageTitle.trim().length > 0
+            ? payload.pageTitle.trim()
+            : "Generated Page",
+        sortOrder: detail?.pages.length ?? 0,
+      });
+      page = createdPage ?? undefined;
+    }
+
+    // Older clients may still send non-UUID local page ids; create a durable page row.
+    if (!page && requestedPageIdRaw && !requestedPageId) {
+      const createdPage = await createProjectPage({
+        projectId,
+        title:
+          typeof payload.pageTitle === "string" && payload.pageTitle.trim().length > 0
+            ? payload.pageTitle.trim()
+            : "Generated Page",
+        sortOrder: detail?.pages.length ?? 0,
+      });
+      page = createdPage ?? undefined;
+    }
+
+    if (!page) {
+      page = detail?.pages[0];
+    }
+
     if (!page) {
       return NextResponse.json(
         { error: "No project page found." },
@@ -129,7 +175,6 @@ export async function POST(request: Request, context: RouteContext) {
         typeof payload.violationCount === "number"
           ? payload.violationCount
           : undefined,
-      isRepair: payload.isRepair === true,
     });
 
     return NextResponse.json({ version }, { status: 201 });

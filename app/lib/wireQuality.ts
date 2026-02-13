@@ -2,7 +2,6 @@ export interface WireQualityReport {
   score: number;
   violations: string[];
   isRenderable: boolean;
-  needsRepair: boolean;
 }
 
 interface EvaluateWireHtmlQualityOptions {
@@ -175,24 +174,10 @@ export const evaluateWireHtmlQuality = ({
   }
 
   const finalScore = clampScore(score);
-  const criticalViolations = violations.filter((violation) =>
-    [
-      "document_structure_incomplete",
-      "style_tag_present",
-      "inline_style_present",
-      "disallowed_script_detected",
-      "image_present_without_permission",
-    ].includes(violation),
-  );
-
   const isRenderable = hasHtmlTag && hasBodyTag;
-  const needsRepair =
-    !isRenderable || criticalViolations.length > 0 || finalScore < 78;
-
   return {
     score: finalScore,
     violations: Array.from(new Set(violations)),
     isRenderable,
-    needsRepair,
   };
 };

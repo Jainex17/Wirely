@@ -27,6 +27,7 @@ export default function EditorWorkspace({
     setSelectedSection,
     renamePage,
     deletePage,
+    createPage,
     pages,
   } = useEditorStore();
 
@@ -53,6 +54,14 @@ export default function EditorWorkspace({
   const handleClosePreview = useCallback(() => {
     setPreviewPageId(null);
   }, []);
+
+  const handleAddPage = useCallback(
+    (afterPageId: string) => {
+      const nextPageNumber = useEditorStore.getState().pages.length + 1;
+      createPage(`Generated Page ${nextPageNumber}`, afterPageId);
+    },
+    [createPage],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,6 +133,7 @@ export default function EditorWorkspace({
         onCanvasClick={handleCanvasClick}
         onRenamePage={renamePage}
         onDeletePage={deletePage}
+        onAddPage={handleAddPage}
         onPreviewPage={handlePreviewPage}
         onZoomChange={handleZoomChange}
         onReset={handleReset}

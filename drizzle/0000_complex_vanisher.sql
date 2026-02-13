@@ -34,7 +34,6 @@ CREATE TABLE "project_versions" (
 	"model_name" text,
 	"quality_score" integer,
 	"violation_count" integer DEFAULT 0 NOT NULL,
-	"is_repair" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

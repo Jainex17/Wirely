@@ -1,10 +1,8 @@
-import { generateText, streamText } from "ai";
+import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   composeGenerateSystemPrompt,
-  composeRepairSystemPrompt,
-  getWireStylePresetById,
   selectWireStylePreset,
   type WireStylePreset,
 } from "@/app/lib/wirePrompt";
@@ -32,19 +30,9 @@ type WireMessage = {
   content: string;
 };
 
-type WireRequestMode = "generate" | "repair";
-
-type WireQualityContext = {
-  stylePresetId?: string;
-  violations?: string[];
-};
-
 type WireRequestBody = {
   wireId?: string;
   messages?: unknown;
-  mode?: WireRequestMode;
-  draftHtml?: string;
-  qualityContext?: WireQualityContext;
   modelName?: unknown;
 };
 
@@ -177,23 +165,6 @@ const parseMessages = (value: unknown): WireMessage[] => {
     .filter((item): item is WireMessage => item !== null);
 };
 
-const parseMode = (value: unknown): WireRequestMode =>
-  value === "repair" ? "repair" : "generate";
-
-const parseQualityContext = (value: unknown): WireQualityContext => {
-  if (!value || typeof value !== "object") return {};
-  const record = value as Record<string, unknown>;
-  const stylePresetId =
-    typeof record.stylePresetId === "string" ? record.stylePresetId : undefined;
-  const violations = Array.isArray(record.violations)
-    ? record.violations.filter(
-        (item): item is string => typeof item === "string" && item.length > 0,
-      )
-    : undefined;
-
-  return { stylePresetId, violations };
-};
-
 const getLatestUserPrompt = (messages: WireMessage[]) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -202,35 +173,6 @@ const getLatestUserPrompt = (messages: WireMessage[]) => {
     }
   }
   return "";
-};
-
-const buildRepairContent = (html: string, details: string) =>
-  `DETAILS:\n${details}\n\nHTML:\n${html}`;
-
-const buildRepairPrompt = ({
-  userPrompt,
-  draftHtml,
-  violations,
-}: {
-  userPrompt: string;
-  draftHtml: string;
-  violations: string[];
-}) => {
-  const violationsBlock =
-    violations.length > 0
-      ? violations.map((item) => `- ${item}`).join("\n")
-      : "- improve_structure_and_quality";
-
-  return [
-    "User request:",
-    userPrompt || "(no explicit user prompt available)",
-    "",
-    "Violations to fix:",
-    violationsBlock,
-    "",
-    "Draft HTML to repair:",
-    draftHtml,
-  ].join("\n");
 };
 
 const logQualityTelemetry = ({
@@ -260,7 +202,6 @@ const logQualityTelemetry = ({
     stylePresetId: stylePreset.id,
     score: quality.score,
     violation_count: quality.violations.length,
-    needs_repair: quality.needsRepair,
   });
 };
 
@@ -345,47 +286,6 @@ const streamWithSelectedModel = async ({
   });
 };
 
-const generateWithSelectedModel = async ({
-  modelName,
-  googleApiKey,
-  openrouterApiKey,
-  systemPrompt,
-  prompt,
-}: {
-  modelName: WireModelName;
-  googleApiKey: string | undefined;
-  openrouterApiKey: string | undefined;
-  systemPrompt: string;
-  prompt: string;
-}) => {
-  const providerType = getWireModelProvider(modelName);
-  if (!providerType) {
-    throw new Error("Unsupported model");
-  }
-
-  if (providerType === "gemini") {
-    const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    const result = await generateText({
-      model: googleProvider(modelName),
-      system: systemPrompt,
-      prompt,
-    });
-    return { text: result.text, modelName };
-  }
-
-  if (!openrouterApiKey) {
-    throw new Error("Missing OpenRouter API key");
-  }
-
-  const openRouterProvider = createOpenRouter({ apiKey: openrouterApiKey });
-  const result = await generateText({
-    model: openRouterProvider(modelName),
-    system: systemPrompt,
-    prompt,
-  });
-  return { text: result.text, modelName };
-};
-
 const streamWithOpenRouter = async ({
   apiKey,
   messages,
@@ -453,52 +353,6 @@ const streamWithOpenRouter = async ({
   throw lastError ?? new Error("OpenRouter models unavailable");
 };
 
-const generateWithOpenRouter = async ({
-  apiKey,
-  systemPrompt,
-  prompt,
-}: {
-  apiKey: string | undefined;
-  systemPrompt: string;
-  prompt: string;
-}) => {
-  if (!apiKey) {
-    throw new Error("Missing OpenRouter API key");
-  }
-
-  const provider = createOpenRouter({ apiKey });
-  let lastError: unknown;
-
-  for (const modelName of OPENROUTER_MODELS) {
-    try {
-      console.info("[wire] OpenRouter repair attempt", { modelName });
-      const result = await generateText({
-        model: provider(modelName),
-        system: systemPrompt,
-        prompt,
-      });
-
-      return { text: result.text, modelName };
-    } catch (error) {
-      lastError = error;
-      console.error("[wire] OpenRouter repair error", {
-        modelName,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-      });
-
-      if (isInsufficientFunds(error)) {
-        throw error;
-      }
-      if (!isModelError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError ?? new Error("OpenRouter repair models unavailable");
-};
-
 export async function POST(request: Request, context: RouteContext) {
   const sessionUser = await getRequestSessionUser();
   if (!sessionUser) {
@@ -522,153 +376,17 @@ export async function POST(request: Request, context: RouteContext) {
     : undefined;
 
   const messages = parseMessages(body?.messages);
-  const mode = parseMode(body?.mode);
   const wireId = id;
   const latestUserPrompt = getLatestUserPrompt(messages);
   const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
-  const qualityContext = parseQualityContext(body?.qualityContext);
-
-  const defaultStylePreset = selectWireStylePreset({
+  const stylePreset = selectWireStylePreset({
     wireId,
     userPrompt: latestUserPrompt,
   });
-  const stylePreset =
-    getWireStylePresetById(qualityContext.stylePresetId) ?? defaultStylePreset;
 
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
   const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
-
-  if (mode === "repair") {
-    const draftHtml = typeof body?.draftHtml === "string" ? body.draftHtml : "";
-    if (!draftHtml.trim()) {
-      return Response.json(
-        { error: "Missing draftHtml for repair mode." },
-        { status: 400 },
-      );
-    }
-
-    const normalizedDraft = normalizeGeneratedHtml(draftHtml, { allowImages });
-    const mergedViolations = Array.from(
-      new Set([
-        ...normalizedDraft.violations,
-        ...(qualityContext.violations ?? []),
-      ]),
-    );
-
-    console.info("[wire] repair_invoked", {
-      mode,
-      stylePresetId: stylePreset.id,
-      violation_count: mergedViolations.length,
-      requestedModelName,
-    });
-
-    const repairSystemPrompt = composeRepairSystemPrompt({
-      stylePreset,
-      allowImages,
-      violations: mergedViolations,
-    });
-    const repairPrompt = buildRepairPrompt({
-      userPrompt: latestUserPrompt,
-      draftHtml: normalizedDraft.html,
-      violations: mergedViolations,
-    });
-
-    if (requestedModelName) {
-      try {
-        const strictResult = await generateWithSelectedModel({
-          modelName: requestedModelName,
-          googleApiKey,
-          openrouterApiKey,
-          systemPrompt: repairSystemPrompt,
-          prompt: repairPrompt,
-        });
-
-        return Response.json({
-          content: strictResult.text,
-          modelName: strictResult.modelName,
-          stylePresetId: stylePreset.id,
-          fallbackUsed: false,
-        });
-      } catch (error) {
-        console.error("[wire] selected model repair error", {
-          modelName: requestedModelName,
-          status: getStatusCode(error),
-          message: getErrorMessage(error),
-          responseBody: getErrorBody(error),
-          error: serializeError(error),
-        });
-        return selectedModelFailureResponse({
-          modelName: requestedModelName,
-          error,
-        });
-      }
-    }
-
-    try {
-      const result = await generateText({
-        model: googleProvider(GEMINI_MODEL_NAME),
-        system: repairSystemPrompt,
-        prompt: repairPrompt,
-      });
-
-      console.info("[wire] repair_success", {
-        modelName: GEMINI_MODEL_NAME,
-        stylePresetId: stylePreset.id,
-      });
-
-      return Response.json({
-        content: result.text,
-        modelName: GEMINI_MODEL_NAME,
-        stylePresetId: stylePreset.id,
-        fallbackUsed: false,
-      });
-    } catch (error) {
-      console.error("[wire] Gemini repair error", {
-        modelName: GEMINI_MODEL_NAME,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-        responseBody: getErrorBody(error),
-        error: serializeError(error),
-      });
-
-      try {
-        const openRouterResult = await generateWithOpenRouter({
-          apiKey: openrouterApiKey,
-          systemPrompt: repairSystemPrompt,
-          prompt: repairPrompt,
-        });
-
-        console.info("[wire] repair_success", {
-          modelName: openRouterResult.modelName,
-          stylePresetId: stylePreset.id,
-        });
-
-        return Response.json({
-          content: openRouterResult.text,
-          modelName: openRouterResult.modelName,
-          stylePresetId: stylePreset.id,
-          fallbackUsed: false,
-        });
-      } catch (repairError) {
-        console.error("[wire] repair_fallback", {
-          status: getStatusCode(repairError),
-          message: getErrorMessage(repairError),
-          fallback_used: true,
-        });
-
-        return Response.json({
-          content: buildRepairContent(
-            normalizedDraft.html,
-            "Polished the draft with deterministic safeguards after repair fallback.",
-          ),
-          modelName: "fallback-normalizer",
-          stylePresetId: stylePreset.id,
-          fallbackUsed: true,
-        });
-      }
-    }
-  }
 
   const systemPrompt = composeGenerateSystemPrompt({
     stylePreset,
@@ -677,7 +395,6 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   console.info("[wire] generation_attempt", {
-    mode,
     stylePresetId: stylePreset.id,
     requestedModelName,
   });

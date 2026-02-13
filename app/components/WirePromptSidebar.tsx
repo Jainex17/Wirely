@@ -10,7 +10,15 @@ import {
 } from "react";
 import { useChat } from "ai/react";
 import type { Message } from "ai";
-import { Eye, History, MessageSquare, RefreshCw, RotateCcw } from "lucide-react";
+import {
+  CopyPlus,
+  Eye,
+  History,
+  MessageSquare,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/app/store/useEditorStore";
 import PagePreviewModal from "@/app/components/PagePreviewModal";
@@ -35,13 +43,6 @@ interface WirePromptSidebarProps {
   initialMessages?: Message[];
 }
 
-type RepairResponse = {
-  content?: string;
-  fallbackUsed?: boolean;
-  stylePresetId?: string;
-  modelName?: string;
-};
-
 type ProjectVersion = {
   id: string;
   promptText: string | null;
@@ -50,7 +51,6 @@ type ProjectVersion = {
   stylePresetId: string | null;
   modelName: string | null;
   violationCount: number;
-  isRepair: boolean;
   createdAt: string;
 };
 
@@ -75,7 +75,6 @@ export default function WirePromptSidebar({
   const [prompt, setPrompt] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [qualityNotice, setQualityNotice] = useState<string | null>(null);
-  const [isPolishing, setIsPolishing] = useState(false);
   const [versions, setVersions] = useState<ProjectVersion[]>([]);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [versionError, setVersionError] = useState<string | null>(null);
@@ -89,7 +88,25 @@ export default function WirePromptSidebar({
     useState<WireModelName>(initialModelName);
   const autoRunRef = useRef(false);
   const latestPromptRef = useRef("");
+  const pendingTargetPageIdRef = useRef<string | null>(null);
+  const pendingCreatedPageIdRef = useRef<string | null>(null);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
+  const createPage = useEditorStore((state) => state.createPage);
+  const deletePage = useEditorStore((state) => state.deletePage);
+  const pageCount = useEditorStore((state) => state.pages.length);
+
+  const clearPendingGeneration = useCallback(() => {
+    pendingTargetPageIdRef.current = null;
+    pendingCreatedPageIdRef.current = null;
+  }, []);
+
+  const rollbackPendingNewPage = useCallback(() => {
+    const pendingCreatedPageId = pendingCreatedPageIdRef.current;
+    if (pendingCreatedPageId) {
+      deletePage(pendingCreatedPageId);
+    }
+    clearPendingGeneration();
+  }, [clearPendingGeneration, deletePage]);
 
   const loadVersions = useCallback(async () => {
     setIsLoadingVersions(true);
@@ -122,7 +139,8 @@ export default function WirePromptSidebar({
       modelName,
       stylePresetId,
       violationCount,
-      isRepair,
+      pageId,
+      pageTitle,
     }: {
       promptText?: string;
       assistantContent: string;
@@ -130,7 +148,8 @@ export default function WirePromptSidebar({
       modelName?: string;
       stylePresetId?: string;
       violationCount?: number;
-      isRepair: boolean;
+      pageId?: string;
+      pageTitle?: string;
     }) => {
       try {
         const response = await fetch(`/api/projects/${wireId}/versions`, {
@@ -145,7 +164,8 @@ export default function WirePromptSidebar({
             modelName,
             stylePresetId,
             violationCount,
-            isRepair,
+            pageId,
+            pageTitle,
           }),
         });
 
@@ -166,6 +186,7 @@ export default function WirePromptSidebar({
     onResponse: async (response) => {
       if (!response.ok) {
         const text = await response.text();
+        rollbackPendingNewPage();
         setErrorMessage(
           text?.trim() ||
             `Generation failed with ${activeModelName}. Try another model.`,
@@ -176,168 +197,164 @@ export default function WirePromptSidebar({
       setErrorMessage(null);
     },
     onError: () => {
+      rollbackPendingNewPage();
       setErrorMessage(
         `Generation failed with ${activeModelName}. Try another model.`,
       );
       stop();
     },
     onFinish: async (message) => {
-      const targetPageId = useEditorStore.getState().pages[0]?.id;
-      if (!targetPageId) return;
-
-      const activePrompt = latestPromptRef.current;
-      const allowImages = userExplicitlyRequestedImages(activePrompt);
-      const stylePreset = selectWireStylePreset({
-        wireId,
-        userPrompt: activePrompt,
-      });
-
-      const initialParsed = parseWireOutput(message.content);
-      const initialNormalized = normalizeGeneratedHtml(initialParsed.html, {
-        allowImages,
-      });
-      const initialQuality = evaluateWireHtmlQuality({
-        html: initialNormalized.html,
-        allowImages,
-        userPrompt: activePrompt,
-        stylePresetId: stylePreset.id,
-      });
-
-      if (!initialQuality.isRenderable) {
-        setErrorMessage(
-          "Generated output was not renderable. Try a more specific prompt.",
-        );
+      const targetPageId =
+        pendingTargetPageIdRef.current ?? useEditorStore.getState().pages[0]?.id;
+      if (!targetPageId) {
+        clearPendingGeneration();
         return;
       }
 
-      setPageHtml(targetPageId, initialNormalized.html, "Generated Page");
-      setQualityNotice(null);
-
-      await persistVersion({
-        promptText: activePrompt,
-        assistantContent: message.content,
-        htmlContent: initialNormalized.html,
-        modelName: activeModelName,
-        stylePresetId: stylePreset.id,
-        violationCount: initialQuality.violations.length,
-        isRepair: false,
-      });
-
-      console.info("[wire] quality_gate", {
-        stage: "initial",
-        score: initialQuality.score,
-        needsRepair: initialQuality.needsRepair,
-        violationCount: initialQuality.violations.length,
-      });
-
-      if (!initialQuality.needsRepair) {
-        return;
-      }
-
-      setIsPolishing(true);
       try {
-        const repairResponse = await fetch(`/api/projects/${wireId}/generate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            wireId,
-            modelName: activeModelName,
-            mode: "repair",
-            messages: [{ role: "user", content: activePrompt }],
-            draftHtml: initialNormalized.html,
-            qualityContext: {
-              stylePresetId: stylePreset.id,
-              violations: initialQuality.violations,
-            },
-          }),
+        const targetPage = useEditorStore
+          .getState()
+          .pages.find((page) => page.id === targetPageId);
+        const activePrompt = latestPromptRef.current;
+        const allowImages = userExplicitlyRequestedImages(activePrompt);
+        const stylePreset = selectWireStylePreset({
+          wireId,
+          userPrompt: activePrompt,
         });
 
-        if (!repairResponse.ok) {
-          const failureText = (await repairResponse.text()).trim();
-          throw new Error(
-            failureText ||
-              `Repair failed with ${activeModelName}. Try another model.`,
-          );
-        }
-
-        const payload = (await repairResponse.json()) as RepairResponse;
-        const repairedParsed = parseWireOutput(payload.content ?? "");
-        const repairedNormalized = normalizeGeneratedHtml(repairedParsed.html, {
+        const initialParsed = parseWireOutput(message.content);
+        const initialNormalized = normalizeGeneratedHtml(initialParsed.html, {
           allowImages,
         });
-        const repairedQuality = evaluateWireHtmlQuality({
-          html: repairedNormalized.html,
+        const initialQuality = evaluateWireHtmlQuality({
+          html: initialNormalized.html,
           allowImages,
           userPrompt: activePrompt,
-          stylePresetId: payload.stylePresetId ?? stylePreset.id,
+          stylePresetId: stylePreset.id,
         });
 
-        console.info("[wire] quality_gate", {
-          stage: "repair",
-          score: repairedQuality.score,
-          isRenderable: repairedQuality.isRenderable,
-          fallbackUsed: !!payload.fallbackUsed,
-          violationCount: repairedQuality.violations.length,
-        });
-
-        const shouldUseRepairedVersion =
-          repairedQuality.isRenderable &&
-          repairedQuality.score >= initialQuality.score;
-
-        if (shouldUseRepairedVersion) {
-          setPageHtml(targetPageId, repairedNormalized.html, "Generated Page");
+        if (!initialQuality.isRenderable) {
+          rollbackPendingNewPage();
+          setErrorMessage(
+            "Generated output was not renderable. Try a more specific prompt.",
+          );
+          return;
         }
+
+        setPageHtml(targetPageId, initialNormalized.html);
+        setQualityNotice(null);
 
         await persistVersion({
           promptText: activePrompt,
-          assistantContent: payload.content ?? "",
-          htmlContent: shouldUseRepairedVersion
-            ? repairedNormalized.html
-            : initialNormalized.html,
-          modelName: payload.modelName,
-          stylePresetId: payload.stylePresetId ?? stylePreset.id,
-          violationCount: repairedQuality.violations.length,
-          isRepair: true,
+          assistantContent: message.content,
+          htmlContent: initialNormalized.html,
+          modelName: activeModelName,
+          stylePresetId: stylePreset.id,
+          violationCount: initialQuality.violations.length,
+          pageId: targetPageId,
+          pageTitle: targetPage?.title,
         });
 
-        if (!shouldUseRepairedVersion || payload.fallbackUsed) {
-          setQualityNotice(
-            "Auto-polish fallback kept output stable; regenerate for a different direction.",
-          );
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error && error.message.trim().length > 0
-            ? error.message
-            : `Repair failed with ${activeModelName}. Try another model.`;
-        setErrorMessage(message);
-        setQualityNotice("Repair skipped after selected model failure.");
+        console.info("[wire] quality_gate", {
+          stage: "initial",
+          score: initialQuality.score,
+          violationCount: initialQuality.violations.length,
+        });
       } finally {
-        setIsPolishing(false);
+        clearPendingGeneration();
       }
     },
   });
 
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (isLoading || isPolishing) return;
-      const trimmed = prompt.trim();
-      if (!trimmed) return;
+  const startGeneration = useCallback(
+    async ({
+      promptText,
+      mode,
+    }: {
+      promptText: string;
+      mode: "replace-first-page" | "new-page";
+    }) => {
+      if (isLoading) return;
 
-      latestPromptRef.current = trimmed;
+      const trimmedPrompt = promptText.trim();
+      if (!trimmedPrompt) return;
+
+      let targetPageId: string | null = null;
+      pendingCreatedPageIdRef.current = null;
+
+      if (mode === "new-page") {
+        const nextPageNumber = useEditorStore.getState().pages.length + 1;
+        targetPageId = createPage(`Generated Page ${nextPageNumber}`);
+        pendingCreatedPageIdRef.current = targetPageId;
+      } else {
+        targetPageId = useEditorStore.getState().pages[0]?.id ?? null;
+      }
+
+      if (!targetPageId) {
+        clearPendingGeneration();
+        return;
+      }
+
+      pendingTargetPageIdRef.current = targetPageId;
+      latestPromptRef.current = trimmedPrompt;
       setQualityNotice(null);
       setErrorMessage(null);
       setPrompt("");
-      await append(
-        { role: "user", content: trimmed },
-        { body: { modelName: activeModelName } },
-      );
+
+      try {
+        await append(
+          { role: "user", content: trimmedPrompt },
+          { body: { modelName: activeModelName } },
+        );
+      } catch (error) {
+        rollbackPendingNewPage();
+        throw error;
+      }
     },
-    [activeModelName, append, isLoading, isPolishing, prompt],
+    [
+      activeModelName,
+      append,
+      clearPendingGeneration,
+      createPage,
+      isLoading,
+      rollbackPendingNewPage,
+    ],
   );
+
+  const handleSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      await startGeneration({
+        promptText: prompt,
+        mode: "replace-first-page",
+      });
+    },
+    [prompt, startGeneration],
+  );
+
+  const latestUserPrompt = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "user" && message.content.trim()) {
+        return message.content.trim();
+      }
+    }
+    return "";
+  }, [messages]);
+
+  const handleGenerateNewPage = useCallback(async () => {
+    await startGeneration({
+      promptText: prompt,
+      mode: "new-page",
+    });
+  }, [prompt, startGeneration]);
+
+  const handleGenerateNewPageFromLastPrompt = useCallback(async () => {
+    await startGeneration({
+      promptText: latestUserPrompt,
+      mode: "new-page",
+    });
+  }, [latestUserPrompt, startGeneration]);
 
   const handleRestoreVersion = useCallback(
     async (version: ProjectVersion) => {
@@ -357,7 +374,8 @@ export default function WirePromptSidebar({
           htmlContent: version.htmlContent,
           stylePresetId: version.stylePresetId ?? undefined,
           violationCount: version.violationCount,
-          isRepair: false,
+          pageId: targetPageId,
+          pageTitle: "Generated Page",
         });
       } finally {
         setRestoringVersionId(null);
@@ -438,7 +456,7 @@ export default function WirePromptSidebar({
 
       return null;
     });
-  }, [messages]);
+  }, [messages, variant]);
 
   const geminiModelOptions = useMemo(
     () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "gemini"),
@@ -501,6 +519,15 @@ export default function WirePromptSidebar({
                 {errorMessage}
               </div>
             ) : null}
+            {qualityNotice ? (
+              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                variant === "panel"
+                  ? "bg-secondary text-secondary-foreground"
+                  : "bg-neutral-800/60 text-neutral-100"
+              }`}>
+                {qualityNotice}
+              </div>
+            ) : null}
             {isLoading ? (
               <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
                 variant === "panel"
@@ -508,15 +535,6 @@ export default function WirePromptSidebar({
                   : "bg-neutral-800/40 text-neutral-200"
               }`}>
                 Generating...
-              </div>
-            ) : null}
-            {isPolishing ? (
-              <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                variant === "panel"
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-neutral-800/40 text-neutral-200"
-              }`}>
-                Polishing design...
               </div>
             ) : null}
           </div>
@@ -541,7 +559,7 @@ export default function WirePromptSidebar({
                 />
                 <Button
                   type="submit"
-                  disabled={isLoading || isPolishing || !prompt.trim()}
+                  disabled={isLoading || !prompt.trim()}
                   size="sm"
                   className={`h-7 px-3 rounded-md text-xs font-medium transition-all ${
                     variant === "panel"
@@ -550,8 +568,54 @@ export default function WirePromptSidebar({
                   }`}
                   aria-label="Send"
                 >
-                  {isLoading || isPolishing ? "..." : "Send"}
+                  {isLoading ? "..." : "Send"}
                 </Button>
+              </div>
+              <div className={`px-3 pb-2 flex items-center justify-between gap-2 ${
+                variant === "panel"
+                  ? "text-muted-foreground"
+                  : "text-neutral-400"
+              }`}>
+                <p className="text-[10px]">
+                  {pageCount} page{pageCount === 1 ? "" : "s"} on canvas
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleGenerateNewPage()}
+                    disabled={isLoading || !prompt.trim()}
+                    className={`h-7 px-2.5 text-[11px] ${
+                      variant === "panel"
+                        ? "border-border bg-transparent text-foreground hover:bg-accent"
+                        : "border-white/20 bg-transparent text-neutral-100 hover:bg-white/10"
+                    }`}
+                  >
+                    <Sparkles className="mr-1 h-3 w-3" />
+                    New page
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleGenerateNewPageFromLastPrompt()}
+                    disabled={isLoading || !latestUserPrompt}
+                    className={`h-7 px-2.5 text-[11px] ${
+                      variant === "panel"
+                        ? "border-border bg-transparent text-foreground hover:bg-accent"
+                        : "border-white/20 bg-transparent text-neutral-100 hover:bg-white/10"
+                    }`}
+                    title={
+                      latestUserPrompt
+                        ? "Create a new page with your last prompt"
+                        : "Generate once to enable same-prompt page creation"
+                    }
+                  >
+                    <CopyPlus className="mr-1 h-3 w-3" />
+                    Same prompt
+                  </Button>
+                </div>
               </div>
               <div className={`flex items-center justify-end px-3 py-1.5 border-t ${
                 variant === "panel" ? "border-border/40 bg-muted/30" : "border-white/5 bg-neutral-900/40"
@@ -561,7 +625,7 @@ export default function WirePromptSidebar({
                   onChange={(event) =>
                     setActiveModelName(event.target.value as WireModelName)
                   }
-                  disabled={isLoading || isPolishing}
+                  disabled={isLoading}
                   className={`h-6 px-1.5 text-[10px] rounded border bg-transparent outline-none cursor-pointer transition-colors ${
                     variant === "panel"
                       ? "border-border text-muted-foreground hover:border-muted-foreground/50"
@@ -643,16 +707,6 @@ export default function WirePromptSidebar({
                   <p className={`text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}>
                     {formatTimestamp(version.createdAt)}
                   </p>
-                  <div className={`flex items-center gap-2 text-xs ${variant === "panel" ? "text-muted-foreground" : "text-neutral-400"}`}>
-                    {version.isRepair ? (
-                      <span className={`rounded px-2 py-0.5 ${
-                        variant === "panel" ? "bg-secondary" : "bg-white/10"
-                      }`}>
-                        Repair
-                      </span>
-                    ) : null}
-
-                  </div>
                 </div>
 
                 <p className={`line-clamp-2 text-sm ${variant === "panel" ? "text-foreground" : "text-neutral-200"}`}>

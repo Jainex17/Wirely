@@ -47,6 +47,7 @@ export interface EditorState extends CanvasState, ProjectState {
   removeSection: (pageId: string, sectionId: string) => void;
   moveSection: (pageId: string, sectionId: string, direction: "up" | "down") => void;
   reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
+  createPage: (title?: string, afterPageId?: string) => string;
   renamePage: (pageId: string, newTitle: string) => void;
   setPageHtml: (pageId: string, html: string, title?: string) => void;
   hydrateProject: (pages: PageData[]) => void;
@@ -69,6 +70,18 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   panOffset: { x: 0, y: 0 },
   activeDevice: "desktop",
   isDragging: false,
+};
+
+const createPageId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 };
 
 export const useEditorStore = create<EditorState>()(
@@ -184,6 +197,40 @@ export const useEditorStore = create<EditorState>()(
 
           return { pages: newPages };
         }),
+
+      createPage: (title = "Generated Page", afterPageId) => {
+        const newPageId = createPageId();
+
+        set((state) => {
+          const newPage: PageData = {
+            id: newPageId,
+            title,
+            sections: [],
+          };
+
+          if (!afterPageId) {
+            return {
+              pages: [...state.pages, newPage],
+            };
+          }
+
+          const targetIndex = state.pages.findIndex((page) => page.id === afterPageId);
+          if (targetIndex === -1) {
+            return {
+              pages: [...state.pages, newPage],
+            };
+          }
+
+          const nextPages = [...state.pages];
+          nextPages.splice(targetIndex + 1, 0, newPage);
+
+          return {
+            pages: nextPages,
+          };
+        });
+
+        return newPageId;
+      },
 
       renamePage: (pageId, newTitle) =>
         set((state) => {

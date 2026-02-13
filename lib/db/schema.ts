@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   integer,
   pgEnum,
@@ -84,7 +83,6 @@ export const projectVersions = pgTable(
     stylePresetId: text("style_preset_id"),
     modelName: text("model_name"),
     violationCount: integer("violation_count").default(0).notNull(),
-    isRepair: boolean("is_repair").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

@@ -292,13 +292,6 @@
           "notNull": true,
           "default": 0
         },
-        "is_repair": {
-          "name": "is_repair",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
