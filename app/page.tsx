@@ -25,9 +25,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Github,
-  LayoutGrid,
-  File,
   ArrowUp,
   ChevronDown,
   Circle,
@@ -68,6 +65,7 @@ export default function Home() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedModel, setSelectedModel] =
     useState<WireModelName>(DEFAULT_WIRE_MODEL);
+  const [selectedPageCount, setSelectedPageCount] = useState<1 | 2 | 3>(1);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -180,6 +178,10 @@ export default function Home() {
         sessionStorage.setItem(`wirePrompt:${projectId}`, trimmedPrompt);
       }
       sessionStorage.setItem(`wireModel:${projectId}`, selectedModel);
+      sessionStorage.setItem(
+        `wirePageCount:${projectId}`,
+        String(selectedPageCount),
+      );
 
       router.push(`/wire/${projectId}`);
     } catch {
@@ -308,6 +310,28 @@ export default function Home() {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="bg-transparent border-border hover:bg-muted"
+                        >
+                          Pages: {selectedPageCount}
+                          <ChevronDown size={16} className="ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-card border-border">
+                        {[1, 2, 3].map((count) => (
+                          <DropdownMenuItem
+                            key={count}
+                            onClick={() => setSelectedPageCount(count as 1 | 2 | 3)}
+                          >
+                            {count} {count === 1 ? "page" : "pages"}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   <Button
                     type="submit"
@@ -326,6 +350,11 @@ export default function Home() {
             <div className="text-center text-sm text-muted-foreground mt-2">
               Select a model and start building{" "}
             </div>
+            {errorMessage ? (
+              <div className="mt-3 text-center text-sm text-destructive">
+                {errorMessage}
+              </div>
+            ) : null}
           </div>
 
           {(isLoadingHistory || historyItems.length > 0) && (

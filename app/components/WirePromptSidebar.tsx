@@ -11,15 +11,23 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import {
-  CopyPlus,
   Eye,
   History,
   MessageSquare,
+  Plus,
   RefreshCw,
   RotateCcw,
-  Sparkles,
+  Send,
+  ChevronDown,
+  Circle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/app/store/useEditorStore";
 import PagePreviewModal from "@/app/components/PagePreviewModal";
 import {
@@ -53,6 +61,18 @@ type ProjectVersion = {
   createdAt: string;
 };
 
+type GenerationVariation = {
+  variationIndex: number;
+  variationCount: number;
+  variationThemeHint: string;
+};
+
+const VARIATION_THEME_HINTS = [
+  "Editorial minimal layout with restrained monochrome palette and precise typography.",
+  "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
+  "Warm handcrafted aesthetic with organic forms, textured surfaces, and soft tones.",
+] as const;
+
 const formatTimestamp = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
@@ -62,6 +82,18 @@ const formatTimestamp = (value: string) => {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+};
+
+const clampPageCount = (value: unknown): 1 | 2 | 3 => {
+  if (typeof value !== "number" || !Number.isInteger(value)) return 1;
+  if (value <= 1) return 1;
+  if (value >= 3) return 3;
+  return 2;
+};
+
+const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
+  if (!raw) return 1;
+  return clampPageCount(Number.parseInt(raw, 10));
 };
 
 export default function WirePromptSidebar({
@@ -85,14 +117,20 @@ export default function WirePromptSidebar({
   );
   const [activeModelName, setActiveModelName] =
     useState<WireModelName>(initialModelName);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+
   const autoRunRef = useRef(false);
   const latestPromptRef = useRef("");
   const pendingTargetPageIdRef = useRef<string | null>(null);
   const pendingCreatedPageIdRef = useRef<string | null>(null);
+  const pendingModelNameRef = useRef<WireModelName>(initialModelName);
+  const pendingGenerationFailedRef = useRef(false);
+  const pendingGenerationErrorRef = useRef<string | null>(null);
+
+  const pages = useEditorStore((state) => state.pages);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
   const createPage = useEditorStore((state) => state.createPage);
   const deletePage = useEditorStore((state) => state.deletePage);
-  const pageCount = useEditorStore((state) => state.pages.length);
 
   const clearPendingGeneration = useCallback(() => {
     pendingTargetPageIdRef.current = null;
@@ -182,27 +220,29 @@ export default function WirePromptSidebar({
     onResponse: async (response) => {
       if (!response.ok) {
         const text = await response.text();
-        rollbackPendingNewPage();
-        setErrorMessage(
+        const failureMessage =
           text?.trim() ||
-            `Generation failed with ${activeModelName}. Try another model.`,
-        );
+          `Generation failed with ${pendingModelNameRef.current}. Try another model.`;
+        pendingGenerationFailedRef.current = true;
+        pendingGenerationErrorRef.current = failureMessage;
+        rollbackPendingNewPage();
+        setErrorMessage(failureMessage);
         stop();
         return;
       }
       setErrorMessage(null);
     },
     onError: () => {
+      const failureMessage = `Generation failed with ${pendingModelNameRef.current}. Try another model.`;
+      pendingGenerationFailedRef.current = true;
+      pendingGenerationErrorRef.current = failureMessage;
       rollbackPendingNewPage();
-      setErrorMessage(
-        `Generation failed with ${activeModelName}. Try another model.`,
-      );
+      setErrorMessage(failureMessage);
       stop();
     },
     onFinish: async (message) => {
       const targetPageId =
-        pendingTargetPageIdRef.current ??
-        useEditorStore.getState().pages[0]?.id;
+        pendingTargetPageIdRef.current ?? useEditorStore.getState().pages[0]?.id;
       if (!targetPageId) {
         clearPendingGeneration();
         return;
@@ -245,7 +285,7 @@ export default function WirePromptSidebar({
           promptText: activePrompt,
           assistantContent: message.content,
           htmlContent: initialNormalized.html,
-          modelName: activeModelName,
+          modelName: pendingModelNameRef.current,
           stylePresetId: stylePreset.id,
           pageId: targetPageId,
           pageTitle: targetPage?.title,
@@ -255,6 +295,7 @@ export default function WirePromptSidebar({
           stage: "initial",
           score: initialQuality.score,
           violations: initialQuality.violations.length,
+          variationIndex: undefined,
         });
       } finally {
         clearPendingGeneration();
@@ -262,95 +303,89 @@ export default function WirePromptSidebar({
     },
   });
 
-  const startGeneration = useCallback(
+  const startGenerationForPage = useCallback(
     async ({
       promptText,
-      mode,
+      targetPageId,
+      createdPageId,
+      variation,
+      modelName,
+      force,
     }: {
       promptText: string;
-      mode: "replace-first-page" | "new-page";
+      targetPageId: string;
+      createdPageId?: string;
+      variation?: GenerationVariation;
+      modelName?: WireModelName;
+      force?: boolean;
     }) => {
-      if (isLoading) return;
+      if (isLoading && !force) {
+        return false;
+      }
 
       const trimmedPrompt = promptText.trim();
-      if (!trimmedPrompt) return;
+      if (!trimmedPrompt) return false;
 
-      let targetPageId: string | null = null;
-      pendingCreatedPageIdRef.current = null;
-
-      if (mode === "new-page") {
-        const nextPageNumber = useEditorStore.getState().pages.length + 1;
-        targetPageId = createPage(`Generated Page ${nextPageNumber}`);
-        pendingCreatedPageIdRef.current = targetPageId;
-      } else {
-        targetPageId = useEditorStore.getState().pages[0]?.id ?? null;
-      }
-
-      if (!targetPageId) {
-        clearPendingGeneration();
-        return;
-      }
+      const selectedModel = modelName ?? activeModelName;
 
       pendingTargetPageIdRef.current = targetPageId;
+      pendingCreatedPageIdRef.current = createdPageId ?? null;
+      pendingModelNameRef.current = selectedModel;
+      pendingGenerationFailedRef.current = false;
+      pendingGenerationErrorRef.current = null;
       latestPromptRef.current = trimmedPrompt;
       setQualityNotice(null);
       setErrorMessage(null);
-      setPrompt("");
+
+      const body: Record<string, unknown> = {
+        modelName: selectedModel,
+      };
+
+      if (variation && variation.variationCount > 1) {
+        body.variationIndex = variation.variationIndex;
+        body.variationCount = variation.variationCount;
+        body.variationThemeHint = variation.variationThemeHint;
+      }
 
       try {
-        await append(
-          { role: "user", content: trimmedPrompt },
-          { body: { modelName: activeModelName } },
-        );
+        await append({ role: "user", content: trimmedPrompt }, { body });
+
+        if (pendingGenerationFailedRef.current) {
+          const failureMessage =
+            pendingGenerationErrorRef.current ??
+            `Generation failed with ${selectedModel}. Try another model.`;
+          pendingGenerationFailedRef.current = false;
+          pendingGenerationErrorRef.current = null;
+          throw new Error(failureMessage);
+        }
+
+        return true;
       } catch (error) {
         rollbackPendingNewPage();
         throw error;
       }
     },
-    [
-      activeModelName,
-      append,
-      clearPendingGeneration,
-      createPage,
-      isLoading,
-      rollbackPendingNewPage,
-    ],
+    [activeModelName, append, isLoading, rollbackPendingNewPage],
   );
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      await startGeneration({
+
+      const targetPageId = selectedPageId ?? useEditorStore.getState().pages[0]?.id;
+      if (!targetPageId) return;
+
+      const generated = await startGenerationForPage({
         promptText: prompt,
-        mode: "replace-first-page",
+        targetPageId,
       });
-    },
-    [prompt, startGeneration],
-  );
 
-  const latestUserPrompt = useMemo(() => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === "user" && message.content.trim()) {
-        return message.content.trim();
+      if (generated) {
+        setPrompt("");
       }
-    }
-    return "";
-  }, [messages]);
-
-  const handleGenerateNewPage = useCallback(async () => {
-    await startGeneration({
-      promptText: prompt,
-      mode: "new-page",
-    });
-  }, [prompt, startGeneration]);
-
-  const handleGenerateNewPageFromLastPrompt = useCallback(async () => {
-    await startGeneration({
-      promptText: latestUserPrompt,
-      mode: "new-page",
-    });
-  }, [latestUserPrompt, startGeneration]);
+    },
+    [prompt, selectedPageId, startGenerationForPage],
+  );
 
   const handleRestoreVersion = useCallback(
     async (version: ProjectVersion) => {
@@ -380,7 +415,19 @@ export default function WirePromptSidebar({
   );
 
   useEffect(() => {
+    if (pages.length === 0) {
+      setSelectedPageId(null);
+      return;
+    }
+
+    if (!selectedPageId || !pages.some((page) => page.id === selectedPageId)) {
+      setSelectedPageId(pages[0].id);
+    }
+  }, [pages, selectedPageId]);
+
+  useEffect(() => {
     if (autoRunRef.current) return;
+
     const storedModel = sessionStorage.getItem(`wireModel:${wireId}`);
     const resolvedModel = isWireModelName(storedModel)
       ? storedModel
@@ -391,16 +438,76 @@ export default function WirePromptSidebar({
     sessionStorage.removeItem(`wireModel:${wireId}`);
 
     const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
-    autoRunRef.current = true;
-    if (!storedPrompt) return;
-    latestPromptRef.current = storedPrompt;
-    sessionStorage.removeItem(`wirePrompt:${wireId}`);
-    setPrompt("");
-    void append(
-      { role: "user", content: storedPrompt },
-      { body: { modelName: resolvedModel } },
+    const storedPageCount = parseStoredPageCount(
+      sessionStorage.getItem(`wirePageCount:${wireId}`),
     );
-  }, [activeModelName, append, wireId]);
+
+    autoRunRef.current = true;
+    sessionStorage.removeItem(`wirePrompt:${wireId}`);
+    sessionStorage.removeItem(`wirePageCount:${wireId}`);
+
+    if (!storedPrompt) return;
+
+    setPrompt("");
+
+    const runInitialBatch = async () => {
+      let firstPageId = useEditorStore.getState().pages[0]?.id;
+      if (!firstPageId) {
+        firstPageId = createPage("Generated Page 1");
+      }
+      if (!firstPageId) return;
+
+      const targets: Array<{ pageId: string; isCreated: boolean }> = [
+        { pageId: firstPageId, isCreated: false },
+      ];
+
+      for (let index = 1; index < storedPageCount; index += 1) {
+        const nextPageNumber = useEditorStore.getState().pages.length + 1;
+        const createdId = createPage(`Generated Page ${nextPageNumber}`);
+        targets.push({ pageId: createdId, isCreated: true });
+      }
+
+      let failedCount = 0;
+      let successCount = 0;
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const target = targets[index];
+
+        try {
+          const completed = await startGenerationForPage({
+            promptText: storedPrompt,
+            targetPageId: target.pageId,
+            createdPageId: target.isCreated ? target.pageId : undefined,
+            modelName: resolvedModel,
+            force: true,
+            variation:
+              storedPageCount > 1
+                ? {
+                    variationIndex: index + 1,
+                    variationCount: storedPageCount,
+                    variationThemeHint: VARIATION_THEME_HINTS[index] ??
+                      VARIATION_THEME_HINTS[VARIATION_THEME_HINTS.length - 1],
+                  }
+                : undefined,
+          });
+
+          if (completed) {
+            successCount += 1;
+          }
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (failedCount > 0) {
+        setErrorMessage(
+          `${failedCount} of ${storedPageCount} requested variations failed. ${successCount} generated successfully.`,
+        );
+      }
+    };
+
+    void runInitialBatch();
+  }, [activeModelName, createPage, startGenerationForPage, wireId]);
 
   useEffect(() => {
     void loadVersions();
@@ -452,6 +559,9 @@ export default function WirePromptSidebar({
       return null;
     });
   }, [messages, variant]);
+
+  const selectedPageTitle =
+    pages.find((page) => page.id === selectedPageId)?.title ?? "Select page";
 
   const geminiModelOptions = useMemo(
     () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "gemini"),
@@ -505,7 +615,7 @@ export default function WirePromptSidebar({
 
       {activeTab === "chat" ? (
         <>
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
             {renderedMessages}
             {errorMessage ? (
               <div
@@ -544,73 +654,115 @@ export default function WirePromptSidebar({
 
           <form onSubmit={handleSubmit} className="shrink-0">
             <div
-              className={`rounded-xl border ${
+              className={`relative flex min-h-[48px] w-full items-end overflow-hidden rounded-xl bg-neutral-900/60 pl-2 pr-1 shadow-2xl transition-all ${
                 variant === "panel"
-                  ? "border-border bg-card shadow-sm"
-                  : "border-white/10 bg-neutral-900/60"
+                  ? "border-border bg-card"
+                  : "border border-white/10"
               }`}
             >
-              <div className="flex items-end gap-2 px-3 py-2">
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Ask..."
-                  rows={1}
-                  className={`flex-1 resize-none border-none bg-transparent py-1.5 text-sm leading-5 focus:outline-none focus:ring-0 min-h-[28px] ${
-                    variant === "panel"
-                      ? "text-foreground placeholder:text-muted-foreground/60"
-                      : "text-neutral-100 placeholder:text-neutral-500"
-                  }`}
-                />
-                <Button
-                  type="submit"
-                  disabled={isLoading || !prompt.trim()}
-                  size="sm"
-                  className={`h-7 px-3 rounded-md text-xs font-medium transition-all ${
-                    variant === "panel"
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-                      : "bg-neutral-200 text-neutral-900 hover:bg-white disabled:opacity-40"
-                  }`}
-                  aria-label="Send"
-                >
-                  {isLoading ? "..." : "Send"}
-                </Button>
-              </div>
-
-              <div
-                className={`flex items-center justify-end px-3 py-1.5 border-t ${
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center ${
                   variant === "panel"
-                    ? "border-border/40 bg-muted/30"
-                    : "border-white/5 bg-neutral-900/40"
+                    ? "text-muted-foreground hover:bg-accent"
+                    : "text-neutral-400 hover:bg-white/10"
                 }`}
               >
-                <select
-                  value={activeModelName}
-                  onChange={(event) =>
-                    setActiveModelName(event.target.value as WireModelName)
-                  }
-                  disabled={isLoading}
-                  className={`h-6 px-1.5 text-[10px] rounded border bg-transparent outline-none cursor-pointer transition-colors ${
-                    variant === "panel"
-                      ? "border-border text-muted-foreground hover:border-muted-foreground/50"
-                      : "border-white/10 text-neutral-400 hover:text-neutral-200"
-                  }`}
-                >
-                  <optgroup label="Gemini">
+                <Plus className="h-4 w-4" />
+              </Button>
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Ask a follow-up..."
+                rows={1}
+                className={`mb-2 max-h-[200px] flex-1 resize-none bg-transparent py-3 text-sm focus:ring-2 focus:ring-neutral-500/50 focus:rounded-md ${
+                  variant === "panel"
+                    ? "text-foreground placeholder:text-muted-foreground/60"
+                    : "text-neutral-100 placeholder:text-neutral-500"
+                }`}
+              />
+              <div className="mr-1 flex shrink-0 flex-col items-end justify-end gap-1 py-1.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`flex h-8 items-center gap-1 rounded-md px-2 text-xs ${
+                        variant === "panel"
+                          ? "text-muted-foreground hover:bg-accent"
+                          : "text-neutral-400 hover:bg-white/10"
+                      }`}
+                    >
+                      <Circle className="h-3 w-3 text-primary" />
+                      {WIRE_MODEL_OPTIONS.find((m) => m.id === activeModelName)
+                        ?.label || activeModelName}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-card border-border">
                     {geminiModelOptions.map((model) => (
-                      <option key={model.id} value={model.id}>
+                      <DropdownMenuItem
+                        key={model.id}
+                        onClick={() => setActiveModelName(model.id)}
+                      >
                         {model.label}
-                      </option>
+                      </DropdownMenuItem>
                     ))}
-                  </optgroup>
-                  <optgroup label="OpenRouter">
                     {openRouterModelOptions.map((model) => (
-                      <option key={model.id} value={model.id}>
+                      <DropdownMenuItem
+                        key={model.id}
+                        onClick={() => setActiveModelName(model.id)}
+                      >
                         {model.label}
-                      </option>
+                      </DropdownMenuItem>
                     ))}
-                  </optgroup>
-                </select>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={`flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs ${
+                        variant === "panel"
+                          ? "text-muted-foreground hover:bg-accent"
+                          : "text-neutral-400 hover:bg-white/10"
+                      }`}
+                    >
+                      <span className="truncate">Edit: {selectedPageTitle}</span>
+                      <ChevronDown className="h-3 w-3 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-card border-border">
+                    {pages.map((page) => (
+                      <DropdownMenuItem
+                        key={page.id}
+                        onClick={() => setSelectedPageId(page.id)}
+                      >
+                        {page.title}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  type="submit"
+                  disabled={isLoading || !prompt.trim() || !selectedPageId}
+                  size="icon"
+                  className={`mb-1 mt-0.5 h-8 w-8 ${
+                    variant === "panel"
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
+                      : "bg-white/10 text-neutral-200 hover:bg-white/20 disabled:opacity-20"
+                  }`}
+                  aria-label="Send message"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </form>
@@ -716,9 +868,7 @@ export default function WirePromptSidebar({
                     }`}
                   >
                     <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                    {restoringVersionId === version.id
-                      ? "Restoring"
-                      : "Restore"}
+                    {restoringVersionId === version.id ? "Restoring" : "Restore"}
                   </Button>
                 </div>
               </div>

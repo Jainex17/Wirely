@@ -34,6 +34,9 @@ type WireRequestBody = {
   wireId?: string;
   messages?: unknown;
   modelName?: unknown;
+  variationIndex?: unknown;
+  variationCount?: unknown;
+  variationThemeHint?: unknown;
 };
 
 interface RouteContext {
@@ -173,6 +176,42 @@ const getLatestUserPrompt = (messages: WireMessage[]) => {
     }
   }
   return "";
+};
+
+const parseVariationCount = (value: unknown) => {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return 1;
+  }
+  if (value < 1) return 1;
+  if (value > 3) return 3;
+  return value;
+};
+
+const parseVariationIndex = (value: unknown, variationCount: number) => {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return 1;
+  }
+  if (value < 1) return 1;
+  if (value > variationCount) return variationCount;
+  return value;
+};
+
+const buildVariationPrompt = ({
+  variationIndex,
+  variationCount,
+  variationThemeHint,
+}: {
+  variationIndex: number;
+  variationCount: number;
+  variationThemeHint: string;
+}) => {
+  return [
+    "Variation directive:",
+    `- This output is variation ${variationIndex} of ${variationCount}.`,
+    `- Anchor style direction to this theme hint: ${variationThemeHint}.`,
+    "- Make this variation clearly and substantially different from the others in theme, color system, typography choices, spacing rhythm, layout composition, and interaction style.",
+    "- Do not produce minor tweaks of the same design. Treat this as a distinct art direction.",
+  ].join("\n");
 };
 
 const logQualityTelemetry = ({
@@ -374,6 +413,12 @@ export async function POST(request: Request, context: RouteContext) {
   const requestedModelName = isWireModelName(requestedModelRaw)
     ? requestedModelRaw
     : undefined;
+  const variationCount = parseVariationCount(body.variationCount);
+  const variationIndex = parseVariationIndex(body.variationIndex, variationCount);
+  const variationThemeHint =
+    typeof body.variationThemeHint === "string"
+      ? body.variationThemeHint.trim()
+      : "";
 
   const messages = parseMessages(body?.messages);
   const wireId = id;
@@ -388,11 +433,20 @@ export async function POST(request: Request, context: RouteContext) {
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
   const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
 
-  const systemPrompt = composeGenerateSystemPrompt({
+  const baseSystemPrompt = composeGenerateSystemPrompt({
     stylePreset,
     allowImages,
     userPrompt: latestUserPrompt,
   });
+  const systemPrompt =
+    variationCount > 1
+      ? `${baseSystemPrompt}\n\n${buildVariationPrompt({
+          variationIndex,
+          variationCount,
+          variationThemeHint:
+            variationThemeHint || `Design direction ${variationIndex}`,
+        })}`
+      : baseSystemPrompt;
 
   console.info("[wire] generation_attempt", {
     stylePresetId: stylePreset.id,
