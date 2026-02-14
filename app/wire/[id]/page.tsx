@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
-import { DEFAULT_WIRE_MODEL, isWireModelName } from "@/app/lib/wireModels";
+import { DEFAULT_WIRE_MODEL } from "@/app/lib/wireModels";
 import WireEditor from "./WireEditor";
 
 interface WirePageProps {
@@ -23,20 +23,12 @@ export default async function WirePage({ params }: WirePageProps) {
     notFound();
   }
 
-  const latestVersion = projectDetail.versions[0];
-  const latestVersionByPageId = new Map<string, (typeof projectDetail.versions)[number]>();
-  for (const version of projectDetail.versions) {
-    if (!latestVersionByPageId.has(version.pageId)) {
-      latestVersionByPageId.set(version.pageId, version);
-    }
-  }
-
   const initialPages =
     projectDetail.pages.length > 0
       ? projectDetail.pages.map((page) => ({
           id: page.id,
           title: page.title,
-          pageHtml: latestVersionByPageId.get(page.id)?.htmlContent ?? "",
+          pageHtml: "",
         }))
       : [
           {
@@ -46,9 +38,7 @@ export default async function WirePage({ params }: WirePageProps) {
           },
         ];
   const projectTitle = projectDetail.project.title;
-  const initialModelName = isWireModelName(latestVersion?.modelName)
-    ? latestVersion.modelName
-    : DEFAULT_WIRE_MODEL;
+  const initialModelName = DEFAULT_WIRE_MODEL;
 
   return (
     <WireEditor

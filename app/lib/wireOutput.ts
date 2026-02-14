@@ -15,6 +15,11 @@ export interface WireParsedOutput {
   html: string;
 }
 
+export interface WireParsedBatchOutput {
+  details: string;
+  htmlByIndex: string[];
+}
+
 export interface NormalizeGeneratedHtmlOptions {
   allowImages: boolean;
 }
@@ -87,6 +92,58 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   };
 };
 
+export const parseBatchWireOutput = (
+  raw: string,
+  expectedCount?: number,
+): WireParsedBatchOutput => {
+  const source = stripCodeFences(raw ?? "");
+  const upperSource = source.toUpperCase();
+  const detailsIndex = upperSource.indexOf(DETAILS_MARKER);
+  const markerMatches = Array.from(
+    source.matchAll(/(?:VARIANT_(\d+)_HTML|HTML_(\d+))\s*:/gi),
+  )
+    .map((match) => {
+      const indexRaw = match[1] ?? match[2];
+      const index = Number.parseInt(indexRaw, 10);
+      return Number.isFinite(index) && index > 0
+        ? { markerIndex: match.index ?? 0, index }
+        : null;
+    })
+    .filter((item): item is { markerIndex: number; index: number } => item !== null)
+    .sort((a, b) => a.markerIndex - b.markerIndex);
+
+  const firstHtmlMarkerIndex = markerMatches[0]?.markerIndex ?? source.length;
+  const details =
+    detailsIndex >= 0
+      ? source
+          .slice(detailsIndex + DETAILS_MARKER.length, firstHtmlMarkerIndex)
+          .trim()
+      : "";
+
+  const maxCountFromMarkers = markerMatches.reduce(
+    (max, marker) => Math.max(max, marker.index),
+    0,
+  );
+  const totalCount = Math.max(expectedCount ?? 0, maxCountFromMarkers);
+  const htmlByIndex = Array.from({ length: totalCount }, () => "");
+
+  for (let i = 0; i < markerMatches.length; i += 1) {
+    const current = markerMatches[i];
+    const next = markerMatches[i + 1];
+    const markerText = source
+      .slice(current.markerIndex)
+      .match(/(?:VARIANT_\d+_HTML|HTML_\d+)\s*:/i)?.[0];
+
+    if (!markerText) continue;
+
+    const contentStart = current.markerIndex + markerText.length;
+    const contentEnd = next?.markerIndex ?? source.length;
+    htmlByIndex[current.index - 1] = source.slice(contentStart, contentEnd).trim();
+  }
+
+  return { details, htmlByIndex };
+};
+
 const removeDisallowedScripts = (value: string) =>
   value.replace(/<script\b[\s\S]*?<\/script>/gi, "");
 
@@ -129,8 +186,10 @@ ${contentWithoutDoctype}
 </html>`;
   }
 
+  const htmlOpenTagMatch = contentWithoutDoctype.match(/<html[^>]*>/i);
   const htmlMatch = contentWithoutDoctype.match(/<html[^>]*>([\s\S]*?)<\/html>/i);
   const htmlInner = htmlMatch ? htmlMatch[1] : contentWithoutDoctype;
+  const bodyOpenTagMatch = htmlInner.match(/<body[^>]*>/i);
   const headMatch = htmlInner.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
   const bodyMatch = htmlInner.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 
@@ -148,8 +207,17 @@ ${contentWithoutDoctype}
   const hasTitle = /<title[\s>]/i.test(safeHeadInner);
   const titleTag = hasTitle ? "" : "<title>Generated Page</title>";
 
+  const htmlOpenTag = (() => {
+    if (!htmlOpenTagMatch) return '<html lang="en">';
+    const tag = htmlOpenTagMatch[0];
+    if (/\blang\s*=/.test(tag)) return tag;
+    return tag.replace(/>$/, ' lang="en">');
+  })();
+
+  const bodyOpenTag = bodyOpenTagMatch?.[0] ?? "<body>";
+
   return `<!doctype html>
-<html lang="en">
+${htmlOpenTag}
 <head>
 ${REQUIRED_CHARSET}
 ${titleTag}
@@ -158,7 +226,7 @@ ${REQUIRED_TAILWIND}
 ${REQUIRED_ELEMENTS}
 ${safeHeadInner}
 </head>
-<body>
+${bodyOpenTag}
 ${bodyInner.trim()}
 </body>
 </html>`;

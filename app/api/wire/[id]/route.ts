@@ -7,11 +7,8 @@ import {
   type WireStylePreset,
 } from "@/app/lib/wirePrompt";
 import {
-  normalizeGeneratedHtml,
-  parseWireOutput,
   userExplicitlyRequestedImages,
 } from "@/app/lib/wireOutput";
-import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
 import {
   DEFAULT_WIRE_MODEL,
   OPENROUTER_FREE_MODELS,
@@ -20,7 +17,10 @@ import {
   type WireModelName,
 } from "@/app/lib/wireModels";
 import { getRequestSessionUser } from "@/lib/auth/session";
-import { getProjectForUser } from "@/lib/db/queries/projects";
+import {
+  appendConversationMessage,
+  getProjectForUser,
+} from "@/lib/db/queries/projects";
 
 const OPENROUTER_MODELS = Array.from(new Set(OPENROUTER_FREE_MODELS));
 const GEMINI_MODEL_NAME = DEFAULT_WIRE_MODEL;
@@ -189,11 +189,28 @@ const parseVariationCount = (value: unknown) => {
 
 const parseVariationIndex = (value: unknown, variationCount: number) => {
   if (typeof value !== "number" || !Number.isInteger(value)) {
-    return 1;
+    return undefined;
   }
   if (value < 1) return 1;
   if (value > variationCount) return variationCount;
   return value;
+};
+
+const parseVariationThemeHints = (value: string, variationCount: number) => {
+  const hints = value
+    .split("||")
+    .map((hint) => hint.trim())
+    .filter(Boolean);
+
+  const fallback = [
+    "Editorial minimal layout with restrained monochrome palette and precise typography.",
+    "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
+    "Warm handcrafted aesthetic with organic forms, textured surfaces, and soft tones.",
+  ];
+
+  return Array.from({ length: variationCount }, (_, index) => {
+    return hints[index] ?? fallback[index] ?? `Design direction ${index + 1}`;
+  });
 };
 
 const buildVariationPrompt = ({
@@ -214,37 +231,76 @@ const buildVariationPrompt = ({
   ].join("\n");
 };
 
-const logQualityTelemetry = ({
-  text,
-  stylePreset,
-  allowImages,
-  userPrompt,
-  modelName,
+const buildBatchVariationPrompt = ({
+  variationCount,
+  variationThemeHints,
 }: {
+  variationCount: number;
+  variationThemeHints: string[];
+}) => {
+  const themeHintLines = variationThemeHints
+    .map((hint, index) => `- Variation ${index + 1}: ${hint}`)
+    .join("\n");
+
+  return [
+    "Batch variation directive:",
+    "- Ignore prior single-page output formatting rules and follow this batch format strictly.",
+    `- Generate ${variationCount} substantially different design variants in a single response.`,
+    "- Each variant must be unique in theme, color system, typography, layout composition, and interaction style.",
+    "- Do not output minor tweaks of one design.",
+    "- Use these theme anchors:",
+    themeHintLines,
+    "Output format requirements for batch mode:",
+    "- Keep DETAILS as short summary text (2 sentences max).",
+    `- Then provide exactly ${variationCount} HTML sections named HTML_1:, HTML_2:, ... up to HTML_${variationCount}:`,
+    "- Each HTML_n section must contain a complete HTML document starting with <!doctype html>.",
+    "- Do not include a plain HTML: section in batch mode.",
+  ].join("\n");
+};
+
+const logQualityTelemetry = (_: {
   text: string;
   stylePreset: WireStylePreset;
   allowImages: boolean;
   userPrompt: string;
   modelName: string;
 }) => {
-  const parsed = parseWireOutput(text);
-  const normalized = normalizeGeneratedHtml(parsed.html, { allowImages });
-  const quality = evaluateWireHtmlQuality({
-    html: normalized.html,
-    allowImages,
-    userPrompt,
-    stylePresetId: stylePreset.id,
-  });
+  void _;
+};
 
-  console.info("[wire] quality_assessment", {
-    modelName,
-    stylePresetId: stylePreset.id,
-    score: quality.score,
-    violations: quality.violations.length,
-  });
+const persistConversationTurn = async ({
+  projectId,
+  userPrompt,
+  assistantContent,
+}: {
+  projectId: string;
+  userPrompt: string;
+  assistantContent: string;
+}) => {
+  try {
+    const trimmedPrompt = userPrompt.trim();
+    if (trimmedPrompt) {
+      await appendConversationMessage({
+        projectId,
+        role: "user",
+        content: trimmedPrompt,
+      });
+    }
+
+    if (assistantContent.trim()) {
+      await appendConversationMessage({
+        projectId,
+        role: "assistant",
+        content: assistantContent,
+      });
+    }
+  } catch (error) {
+    console.error("[wire] conversation_persist_failed", error);
+  }
 };
 
 const streamWithSelectedModel = async ({
+  projectId,
   modelName,
   googleApiKey,
   openrouterApiKey,
@@ -254,6 +310,7 @@ const streamWithSelectedModel = async ({
   allowImages,
   userPrompt,
 }: {
+  projectId: string;
   modelName: WireModelName;
   googleApiKey: string | undefined;
   openrouterApiKey: string | undefined;
@@ -291,6 +348,11 @@ const streamWithSelectedModel = async ({
           userPrompt,
           modelName,
         });
+        void persistConversationTurn({
+          projectId,
+          userPrompt,
+          assistantContent: text,
+        });
       },
     });
   }
@@ -321,11 +383,17 @@ const streamWithSelectedModel = async ({
         userPrompt,
         modelName,
       });
+      void persistConversationTurn({
+        projectId,
+        userPrompt,
+        assistantContent: text,
+      });
     },
   });
 };
 
 const streamWithOpenRouter = async ({
+  projectId,
   apiKey,
   messages,
   systemPrompt,
@@ -333,6 +401,7 @@ const streamWithOpenRouter = async ({
   allowImages,
   userPrompt,
 }: {
+  projectId: string;
   apiKey: string | undefined;
   messages: WireMessage[];
   systemPrompt: string;
@@ -370,6 +439,11 @@ const streamWithOpenRouter = async ({
             allowImages,
             userPrompt,
             modelName,
+          });
+          void persistConversationTurn({
+            projectId,
+            userPrompt,
+            assistantContent: text,
           });
         },
       });
@@ -419,6 +493,11 @@ export async function POST(request: Request, context: RouteContext) {
     typeof body.variationThemeHint === "string"
       ? body.variationThemeHint.trim()
       : "";
+  const isBatchVariationRequest = variationCount > 1 && variationIndex === undefined;
+  const variationThemeHints = parseVariationThemeHints(
+    variationThemeHint,
+    variationCount,
+  );
 
   const messages = parseMessages(body?.messages);
   const wireId = id;
@@ -440,22 +519,33 @@ export async function POST(request: Request, context: RouteContext) {
   });
   const systemPrompt =
     variationCount > 1
-      ? `${baseSystemPrompt}\n\n${buildVariationPrompt({
-          variationIndex,
-          variationCount,
-          variationThemeHint:
-            variationThemeHint || `Design direction ${variationIndex}`,
-        })}`
+      ? `${baseSystemPrompt}\n\n${
+          isBatchVariationRequest
+            ? buildBatchVariationPrompt({
+                variationCount,
+                variationThemeHints,
+              })
+            : buildVariationPrompt({
+                variationIndex: variationIndex ?? 1,
+                variationCount,
+                variationThemeHint:
+                  variationThemeHint || `Design direction ${variationIndex ?? 1}`,
+              })
+        }`
       : baseSystemPrompt;
 
   console.info("[wire] generation_attempt", {
     stylePresetId: stylePreset.id,
     requestedModelName,
+    variationCount,
+    variationIndex: variationIndex ?? null,
+    batchMode: isBatchVariationRequest,
   });
 
   if (requestedModelName) {
     try {
       const selectedResult = await streamWithSelectedModel({
+        projectId: id,
         modelName: requestedModelName,
         googleApiKey,
         openrouterApiKey,
@@ -504,6 +594,11 @@ export async function POST(request: Request, context: RouteContext) {
           userPrompt: latestUserPrompt,
           modelName: GEMINI_MODEL_NAME,
         });
+        void persistConversationTurn({
+          projectId: id,
+          userPrompt: latestUserPrompt,
+          assistantContent: text,
+        });
       },
     });
 
@@ -519,6 +614,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     try {
       const result = await streamWithOpenRouter({
+        projectId: id,
         apiKey: openrouterApiKey,
         messages,
         systemPrompt,

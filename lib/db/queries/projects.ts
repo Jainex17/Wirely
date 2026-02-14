@@ -5,7 +5,6 @@ import {
   conversations,
   projectPages,
   projects,
-  projectVersions,
   type ConversationRole,
   type ProjectStatus,
 } from "@/lib/db/schema";
@@ -91,19 +90,11 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
         .orderBy(asc(conversationMessages.createdAt))
     : [];
 
-  const versions = await db
-    .select()
-    .from(projectVersions)
-    .where(eq(projectVersions.projectId, projectId))
-    .orderBy(desc(projectVersions.createdAt))
-    .limit(200);
-
   return {
     project,
     pages,
     conversation,
     messages,
-    versions,
   };
 };
 
@@ -197,62 +188,6 @@ export const appendConversationMessage = async ({
     .returning();
 
   return message;
-};
-
-export const appendProjectVersion = async ({
-  projectId,
-  pageId,
-  promptText,
-  assistantDetails,
-  htmlContent,
-  stylePresetId,
-  modelName,
-}: {
-  projectId: string;
-  pageId: string;
-  promptText?: string;
-  assistantDetails?: string;
-  htmlContent: string;
-  stylePresetId?: string;
-  modelName?: string;
-}) => {
-  const db = getDb();
-
-  const [version] = await db
-    .insert(projectVersions)
-    .values({
-      projectId,
-      pageId,
-      promptText,
-      assistantDetails,
-      htmlContent,
-      stylePresetId,
-      modelName,
-    })
-    .returning();
-
-  return version ?? null;
-};
-
-export const listProjectVersionsForUser = async ({
-  projectId,
-  userId,
-  limit = 30,
-}: {
-  projectId: string;
-  userId: string;
-  limit?: number;
-}) => {
-  const project = await getProjectForUser(projectId, userId);
-  if (!project) return null;
-
-  const db = getDb();
-  return db
-    .select()
-    .from(projectVersions)
-    .where(eq(projectVersions.projectId, projectId))
-    .orderBy(desc(projectVersions.createdAt))
-    .limit(limit);
 };
 
 export const deleteProjectForUser = async ({

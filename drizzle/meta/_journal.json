@@ -15,6 +15,13 @@
       "when": 1771000000000,
       "tag": "0001_drop_quality_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771048279745,
+      "tag": "0002_mature_deadpool",
+      "breakpoints": true
     }
   ]
 }

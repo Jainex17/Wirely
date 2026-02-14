@@ -22,6 +22,7 @@ interface ComposeWirePromptOptions {
 
 const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
 const ELEMENTS_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
+const CHARTJS_CDN = `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>`;
 
 export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
   {
@@ -136,8 +137,8 @@ export const selectWireStylePreset = ({
 
 const buildImageRule = (allowImages: boolean) =>
   allowImages
-    ? "- Images are allowed because the user explicitly requested them."
-    : "- Do not use <img>, picture, svg image assets, or background images.";
+    ? "- Images are allowed because the user explicitly requested them. Inline <svg> UI icons/charts are always allowed."
+    : "- Do not use external bitmap image assets (<img>, <picture>, or CSS background-image URLs). Inline <svg> icons/charts are allowed and encouraged.";
 
 const isDashboardPrompt = (prompt: string) => {
   const text = prompt.toLowerCase();
@@ -169,8 +170,12 @@ Intent alignment (dashboard mode):
 - The requested artifact is a dashboard/application UI, not a marketing landing page.
 - Do not produce hero/value-prop/CTA marketing sections.
 - Implement a left sidebar navigation with clear active state and at least 3 navigation items.
-- Main panel must be data-dense and include KPI cards plus at least 2 chart blocks.
+- Main panel must be data-dense and include KPI cards plus at least 2 real chart renders (not placeholders).
+- Use Chart.js with exactly one ${CHARTJS_CDN} include and at least 2 <canvas> elements with unique ids.
+- Initialize charts in a single script block using deterministic sample datasets.
 - Include a table in the main content with data rows.
+- Use inline <svg> icons for navigation/KPI visuals; do not use emoji-only iconography.
+- Never output placeholder chart text such as "[Placeholder: ...]" or "coming soon chart".
 ${hasUnified && hasActive && hasFoundational ? "- Include switchable views/tabs for Unified, Active, and Foundational in the main dashboard." : "- If user asks for multiple named views, provide clear switching controls between those views."}
 ${hasTargetQuery ? "- The table must include a Target Query column." : "- Include practical metric columns in table form."}
 ${hasGeoScore ? "- The table must include a GEO Score column with realistic percentage values." : "- Include a score/status column in the table."}
@@ -201,6 +206,7 @@ HTML:
 - Use Tailwind utility classes for all styling.
 - Include ${TAILWIND_CDN} in <head>.
 - Include ${ELEMENTS_CDN} in <head>.
+- For dashboard/chart UIs, include ${CHARTJS_CDN} in <head>.
 - Include <meta name="viewport" content="width=device-width, initial-scale=1.0">.
 - Set explicit base styling on <body> with Tailwind classes, including background and text color (do not rely on parent/container background).
 - Do not include <style> tags.
@@ -237,6 +243,10 @@ Iframe/runtime constraints:
 - HTML runs in iframe srcdoc; keep it self-contained and deterministic.
 - The iframe is visible on a white default background. If you choose a dark theme/layout, set an explicit dark background class on 'body' (e.g., 'bg-slate-950') so the page background is dark, not white.
 - Use CDN or inline assets only. No local file paths.
+- Allowed external scripts are limited to:
+  - ${TAILWIND_CDN}
+  - ${ELEMENTS_CDN}
+  - ${CHARTJS_CDN} (dashboard/chart interfaces only)
 - Keep JS minimal and optional. No frameworks/build tools/import maps.
 - Do not rely on window.top/window.parent access or popups.
 - Keep output maintainable, around 140-260 lines.

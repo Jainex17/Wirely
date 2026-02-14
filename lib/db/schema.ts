@@ -67,29 +67,6 @@ export const projectPages = pgTable(
   }),
 );
 
-export const projectVersions = pgTable(
-  "project_versions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    pageId: uuid("page_id")
-      .notNull()
-      .references(() => projectPages.id, { onDelete: "cascade" }),
-    promptText: text("prompt_text"),
-    assistantDetails: text("assistant_details"),
-    htmlContent: text("html_content").notNull(),
-    stylePresetId: text("style_preset_id"),
-    modelName: text("model_name"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    projectIdx: index("project_versions_project_id_idx").on(table.projectId),
-    pageIdx: index("project_versions_page_id_idx").on(table.pageId),
-  }),
-);
-
 export const conversations = pgTable(
   "conversations",
   {

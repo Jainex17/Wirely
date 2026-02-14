@@ -6,6 +6,12 @@ import type { Message } from "ai";
 import { ArrowLeft } from "lucide-react";
 import EditorWorkspace from "@/app/components/EditorWorkspace";
 import WirePromptSidebar from "@/app/components/WirePromptSidebar";
+import {
+  normalizeGeneratedHtml,
+  parseBatchWireOutput,
+  parseWireOutput,
+  userExplicitlyRequestedImages,
+} from "@/app/lib/wireOutput";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth/client";
 import {
@@ -45,6 +51,8 @@ export default function WireEditor({
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
+  const createPage = useEditorStore((state) => state.createPage);
+  const setPageHtml = useEditorStore((state) => state.setPageHtml);
 
   useEffect(() => {
     hydrateProject(
@@ -56,6 +64,42 @@ export default function WireEditor({
       })),
     );
   }, [hydrateProject, initialProject.pages]);
+
+  useEffect(() => {
+    const hasPreloadedHtml = initialProject.pages.some(
+      (page) => page.pageHtml.trim().length > 0,
+    );
+    if (hasPreloadedHtml) return;
+
+    const latestAssistant = [...initialMessages]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.content.trim());
+    if (!latestAssistant) return;
+
+    const latestUserPrompt = [...initialMessages]
+      .reverse()
+      .find((message) => message.role === "user" && message.content.trim())?.content;
+    const allowImages = userExplicitlyRequestedImages(latestUserPrompt ?? "");
+    const parsedBatch = parseBatchWireOutput(latestAssistant.content);
+    const batchHtml = parsedBatch.htmlByIndex.filter((html) => html.trim().length > 0);
+    const htmlCandidates =
+      batchHtml.length > 0 ? batchHtml : [parseWireOutput(latestAssistant.content).html];
+    const validCandidates = htmlCandidates.filter((html) => html.trim().length > 0);
+    if (validCandidates.length === 0) return;
+
+    const pageIds = [...initialProject.pages.map((page) => page.id)];
+    for (let index = pageIds.length; index < validCandidates.length; index += 1) {
+      const createdId = createPage(`Generated Page ${index + 1}`);
+      pageIds.push(createdId);
+    }
+
+    validCandidates.forEach((html, index) => {
+      const targetPageId = pageIds[index];
+      if (!targetPageId) return;
+      const normalized = normalizeGeneratedHtml(html, { allowImages });
+      setPageHtml(targetPageId, normalized.html);
+    });
+  }, [createPage, initialMessages, initialProject.pages, setPageHtml]);
 
   const name = sessionUser.name ?? sessionUser.email ?? "User";
   const initials = useMemo(
