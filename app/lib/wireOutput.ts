@@ -8,6 +8,16 @@ const REQUIRED_TAILWIND =
   '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>';
 const REQUIRED_ELEMENTS =
   '<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>';
+const CHARTJS_ALLOWED_SRC_PATTERNS = [
+  /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
+  /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
+];
+const REQUIRED_SCRIPT_SRC_PATTERNS = [
+  /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@4(?:[?#].*)?$/i,
+  /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindplus\/elements@1(?:[?#].*)?$/i,
+];
+const UNSAFE_INLINE_SCRIPT_PATTERN =
+  /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon)\b|window\.(?:top|parent)/i;
 
 export interface WireParsedOutput {
   raw: string;
@@ -144,8 +154,44 @@ export const parseBatchWireOutput = (
   return { details, htmlByIndex };
 };
 
-const removeDisallowedScripts = (value: string) =>
-  value.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+const getScriptSrc = (scriptTag: string) => {
+  const srcMatch = scriptTag.match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  return (srcMatch?.[2] ?? srcMatch?.[3] ?? srcMatch?.[4] ?? "").trim();
+};
+
+const isAllowedExternalScript = (src: string) => {
+  const normalized = src.trim();
+  if (!normalized) return false;
+  return [...REQUIRED_SCRIPT_SRC_PATTERNS, ...CHARTJS_ALLOWED_SRC_PATTERNS].some(
+    (pattern) => pattern.test(normalized),
+  );
+};
+
+const sanitizeScripts = (value: string) => {
+  let removedDisallowed = 0;
+  let removedUnsafeInline = 0;
+
+  const html = value.replace(/<script\b[\s\S]*?<\/script>/gi, (scriptTag) => {
+    const src = getScriptSrc(scriptTag);
+    if (src) {
+      if (isAllowedExternalScript(src)) {
+        return scriptTag;
+      }
+      removedDisallowed += 1;
+      return "";
+    }
+
+    const content =
+      scriptTag.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i)?.[1] ?? "";
+    if (UNSAFE_INLINE_SCRIPT_PATTERN.test(content)) {
+      removedUnsafeInline += 1;
+      return "";
+    }
+    return scriptTag;
+  });
+
+  return { html, removedDisallowed, removedUnsafeInline };
+};
 
 const removeEventHandlers = (value: string) =>
   value.replace(/\son[a-z0-9_-]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "");
@@ -201,7 +247,14 @@ ${contentWithoutDoctype}
   const safeHeadInner = headInner
     .replace(/<meta[^>]*charset[^>]*>/gi, "")
     .replace(/<meta[^>]*name=["']viewport["'][^>]*>/gi, "")
-    .replace(/<script\b[\s\S]*?<\/script>/gi, "")
+    .replace(
+      /<script\b[^>]*src\s*=\s*["']https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@4[^"']*["'][^>]*>\s*<\/script>/gi,
+      "",
+    )
+    .replace(
+      /<script\b[^>]*src\s*=\s*["']https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindplus\/elements@1[^"']*["'][^>]*>\s*<\/script>/gi,
+      "",
+    )
     .trim();
 
   const hasTitle = /<title[\s>]/i.test(safeHeadInner);
@@ -262,8 +315,14 @@ export const normalizeGeneratedHtml = (
 
   const scriptCount = countMatches(html, /<script\b[\s\S]*?<\/script>/gi);
   if (scriptCount > 0) {
-    violations.push("non_required_script_removed");
-    html = removeDisallowedScripts(html);
+    const sanitizedScripts = sanitizeScripts(html);
+    html = sanitizedScripts.html;
+    if (sanitizedScripts.removedDisallowed > 0) {
+      violations.push("disallowed_script_removed");
+    }
+    if (sanitizedScripts.removedUnsafeInline > 0) {
+      violations.push("unsafe_inline_script_removed");
+    }
   }
 
   const eventHandlerCount = countMatches(

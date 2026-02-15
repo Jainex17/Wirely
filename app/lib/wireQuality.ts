@@ -12,6 +12,10 @@ interface EvaluateWireHtmlQualityOptions {
 }
 
 const clampScore = (value: number) => Math.max(0, Math.min(100, value));
+const isDashboardPrompt = (prompt: string) =>
+  /(dashboard|admin|analytics|metrics|kpi|reporting|scorecard|table|sidebar|panel|workspace)/i.test(
+    prompt,
+  );
 
 const hasClassPattern = (html: string, pattern: RegExp) => pattern.test(html);
 
@@ -25,6 +29,7 @@ export const evaluateWireHtmlQuality = ({
 }: EvaluateWireHtmlQualityOptions): WireQualityReport => {
   let score = 100;
   const violations: string[] = [];
+  const dashboardRequested = isDashboardPrompt(userPrompt);
 
   const hasHtmlTag = /<html[\s>]/i.test(html) && /<\/html>/i.test(html);
   const hasBodyTag = /<body[\s>]/i.test(html) && /<\/body>/i.test(html);
@@ -126,12 +131,23 @@ export const evaluateWireHtmlQuality = ({
     score -= 20;
   }
 
-  const disallowedScriptTagMatches = html.match(/<script\b[^>]*>/gi) ?? [];
+  const disallowedScriptTagMatches = html.match(/<script\b[\s\S]*?<\/script>/gi) ?? [];
   const disallowedScriptCount = disallowedScriptTagMatches.filter((tag) => {
-    const lowerTag = tag.toLowerCase();
-    return (
-      !lowerTag.includes("@tailwindcss/browser@4") &&
-      !lowerTag.includes("@tailwindplus/elements@1")
+    const srcMatch = tag.match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const src = (srcMatch?.[2] ?? srcMatch?.[3] ?? srcMatch?.[4] ?? "").trim();
+    if (src) {
+      return ![
+        /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@4(?:[?#].*)?$/i,
+        /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindplus\/elements@1(?:[?#].*)?$/i,
+        /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
+        /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
+      ].some((pattern) => pattern.test(src));
+    }
+
+    const inlineScriptBody =
+      tag.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i)?.[1] ?? "";
+    return /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon)\b|window\.(?:top|parent)/i.test(
+      inlineScriptBody,
     );
   }).length;
   if (disallowedScriptCount > 0) {
@@ -160,6 +176,49 @@ export const evaluateWireHtmlQuality = ({
     score -= 8;
   }
 
+  let hasDashboardHardFailure = false;
+  if (dashboardRequested) {
+    const hasPlaceholderChartText =
+      /\[\s*placeholder[^\]]*\]|placeholder\s*:|coming soon chart|chart placeholder|todo chart/i.test(
+        html,
+      );
+    if (hasPlaceholderChartText) {
+      violations.push("chart_placeholder_detected");
+      score -= 30;
+      hasDashboardHardFailure = true;
+    }
+
+    const hasChartJsScript =
+      /<script\b[^>]*src\s*=\s*("|\')https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#][^"']*)?\1[^>]*>\s*<\/script>/i.test(
+        html,
+      ) ||
+      /<script\b[^>]*src\s*=\s*("|\')https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#][^"']*)?\1[^>]*>\s*<\/script>/i.test(
+        html,
+      );
+    const hasCanvas = /<canvas[\s>]/i.test(html);
+    const hasSvgChartSignal =
+      /<svg[\s\S]*?(?:polyline|path|rect|line|circle)[\s\S]*?<\/svg>/i.test(html) &&
+      /(chart|trend|series|axis|bar|line|distribution)/i.test(html);
+    if (!((hasChartJsScript && hasCanvas) || hasSvgChartSignal)) {
+      violations.push("missing_chart_render_signal");
+      score -= 30;
+      hasDashboardHardFailure = true;
+    }
+
+    const svgTagCount = (html.match(/<svg[\s>]/gi) ?? []).length;
+    if (svgTagCount < 3) {
+      violations.push("missing_svg_icon_signal");
+      score -= 20;
+      hasDashboardHardFailure = true;
+    }
+
+    if (emojiCount >= 2) {
+      violations.push("emoji_icon_overuse_dashboard");
+      score -= 8;
+      hasDashboardHardFailure = true;
+    }
+  }
+
   const repeatedCardPatternCount = (
     html.match(/rounded-2xl\s+shadow-xl/gi) ?? []
   ).length;
@@ -174,7 +233,7 @@ export const evaluateWireHtmlQuality = ({
   }
 
   const finalScore = clampScore(score);
-  const isRenderable = hasHtmlTag && hasBodyTag;
+  const isRenderable = hasHtmlTag && hasBodyTag && !hasDashboardHardFailure;
   return {
     score: finalScore,
     violations: Array.from(new Set(violations)),

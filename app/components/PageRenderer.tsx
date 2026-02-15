@@ -61,6 +61,8 @@ export default React.memo(function PageRenderer({
   onPreviewPage,
   currentDevice,
 }: PageRendererProps) {
+  const MAX_IFRAME_HEIGHT = 5000;
+  const CHART_CANVAS_HEIGHT = 320;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
   const hasHtml =
@@ -76,18 +78,53 @@ export default React.memo(function PageRenderer({
     [hasHtml, page.iframeHtml, currentDevice.height],
   );
   const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
+  const stabilizeChartCanvases = React.useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+
+    const canvases = Array.from(doc.querySelectorAll("canvas"));
+    for (const canvas of canvases) {
+      const element = canvas as HTMLCanvasElement;
+      // Prevent responsive chart libraries from entering parent-child resize loops.
+      if (!element.style.height) {
+        element.style.height = `${CHART_CANVAS_HEIGHT}px`;
+      }
+      element.style.maxHeight = `${CHART_CANVAS_HEIGHT}px`;
+      element.style.minHeight = `${CHART_CANVAS_HEIGHT}px`;
+      element.style.width = "100%";
+      element.style.display = "block";
+      if (!element.hasAttribute("height")) {
+        element.setAttribute("height", String(CHART_CANVAS_HEIGHT));
+      }
+
+      const parent = element.parentElement;
+      if (parent) {
+        if (!parent.style.minHeight) {
+          parent.style.minHeight = `${CHART_CANVAS_HEIGHT}px`;
+        }
+        parent.style.overflow = "hidden";
+      }
+    }
+  }, []);
+
   const syncIframeHeight = React.useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
+    stabilizeChartCanvases();
+    // eslint-disable-next-line react-hooks/immutability
     doc.documentElement.style.overflow = "hidden";
     doc.body.style.overflow = "hidden";
-    const nextHeight = Math.max(
+    const measuredHeight = Math.max(
       currentDevice.height,
       doc.documentElement?.scrollHeight ?? 0,
       doc.body?.scrollHeight ?? 0,
     );
-    setIframeHeight(nextHeight);
-  }, [currentDevice.height]);
+    const boundedHeight = Math.min(
+      MAX_IFRAME_HEIGHT,
+      Math.max(currentDevice.height, measuredHeight),
+    );
+    setIframeHeight(boundedHeight);
+  }, [currentDevice.height, stabilizeChartCanvases]);
 
   const handleLoad = React.useCallback(() => {
     syncIframeHeight();

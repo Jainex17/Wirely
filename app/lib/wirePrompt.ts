@@ -173,6 +173,7 @@ Intent alignment (dashboard mode):
 - Main panel must be data-dense and include KPI cards plus at least 2 real chart renders (not placeholders).
 - Use Chart.js with exactly one ${CHARTJS_CDN} include and at least 2 <canvas> elements with unique ids.
 - Initialize charts in a single script block using deterministic sample datasets.
+- Put each canvas inside a fixed-height container (e.g., wrapper with Tailwind classes like "relative h-64 md:h-72") to prevent resize loops.
 - Include a table in the main content with data rows.
 - Use inline <svg> icons for navigation/KPI visuals; do not use emoji-only iconography.
 - Never output placeholder chart text such as "[Placeholder: ...]" or "coming soon chart".
@@ -247,6 +248,10 @@ Iframe/runtime constraints:
   - ${TAILWIND_CDN}
   - ${ELEMENTS_CDN}
   - ${CHARTJS_CDN} (dashboard/chart interfaces only)
+- Chart initialization template hint (dashboard mode):
+  - Add two canvases: <canvas id="geoTrendChart"> and <canvas id="engineSplitChart">.
+  - Wrap each canvas in a fixed-height container using Tailwind height utilities (for example "h-64").
+  - Add one DOMContentLoaded script that instantiates both charts with deterministic sample arrays.
 - Keep JS minimal and optional. No frameworks/build tools/import maps.
 - Do not rely on window.top/window.parent access or popups.
 - Keep output maintainable, around 140-260 lines.

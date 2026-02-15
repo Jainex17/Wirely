@@ -64,6 +64,28 @@ const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
   return clampPageCount(Number.parseInt(raw, 10));
 };
 
+const CHART_ICON_QUALITY_FAILURE_MESSAGE =
+  "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
+
+const hasChartIconQualityViolation = (violations: string[]) =>
+  violations.some((violation) =>
+    [
+      "chart_placeholder_detected",
+      "missing_chart_render_signal",
+      "missing_svg_icon_signal",
+      "emoji_icon_overuse_dashboard",
+    ].includes(violation),
+  );
+
+const getPrimaryGeneratedHtml = (content: string) => {
+  const parsedBatch = parseBatchWireOutput(content);
+  const firstBatchHtml = parsedBatch.htmlByIndex.find(
+    (candidate) => candidate.trim().length > 0,
+  );
+  if (firstBatchHtml) return firstBatchHtml;
+  return parseWireOutput(content).html;
+};
+
 const getAssistantDetails = (content: string) => {
   const parsedBatch = parseBatchWireOutput(content);
   if (parsedBatch.details) {
@@ -178,6 +200,7 @@ export default function WirePromptSidebar({
           const parsedBatch = parseBatchWireOutput(message.content, batchTargetPageIds.length);
           let successCount = 0;
           let failedCount = 0;
+          let chartIconFailureCount = 0;
 
           for (let index = 0; index < batchTargetPageIds.length; index += 1) {
             const targetPageId = batchTargetPageIds[index];
@@ -202,6 +225,9 @@ export default function WirePromptSidebar({
 
             if (!quality.isRenderable) {
               failedCount += 1;
+              if (hasChartIconQualityViolation(quality.violations)) {
+                chartIconFailureCount += 1;
+              }
               if (pendingBatchCreatedPageIdsRef.current.includes(targetPageId)) {
                 deletePage(targetPageId);
               }
@@ -213,8 +239,8 @@ export default function WirePromptSidebar({
           }
 
           if (successCount === 0) {
-            const fallbackParsed = parseWireOutput(message.content);
-            const fallbackNormalized = normalizeGeneratedHtml(fallbackParsed.html, {
+            const fallbackHtml = getPrimaryGeneratedHtml(message.content);
+            const fallbackNormalized = normalizeGeneratedHtml(fallbackHtml, {
               allowImages,
             });
             const fallbackQuality = evaluateWireHtmlQuality({
@@ -227,6 +253,13 @@ export default function WirePromptSidebar({
             if (fallbackQuality.isRenderable) {
               setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
               successCount = 1;
+            } else if (
+              /<html[\s>]/i.test(fallbackNormalized.html) &&
+              /<body[\s>]/i.test(fallbackNormalized.html)
+            ) {
+              setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
+              failedCount = Math.max(0, failedCount - 1);
+              successCount = 1;
             }
           }
 
@@ -235,6 +268,12 @@ export default function WirePromptSidebar({
           }
 
           if (failedCount > 0) {
+            if (chartIconFailureCount > 0) {
+              setErrorMessage(
+                `${failedCount} of ${batchTargetPageIds.length} variations failed. ${CHART_ICON_QUALITY_FAILURE_MESSAGE}`,
+              );
+              return;
+            }
             setErrorMessage(
               `${failedCount} of ${batchTargetPageIds.length} variations failed. ${successCount} generated successfully.`,
             );
@@ -250,8 +289,8 @@ export default function WirePromptSidebar({
           return;
         }
 
-        const initialParsed = parseWireOutput(message.content);
-        const initialNormalized = normalizeGeneratedHtml(initialParsed.html, {
+        const initialHtml = getPrimaryGeneratedHtml(message.content);
+        const initialNormalized = normalizeGeneratedHtml(initialHtml, {
           allowImages,
         });
         const initialQuality = evaluateWireHtmlQuality({
@@ -264,7 +303,9 @@ export default function WirePromptSidebar({
         if (!initialQuality.isRenderable) {
           rollbackPendingCreatedPages();
           setErrorMessage(
-            "Generated output was not renderable. Try a more specific prompt.",
+            hasChartIconQualityViolation(initialQuality.violations)
+              ? CHART_ICON_QUALITY_FAILURE_MESSAGE
+              : "Generated output was not renderable. Try a more specific prompt.",
           );
           return;
         }
