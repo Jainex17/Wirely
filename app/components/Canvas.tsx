@@ -15,10 +15,13 @@ interface CanvasProps {
   panOffset: { x: number; y: number };
   zoom: number;
   activeDevice: keyof typeof DEVICE_DIMENSIONS;
+  activeTool: "select" | "grab";
+  isPanning: boolean;
   onCanvasClick: () => void;
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
   onPreviewPage: (pageId: string) => void;
+  onToolChange: (tool: "select" | "grab") => void;
   onZoomChange: (zoom: number) => void;
   onReset: () => void;
 }
@@ -28,10 +31,13 @@ export default function Canvas({
   panOffset,
   zoom,
   activeDevice,
+  activeTool,
+  isPanning,
   onCanvasClick,
   onRenamePage,
   onDeletePage,
   onPreviewPage,
+  onToolChange,
   onZoomChange,
   onReset,
 }: CanvasProps) {
@@ -41,9 +47,12 @@ export default function Canvas({
   return (
     <div
       ref={canvasRef}
-      className="relative w-full h-full overflow-hidden select-none"
+      className={`relative w-full h-full overflow-hidden select-none ${
+        activeTool === "grab" ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
+      }`}
       onClick={onCanvasClick}
     >
+      <div className="pointer-events-none absolute inset-0 canvas-dots" />
       <div
         className="absolute"
         style={{
@@ -76,6 +85,8 @@ export default function Canvas({
         </div>
       </div>
       <CanvasToolbar
+        activeTool={activeTool}
+        onToolChange={onToolChange}
         zoom={zoom}
         onZoomChange={onZoomChange}
         onReset={onReset}

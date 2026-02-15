@@ -210,6 +210,17 @@
   mask-image: radial-gradient(circle at 50% 30%, black 0%, transparent 70%);
 }
 
+.canvas-dots {
+  background-image: radial-gradient(
+    circle,
+    rgba(100, 116, 139, 0.42) 1.2px,
+    transparent 1.25px
+  );
+  background-size: 20px 20px;
+  background-position: 0 0;
+  opacity: 0.9;
+}
+
 .glass-panel {
   background: color-mix(in srgb, var(--card) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);

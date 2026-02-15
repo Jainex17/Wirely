@@ -7,6 +7,8 @@ import PagePreviewModal from "./PagePreviewModal";
 
 const MIN_ZOOM = 5;
 const MAX_ZOOM = 200;
+const TRACKPAD_ZOOM_SENSITIVITY = 0.007;
+const MOUSE_WHEEL_ZOOM_SENSITIVITY = 0.0025;
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
@@ -16,7 +18,15 @@ export default function EditorWorkspace({
   sidebarMode = "default",
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const panDragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialPanX: number;
+    initialPanY: number;
+  } | null>(null);
   const [previewPageId, setPreviewPageId] = useState<string | null>(null);
+  const [activeTool, setActiveTool] = useState<"select" | "grab">("select");
+  const [isPanning, setIsPanning] = useState(false);
 
   const {
     zoom,
@@ -43,8 +53,9 @@ export default function EditorWorkspace({
   }, [setZoom, setPanOffset]);
 
   const handleCanvasClick = useCallback(() => {
+    if (activeTool === "grab") return;
     setSelectedSection(null);
-  }, [setSelectedSection]);
+  }, [activeTool, setSelectedSection]);
 
   const handlePreviewPage = useCallback((pageId: string) => {
     setPreviewPageId(pageId);
@@ -76,7 +87,13 @@ export default function EditorWorkspace({
 
       if (e.ctrlKey || e.metaKey) {
         const delta = -e.deltaY;
-        const zoomFactor = 1 + delta * 0.001;
+        const isLikelyMouseWheel =
+          e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL ||
+          Math.abs(e.deltaY) >= 40;
+        const sensitivity = isLikelyMouseWheel
+          ? MOUSE_WHEEL_ZOOM_SENSITIVITY
+          : TRACKPAD_ZOOM_SENSITIVITY;
+        const zoomFactor = Math.exp(delta * sensitivity);
         const newZoom = Math.min(
           Math.max(currentZoom * zoomFactor, MIN_ZOOM),
           MAX_ZOOM,
@@ -114,6 +131,63 @@ export default function EditorWorkspace({
     };
   }, []);
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const stopPanning = () => {
+      panDragRef.current = null;
+      setIsPanning(false);
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (activeTool !== "grab" || e.button !== 0) return;
+
+      const target = e.target;
+      if (
+        target instanceof Element &&
+        target.closest('[data-scroll-lock="modal"]')
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      const state = useEditorStore.getState();
+      panDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialPanX: state.panOffset.x,
+        initialPanY: state.panOffset.y,
+      };
+      setIsPanning(true);
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dragState = panDragRef.current;
+      if (!dragState) return;
+
+      const deltaX = e.clientX - dragState.startX;
+      const deltaY = e.clientY - dragState.startY;
+      useEditorStore.getState().setPanOffset({
+        x: dragState.initialPanX + deltaX,
+        y: dragState.initialPanY + deltaY,
+      });
+    };
+
+    canvas.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopPanning);
+    window.addEventListener("blur", stopPanning);
+
+    return () => {
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopPanning);
+      window.removeEventListener("blur", stopPanning);
+      stopPanning();
+    };
+  }, [activeTool]);
+
   return (
     <div data-sidebar-mode={sidebarMode} className="relative w-full h-full">
       <Canvas
@@ -121,10 +195,13 @@ export default function EditorWorkspace({
         panOffset={panOffset}
         zoom={zoom}
         activeDevice={activeDevice}
+        activeTool={activeTool}
+        isPanning={isPanning}
         onCanvasClick={handleCanvasClick}
         onRenamePage={renamePage}
         onDeletePage={deletePage}
         onPreviewPage={handlePreviewPage}
+        onToolChange={setActiveTool}
         onZoomChange={handleZoomChange}
         onReset={handleReset}
       />

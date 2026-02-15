@@ -1,20 +1,22 @@
 "use client";
 
-import { useState } from "react";
 import { Hand, MousePointer2, Minus } from "lucide-react";
 
 interface CanvasToolbarProps {
+  activeTool: "select" | "grab";
+  onToolChange: (tool: "select" | "grab") => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onReset: () => void;
 }
 
 export default function CanvasToolbar({
+  activeTool,
+  onToolChange,
   zoom,
   onZoomChange,
   onReset,
 }: CanvasToolbarProps) {
-  const [activeTool, setActiveTool] = useState<"select" | "grab">("select");
   const zoomLevels = [5, 10, 25, 50, 75, 100, 125, 150, 200];
 
   const handleZoomIn = () => {
@@ -37,7 +39,7 @@ export default function CanvasToolbar({
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-secondary rounded-[var(--radius)] border border-border p-1 z-20">
       <div className="flex items-center gap-1 px-1">
         <button
-          onClick={() => setActiveTool("select")}
+          onClick={() => onToolChange("select")}
           className={`p-1.5 rounded transition-colors ${
             activeTool === "select"
               ? "bg-accent text-foreground"
@@ -48,7 +50,7 @@ export default function CanvasToolbar({
           <MousePointer2 className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={() => setActiveTool("grab")}
+          onClick={() => onToolChange("grab")}
           className={`p-1.5 rounded transition-colors ${
             activeTool === "grab"
               ? "bg-accent text-foreground"
