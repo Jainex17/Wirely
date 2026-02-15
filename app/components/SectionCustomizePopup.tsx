@@ -143,7 +143,7 @@ export default function SectionCustomizePopup({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setView("layout")}
                   className="flex items-center justify-center gap-2 px-4 py-2 bg-card border border-border rounded hover:border-ring hover:text-primary transition-all group text-foreground"
@@ -177,7 +177,7 @@ export default function SectionCustomizePopup({
                 <button
                   key={layout.id}
                   onClick={() => onLayoutSelect(layout.id)}
-                  className="flex items-center gap-3 p-3 text-left rounded border border-border hover:border-ring hover:bg-secondary transition-all group"
+                  className="flex items-center gap-2 p-3 text-left rounded border border-border hover:border-ring hover:bg-secondary transition-all group"
                 >
                   <div className="w-10 h-10 rounded bg-secondary flex-shrink-0 group-hover:bg-secondary transition-colors flex items-center justify-center text-muted-foreground group-hover:text-primary">
                     <Layout className="w-5 h-5" />
@@ -199,7 +199,7 @@ export default function SectionCustomizePopup({
                 <button
                   key={scheme.id}
                   onClick={() => handleSchemeSelect(scheme.colors[0])}
-                  className="flex items-center gap-3 p-3 text-left rounded border border-border hover:border-ring hover:bg-secondary transition-all group"
+                  className="flex items-center gap-2 p-3 text-left rounded border border-border hover:border-ring hover:bg-secondary transition-all group"
                 >
                   <div className="flex flex-col gap-1">
                     <div className="flex gap-1">

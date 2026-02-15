@@ -221,7 +221,7 @@ const ensureDocumentSkeleton = (input: string) => {
 <html lang="en">
 <head>
 ${REQUIRED_CHARSET}
-<title>Generated Page</title>
+<title>Page</title>
 ${REQUIRED_VIEWPORT}
 ${REQUIRED_TAILWIND}
 ${REQUIRED_ELEMENTS}
@@ -258,7 +258,7 @@ ${contentWithoutDoctype}
     .trim();
 
   const hasTitle = /<title[\s>]/i.test(safeHeadInner);
-  const titleTag = hasTitle ? "" : "<title>Generated Page</title>";
+  const titleTag = hasTitle ? "" : "<title>Page</title>";
 
   const htmlOpenTag = (() => {
     if (!htmlOpenTagMatch) return '<html lang="en">';
@@ -295,7 +295,7 @@ export const normalizeGeneratedHtml = (
 
   if (!html) {
     violations.push("missing_html_payload");
-    html = "<main><section><h1>Generated Page</h1></section></main>";
+    html = "<main><section><h1>Page</h1></section></main>";
   }
 
   const styleTagCount = countMatches(html, /<style\b[\s\S]*?<\/style>/gi);

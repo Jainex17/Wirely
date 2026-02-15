@@ -43,7 +43,7 @@ export default function AppHeader({
         .join("")
         .slice(0, 2)
         .toUpperCase(),
-    [name]
+    [name],
   );
 
   const handleLogout = async () => {
@@ -54,7 +54,7 @@ export default function AppHeader({
 
   return (
     <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {showBackButton ? (
           <Button
             type="button"
@@ -76,13 +76,13 @@ export default function AppHeader({
         )}
         <h1 className="text-base font-semibold text-foreground">{title}</h1>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+                className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
               >
                 <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                   {name}

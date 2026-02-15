@@ -25,7 +25,7 @@ export const createProject = async (userId: string, title: string) => {
     .insert(projectPages)
     .values({
       projectId: project.id,
-      title: "Generated Page",
+      title: "Page 1",
       sortOrder: 0,
     })
     .returning();

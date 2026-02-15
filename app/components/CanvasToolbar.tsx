@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Hand, MousePointer2, Minus, Plus } from "lucide-react";
+import { Hand, MousePointer2, Minus } from "lucide-react";
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -83,10 +83,10 @@ export default function CanvasToolbar({
         <button
           onClick={handleZoomIn}
           disabled={zoom >= zoomLevels[zoomLevels.length - 1]}
-          className="p-1.5 text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-2 py-1 text-xs font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Zoom in"
         >
-          <Plus className="w-3.5 h-3.5" />
+          In
         </button>
       </div>
     </div>

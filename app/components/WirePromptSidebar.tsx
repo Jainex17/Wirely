@@ -88,10 +88,19 @@ const getPrimaryGeneratedHtml = (content: string) => {
 
 const getAssistantDetails = (content: string) => {
   const parsedBatch = parseBatchWireOutput(content);
-  if (parsedBatch.details) {
+  const hasBatchHtmlSections = parsedBatch.htmlByIndex.some(
+    (candidate) => candidate.trim().length > 0,
+  );
+  if (hasBatchHtmlSections && parsedBatch.details) {
     return parsedBatch.details;
   }
   const singleDetails = parseWireOutput(content).details;
+  const detailsWithoutHtmlMarker = singleDetails
+    .replace(/\n?\s*HTML\s*:[\s\S]*$/i, "")
+    .trim();
+  if (detailsWithoutHtmlMarker) {
+    return detailsWithoutHtmlMarker;
+  }
   const htmlStart = singleDetails.search(/<!doctype html>|<html[\s>]/i);
   if (htmlStart >= 0) {
     return singleDetails.slice(0, htmlStart).trim();
@@ -468,77 +477,84 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     if (autoRunRef.current) return;
+    const autoRunTimerId = window.setTimeout(() => {
+      if (autoRunRef.current) return;
 
-    const storedModel = sessionStorage.getItem(`wireModel:${wireId}`);
-    const resolvedModel = isWireModelName(storedModel)
-      ? storedModel
-      : activeModelName;
-    if (isWireModelName(storedModel)) {
-      setActiveModelName(storedModel);
-    }
-    sessionStorage.removeItem(`wireModel:${wireId}`);
-
-    const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
-    const storedPageCount = parseStoredPageCount(
-      sessionStorage.getItem(`wirePageCount:${wireId}`),
-    );
-
-    autoRunRef.current = true;
-    sessionStorage.removeItem(`wirePrompt:${wireId}`);
-    sessionStorage.removeItem(`wirePageCount:${wireId}`);
-
-    if (!storedPrompt) return;
-
-    setPrompt("");
-
-    const runInitialBatch = async () => {
-      let firstPageId = useEditorStore.getState().pages[0]?.id;
-      if (!firstPageId) {
-        firstPageId = createPage("Generated Page 1");
-      }
-      if (!firstPageId) return;
-
-      const targets: Array<{ pageId: string; isCreated: boolean }> = [
-        { pageId: firstPageId, isCreated: false },
-      ];
-
-      for (let index = 1; index < storedPageCount; index += 1) {
-        const nextPageNumber = useEditorStore.getState().pages.length + 1;
-        const createdId = createPage(`Generated Page ${nextPageNumber}`);
-        targets.push({ pageId: createdId, isCreated: true });
+      const storedModel = sessionStorage.getItem(`wireModel:${wireId}`);
+      const resolvedModel = isWireModelName(storedModel)
+        ? storedModel
+        : activeModelName;
+      if (isWireModelName(storedModel)) {
+        setActiveModelName(storedModel);
       }
 
-      try {
-        if (storedPageCount === 1) {
-          await startGenerationForPage({
-            promptText: storedPrompt,
-            targetPageId: targets[0].pageId,
-            modelName: resolvedModel,
-            force: true,
-          });
-          return;
+      const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
+      const storedPageCount = parseStoredPageCount(
+        sessionStorage.getItem(`wirePageCount:${wireId}`),
+      );
+
+      autoRunRef.current = true;
+      sessionStorage.removeItem(`wireModel:${wireId}`);
+      sessionStorage.removeItem(`wirePrompt:${wireId}`);
+      sessionStorage.removeItem(`wirePageCount:${wireId}`);
+
+      if (!storedPrompt) return;
+
+      setPrompt("");
+
+      const runInitialBatch = async () => {
+        let firstPageId = useEditorStore.getState().pages[0]?.id;
+        if (!firstPageId) {
+          firstPageId = createPage("Page 1");
+        }
+        if (!firstPageId) return;
+
+        const targets: Array<{ pageId: string; isCreated: boolean }> = [
+          { pageId: firstPageId, isCreated: false },
+        ];
+
+        for (let index = 1; index < storedPageCount; index += 1) {
+          const nextPageNumber = useEditorStore.getState().pages.length + 1;
+          const createdId = createPage(`Page ${nextPageNumber}`);
+          targets.push({ pageId: createdId, isCreated: true });
         }
 
-        const targetPageIds = targets.map((target) => target.pageId);
-        const createdPageIds = targets
-          .filter((target) => target.isCreated)
-          .map((target) => target.pageId);
-        markPagesAsLoading(targetPageIds);
+        try {
+          if (storedPageCount === 1) {
+            await startGenerationForPage({
+              promptText: storedPrompt,
+              targetPageId: targets[0].pageId,
+              modelName: resolvedModel,
+              force: true,
+            });
+            return;
+          }
 
-        await startBatchGeneration({
-          promptText: storedPrompt,
-          targetPageIds,
-          createdPageIds,
-          modelName: resolvedModel,
-        });
-      } catch {
-        setErrorMessage(
-          `Could not generate ${storedPageCount} pages in one request. Please try again.`,
-        );
-      }
+          const targetPageIds = targets.map((target) => target.pageId);
+          const createdPageIds = targets
+            .filter((target) => target.isCreated)
+            .map((target) => target.pageId);
+          markPagesAsLoading(targetPageIds);
+
+          await startBatchGeneration({
+            promptText: storedPrompt,
+            targetPageIds,
+            createdPageIds,
+            modelName: resolvedModel,
+          });
+        } catch {
+          setErrorMessage(
+            `Could not generate ${storedPageCount} pages in one request. Please try again.`,
+          );
+        }
+      };
+
+      void runInitialBatch();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(autoRunTimerId);
     };
-
-    void runInitialBatch();
   }, [
     activeModelName,
     createPage,

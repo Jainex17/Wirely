@@ -28,6 +28,7 @@ import {
   ArrowUp,
   ChevronDown,
   Circle,
+  Loader2,
   MoreHorizontal,
   Trash2,
 } from "lucide-react";
@@ -52,6 +53,28 @@ interface ProjectsResponse {
     updatedAt: string;
   }>;
 }
+
+const PAGE_VARIATION_OPTIONS: Array<{
+  value: 1 | 2 | 3;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: 1,
+    label: "1 design",
+    hint: "Generate a single page design",
+  },
+  {
+    value: 2,
+    label: "2 variations",
+    hint: "Generate 2 pages with different designs",
+  },
+  {
+    value: 3,
+    label: "3 variations",
+    hint: "Generate 3 pages with different designs",
+  },
+];
 
 export default function Home() {
   const router = useRouter();
@@ -252,7 +275,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-3 overflow-hidden">
+    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-2 overflow-hidden">
       <AppHeader
         user={user}
         title="Wirely"
@@ -317,17 +340,21 @@ export default function Home() {
                           size="sm"
                           className="bg-transparent border-border hover:bg-muted"
                         >
-                          Pages: {selectedPageCount}
+                          Variations: {selectedPageCount}
                           <ChevronDown size={16} className="ml-2" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-card border-border">
-                        {[1, 2, 3].map((count) => (
+                        {PAGE_VARIATION_OPTIONS.map((option) => (
                           <DropdownMenuItem
-                            key={count}
-                            onClick={() => setSelectedPageCount(count as 1 | 2 | 3)}
+                            key={option.value}
+                            onClick={() => setSelectedPageCount(option.value)}
+                            className="flex flex-col items-start"
                           >
-                            {count} {count === 1 ? "page" : "pages"}
+                            <span>{option.label}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {option.hint}
+                            </span>
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
@@ -342,7 +369,11 @@ export default function Home() {
                         : "bg-muted text-muted-foreground"
                     }
                   >
-                    <ArrowUp size={16} />
+                    {isSubmitting ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <ArrowUp size={16} />
+                    )}
                   </Button>
                 </div>
               </div>
@@ -367,10 +398,7 @@ export default function Home() {
               {isLoadingHistory ? (
                 <div className="animate-pulse mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
                   {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="p-4 bg-muted rounded-lg h-32"
-                    >
+                    <div key={i} className="p-4 bg-muted rounded-lg h-32">
                       <div className="h-5 bg-muted-foreground/20 rounded w-3/4 mb-4"></div>
                       <div className="flex items-center justify-between mt-auto">
                         <div className="h-4 bg-muted-foreground/20 rounded w-12"></div>
@@ -388,7 +416,9 @@ export default function Home() {
                         className="flex flex-col p-4 bg-card rounded-lg h-full min-h-[120px] transition-colors"
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-medium line-clamp-2 flex-1">{project.title}</span>
+                          <span className="font-medium line-clamp-2 flex-1">
+                            {project.title}
+                          </span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button

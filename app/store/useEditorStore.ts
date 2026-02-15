@@ -59,7 +59,7 @@ const generateEmptyState = (): Pick<
   ProjectState,
   "pages" | "sections" | "selectedSectionId" | "draggingSectionId"
 > => ({
-  pages: [{ id: "page-home", title: "Generated Page", sections: [] }],
+  pages: [{ id: "page-home", title: "Page 1", sections: [] }],
   sections: {},
   selectedSectionId: null,
   draggingSectionId: null,
@@ -198,13 +198,14 @@ export const useEditorStore = create<EditorState>()(
           return { pages: newPages };
         }),
 
-      createPage: (title = "Generated Page", afterPageId) => {
+      createPage: (title, afterPageId) => {
         const newPageId = createPageId();
 
         set((state) => {
+          const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
           const newPage: PageData = {
             id: newPageId,
-            title,
+            title: resolvedTitle,
             sections: [],
           };
 
@@ -268,7 +269,7 @@ export const useEditorStore = create<EditorState>()(
           pages:
             pages.length > 0
               ? pages
-              : [{ id: "page-home", title: "Generated Page", sections: [] }],
+              : [{ id: "page-home", title: "Page 1", sections: [] }],
         })),
 
       deletePage: (pageId) =>

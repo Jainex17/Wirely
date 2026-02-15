@@ -73,23 +73,37 @@ export default function WireEditor({
 
     const latestAssistant = [...initialMessages]
       .reverse()
-      .find((message) => message.role === "assistant" && message.content.trim());
+      .find(
+        (message) => message.role === "assistant" && message.content.trim(),
+      );
     if (!latestAssistant) return;
 
     const latestUserPrompt = [...initialMessages]
       .reverse()
-      .find((message) => message.role === "user" && message.content.trim())?.content;
+      .find(
+        (message) => message.role === "user" && message.content.trim(),
+      )?.content;
     const allowImages = userExplicitlyRequestedImages(latestUserPrompt ?? "");
     const parsedBatch = parseBatchWireOutput(latestAssistant.content);
-    const batchHtml = parsedBatch.htmlByIndex.filter((html) => html.trim().length > 0);
+    const batchHtml = parsedBatch.htmlByIndex.filter(
+      (html) => html.trim().length > 0,
+    );
     const htmlCandidates =
-      batchHtml.length > 0 ? batchHtml : [parseWireOutput(latestAssistant.content).html];
-    const validCandidates = htmlCandidates.filter((html) => html.trim().length > 0);
+      batchHtml.length > 0
+        ? batchHtml
+        : [parseWireOutput(latestAssistant.content).html];
+    const validCandidates = htmlCandidates.filter(
+      (html) => html.trim().length > 0,
+    );
     if (validCandidates.length === 0) return;
 
     const pageIds = [...initialProject.pages.map((page) => page.id)];
-    for (let index = pageIds.length; index < validCandidates.length; index += 1) {
-      const createdId = createPage(`Generated Page ${index + 1}`);
+    for (
+      let index = pageIds.length;
+      index < validCandidates.length;
+      index += 1
+    ) {
+      const createdId = createPage(`Page ${index + 1}`);
       pageIds.push(createdId);
     }
 
@@ -127,9 +141,9 @@ export default function WireEditor({
   };
 
   return (
-    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-3 overflow-hidden">
+    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-2 overflow-hidden">
       <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div>
             <Button
               type="button"
@@ -149,12 +163,12 @@ export default function WireEditor({
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+                className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
               >
                 <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                   {name}
@@ -164,7 +178,10 @@ export default function WireEditor({
                 </div>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44 border-0 shadow-none">
+            <DropdownMenuContent
+              align="end"
+              className="w-44 border-0 shadow-none"
+            >
               <DropdownMenuItem onClick={() => router.push("/profile")}>
                 Profile
               </DropdownMenuItem>
@@ -179,11 +196,11 @@ export default function WireEditor({
           </DropdownMenu>
         </div>
       </header>
-      <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-3">
-        <div className="w-[70%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+      <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
+        <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
           <EditorWorkspace sidebarMode="wire" />
         </div>
-        <div className="w-[30%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+        <div className="w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
           <WirePromptSidebar
             variant="panel"
             wireId={wireId}

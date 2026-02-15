@@ -1,9 +1,8 @@
 import React from "react";
-import { FileIcon, PlusIcon } from "lucide-react";
+import { FileIcon } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import PageOptionsMenu from "./PageOptionsMenu";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
-import { Button } from "@/components/ui/button";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -44,7 +43,6 @@ interface PageRendererProps {
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
-  onAddPage: (afterPageId: string) => void;
   onPreviewPage: (pageId: string) => void;
   currentDevice: {
     width: number;
@@ -57,7 +55,6 @@ export default React.memo(function PageRenderer({
   page,
   onRenamePage,
   onDeletePage,
-  onAddPage,
   onPreviewPage,
   currentDevice,
 }: PageRendererProps) {
@@ -137,18 +134,7 @@ export default React.memo(function PageRenderer({
   }, [currentDevice.height, page.id, page.iframeHtml]);
 
   return (
-    <div className="relative flex flex-col items-center gap-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => onAddPage(page.id)}
-        title="Add new page next to this"
-        aria-label={`Add page after ${page.title}`}
-        className="absolute -right-12 top-[10px] h-8 w-8 rounded-full border border-border bg-card shadow-sm hover:bg-accent"
-      >
-        <PlusIcon className="h-4 w-4" />
-      </Button>
+    <div className="relative flex flex-col items-center gap-2">
       <div className="w-full h-[50px] flex items-center pl-4 pr-2 rounded-[var(--radius)] justify-between bg-secondary">
         <p className="text-foreground font-medium text-md flex items-center gap-2">
           <FileIcon width={18} />
@@ -178,7 +164,7 @@ export default React.memo(function PageRenderer({
             onLoad={handleLoad}
             className="h-full w-full border-0 pointer-events-none bg-white"
             style={{ overflow: "hidden" }}
-            loading="lazy"
+            loading="eager"
             sandbox="allow-same-origin allow-scripts"
             referrerPolicy="no-referrer"
             scrolling="no"

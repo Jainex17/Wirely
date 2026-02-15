@@ -33,7 +33,7 @@ export default async function WirePage({ params }: WirePageProps) {
       : [
           {
             id: "page-home",
-            title: "Generated Page",
+            title: "Page 1",
             pageHtml: "",
           },
         ];
