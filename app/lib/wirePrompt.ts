@@ -23,6 +23,7 @@ interface ComposeWirePromptOptions {
 const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
 const ELEMENTS_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
 const CHARTJS_CDN = `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>`;
+const BOOTSTRAP_ICONS_CDN = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">`;
 
 export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
   {
@@ -175,7 +176,7 @@ Intent alignment (dashboard mode):
 - Initialize charts in a single script block using deterministic sample datasets.
 - Put each canvas inside a fixed-height container (e.g., wrapper with Tailwind classes like "relative h-64 md:h-72") to prevent resize loops.
 - Include a table in the main content with data rows.
-- Use inline <svg> icons for navigation/KPI visuals; do not use emoji-only iconography.
+- Use Bootstrap Icons classes (e.g., bi-house, bi-graph-up, bi-gear) for navigation/KPI visuals; do not use emoji-only iconography.
 - Never output placeholder chart text such as "[Placeholder: ...]" or "coming soon chart".
 ${hasUnified && hasActive && hasFoundational ? "- Include switchable views/tabs for Unified, Active, and Foundational in the main dashboard." : "- If user asks for multiple named views, provide clear switching controls between those views."}
 ${hasTargetQuery ? "- The table must include a Target Query column." : "- Include practical metric columns in table form."}
@@ -208,6 +209,7 @@ HTML:
 - Include ${TAILWIND_CDN} in <head>.
 - Include ${ELEMENTS_CDN} in <head>.
 - For dashboard/chart UIs, include ${CHARTJS_CDN} in <head>.
+- Include ${BOOTSTRAP_ICONS_CDN} in <head>.
 - Include <meta name="viewport" content="width=device-width, initial-scale=1.0">.
 - Set explicit base styling on <body> with Tailwind classes, including background and text color (do not rely on parent/container background).
 - Do not include <style> tags.
@@ -236,6 +238,10 @@ Quality requirements:
 - Use a clear palette with dominant colors and controlled accents.
 - Use depth/atmosphere (gradients, texture, pattern, or layered surfaces) when appropriate to the chosen tone.
 - Avoid emoji-only iconography.
+- Prefer searchable Bootstrap Icons by class name and use semantic icon names for context (for example: bi-house, bi-graph-up, bi-gear, bi-people, bi-lightning).
+- For decorative icons, use markup like <i class="bi bi-ICON_NAME" aria-hidden="true"></i>.
+- When adding icons, explicitly tune icon presentation with Tailwind utility classes for size, color, margin, and padding so spacing/alignment matches surrounding text and controls.
+- Do not use icon-only controls unless an explicit aria-label is present.
 - Avoid giant clip-path blobs and noisy ornamental effects.
 ${buildImageRule(allowImages)}
 ${buildIntentGuardrails(userPrompt)}

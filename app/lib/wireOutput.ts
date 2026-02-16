@@ -8,6 +8,8 @@ const REQUIRED_TAILWIND =
   '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>';
 const REQUIRED_ELEMENTS =
   '<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>';
+const REQUIRED_BOOTSTRAP_ICONS_LINK =
+  '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">';
 const CHARTJS_ALLOWED_SRC_PATTERNS = [
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
@@ -225,6 +227,7 @@ ${REQUIRED_CHARSET}
 ${REQUIRED_VIEWPORT}
 ${REQUIRED_TAILWIND}
 ${REQUIRED_ELEMENTS}
+${REQUIRED_BOOTSTRAP_ICONS_LINK}
 </head>
 <body>
 ${contentWithoutDoctype}
@@ -255,6 +258,10 @@ ${contentWithoutDoctype}
       /<script\b[^>]*src\s*=\s*["']https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindplus\/elements@1[^"']*["'][^>]*>\s*<\/script>/gi,
       "",
     )
+    .replace(
+      /<link\b[^>]*href\s*=\s*["']https:\/\/cdn\.jsdelivr\.net\/npm\/bootstrap-icons(?:@\d+(?:\.\d+(?:\.\d+)?)?)?\/font\/bootstrap-icons(?:\.min)?\.css(?:[?#][^"']*)?["'][^>]*>/gi,
+      "",
+    )
     .trim();
 
   const hasTitle = /<title[\s>]/i.test(safeHeadInner);
@@ -277,6 +284,7 @@ ${titleTag}
 ${REQUIRED_VIEWPORT}
 ${REQUIRED_TAILWIND}
 ${REQUIRED_ELEMENTS}
+${REQUIRED_BOOTSTRAP_ICONS_LINK}
 ${safeHeadInner}
 </head>
 ${bodyOpenTag}
