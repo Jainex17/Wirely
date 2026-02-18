@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import {
   conversationMessages,
@@ -87,14 +87,15 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
         .select()
         .from(conversationMessages)
         .where(eq(conversationMessages.conversationId, conversation.id))
-        .orderBy(asc(conversationMessages.createdAt))
+        .orderBy(desc(conversationMessages.createdAt))
+        .limit(80)
     : [];
 
   return {
     project,
     pages,
     conversation,
-    messages,
+    messages: [...messages].reverse(),
   };
 };
 
@@ -122,6 +123,150 @@ export const createProjectPage = async ({
     .returning();
 
   return page ?? null;
+};
+
+export const touchProjectUpdatedAt = async (projectId: string) => {
+  const db = getDb();
+  await db
+    .update(projects)
+    .set({ updatedAt: new Date() })
+    .where(eq(projects.id, projectId));
+};
+
+export const getProjectPageForUser = async ({
+  projectId,
+  pageId,
+  userId,
+}: {
+  projectId: string;
+  pageId: string;
+  userId: string;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const [page] = await db
+    .select()
+    .from(projectPages)
+    .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+    .limit(1);
+
+  return page ?? null;
+};
+
+export const createProjectPageForUser = async ({
+  projectId,
+  userId,
+  title,
+}: {
+  projectId: string;
+  userId: string;
+  title: string;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const [lastPage] = await db
+    .select({ sortOrder: projectPages.sortOrder })
+    .from(projectPages)
+    .where(eq(projectPages.projectId, projectId))
+    .orderBy(desc(projectPages.sortOrder))
+    .limit(1);
+
+  const [created] = await db
+    .insert(projectPages)
+    .values({
+      projectId,
+      title,
+      sortOrder: (lastPage?.sortOrder ?? -1) + 1,
+      htmlContent: "",
+    })
+    .returning();
+
+  if (!created) return null;
+  await touchProjectUpdatedAt(projectId);
+  return created;
+};
+
+export const updateProjectPageForUser = async ({
+  projectId,
+  pageId,
+  userId,
+  title,
+  htmlContent,
+}: {
+  projectId: string;
+  pageId: string;
+  userId: string;
+  title?: string;
+  htmlContent?: string;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const [updated] = await db
+    .update(projectPages)
+    .set({
+      ...(title !== undefined ? { title } : {}),
+      ...(htmlContent !== undefined ? { htmlContent } : {}),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+    .returning();
+
+  if (!updated) return null;
+  await touchProjectUpdatedAt(projectId);
+  return updated;
+};
+
+export const deleteProjectPageForUser = async ({
+  projectId,
+  pageId,
+  userId,
+}: {
+  projectId: string;
+  pageId: string;
+  userId: string;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) {
+    return { deleted: null, notFound: true, isLastPage: false };
+  }
+
+  const [page] = await db
+    .select({ id: projectPages.id })
+    .from(projectPages)
+    .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+    .limit(1);
+
+  if (!page) {
+    return { deleted: null, notFound: true, isLastPage: false };
+  }
+
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(projectPages)
+    .where(eq(projectPages.projectId, projectId));
+
+  if ((countRow?.count ?? 0) <= 1) {
+    return { deleted: null, notFound: false, isLastPage: true };
+  }
+
+  const [deleted] = await db
+    .delete(projectPages)
+    .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+    .returning();
+
+  if (!deleted) {
+    return { deleted: null, notFound: true, isLastPage: false };
+  }
+
+  await touchProjectUpdatedAt(projectId);
+  return { deleted, notFound: false, isLastPage: false };
 };
 
 export const updateProjectForUser = async ({
@@ -154,10 +299,12 @@ export const appendConversationMessage = async ({
   projectId,
   role,
   content,
+  targetPageId,
 }: {
   projectId: string;
   role: ConversationRole;
   content: string;
+  targetPageId?: string;
 }) => {
   const db = getDb();
 
@@ -184,9 +331,11 @@ export const appendConversationMessage = async ({
       conversationId: conversation.id,
       role,
       content,
+      ...(targetPageId ? { targetPageId } : {}),
     })
     .returning();
 
+  await touchProjectUpdatedAt(projectId);
   return message;
 };
 

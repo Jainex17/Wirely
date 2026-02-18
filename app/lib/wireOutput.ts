@@ -64,6 +64,27 @@ const extractHtmlFallback = (value: string) => {
   return value.trim();
 };
 
+const BATCH_HTML_MARKER_PATTERN =
+  /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?(?:(?:VARIANT|VARIATION)[_\s-]*(\d+)(?:[_\s-]*HTML)?|HTML[_\s-]*(\d+))(?:\*\*)?\s*:?\s*/gim;
+
+const extractHtmlDocuments = (value: string) => {
+  const doctypeDocuments = Array.from(
+    value.matchAll(/<!doctype html>[\s\S]*?(?=(?:<!doctype html>|$))/gi),
+  )
+    .map((match) => match[0].trim())
+    .filter(Boolean);
+  if (doctypeDocuments.length > 0) return doctypeDocuments;
+
+  return Array.from(value.matchAll(/<html[\s\S]*?<\/html>/gi))
+    .map((match) => match[0].trim())
+    .filter(Boolean);
+};
+
+const extractFirstHtmlDocument = (value: string) => {
+  const documents = extractHtmlDocuments(value);
+  return documents[0] ?? value.trim();
+};
+
 export const parseWireOutput = (raw: string): WireParsedOutput => {
   const source = stripCodeFences(raw ?? "");
   const upperSource = source.toUpperCase();
@@ -111,24 +132,48 @@ export const parseBatchWireOutput = (
   const source = stripCodeFences(raw ?? "");
   const upperSource = source.toUpperCase();
   const detailsIndex = upperSource.indexOf(DETAILS_MARKER);
+  const htmlDocuments = extractHtmlDocuments(source);
   const markerMatches = Array.from(
-    source.matchAll(/(?:VARIANT_(\d+)_HTML|HTML_(\d+))\s*:/gi),
+    source.matchAll(BATCH_HTML_MARKER_PATTERN),
   )
     .map((match) => {
       const indexRaw = match[1] ?? match[2];
       const index = Number.parseInt(indexRaw, 10);
+      const fullMatch = match[0] ?? "";
+      const matchStart = match.index ?? 0;
+      const markerOffset = fullMatch.search(/[^\n]/);
+      const markerIndex = matchStart + (markerOffset >= 0 ? markerOffset : 0);
       return Number.isFinite(index) && index > 0
-        ? { markerIndex: match.index ?? 0, index }
+        ? {
+            markerIndex,
+            index,
+            contentStart: matchStart + fullMatch.length,
+          }
         : null;
     })
-    .filter((item): item is { markerIndex: number; index: number } => item !== null)
+    .filter(
+      (
+        item,
+      ): item is {
+        markerIndex: number;
+        index: number;
+        contentStart: number;
+      } => item !== null,
+    )
     .sort((a, b) => a.markerIndex - b.markerIndex);
 
-  const firstHtmlMarkerIndex = markerMatches[0]?.markerIndex ?? source.length;
+  const firstHtmlDocumentIndex = (() => {
+    const firstDocument = htmlDocuments[0];
+    if (!firstDocument) return -1;
+    return source.indexOf(firstDocument);
+  })();
+  const firstHtmlBoundaryIndex =
+    markerMatches[0]?.markerIndex ??
+    (firstHtmlDocumentIndex >= 0 ? firstHtmlDocumentIndex : source.length);
   const details =
     detailsIndex >= 0
       ? source
-          .slice(detailsIndex + DETAILS_MARKER.length, firstHtmlMarkerIndex)
+          .slice(detailsIndex + DETAILS_MARKER.length, firstHtmlBoundaryIndex)
           .trim()
       : "";
 
@@ -136,21 +181,44 @@ export const parseBatchWireOutput = (
     (max, marker) => Math.max(max, marker.index),
     0,
   );
-  const totalCount = Math.max(expectedCount ?? 0, maxCountFromMarkers);
+  const totalCount = Math.max(
+    expectedCount ?? 0,
+    maxCountFromMarkers,
+    htmlDocuments.length,
+  );
   const htmlByIndex = Array.from({ length: totalCount }, () => "");
 
   for (let i = 0; i < markerMatches.length; i += 1) {
     const current = markerMatches[i];
     const next = markerMatches[i + 1];
-    const markerText = source
-      .slice(current.markerIndex)
-      .match(/(?:VARIANT_\d+_HTML|HTML_\d+)\s*:/i)?.[0];
-
-    if (!markerText) continue;
-
-    const contentStart = current.markerIndex + markerText.length;
+    const contentStart = current.contentStart;
     const contentEnd = next?.markerIndex ?? source.length;
-    htmlByIndex[current.index - 1] = source.slice(contentStart, contentEnd).trim();
+    htmlByIndex[current.index - 1] = extractFirstHtmlDocument(
+      source.slice(contentStart, contentEnd).trim(),
+    );
+  }
+
+  let documentCursor = 0;
+  const usedDocuments = new Set(
+    htmlByIndex
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
+  for (let index = 0; index < htmlByIndex.length; index += 1) {
+    if (htmlByIndex[index].trim().length > 0) continue;
+
+    while (
+      documentCursor < htmlDocuments.length &&
+      usedDocuments.has(htmlDocuments[documentCursor].trim())
+    ) {
+      documentCursor += 1;
+    }
+
+    const fallbackDocument = htmlDocuments[documentCursor];
+    if (!fallbackDocument) continue;
+    htmlByIndex[index] = fallbackDocument;
+    usedDocuments.add(fallbackDocument.trim());
+    documentCursor += 1;
   }
 
   return { details, htmlByIndex };

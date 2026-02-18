@@ -47,7 +47,7 @@ export interface EditorState extends CanvasState, ProjectState {
   removeSection: (pageId: string, sectionId: string) => void;
   moveSection: (pageId: string, sectionId: string, direction: "up" | "down") => void;
   reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
-  createPage: (title?: string, afterPageId?: string) => string;
+  createPage: (title?: string, afterPageId?: string, pageId?: string) => string;
   renamePage: (pageId: string, newTitle: string) => void;
   setPageHtml: (pageId: string, html: string, title?: string) => void;
   hydrateProject: (pages: PageData[]) => void;
@@ -198,8 +198,8 @@ export const useEditorStore = create<EditorState>()(
           return { pages: newPages };
         }),
 
-      createPage: (title, afterPageId) => {
-        const newPageId = createPageId();
+      createPage: (title, afterPageId, pageId) => {
+        const newPageId = pageId ?? createPageId();
 
         set((state) => {
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;

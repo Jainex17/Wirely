@@ -46,6 +46,11 @@ interface WirePromptSidebarProps {
   initialMessages?: Message[];
 }
 
+interface CompactHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 const VARIATION_THEME_HINTS = [
   "Editorial minimal layout with restrained monochrome palette and precise typography.",
   "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
@@ -108,6 +113,32 @@ const getAssistantDetails = (content: string) => {
   return singleDetails;
 };
 
+const MAX_COMPACT_HISTORY_MESSAGES = 12;
+
+const compactHistoryFromMessages = (messages: Message[]): CompactHistoryMessage[] => {
+  const compact: CompactHistoryMessage[] = [];
+
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") {
+      continue;
+    }
+
+    if (typeof message.content !== "string") {
+      continue;
+    }
+
+    const content =
+      message.role === "assistant"
+        ? getAssistantDetails(message.content) || "Generated an updated page."
+        : message.content.trim();
+    if (!content) continue;
+
+    compact.push({ role: message.role, content });
+  }
+
+  return compact.slice(-MAX_COMPACT_HISTORY_MESSAGES);
+};
+
 export default function WirePromptSidebar({
   wireId,
   variant = "floating",
@@ -133,8 +164,8 @@ export default function WirePromptSidebar({
 
   const pages = useEditorStore((state) => state.pages);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
-  const createPage = useEditorStore((state) => state.createPage);
-  const deletePage = useEditorStore((state) => state.deletePage);
+  const createPageLocal = useEditorStore((state) => state.createPage);
+  const deletePageLocal = useEditorStore((state) => state.deletePage);
 
   const clearPendingGeneration = useCallback(() => {
     pendingTargetPageIdRef.current = null;
@@ -142,6 +173,61 @@ export default function WirePromptSidebar({
     pendingBatchTargetPageIdsRef.current = null;
     pendingBatchCreatedPageIdsRef.current = [];
   }, []);
+
+  const persistPageUpdate = useCallback(
+    async (pageId: string, payload: { title?: string; htmlContent?: string }) => {
+      const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Page persistence failed with status ${response.status}`);
+      }
+    },
+    [wireId],
+  );
+
+  const persistPageHtml = useCallback(
+    async (pageId: string, htmlContent: string) => {
+      await persistPageUpdate(pageId, { htmlContent });
+    },
+    [persistPageUpdate],
+  );
+
+  const createPageOnServer = useCallback(
+    async (title: string) => {
+      const response = await fetch(`/api/projects/${wireId}/pages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) {
+        throw new Error(`Page creation failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        page?: { id: string; title: string };
+      };
+      if (!payload.page) {
+        throw new Error("Page creation response missing page payload.");
+      }
+      return payload.page;
+    },
+    [wireId],
+  );
+
+  const deletePageOnServer = useCallback(
+    async (pageId: string) => {
+      const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(`Page deletion failed with status ${response.status}`);
+      }
+    },
+    [wireId],
+  );
 
   const rollbackPendingCreatedPages = useCallback(() => {
     const pageIdsToDelete = new Set<string>();
@@ -153,11 +239,14 @@ export default function WirePromptSidebar({
     }
 
     for (const pageId of pageIdsToDelete) {
-      deletePage(pageId);
+      deletePageLocal(pageId);
+      void deletePageOnServer(pageId).catch((error) => {
+        console.error("[wire] rollback_delete_failed", { pageId, error });
+      });
     }
 
     clearPendingGeneration();
-  }, [clearPendingGeneration, deletePage]);
+  }, [clearPendingGeneration, deletePageLocal, deletePageOnServer]);
 
   const markPagesAsLoading = useCallback(
     (pageIds: string[]) => {
@@ -170,8 +259,50 @@ export default function WirePromptSidebar({
 
   const { messages, append, isLoading, stop } = useChat({
     api: `/api/projects/${wireId}/generate`,
-    body: { wireId, modelName: activeModelName },
+    body: { wireId },
     initialMessages,
+    experimental_prepareRequestBody: ({ messages: outgoingMessages, requestBody }) => {
+      const body = (requestBody ?? {}) as Record<string, unknown>;
+      const selectedModel = isWireModelName(body.modelName)
+        ? body.modelName
+        : activeModelName;
+      const variationCount =
+        typeof body.variationCount === "number" ? body.variationCount : undefined;
+      const isBatchRequest =
+        typeof variationCount === "number" &&
+        variationCount > 1 &&
+        body.variationIndex === undefined;
+      const storePages = useEditorStore.getState().pages;
+      const targetPageId =
+        isBatchRequest
+          ? undefined
+          : pendingTargetPageIdRef.current ??
+            selectedPageId ??
+            storePages[0]?.id ??
+            undefined;
+      const targetPage = targetPageId
+        ? storePages.find((page) => page.id === targetPageId)
+        : undefined;
+      const latestUserMessage = [...outgoingMessages]
+        .reverse()
+        .find((message) => message.role === "user" && typeof message.content === "string");
+      const promptText =
+        (latestUserMessage?.content as string | undefined)?.trim() ??
+        latestPromptRef.current;
+
+      return {
+        wireId,
+        modelName: selectedModel,
+        promptText,
+        targetPageId,
+        targetPageTitle: targetPage?.title,
+        targetPageHtml: isBatchRequest ? undefined : targetPage?.iframeHtml ?? "",
+        compactHistory: compactHistoryFromMessages(outgoingMessages as Message[]),
+        variationCount,
+        variationIndex: body.variationIndex,
+        variationThemeHint: body.variationThemeHint,
+      };
+    },
     onResponse: async (response) => {
       if (!response.ok) {
         const text = await response.text();
@@ -207,6 +338,7 @@ export default function WirePromptSidebar({
         const batchTargetPageIds = pendingBatchTargetPageIdsRef.current;
         if (batchTargetPageIds && batchTargetPageIds.length > 1) {
           const parsedBatch = parseBatchWireOutput(message.content, batchTargetPageIds.length);
+          const savePromises: Array<Promise<void>> = [];
           let successCount = 0;
           let failedCount = 0;
           let chartIconFailureCount = 0;
@@ -217,7 +349,8 @@ export default function WirePromptSidebar({
             if (!htmlCandidate.trim()) {
               failedCount += 1;
               if (pendingBatchCreatedPageIdsRef.current.includes(targetPageId)) {
-                deletePage(targetPageId);
+                deletePageLocal(targetPageId);
+                savePromises.push(deletePageOnServer(targetPageId));
               }
               continue;
             }
@@ -238,12 +371,14 @@ export default function WirePromptSidebar({
                 chartIconFailureCount += 1;
               }
               if (pendingBatchCreatedPageIdsRef.current.includes(targetPageId)) {
-                deletePage(targetPageId);
+                deletePageLocal(targetPageId);
+                savePromises.push(deletePageOnServer(targetPageId));
               }
               continue;
             }
 
             setPageHtml(targetPageId, normalized.html);
+            savePromises.push(persistPageHtml(targetPageId, normalized.html));
             successCount += 1;
           }
 
@@ -261,15 +396,23 @@ export default function WirePromptSidebar({
 
             if (fallbackQuality.isRenderable) {
               setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
+              savePromises.push(persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html));
               successCount = 1;
             } else if (
               /<html[\s>]/i.test(fallbackNormalized.html) &&
               /<body[\s>]/i.test(fallbackNormalized.html)
             ) {
               setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
+              savePromises.push(persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html));
               failedCount = Math.max(0, failedCount - 1);
               successCount = 1;
             }
+          }
+
+          if (savePromises.length > 0) {
+            void Promise.all(savePromises).catch((error) => {
+              console.error("[wire] batch_page_persist_failed", error);
+            });
           }
 
           if (successCount > 0) {
@@ -320,6 +463,9 @@ export default function WirePromptSidebar({
         }
 
         setPageHtml(targetPageId, initialNormalized.html);
+        void persistPageHtml(targetPageId, initialNormalized.html).catch((error) => {
+          console.error("[wire] page_persist_failed", { targetPageId, error });
+        });
         setQualityNotice(null);
       } finally {
         pendingGenerationFailedRef.current = false;
@@ -503,23 +649,26 @@ export default function WirePromptSidebar({
       setPrompt("");
 
       const runInitialBatch = async () => {
-        let firstPageId = useEditorStore.getState().pages[0]?.id;
-        if (!firstPageId) {
-          firstPageId = createPage("Page 1");
-        }
-        if (!firstPageId) return;
-
-        const targets: Array<{ pageId: string; isCreated: boolean }> = [
-          { pageId: firstPageId, isCreated: false },
-        ];
-
-        for (let index = 1; index < storedPageCount; index += 1) {
-          const nextPageNumber = useEditorStore.getState().pages.length + 1;
-          const createdId = createPage(`Page ${nextPageNumber}`);
-          targets.push({ pageId: createdId, isCreated: true });
-        }
-
         try {
+          let firstPageId = useEditorStore.getState().pages[0]?.id;
+          if (!firstPageId) {
+            const createdFirstPage = await createPageOnServer("Page 1");
+            createPageLocal(createdFirstPage.title, undefined, createdFirstPage.id);
+            firstPageId = createdFirstPage.id;
+          }
+          if (!firstPageId) return;
+
+          const targets: Array<{ pageId: string; isCreated: boolean }> = [
+            { pageId: firstPageId, isCreated: false },
+          ];
+
+          for (let index = 1; index < storedPageCount; index += 1) {
+            const nextPageNumber = useEditorStore.getState().pages.length + 1;
+            const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
+            createPageLocal(createdPage.title, undefined, createdPage.id);
+            targets.push({ pageId: createdPage.id, isCreated: true });
+          }
+
           if (storedPageCount === 1) {
             await startGenerationForPage({
               promptText: storedPrompt,
@@ -557,7 +706,8 @@ export default function WirePromptSidebar({
     };
   }, [
     activeModelName,
-    createPage,
+    createPageLocal,
+    createPageOnServer,
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,

@@ -28,7 +28,7 @@ export default async function WirePage({ params }: WirePageProps) {
       ? projectDetail.pages.map((page) => ({
           id: page.id,
           title: page.title,
-          pageHtml: "",
+          pageHtml: page.htmlContent,
         }))
       : [
           {

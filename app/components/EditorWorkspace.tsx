@@ -12,10 +12,12 @@ const MOUSE_WHEEL_ZOOM_SENSITIVITY = 0.0025;
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
+  projectId?: string;
 }
 
 export default function EditorWorkspace({
   sidebarMode = "default",
+  projectId,
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const panDragRef = useRef<{
@@ -37,6 +39,7 @@ export default function EditorWorkspace({
     setSelectedSection,
     renamePage,
     deletePage,
+    hydrateProject,
     pages,
   } = useEditorStore();
 
@@ -64,6 +67,81 @@ export default function EditorWorkspace({
   const handleClosePreview = useCallback(() => {
     setPreviewPageId(null);
   }, []);
+
+  const handleRenamePage = useCallback(
+    async (pageId: string, newTitle: string) => {
+      const existingPage = pages.find((page) => page.id === pageId);
+      if (!existingPage) return;
+
+      renamePage(pageId, newTitle);
+
+      if (!projectId) return;
+
+      try {
+        const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: newTitle }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Rename failed with status ${response.status}`);
+        }
+      } catch (error) {
+        console.error("[pages:rename]", error);
+        renamePage(pageId, existingPage.title);
+        window.alert("Could not rename page. Please try again.");
+      }
+    },
+    [pages, projectId, renamePage],
+  );
+
+  const handleDeletePage = useCallback(
+    async (pageId: string) => {
+      const page = pages.find((candidate) => candidate.id === pageId);
+      if (!page) return;
+
+      deletePage(pageId);
+
+      if (!projectId) return;
+
+      try {
+        const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
+          method: "DELETE",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Delete failed with status ${response.status}`);
+        }
+      } catch (error) {
+        console.error("[pages:delete]", error);
+        window.alert("Could not delete page. Restoring latest server data.");
+
+        try {
+          const reloadResponse = await fetch(`/api/projects/${projectId}`, {
+            cache: "no-store",
+          });
+          if (!reloadResponse.ok) {
+            throw new Error(`Reload failed with status ${reloadResponse.status}`);
+          }
+          const payload = (await reloadResponse.json()) as {
+            pages?: Array<{ id: string; title: string; htmlContent: string }>;
+          };
+          const reloadedPages =
+            payload.pages?.map((item) => ({
+              id: item.id,
+              title: item.title,
+              iframeHtml: item.htmlContent,
+              sections: [] as string[],
+            })) ?? [];
+          hydrateProject(reloadedPages);
+        } catch (reloadError) {
+          console.error("[pages:reload_after_delete_failure]", reloadError);
+        }
+      }
+    },
+    [deletePage, hydrateProject, pages, projectId],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -198,8 +276,8 @@ export default function EditorWorkspace({
         activeTool={activeTool}
         isPanning={isPanning}
         onCanvasClick={handleCanvasClick}
-        onRenamePage={renamePage}
-        onDeletePage={deletePage}
+        onRenamePage={handleRenamePage}
+        onDeletePage={handleDeletePage}
         onPreviewPage={handlePreviewPage}
         onToolChange={setActiveTool}
         onZoomChange={handleZoomChange}

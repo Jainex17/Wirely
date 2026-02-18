@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:backfill:page-html": "bun run scripts/backfill-page-html-from-conversation.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.0.0",

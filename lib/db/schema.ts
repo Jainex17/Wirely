@@ -59,11 +59,16 @@ export const projectPages = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
+    htmlContent: text("html_content").default("").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     projectIdx: index("project_pages_project_id_idx").on(table.projectId),
+    projectSortIdx: index("project_pages_project_sort_idx").on(
+      table.projectId,
+      table.sortOrder,
+    ),
   }),
 );
 
@@ -90,11 +95,17 @@ export const conversationMessages = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     role: conversationRoleEnum("role").notNull(),
     content: text("content").notNull(),
+    targetPageId: uuid("target_page_id").references(() => projectPages.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     conversationIdx: index("conversation_messages_conversation_id_idx").on(
       table.conversationId,
+    ),
+    targetPageIdx: index("conversation_messages_target_page_id_idx").on(
+      table.targetPageId,
     ),
   }),
 );

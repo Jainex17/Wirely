@@ -7,6 +7,8 @@ import {
   type WireStylePreset,
 } from "@/app/lib/wirePrompt";
 import {
+  parseBatchWireOutput,
+  parseWireOutput,
   userExplicitlyRequestedImages,
 } from "@/app/lib/wireOutput";
 import {
@@ -19,6 +21,7 @@ import {
 import { getRequestSessionUser } from "@/lib/auth/session";
 import {
   appendConversationMessage,
+  getProjectPageForUser,
   getProjectForUser,
 } from "@/lib/db/queries/projects";
 
@@ -30,10 +33,20 @@ type WireMessage = {
   content: string;
 };
 
+type CompactHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type WireRequestBody = {
   wireId?: string;
   messages?: unknown;
   modelName?: unknown;
+  promptText?: unknown;
+  targetPageId?: unknown;
+  targetPageTitle?: unknown;
+  targetPageHtml?: unknown;
+  compactHistory?: unknown;
   variationIndex?: unknown;
   variationCount?: unknown;
   variationThemeHint?: unknown;
@@ -168,6 +181,27 @@ const parseMessages = (value: unknown): WireMessage[] => {
     .filter((item): item is WireMessage => item !== null);
 };
 
+const parseCompactHistory = (value: unknown): CompactHistoryMessage[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        !!item && typeof item === "object",
+    )
+    .map((item) => {
+      const role = item.role;
+      const content = item.content;
+      if ((role === "user" || role === "assistant") && typeof content === "string") {
+        const trimmed = content.trim();
+        if (!trimmed) return null;
+        return { role, content: trimmed };
+      }
+      return null;
+    })
+    .filter((item): item is CompactHistoryMessage => item !== null)
+    .slice(-12);
+};
+
 const getLatestUserPrompt = (messages: WireMessage[]) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -176,6 +210,99 @@ const getLatestUserPrompt = (messages: WireMessage[]) => {
     }
   }
   return "";
+};
+
+const parsePromptText = (value: unknown) => {
+  if (typeof value !== "string") return "";
+  return value.trim();
+};
+
+const parseOptionalString = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+const buildPageScopedPrompt = ({
+  userPrompt,
+  targetPageId,
+  targetPageTitle,
+  targetPageHtml,
+}: {
+  userPrompt: string;
+  targetPageId?: string;
+  targetPageTitle?: string;
+  targetPageHtml?: string;
+}) => {
+  if (!targetPageId) return userPrompt;
+
+  const html = targetPageHtml?.trim() ?? "";
+  return [
+    "Page editing context:",
+    `- Target page ID: ${targetPageId}`,
+    `- Target page title: ${targetPageTitle || "Untitled Page"}`,
+    "- Edit only this target page and return one full HTML document for this page.",
+    html ? "Current target page HTML:" : "Current target page HTML is empty.",
+    html || "(empty)",
+    "",
+    "User instruction:",
+    userPrompt,
+  ].join("\n");
+};
+
+const buildModelMessages = ({
+  compactHistory,
+  fallbackMessages,
+  scopedUserPrompt,
+  plainUserPrompt,
+}: {
+  compactHistory: CompactHistoryMessage[];
+  fallbackMessages: WireMessage[];
+  scopedUserPrompt: string;
+  plainUserPrompt: string;
+}): WireMessage[] => {
+  const baseHistory: WireMessage[] =
+    compactHistory.length > 0
+      ? compactHistory.map((message) => ({
+          role: message.role,
+          content: message.content,
+        }))
+      : fallbackMessages.filter(
+          (message) =>
+            (message.role === "user" || message.role === "assistant") &&
+            message.content.trim().length > 0,
+        );
+
+  const normalizedPrompt = plainUserPrompt.trim();
+  if (baseHistory.length > 0) {
+    const last = baseHistory[baseHistory.length - 1];
+    if (last.role === "user" && last.content.trim() === normalizedPrompt) {
+      baseHistory.pop();
+    }
+  }
+
+  return [...baseHistory, { role: "user", content: scopedUserPrompt }];
+};
+
+const extractAssistantSummary = (assistantContent: string) => {
+  const parsedBatch = parseBatchWireOutput(assistantContent);
+  const batchDetails = parsedBatch.details.trim();
+  if (batchDetails) {
+    return batchDetails.slice(0, 1200);
+  }
+
+  const parsedSingle = parseWireOutput(assistantContent);
+  const details = parsedSingle.details.trim();
+  if (details) {
+    return details.slice(0, 1200);
+  }
+
+  const stripped = assistantContent
+    .replace(/<!doctype html>[\s\S]*$/i, "")
+    .replace(/<html[\s\S]*$/i, "")
+    .trim();
+  if (stripped) {
+    return stripped.slice(0, 1200);
+  }
+
+  return "Generated updated HTML.";
 };
 
 const parseVariationCount = (value: unknown) => {
@@ -271,11 +398,13 @@ const logQualityTelemetry = (_: {
 const persistConversationTurn = async ({
   projectId,
   userPrompt,
-  assistantContent,
+  assistantSummary,
+  targetPageId,
 }: {
   projectId: string;
   userPrompt: string;
-  assistantContent: string;
+  assistantSummary: string;
+  targetPageId?: string;
 }) => {
   try {
     const trimmedPrompt = userPrompt.trim();
@@ -284,14 +413,16 @@ const persistConversationTurn = async ({
         projectId,
         role: "user",
         content: trimmedPrompt,
+        targetPageId,
       });
     }
 
-    if (assistantContent.trim()) {
+    if (assistantSummary.trim()) {
       await appendConversationMessage({
         projectId,
         role: "assistant",
-        content: assistantContent,
+        content: assistantSummary,
+        targetPageId,
       });
     }
   } catch (error) {
@@ -309,6 +440,7 @@ const streamWithSelectedModel = async ({
   stylePreset,
   allowImages,
   userPrompt,
+  targetPageId,
 }: {
   projectId: string;
   modelName: WireModelName;
@@ -319,6 +451,7 @@ const streamWithSelectedModel = async ({
   stylePreset: WireStylePreset;
   allowImages: boolean;
   userPrompt: string;
+  targetPageId?: string;
 }) => {
   const providerType = getWireModelProvider(modelName);
   if (!providerType) {
@@ -351,7 +484,8 @@ const streamWithSelectedModel = async ({
         void persistConversationTurn({
           projectId,
           userPrompt,
-          assistantContent: text,
+          assistantSummary: extractAssistantSummary(text),
+          targetPageId,
         });
       },
     });
@@ -386,7 +520,8 @@ const streamWithSelectedModel = async ({
       void persistConversationTurn({
         projectId,
         userPrompt,
-        assistantContent: text,
+        assistantSummary: extractAssistantSummary(text),
+        targetPageId,
       });
     },
   });
@@ -400,6 +535,7 @@ const streamWithOpenRouter = async ({
   stylePreset,
   allowImages,
   userPrompt,
+  targetPageId,
 }: {
   projectId: string;
   apiKey: string | undefined;
@@ -408,6 +544,7 @@ const streamWithOpenRouter = async ({
   stylePreset: WireStylePreset;
   allowImages: boolean;
   userPrompt: string;
+  targetPageId?: string;
 }) => {
   if (!apiKey) {
     throw new Error("Missing OpenRouter API key");
@@ -443,7 +580,8 @@ const streamWithOpenRouter = async ({
           void persistConversationTurn({
             projectId,
             userPrompt,
-            assistantContent: text,
+            assistantSummary: extractAssistantSummary(text),
+            targetPageId,
           });
         },
       });
@@ -499,9 +637,55 @@ export async function POST(request: Request, context: RouteContext) {
     variationCount,
   );
 
-  const messages = parseMessages(body?.messages);
+  const fallbackMessages = parseMessages(body?.messages);
+  const compactHistory = parseCompactHistory(body?.compactHistory);
+  const promptText = parsePromptText(body?.promptText);
+  const latestUserPrompt = promptText || getLatestUserPrompt(fallbackMessages);
+  if (!latestUserPrompt) {
+    return Response.json({ error: "Missing promptText." }, { status: 400 });
+  }
+
+  const rawTargetPageId = parseOptionalString(body?.targetPageId);
+  const rawTargetPageTitle = parseOptionalString(body?.targetPageTitle);
+  const rawTargetPageHtml = typeof body?.targetPageHtml === "string" ? body.targetPageHtml : "";
+
+  let resolvedTargetPageId: string | null = null;
+  let resolvedTargetPageTitle = rawTargetPageTitle;
+  let resolvedTargetPageHtml = rawTargetPageHtml;
+
+  if (rawTargetPageId) {
+    const targetPage = await getProjectPageForUser({
+      projectId: id,
+      pageId: rawTargetPageId,
+      userId: sessionUser.id,
+    });
+    if (!targetPage) {
+      return Response.json({ error: "Target page not found." }, { status: 404 });
+    }
+    resolvedTargetPageId = targetPage.id;
+    if (!resolvedTargetPageTitle) {
+      resolvedTargetPageTitle = targetPage.title;
+    }
+    if (!resolvedTargetPageHtml) {
+      resolvedTargetPageHtml = targetPage.htmlContent;
+    }
+  }
+
+  const scopedUserPrompt = buildPageScopedPrompt({
+    userPrompt: latestUserPrompt,
+    targetPageId: isBatchVariationRequest ? undefined : resolvedTargetPageId ?? undefined,
+    targetPageTitle: resolvedTargetPageTitle || undefined,
+    targetPageHtml: resolvedTargetPageHtml || undefined,
+  });
+
+  const messages = buildModelMessages({
+    compactHistory,
+    fallbackMessages,
+    scopedUserPrompt,
+    plainUserPrompt: latestUserPrompt,
+  });
+
   const wireId = id;
-  const latestUserPrompt = getLatestUserPrompt(messages);
   const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
   const stylePreset = selectWireStylePreset({
     wireId,
@@ -517,7 +701,7 @@ export async function POST(request: Request, context: RouteContext) {
     allowImages,
     userPrompt: latestUserPrompt,
   });
-  const systemPrompt =
+  const coreSystemPrompt =
     variationCount > 1
       ? `${baseSystemPrompt}\n\n${
           isBatchVariationRequest
@@ -533,10 +717,23 @@ export async function POST(request: Request, context: RouteContext) {
               })
         }`
       : baseSystemPrompt;
+  const pageScopeDirective =
+    resolvedTargetPageId && !isBatchVariationRequest
+      ? [
+          "Page scope directive:",
+          "- Edit only the provided target page context.",
+          "- Do not make cross-page changes.",
+          "- Return one full HTML document for the target page only.",
+        ].join("\n")
+      : "";
+  const systemPrompt = pageScopeDirective
+    ? `${coreSystemPrompt}\n\n${pageScopeDirective}`
+    : coreSystemPrompt;
 
   console.info("[wire] generation_attempt", {
     stylePresetId: stylePreset.id,
     requestedModelName,
+    targetPageId: resolvedTargetPageId,
     variationCount,
     variationIndex: variationIndex ?? null,
     batchMode: isBatchVariationRequest,
@@ -554,6 +751,7 @@ export async function POST(request: Request, context: RouteContext) {
         stylePreset,
         allowImages,
         userPrompt: latestUserPrompt,
+        targetPageId: resolvedTargetPageId ?? undefined,
       });
 
       return selectedResult.toDataStreamResponse();
@@ -597,7 +795,8 @@ export async function POST(request: Request, context: RouteContext) {
         void persistConversationTurn({
           projectId: id,
           userPrompt: latestUserPrompt,
-          assistantContent: text,
+          assistantSummary: extractAssistantSummary(text),
+          targetPageId: resolvedTargetPageId ?? undefined,
         });
       },
     });
@@ -621,6 +820,7 @@ export async function POST(request: Request, context: RouteContext) {
         stylePreset,
         allowImages,
         userPrompt: latestUserPrompt,
+        targetPageId: resolvedTargetPageId ?? undefined,
       });
 
       return result.toDataStreamResponse();
