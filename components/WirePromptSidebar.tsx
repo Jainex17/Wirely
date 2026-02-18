@@ -170,6 +170,7 @@ export default function WirePromptSidebar({
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
   const autoRunRef = useRef(false);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const latestPromptRef = useRef("");
   const pendingTargetPageIdRef = useRef<string | null>(null);
   const pendingCreatedPageIdRef = useRef<string | null>(null);
@@ -736,6 +737,24 @@ export default function WirePromptSidebar({
     [prompt, selectedPageId, startGenerationForPage],
   );
 
+  const resizePromptTextarea = useCallback(() => {
+    const textarea = promptTextareaRef.current;
+    if (!textarea) return;
+
+    const computedStyles = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computedStyles.lineHeight) || 20;
+    const minHeight = lineHeight * 3;
+    const maxHeight = lineHeight * 9;
+
+    textarea.style.height = "auto";
+    const clampedHeight = Math.min(
+      Math.max(textarea.scrollHeight, minHeight),
+      maxHeight,
+    );
+    textarea.style.height = `${clampedHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, []);
+
   useEffect(() => {
     if (pages.length === 0) {
       setSelectedPageId(null);
@@ -746,6 +765,10 @@ export default function WirePromptSidebar({
       setSelectedPageId(pages[0].id);
     }
   }, [pages, selectedPageId]);
+
+  useEffect(() => {
+    resizePromptTextarea();
+  }, [prompt, resizePromptTextarea]);
 
   useEffect(() => {
     if (autoRunRef.current) return;
@@ -947,95 +970,103 @@ export default function WirePromptSidebar({
 
       <form onSubmit={handleSubmit} className="shrink-0">
         <div
-          className={`relative flex min-h-[48px] w-full items-end overflow-hidden rounded-xl bg-neutral-900/60 pl-2 pr-1 shadow-2xl transition-all ${
+          className={`relative flex w-full flex-col overflow-hidden rounded-xl bg-neutral-900/60 shadow-2xl transition-all ${
             variant === "panel"
               ? "border-border bg-card"
               : "border border-white/10"
           }`}
         >
           <textarea
+            ref={promptTextareaRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onInput={resizePromptTextarea}
             placeholder="Ask a follow-up..."
-            rows={1}
-            className={`mb-2 max-h-[200px] flex-1 resize-none bg-transparent py-3 text-sm focus:ring-2 focus:ring-neutral-500/50 focus:rounded-md ${
+            rows={3}
+            className={`w-full resize-none bg-transparent px-3 pb-2 pt-3 text-sm leading-5 focus:outline-none focus-visible:outline-none focus:ring-0 ${
               variant === "panel"
                 ? "text-foreground placeholder:text-muted-foreground/60"
                 : "text-neutral-100 placeholder:text-neutral-500"
             }`}
           />
-          <div className="mr-1 flex shrink-0 flex-col items-end justify-end gap-1 py-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={`flex h-8 items-center gap-1 rounded-md px-2 text-xs ${
-                    variant === "panel"
-                      ? "text-muted-foreground hover:bg-accent"
-                      : "text-neutral-400 hover:bg-white/10"
-                  }`}
-                >
-                  <Circle className="h-3 w-3 text-primary" />
-                  {WIRE_MODEL_OPTIONS.find((m) => m.id === activeModelName)
-                    ?.label || activeModelName}
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-card border-border">
-                {geminiModelOptions.map((model) => (
-                  <DropdownMenuItem
-                    key={model.id}
-                    onClick={() => setActiveModelName(model.id)}
+          <div
+            className={`flex items-center justify-between gap-2 px-2 pb-2 pt-1 ${
+              variant === "panel" ? "border-t border-border/60" : "border-t border-white/10"
+            }`}
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={`flex h-8 items-center gap-1 rounded-md px-2 text-xs ${
+                      variant === "panel"
+                        ? "text-muted-foreground hover:bg-accent"
+                        : "text-neutral-400 hover:bg-white/10"
+                    }`}
                   >
-                    {model.label}
-                  </DropdownMenuItem>
-                ))}
-                {openRouterModelOptions.map((model) => (
-                  <DropdownMenuItem
-                    key={model.id}
-                    onClick={() => setActiveModelName(model.id)}
-                  >
-                    {model.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <Circle className="h-3 w-3 text-primary" />
+                    {WIRE_MODEL_OPTIONS.find((m) => m.id === activeModelName)
+                      ?.label || activeModelName}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-card border-border">
+                  {geminiModelOptions.map((model) => (
+                    <DropdownMenuItem
+                      key={model.id}
+                      onClick={() => setActiveModelName(model.id)}
+                    >
+                      {model.label}
+                    </DropdownMenuItem>
+                  ))}
+                  {openRouterModelOptions.map((model) => (
+                    <DropdownMenuItem
+                      key={model.id}
+                      onClick={() => setActiveModelName(model.id)}
+                    >
+                      {model.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={`flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs ${
-                    variant === "panel"
-                      ? "text-muted-foreground hover:bg-accent"
-                      : "text-neutral-400 hover:bg-white/10"
-                  }`}
-                >
-                  <span className="truncate">Edit: {selectedPageTitle}</span>
-                  <ChevronDown className="h-3 w-3 shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="bg-card border-border">
-                {pages.map((page) => (
-                  <DropdownMenuItem
-                    key={page.id}
-                    onClick={() => setSelectedPageId(page.id)}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={`flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs ${
+                      variant === "panel"
+                        ? "text-muted-foreground hover:bg-accent"
+                        : "text-neutral-400 hover:bg-white/10"
+                    }`}
                   >
-                    {page.title}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <span className="truncate">Edit: {selectedPageTitle}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-card border-border">
+                  {pages.map((page) => (
+                    <DropdownMenuItem
+                      key={page.id}
+                      onClick={() => setSelectedPageId(page.id)}
+                    >
+                      {page.title}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
 
             <Button
               type="submit"
               disabled={isLoading || !prompt.trim() || !selectedPageId}
               size="icon"
-              className={`mb-1 mt-0.5 h-8 w-8 ${
+              className={`h-8 w-8 shrink-0 ${
                 variant === "panel"
                   ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
                   : "bg-white/10 text-neutral-200 hover:bg-white/20 disabled:opacity-20"
