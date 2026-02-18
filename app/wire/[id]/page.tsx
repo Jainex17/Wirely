@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
-import { DEFAULT_WIRE_MODEL } from "@/app/lib/wireModels";
+import { DEFAULT_WIRE_MODEL } from "@/lib/wireModels";
 import WireEditor from "./WireEditor";
 
 interface WirePageProps {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEditorStore } from "../store/useEditorStore";
+import { useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import PageRenderer from "./PageRenderer";
 

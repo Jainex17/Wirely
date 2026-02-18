@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { type SectionType } from "@/app/lib/sectionLayouts";
+import { type SectionType } from "@/lib/sectionLayouts";
 
 export type DeviceType = "desktop" | "tablet" | "mobile";
 

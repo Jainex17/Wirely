@@ -5,19 +5,19 @@ import {
   composeGenerateSystemPrompt,
   selectWireStylePreset,
   type WireStylePreset,
-} from "@/app/lib/wirePrompt";
+} from "@/lib/wirePrompt";
 import {
   parseBatchWireOutput,
   parseWireOutput,
   userExplicitlyRequestedImages,
-} from "@/app/lib/wireOutput";
+} from "@/lib/wireOutput";
 import {
   DEFAULT_WIRE_MODEL,
   OPENROUTER_FREE_MODELS,
   getWireModelProvider,
   isWireModelName,
   type WireModelName,
-} from "@/app/lib/wireModels";
+} from "@/lib/wireModels";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import {
   appendConversationMessage,

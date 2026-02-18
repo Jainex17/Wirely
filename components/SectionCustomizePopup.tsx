@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { SECTION_LAYOUTS } from "../lib/sectionLayouts";
-import { type SectionData } from "../store/useEditorStore";
+import { SECTION_LAYOUTS } from "@/lib/sectionLayouts";
+import { type SectionData } from "@/store/useEditorStore";
 import {
   AlertDialog,
   AlertDialogAction,

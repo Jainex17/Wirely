@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "ai";
 import { ArrowLeft } from "lucide-react";
-import EditorWorkspace from "@/app/components/EditorWorkspace";
-import WirePromptSidebar from "@/app/components/WirePromptSidebar";
+import EditorWorkspace from "@/components/EditorWorkspace";
+import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth/client";
 import {
@@ -14,8 +14,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEditorStore } from "@/app/store/useEditorStore";
-import type { WireModelName } from "@/app/lib/wireModels";
+import { useEditorStore } from "@/store/useEditorStore";
+import type { WireModelName } from "@/lib/wireModels";
 
 interface WireEditorProps {
   wireId: string;

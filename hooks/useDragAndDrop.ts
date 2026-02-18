@@ -4,7 +4,7 @@ import {
   DragOverEvent,
   DragEndEvent,
 } from "@dnd-kit/core";
-import { useEditorStore } from "../store/useEditorStore";
+import { useEditorStore } from "@/store/useEditorStore";
 
 export function useDragAndDrop() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);

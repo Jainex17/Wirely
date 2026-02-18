@@ -7,7 +7,7 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   type WireModelName,
-} from "@/app/lib/wireModels";
+} from "@/lib/wireModels";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,7 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import AppHeader from "@/app/components/AppHeader";
+import AppHeader from "@/components/AppHeader";
 
 interface MeResponse {
   user: {

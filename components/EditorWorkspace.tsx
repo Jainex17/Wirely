@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useEditorStore } from "../store/useEditorStore";
+import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
 import PagePreviewModal from "./PagePreviewModal";
 

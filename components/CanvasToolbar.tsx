@@ -1,6 +1,6 @@
 "use client";
 
-import { Hand, MousePointer2, Minus } from "lucide-react";
+import { Hand, MousePointer2, Minus, Plus } from "lucide-react";
 
 interface CanvasToolbarProps {
   activeTool: "select" | "grab";
@@ -88,7 +88,7 @@ export default function CanvasToolbar({
           className="px-2 py-1 text-xs font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title="Zoom in"
         >
-          In
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

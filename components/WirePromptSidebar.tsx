@@ -10,12 +10,7 @@ import {
 } from "react";
 import { useChat } from "ai/react";
 import type { Message } from "ai";
-import {
-  Plus,
-  Send,
-  ChevronDown,
-  Circle,
-} from "lucide-react";
+import { Send, ChevronDown, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,21 +18,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEditorStore } from "@/app/store/useEditorStore";
+import { useEditorStore } from "@/store/useEditorStore";
 import {
   normalizeGeneratedHtml,
   parseBatchWireOutput,
   parseWireOutput,
   userExplicitlyRequestedImages,
-} from "@/app/lib/wireOutput";
-import { evaluateWireHtmlQuality } from "@/app/lib/wireQuality";
-import { selectWireStylePreset } from "@/app/lib/wirePrompt";
+} from "@/lib/wireOutput";
+import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
+import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   isWireModelName,
   type WireModelName,
-} from "@/app/lib/wireModels";
+} from "@/lib/wireModels";
 
 interface WirePromptSidebarProps {
   wireId: string;
@@ -115,7 +110,9 @@ const getAssistantDetails = (content: string) => {
 
 const MAX_COMPACT_HISTORY_MESSAGES = 12;
 
-const compactHistoryFromMessages = (messages: Message[]): CompactHistoryMessage[] => {
+const compactHistoryFromMessages = (
+  messages: Message[],
+): CompactHistoryMessage[] => {
   const compact: CompactHistoryMessage[] = [];
 
   for (const message of messages) {
@@ -175,7 +172,10 @@ export default function WirePromptSidebar({
   }, []);
 
   const persistPageUpdate = useCallback(
-    async (pageId: string, payload: { title?: string; htmlContent?: string }) => {
+    async (
+      pageId: string,
+      payload: { title?: string; htmlContent?: string },
+    ) => {
       const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -183,7 +183,9 @@ export default function WirePromptSidebar({
       });
 
       if (!response.ok) {
-        throw new Error(`Page persistence failed with status ${response.status}`);
+        throw new Error(
+          `Page persistence failed with status ${response.status}`,
+        );
       }
     },
     [wireId],
@@ -261,31 +263,38 @@ export default function WirePromptSidebar({
     api: `/api/projects/${wireId}/generate`,
     body: { wireId },
     initialMessages,
-    experimental_prepareRequestBody: ({ messages: outgoingMessages, requestBody }) => {
+    experimental_prepareRequestBody: ({
+      messages: outgoingMessages,
+      requestBody,
+    }) => {
       const body = (requestBody ?? {}) as Record<string, unknown>;
       const selectedModel = isWireModelName(body.modelName)
         ? body.modelName
         : activeModelName;
       const variationCount =
-        typeof body.variationCount === "number" ? body.variationCount : undefined;
+        typeof body.variationCount === "number"
+          ? body.variationCount
+          : undefined;
       const isBatchRequest =
         typeof variationCount === "number" &&
         variationCount > 1 &&
         body.variationIndex === undefined;
       const storePages = useEditorStore.getState().pages;
-      const targetPageId =
-        isBatchRequest
-          ? undefined
-          : pendingTargetPageIdRef.current ??
-            selectedPageId ??
-            storePages[0]?.id ??
-            undefined;
+      const targetPageId = isBatchRequest
+        ? undefined
+        : (pendingTargetPageIdRef.current ??
+          selectedPageId ??
+          storePages[0]?.id ??
+          undefined);
       const targetPage = targetPageId
         ? storePages.find((page) => page.id === targetPageId)
         : undefined;
       const latestUserMessage = [...outgoingMessages]
         .reverse()
-        .find((message) => message.role === "user" && typeof message.content === "string");
+        .find(
+          (message) =>
+            message.role === "user" && typeof message.content === "string",
+        );
       const promptText =
         (latestUserMessage?.content as string | undefined)?.trim() ??
         latestPromptRef.current;
@@ -296,8 +305,12 @@ export default function WirePromptSidebar({
         promptText,
         targetPageId,
         targetPageTitle: targetPage?.title,
-        targetPageHtml: isBatchRequest ? undefined : targetPage?.iframeHtml ?? "",
-        compactHistory: compactHistoryFromMessages(outgoingMessages as Message[]),
+        targetPageHtml: isBatchRequest
+          ? undefined
+          : (targetPage?.iframeHtml ?? ""),
+        compactHistory: compactHistoryFromMessages(
+          outgoingMessages as Message[],
+        ),
         variationCount,
         variationIndex: body.variationIndex,
         variationThemeHint: body.variationThemeHint,
@@ -337,7 +350,10 @@ export default function WirePromptSidebar({
 
         const batchTargetPageIds = pendingBatchTargetPageIdsRef.current;
         if (batchTargetPageIds && batchTargetPageIds.length > 1) {
-          const parsedBatch = parseBatchWireOutput(message.content, batchTargetPageIds.length);
+          const parsedBatch = parseBatchWireOutput(
+            message.content,
+            batchTargetPageIds.length,
+          );
           const savePromises: Array<Promise<void>> = [];
           let successCount = 0;
           let failedCount = 0;
@@ -348,7 +364,9 @@ export default function WirePromptSidebar({
             const htmlCandidate = parsedBatch.htmlByIndex[index] ?? "";
             if (!htmlCandidate.trim()) {
               failedCount += 1;
-              if (pendingBatchCreatedPageIdsRef.current.includes(targetPageId)) {
+              if (
+                pendingBatchCreatedPageIdsRef.current.includes(targetPageId)
+              ) {
                 deletePageLocal(targetPageId);
                 savePromises.push(deletePageOnServer(targetPageId));
               }
@@ -370,7 +388,9 @@ export default function WirePromptSidebar({
               if (hasChartIconQualityViolation(quality.violations)) {
                 chartIconFailureCount += 1;
               }
-              if (pendingBatchCreatedPageIdsRef.current.includes(targetPageId)) {
+              if (
+                pendingBatchCreatedPageIdsRef.current.includes(targetPageId)
+              ) {
                 deletePageLocal(targetPageId);
                 savePromises.push(deletePageOnServer(targetPageId));
               }
@@ -396,14 +416,18 @@ export default function WirePromptSidebar({
 
             if (fallbackQuality.isRenderable) {
               setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
-              savePromises.push(persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html));
+              savePromises.push(
+                persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html),
+              );
               successCount = 1;
             } else if (
               /<html[\s>]/i.test(fallbackNormalized.html) &&
               /<body[\s>]/i.test(fallbackNormalized.html)
             ) {
               setPageHtml(batchTargetPageIds[0], fallbackNormalized.html);
-              savePromises.push(persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html));
+              savePromises.push(
+                persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html),
+              );
               failedCount = Math.max(0, failedCount - 1);
               successCount = 1;
             }
@@ -436,7 +460,8 @@ export default function WirePromptSidebar({
         }
 
         const targetPageId =
-          pendingTargetPageIdRef.current ?? useEditorStore.getState().pages[0]?.id;
+          pendingTargetPageIdRef.current ??
+          useEditorStore.getState().pages[0]?.id;
         if (!targetPageId) {
           return;
         }
@@ -463,9 +488,14 @@ export default function WirePromptSidebar({
         }
 
         setPageHtml(targetPageId, initialNormalized.html);
-        void persistPageHtml(targetPageId, initialNormalized.html).catch((error) => {
-          console.error("[wire] page_persist_failed", { targetPageId, error });
-        });
+        void persistPageHtml(targetPageId, initialNormalized.html).catch(
+          (error) => {
+            console.error("[wire] page_persist_failed", {
+              targetPageId,
+              error,
+            });
+          },
+        );
         setQualityNotice(null);
       } finally {
         pendingGenerationFailedRef.current = false;
@@ -565,9 +595,10 @@ export default function WirePromptSidebar({
       const body = {
         modelName,
         variationCount: targetPageIds.length,
-        variationThemeHint: VARIATION_THEME_HINTS.slice(0, targetPageIds.length).join(
-          " || ",
-        ),
+        variationThemeHint: VARIATION_THEME_HINTS.slice(
+          0,
+          targetPageIds.length,
+        ).join(" || "),
       };
 
       try {
@@ -595,7 +626,8 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      const targetPageId = selectedPageId ?? useEditorStore.getState().pages[0]?.id;
+      const targetPageId =
+        selectedPageId ?? useEditorStore.getState().pages[0]?.id;
       if (!targetPageId) return;
 
       const generated = await startGenerationForPage({
@@ -653,7 +685,11 @@ export default function WirePromptSidebar({
           let firstPageId = useEditorStore.getState().pages[0]?.id;
           if (!firstPageId) {
             const createdFirstPage = await createPageOnServer("Page 1");
-            createPageLocal(createdFirstPage.title, undefined, createdFirstPage.id);
+            createPageLocal(
+              createdFirstPage.title,
+              undefined,
+              createdFirstPage.id,
+            );
             firstPageId = createdFirstPage.id;
           }
           if (!firstPageId) return;
@@ -664,7 +700,9 @@ export default function WirePromptSidebar({
 
           for (let index = 1; index < storedPageCount; index += 1) {
             const nextPageNumber = useEditorStore.getState().pages.length + 1;
-            const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
+            const createdPage = await createPageOnServer(
+              `Page ${nextPageNumber}`,
+            );
             createPageLocal(createdPage.title, undefined, createdPage.id);
             targets.push({ pageId: createdPage.id, isCreated: true });
           }
@@ -819,18 +857,6 @@ export default function WirePromptSidebar({
               : "border border-white/10"
           }`}
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`flex h-8 w-8 shrink-0 items-center justify-center ${
-              variant === "panel"
-                ? "text-muted-foreground hover:bg-accent"
-                : "text-neutral-400 hover:bg-white/10"
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}

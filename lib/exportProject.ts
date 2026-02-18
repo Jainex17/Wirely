@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
-import { PageData } from "../store/useEditorStore";
+import { PageData } from "@/store/useEditorStore";
 
 const BASE_STYLES = `
 <style>

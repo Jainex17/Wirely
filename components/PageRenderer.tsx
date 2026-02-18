@@ -1,6 +1,6 @@
 import React from "react";
 import { FileIcon } from "lucide-react";
-import { useEditorStore } from "../store/useEditorStore";
+import { useEditorStore } from "@/store/useEditorStore";
 import PageOptionsMenu from "./PageOptionsMenu";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
