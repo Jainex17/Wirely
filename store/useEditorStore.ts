@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { type SectionType } from "@/lib/sectionLayouts";
+import { createSafeLocalStorage } from "@/lib/storage/safeLocalStorage";
 
 export type DeviceType = "desktop" | "tablet" | "mobile";
 
@@ -301,7 +302,7 @@ export const useEditorStore = create<EditorState>()(
     {
       name: "wirely-editor-storage",
       version: 2,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createSafeLocalStorage("wirely-editor-storage")),
       partialize: (state) => ({
         zoom: state.zoom,
         panOffset: state.panOffset,

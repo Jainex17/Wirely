@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
+import { toast } from "@/components/ui/sonner";
 
 interface MeResponse {
   user: {
@@ -209,6 +210,7 @@ export default function Home() {
       router.push(`/wire/${projectId}`);
     } catch {
       setErrorMessage("Could not create a project. Please try again.");
+      toast.error("Could not create a project. Please try again.");
       setIsSubmitting(false);
     }
   };
@@ -263,11 +265,12 @@ export default function Home() {
 
       if (response.ok) {
         setHistoryItems((prev) => prev.filter((p) => p.id !== projectToDelete));
+        toast.success("Project deleted.");
       } else {
-        alert("Failed to delete project");
+        toast.error("Failed to delete project.");
       }
     } catch {
-      alert("Failed to delete project");
+      toast.error("Failed to delete project.");
     } finally {
       setProjectToDelete(null);
       setIsDeleteDialogOpen(false);

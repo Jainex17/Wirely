@@ -106,7 +106,12 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   }
 
   const details = (() => {
-    if (detailsIndex === -1) return "";
+    if (detailsIndex === -1) {
+      if (htmlIndex > 0) {
+        return source.slice(0, htmlIndex).trim();
+      }
+      return "";
+    }
     const start = detailsIndex + DETAILS_MARKER.length;
     const end = nextSectionIndex(start, [htmlIndex]);
     return source.slice(start, end).trim();

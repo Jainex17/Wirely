@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Monitor, XIcon } from "lucide-react";
+import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
 interface PagePreviewModalProps {
@@ -16,11 +17,21 @@ export default function PagePreviewModal({
   page,
 }: PagePreviewModalProps) {
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
-  const hasHtml =
+  const hasRawHtml =
     typeof page?.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
+  const sanitizedHtml = React.useMemo(
+    () => (hasRawHtml ? sanitizeIframeHtml(page?.iframeHtml ?? "") : ""),
+    [hasRawHtml, page?.iframeHtml],
+  );
+  const hasHtml = sanitizedHtml.trim().length > 0;
 
   const handleLoad = React.useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
+    let doc: Document | null = null;
+    try {
+      doc = iframeRef.current?.contentDocument ?? null;
+    } catch {
+      doc = null;
+    }
     if (!doc) return;
     doc.documentElement.style.overflow = "auto";
     doc.body.style.overflow = "auto";
@@ -54,10 +65,10 @@ export default function PagePreviewModal({
             <iframe
               ref={iframeRef}
               title={`Preview ${page.title}`}
-              srcDoc={page.iframeHtml}
+              srcDoc={sanitizedHtml}
               className="h-full w-full border-0"
               style={{ overflow: "auto" }}
-              sandbox="allow-same-origin allow-scripts"
+              sandbox="allow-scripts"
               referrerPolicy="no-referrer"
               onLoad={handleLoad}
             />

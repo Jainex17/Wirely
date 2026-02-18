@@ -3,6 +3,8 @@ import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createProject, listProjectsForUser } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
 
 const TITLE_MODEL_NAME = "gemini-2.5-flash-lite";
 
@@ -52,7 +54,7 @@ const generateProjectTitle = async (prompt: string) => {
     if (!title) return fallbackTitleFromPrompt(trimmedPrompt);
     return title;
   } catch (error) {
-    console.error("[projects:title]", error);
+    logger.error("projects_title_generation_failed", { error });
     return fallbackTitleFromPrompt(trimmedPrompt);
   }
 };
@@ -67,7 +69,7 @@ export async function GET() {
     const projects = await listProjectsForUser(sessionUser.id);
     return NextResponse.json({ projects });
   } catch (error) {
-    console.error("[projects:list]", error);
+    logger.error("projects_list_failed", { error });
     return NextResponse.json({ error: "Failed to list projects." }, { status: 500 });
   }
 }
@@ -79,10 +81,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as {
+    const parsed = await readJsonBodyWithLimit<{
       title?: unknown;
       prompt?: unknown;
-    };
+    }>(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+
+    const body = parsed.data;
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     const explicitTitle =
       typeof body.title === "string" && body.title.trim().length > 0
@@ -100,7 +107,7 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("[projects:create]", error);
+    logger.error("projects_create_failed", { error });
     return NextResponse.json({ error: "Failed to create project." }, { status: 500 });
   }
 }

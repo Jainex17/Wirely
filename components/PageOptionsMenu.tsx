@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { EyeIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,7 +28,6 @@ interface PageOptionsMenuProps {
   isOnlyPage: boolean;
   onRename: (newTitle: string) => void;
   onDelete: () => void;
-  onPreview: () => void;
 }
 
 export default function PageOptionsMenu({
@@ -36,7 +35,6 @@ export default function PageOptionsMenu({
   isOnlyPage,
   onRename,
   onDelete,
-  onPreview,
 }: PageOptionsMenuProps) {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -52,14 +50,6 @@ export default function PageOptionsMenu({
   return (
     <>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onPreview}
-          title="Preview page"
-        >
-          <EyeIcon className="h-4 w-4" />
-        </Button>
         <Button
           variant="ghost"
           size="icon"

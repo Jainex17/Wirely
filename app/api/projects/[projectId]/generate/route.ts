@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProjectForUser } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -19,7 +21,11 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    const requestBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = await readJsonBodyWithLimit<Record<string, unknown>>(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const requestBody = parsed.data;
     const proxyResponse = await fetch(new URL(`/api/wire/${projectId}`, request.url), {
       method: "POST",
       headers: {
@@ -46,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       headers,
     });
   } catch (error) {
-    console.error("[projects:generate]", error);
+    logger.error("projects_generate_proxy_failed", { error });
     return NextResponse.json({ error: "Failed to generate output." }, { status: 500 });
   }
 }

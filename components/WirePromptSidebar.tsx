@@ -33,6 +33,8 @@ import {
   isWireModelName,
   type WireModelName,
 } from "@/lib/wireModels";
+import { toast } from "@/components/ui/sonner";
+import { logger } from "@/lib/logger";
 
 interface WirePromptSidebarProps {
   wireId: string;
@@ -66,6 +68,24 @@ const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
 
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
+
+const GENERATION_FAILURE_PREVIEW_HTML = [
+  "<!doctype html>",
+  '<html lang="en">',
+  "<head>",
+  '<meta charset="UTF-8">',
+  '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+  "<title>Generation failed</title>",
+  "</head>",
+  "<body>",
+  "<main>",
+  "<h1>Generation could not be completed</h1>",
+  "<p>The latest response could not be rendered for this page.</p>",
+  "<p>Try regenerating with a more specific prompt.</p>",
+  "</main>",
+  "</body>",
+  "</html>",
+].join("");
 
 const hasChartIconQualityViolation = (violations: string[]) =>
   violations.some((violation) =>
@@ -155,9 +175,11 @@ export default function WirePromptSidebar({
   const pendingCreatedPageIdRef = useRef<string | null>(null);
   const pendingBatchTargetPageIdsRef = useRef<string[] | null>(null);
   const pendingBatchCreatedPageIdsRef = useRef<string[]>([]);
+  const pendingPageHtmlBackupRef = useRef<Map<string, string>>(new Map());
   const pendingModelNameRef = useRef<WireModelName>(initialModelName);
   const pendingGenerationFailedRef = useRef(false);
   const pendingGenerationErrorRef = useRef<string | null>(null);
+  const hasShownErrorToastRef = useRef(false);
 
   const pages = useEditorStore((state) => state.pages);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
@@ -169,6 +191,15 @@ export default function WirePromptSidebar({
     pendingCreatedPageIdRef.current = null;
     pendingBatchTargetPageIdsRef.current = null;
     pendingBatchCreatedPageIdsRef.current = [];
+    pendingPageHtmlBackupRef.current.clear();
+  }, []);
+
+  const reportError = useCallback((message: string) => {
+    setErrorMessage(message);
+    if (!hasShownErrorToastRef.current) {
+      toast.error(message);
+      hasShownErrorToastRef.current = true;
+    }
   }, []);
 
   const persistPageUpdate = useCallback(
@@ -240,15 +271,58 @@ export default function WirePromptSidebar({
       pageIdsToDelete.add(pageId);
     }
 
+    for (const [pageId, previousHtml] of pendingPageHtmlBackupRef.current) {
+      if (pageIdsToDelete.has(pageId)) {
+        continue;
+      }
+      setPageHtml(
+        pageId,
+        previousHtml.trim().length > 0
+          ? previousHtml
+          : GENERATION_FAILURE_PREVIEW_HTML,
+      );
+    }
+
     for (const pageId of pageIdsToDelete) {
       deletePageLocal(pageId);
       void deletePageOnServer(pageId).catch((error) => {
-        console.error("[wire] rollback_delete_failed", { pageId, error });
+        logger.error("wire_rollback_delete_failed", { pageId, error });
       });
     }
 
     clearPendingGeneration();
-  }, [clearPendingGeneration, deletePageLocal, deletePageOnServer]);
+  }, [
+    clearPendingGeneration,
+    deletePageLocal,
+    deletePageOnServer,
+    setPageHtml,
+  ]);
+
+  const snapshotCurrentPageHtml = useCallback((pageIds: string[]) => {
+    const pagesById = new Map(
+      useEditorStore.getState().pages.map((page) => [
+        page.id,
+        page.iframeHtml ?? "",
+      ]),
+    );
+    pendingPageHtmlBackupRef.current.clear();
+    for (const pageId of pageIds) {
+      pendingPageHtmlBackupRef.current.set(pageId, pagesById.get(pageId) ?? "");
+    }
+  }, []);
+
+  const restorePageAfterFailedGeneration = useCallback(
+    (pageId: string) => {
+      const previousHtml = pendingPageHtmlBackupRef.current.get(pageId) ?? "";
+      setPageHtml(
+        pageId,
+        previousHtml.trim().length > 0
+          ? previousHtml
+          : GENERATION_FAILURE_PREVIEW_HTML,
+      );
+    },
+    [setPageHtml],
+  );
 
   const markPagesAsLoading = useCallback(
     (pageIds: string[]) => {
@@ -325,7 +399,7 @@ export default function WirePromptSidebar({
         pendingGenerationFailedRef.current = true;
         pendingGenerationErrorRef.current = failureMessage;
         rollbackPendingCreatedPages();
-        setErrorMessage(failureMessage);
+        reportError(failureMessage);
         stop();
         return;
       }
@@ -336,7 +410,7 @@ export default function WirePromptSidebar({
       pendingGenerationFailedRef.current = true;
       pendingGenerationErrorRef.current = failureMessage;
       rollbackPendingCreatedPages();
-      setErrorMessage(failureMessage);
+      reportError(failureMessage);
       stop();
     },
     onFinish: (message) => {
@@ -369,6 +443,8 @@ export default function WirePromptSidebar({
               ) {
                 deletePageLocal(targetPageId);
                 savePromises.push(deletePageOnServer(targetPageId));
+              } else {
+                restorePageAfterFailedGeneration(targetPageId);
               }
               continue;
             }
@@ -393,6 +469,8 @@ export default function WirePromptSidebar({
               ) {
                 deletePageLocal(targetPageId);
                 savePromises.push(deletePageOnServer(targetPageId));
+              } else {
+                restorePageAfterFailedGeneration(targetPageId);
               }
               continue;
             }
@@ -435,7 +513,7 @@ export default function WirePromptSidebar({
 
           if (savePromises.length > 0) {
             void Promise.all(savePromises).catch((error) => {
-              console.error("[wire] batch_page_persist_failed", error);
+              logger.error("wire_batch_page_persist_failed", { error });
             });
           }
 
@@ -445,12 +523,12 @@ export default function WirePromptSidebar({
 
           if (failedCount > 0) {
             if (chartIconFailureCount > 0) {
-              setErrorMessage(
+              reportError(
                 `${failedCount} of ${batchTargetPageIds.length} variations failed. ${CHART_ICON_QUALITY_FAILURE_MESSAGE}`,
               );
               return;
             }
-            setErrorMessage(
+            reportError(
               `${failedCount} of ${batchTargetPageIds.length} variations failed. ${successCount} generated successfully.`,
             );
           } else {
@@ -479,7 +557,7 @@ export default function WirePromptSidebar({
 
         if (!initialQuality.isRenderable) {
           rollbackPendingCreatedPages();
-          setErrorMessage(
+          reportError(
             hasChartIconQualityViolation(initialQuality.violations)
               ? CHART_ICON_QUALITY_FAILURE_MESSAGE
               : "Generated output was not renderable. Try a more specific prompt.",
@@ -490,7 +568,7 @@ export default function WirePromptSidebar({
         setPageHtml(targetPageId, initialNormalized.html);
         void persistPageHtml(targetPageId, initialNormalized.html).catch(
           (error) => {
-            console.error("[wire] page_persist_failed", {
+            logger.error("wire_page_persist_failed", {
               targetPageId,
               error,
             });
@@ -535,7 +613,9 @@ export default function WirePromptSidebar({
       pendingModelNameRef.current = selectedModel;
       pendingGenerationFailedRef.current = false;
       pendingGenerationErrorRef.current = null;
+      hasShownErrorToastRef.current = false;
       latestPromptRef.current = trimmedPrompt;
+      snapshotCurrentPageHtml([targetPageId]);
       setQualityNotice(null);
       setErrorMessage(null);
 
@@ -561,7 +641,13 @@ export default function WirePromptSidebar({
         throw error;
       }
     },
-    [activeModelName, append, isLoading, rollbackPendingCreatedPages],
+    [
+      activeModelName,
+      append,
+      isLoading,
+      rollbackPendingCreatedPages,
+      snapshotCurrentPageHtml,
+    ],
   );
 
   const startBatchGeneration = useCallback(
@@ -587,7 +673,9 @@ export default function WirePromptSidebar({
       pendingModelNameRef.current = modelName;
       pendingGenerationFailedRef.current = false;
       pendingGenerationErrorRef.current = null;
+      hasShownErrorToastRef.current = false;
       latestPromptRef.current = trimmedPrompt;
+      snapshotCurrentPageHtml(targetPageIds);
       setQualityNotice(null);
       setErrorMessage(null);
       markPagesAsLoading(targetPageIds);
@@ -619,7 +707,13 @@ export default function WirePromptSidebar({
         throw error;
       }
     },
-    [append, isLoading, markPagesAsLoading, rollbackPendingCreatedPages],
+    [
+      append,
+      isLoading,
+      markPagesAsLoading,
+      rollbackPendingCreatedPages,
+      snapshotCurrentPageHtml,
+    ],
   );
 
   const handleSubmit = useCallback(
@@ -683,6 +777,7 @@ export default function WirePromptSidebar({
       const runInitialBatch = async () => {
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
+          let firstPageWasCreated = false;
           if (!firstPageId) {
             const createdFirstPage = await createPageOnServer("Page 1");
             createPageLocal(
@@ -691,11 +786,12 @@ export default function WirePromptSidebar({
               createdFirstPage.id,
             );
             firstPageId = createdFirstPage.id;
+            firstPageWasCreated = true;
           }
           if (!firstPageId) return;
 
           const targets: Array<{ pageId: string; isCreated: boolean }> = [
-            { pageId: firstPageId, isCreated: false },
+            { pageId: firstPageId, isCreated: firstPageWasCreated },
           ];
 
           for (let index = 1; index < storedPageCount; index += 1) {
@@ -721,7 +817,6 @@ export default function WirePromptSidebar({
           const createdPageIds = targets
             .filter((target) => target.isCreated)
             .map((target) => target.pageId);
-          markPagesAsLoading(targetPageIds);
 
           await startBatchGeneration({
             promptText: storedPrompt,
@@ -730,7 +825,7 @@ export default function WirePromptSidebar({
             modelName: resolvedModel,
           });
         } catch {
-          setErrorMessage(
+          reportError(
             `Could not generate ${storedPageCount} pages in one request. Please try again.`,
           );
         }
@@ -749,6 +844,7 @@ export default function WirePromptSidebar({
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
+    reportError,
     wireId,
   ]);
 

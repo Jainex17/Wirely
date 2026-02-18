@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createProjectPageForUser } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -14,7 +16,11 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as { title?: unknown };
+    const parsed = await readJsonBodyWithLimit<{ title?: unknown }>(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const body = parsed.data;
     const title =
       typeof body.title === "string" && body.title.trim().length > 0
         ? body.title.trim()
@@ -32,7 +38,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({ page }, { status: 201 });
   } catch (error) {
-    console.error("[projects:pages:create]", error);
+    logger.error("projects_pages_create_failed", { error });
     return NextResponse.json({ error: "Failed to create page." }, { status: 500 });
   }
 }

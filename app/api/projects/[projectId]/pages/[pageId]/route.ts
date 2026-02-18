@@ -4,6 +4,8 @@ import {
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
 
 interface RouteContext {
   params: Promise<{ projectId: string; pageId: string }>;
@@ -17,10 +19,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const { projectId, pageId } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as {
+    const parsed = await readJsonBodyWithLimit<{
       title?: unknown;
       htmlContent?: unknown;
-    };
+    }>(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const body = parsed.data;
 
     const title =
       typeof body.title === "string" && body.title.trim().length > 0
@@ -46,7 +52,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json({ page });
   } catch (error) {
-    console.error("[projects:pages:update]", error);
+    logger.error("projects_pages_update_failed", { error });
     return NextResponse.json({ error: "Failed to update page." }, { status: 500 });
   }
 }
@@ -78,7 +84,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     return NextResponse.json({ success: true, page: result.deleted });
   } catch (error) {
-    console.error("[projects:pages:delete]", error);
+    logger.error("projects_pages_delete_failed", { error });
     return NextResponse.json({ error: "Failed to delete page." }, { status: 500 });
   }
 }

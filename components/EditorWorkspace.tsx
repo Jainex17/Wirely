@@ -3,7 +3,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
-import PagePreviewModal from "./PagePreviewModal";
+import { toast } from "@/components/ui/sonner";
+import { logger } from "@/lib/logger";
 
 const MIN_ZOOM = 5;
 const MAX_ZOOM = 200;
@@ -26,7 +27,6 @@ export default function EditorWorkspace({
     initialPanX: number;
     initialPanY: number;
   } | null>(null);
-  const [previewPageId, setPreviewPageId] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<"select" | "grab">("select");
   const [isPanning, setIsPanning] = useState(false);
 
@@ -60,14 +60,6 @@ export default function EditorWorkspace({
     setSelectedSection(null);
   }, [activeTool, setSelectedSection]);
 
-  const handlePreviewPage = useCallback((pageId: string) => {
-    setPreviewPageId(pageId);
-  }, []);
-
-  const handleClosePreview = useCallback(() => {
-    setPreviewPageId(null);
-  }, []);
-
   const handleRenamePage = useCallback(
     async (pageId: string, newTitle: string) => {
       const existingPage = pages.find((page) => page.id === pageId);
@@ -88,9 +80,9 @@ export default function EditorWorkspace({
           throw new Error(`Rename failed with status ${response.status}`);
         }
       } catch (error) {
-        console.error("[pages:rename]", error);
+        logger.error("pages_rename_failed", { pageId, projectId, error });
         renamePage(pageId, existingPage.title);
-        window.alert("Could not rename page. Please try again.");
+        toast.error("Could not rename page. Please try again.");
       }
     },
     [pages, projectId, renamePage],
@@ -113,9 +105,10 @@ export default function EditorWorkspace({
         if (!response.ok) {
           throw new Error(`Delete failed with status ${response.status}`);
         }
+        toast.success("Page deleted.");
       } catch (error) {
-        console.error("[pages:delete]", error);
-        window.alert("Could not delete page. Restoring latest server data.");
+        logger.error("pages_delete_failed", { pageId, projectId, error });
+        toast.error("Could not delete page. Restoring latest server data.");
 
         try {
           const reloadResponse = await fetch(`/api/projects/${projectId}`, {
@@ -136,7 +129,12 @@ export default function EditorWorkspace({
             })) ?? [];
           hydrateProject(reloadedPages);
         } catch (reloadError) {
-          console.error("[pages:reload_after_delete_failure]", reloadError);
+          logger.error("pages_reload_after_delete_failure", {
+            pageId,
+            projectId,
+            reloadError,
+          });
+          toast.error("Could not restore latest server data.");
         }
       }
     },
@@ -278,19 +276,9 @@ export default function EditorWorkspace({
         onCanvasClick={handleCanvasClick}
         onRenamePage={handleRenamePage}
         onDeletePage={handleDeletePage}
-        onPreviewPage={handlePreviewPage}
         onToolChange={setActiveTool}
         onZoomChange={handleZoomChange}
         onReset={handleReset}
-      />
-      <PagePreviewModal
-        isOpen={previewPageId !== null}
-        onClose={handleClosePreview}
-        page={
-          previewPageId
-            ? pages.find((p) => p.id === previewPageId) || null
-            : null
-        }
       />
     </div>
   );

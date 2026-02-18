@@ -176,7 +176,6 @@ export const evaluateWireHtmlQuality = ({
     score -= 8;
   }
 
-  let hasDashboardHardFailure = false;
   if (dashboardRequested) {
     const hasPlaceholderChartText =
       /\[\s*placeholder[^\]]*\]|placeholder\s*:|coming soon chart|chart placeholder|todo chart/i.test(
@@ -185,7 +184,6 @@ export const evaluateWireHtmlQuality = ({
     if (hasPlaceholderChartText) {
       violations.push("chart_placeholder_detected");
       score -= 30;
-      hasDashboardHardFailure = true;
     }
 
     const hasChartJsScript =
@@ -202,20 +200,17 @@ export const evaluateWireHtmlQuality = ({
     if (!((hasChartJsScript && hasCanvas) || hasSvgChartSignal)) {
       violations.push("missing_chart_render_signal");
       score -= 30;
-      hasDashboardHardFailure = true;
     }
 
     const svgTagCount = (html.match(/<svg[\s>]/gi) ?? []).length;
     if (svgTagCount < 3) {
       violations.push("missing_svg_icon_signal");
       score -= 20;
-      hasDashboardHardFailure = true;
     }
 
     if (emojiCount >= 2) {
       violations.push("emoji_icon_overuse_dashboard");
       score -= 8;
-      hasDashboardHardFailure = true;
     }
   }
 
@@ -233,7 +228,7 @@ export const evaluateWireHtmlQuality = ({
   }
 
   const finalScore = clampScore(score);
-  const isRenderable = hasHtmlTag && hasBodyTag && !hasDashboardHardFailure;
+  const isRenderable = hasHtmlTag && hasBodyTag;
   return {
     score: finalScore,
     violations: Array.from(new Set(violations)),

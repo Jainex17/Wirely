@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
+import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 
 interface WireEditorProps {
   wireId: string;
@@ -110,6 +111,7 @@ export default function WireEditor({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
+                suppressHydrationWarning
                 className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
               >
                 <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
@@ -139,17 +141,21 @@ export default function WireEditor({
         </div>
       </header>
       <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
-        <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
-          <EditorWorkspace sidebarMode="wire" projectId={wireId} />
-        </div>
-        <div className="w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
-          <WirePromptSidebar
-            variant="panel"
-            wireId={wireId}
-            initialModelName={initialModelName}
-            initialMessages={initialMessages}
-          />
-        </div>
+        <EditorErrorBoundary title="Workspace canvas crashed">
+          <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+            <EditorWorkspace sidebarMode="wire" projectId={wireId} />
+          </div>
+        </EditorErrorBoundary>
+        <EditorErrorBoundary title="Prompt panel crashed">
+          <div className="w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+            <WirePromptSidebar
+              variant="panel"
+              wireId={wireId}
+              initialModelName={initialModelName}
+              initialMessages={initialMessages}
+            />
+          </div>
+        </EditorErrorBoundary>
       </div>
     </div>
   );

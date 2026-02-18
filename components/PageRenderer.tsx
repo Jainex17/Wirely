@@ -1,6 +1,7 @@
 import React from "react";
 import { FileIcon } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
+import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import PageOptionsMenu from "./PageOptionsMenu";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
@@ -43,7 +44,6 @@ interface PageRendererProps {
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
-  onPreviewPage: (pageId: string) => void;
   currentDevice: {
     width: number;
     height: number;
@@ -55,28 +55,34 @@ export default React.memo(function PageRenderer({
   page,
   onRenamePage,
   onDeletePage,
-  onPreviewPage,
   currentDevice,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 5000;
   const CHART_CANVAS_HEIGHT = 320;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
-  const hasHtml =
+  const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
+  const sanitizedHtml = React.useMemo(
+    () => (hasRawHtml ? sanitizeIframeHtml(page.iframeHtml ?? "") : ""),
+    [hasRawHtml, page.iframeHtml],
+  );
+  const hasHtml = sanitizedHtml.trim().length > 0;
   const canvasSrcDoc = React.useMemo(
     () =>
       hasHtml
-        ? stabilizeViewportHeightClasses(
-            page.iframeHtml ?? "",
-            currentDevice.height,
-          )
+        ? stabilizeViewportHeightClasses(sanitizedHtml, currentDevice.height)
         : "",
-    [hasHtml, page.iframeHtml, currentDevice.height],
+    [hasHtml, sanitizedHtml, currentDevice.height],
   );
   const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
   const stabilizeChartCanvases = React.useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
+    let doc: Document | null = null;
+    try {
+      doc = iframeRef.current?.contentDocument ?? null;
+    } catch {
+      doc = null;
+    }
     if (!doc) return;
 
     const canvases = Array.from(doc.querySelectorAll("canvas"));
@@ -105,7 +111,12 @@ export default React.memo(function PageRenderer({
   }, []);
 
   const syncIframeHeight = React.useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
+    let doc: Document | null = null;
+    try {
+      doc = iframeRef.current?.contentDocument ?? null;
+    } catch {
+      doc = null;
+    }
     if (!doc) return;
     stabilizeChartCanvases();
     // eslint-disable-next-line react-hooks/immutability
@@ -145,7 +156,6 @@ export default React.memo(function PageRenderer({
           isOnlyPage={isOnlyPage}
           onRename={(newTitle) => onRenamePage(page.id, newTitle)}
           onDelete={() => onDeletePage(page.id)}
-          onPreview={() => onPreviewPage(page.id)}
         />
       </div>
       <div
@@ -165,7 +175,7 @@ export default React.memo(function PageRenderer({
             className="h-full w-full border-0 pointer-events-none bg-white"
             style={{ overflow: "hidden" }}
             loading="eager"
-            sandbox="allow-same-origin allow-scripts"
+            sandbox="allow-scripts"
             referrerPolicy="no-referrer"
             scrolling="no"
           />

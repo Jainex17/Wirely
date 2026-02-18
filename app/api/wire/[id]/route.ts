@@ -24,9 +24,14 @@ import {
   getProjectPageForUser,
   getProjectForUser,
 } from "@/lib/db/queries/projects";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
+import { createRateLimiter } from "@/lib/rate-limit";
 
 const OPENROUTER_MODELS = Array.from(new Set(OPENROUTER_FREE_MODELS));
 const GEMINI_MODEL_NAME = DEFAULT_WIRE_MODEL;
+const wireRateLimiter = createRateLimiter();
+const includeErrorStack = process.env.NODE_ENV !== "production";
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -55,6 +60,166 @@ type WireRequestBody = {
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
+
+const MAX_PROMPT_TEXT_LENGTH = 12_000;
+const MAX_MESSAGE_COUNT = 60;
+const MAX_MESSAGE_CONTENT_LENGTH = 12_000;
+const MAX_COMPACT_HISTORY_COUNT = 24;
+const MAX_TARGET_PAGE_ID_LENGTH = 128;
+const MAX_TARGET_PAGE_TITLE_LENGTH = 200;
+const MAX_TARGET_PAGE_HTML_LENGTH = 250_000;
+const MAX_VARIATION_THEME_HINT_LENGTH = 2_000;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const isIntegerInRange = (
+  value: unknown,
+  min: number,
+  max: number,
+): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+
+const validateRequestBody = (body: WireRequestBody) => {
+  if (body.wireId !== undefined) {
+    if (typeof body.wireId !== "string") {
+      return "wireId must be a string.";
+    }
+    if (body.wireId.length > MAX_TARGET_PAGE_ID_LENGTH) {
+      return `wireId is too long (max ${MAX_TARGET_PAGE_ID_LENGTH} chars).`;
+    }
+  }
+
+  if (body.modelName !== undefined && typeof body.modelName !== "string") {
+    return "modelName must be a string.";
+  }
+
+  if (body.promptText !== undefined) {
+    if (typeof body.promptText !== "string") {
+      return "promptText must be a string.";
+    }
+    if (body.promptText.length > MAX_PROMPT_TEXT_LENGTH) {
+      return `promptText is too long (max ${MAX_PROMPT_TEXT_LENGTH} chars).`;
+    }
+  }
+
+  if (body.targetPageId !== undefined) {
+    if (typeof body.targetPageId !== "string") {
+      return "targetPageId must be a string.";
+    }
+    if (body.targetPageId.length > MAX_TARGET_PAGE_ID_LENGTH) {
+      return `targetPageId is too long (max ${MAX_TARGET_PAGE_ID_LENGTH} chars).`;
+    }
+  }
+
+  if (body.targetPageTitle !== undefined) {
+    if (typeof body.targetPageTitle !== "string") {
+      return "targetPageTitle must be a string.";
+    }
+    if (body.targetPageTitle.length > MAX_TARGET_PAGE_TITLE_LENGTH) {
+      return `targetPageTitle is too long (max ${MAX_TARGET_PAGE_TITLE_LENGTH} chars).`;
+    }
+  }
+
+  if (body.targetPageHtml !== undefined) {
+    if (typeof body.targetPageHtml !== "string") {
+      return "targetPageHtml must be a string.";
+    }
+    if (body.targetPageHtml.length > MAX_TARGET_PAGE_HTML_LENGTH) {
+      return `targetPageHtml is too long (max ${MAX_TARGET_PAGE_HTML_LENGTH} chars).`;
+    }
+  }
+
+  if (body.messages !== undefined) {
+    if (!Array.isArray(body.messages)) {
+      return "messages must be an array.";
+    }
+    if (body.messages.length > MAX_MESSAGE_COUNT) {
+      return `messages must have at most ${MAX_MESSAGE_COUNT} items.`;
+    }
+    for (const [index, message] of body.messages.entries()) {
+      if (!isRecord(message)) {
+        return `messages[${index}] must be an object.`;
+      }
+      if (
+        message.role !== "system" &&
+        message.role !== "user" &&
+        message.role !== "assistant"
+      ) {
+        return `messages[${index}].role is invalid.`;
+      }
+      if (typeof message.content !== "string") {
+        return `messages[${index}].content must be a string.`;
+      }
+      if (message.content.length > MAX_MESSAGE_CONTENT_LENGTH) {
+        return `messages[${index}].content is too long (max ${MAX_MESSAGE_CONTENT_LENGTH} chars).`;
+      }
+    }
+  }
+
+  if (body.compactHistory !== undefined) {
+    if (!Array.isArray(body.compactHistory)) {
+      return "compactHistory must be an array.";
+    }
+    if (body.compactHistory.length > MAX_COMPACT_HISTORY_COUNT) {
+      return `compactHistory must have at most ${MAX_COMPACT_HISTORY_COUNT} items.`;
+    }
+    for (const [index, message] of body.compactHistory.entries()) {
+      if (!isRecord(message)) {
+        return `compactHistory[${index}] must be an object.`;
+      }
+      if (message.role !== "user" && message.role !== "assistant") {
+        return `compactHistory[${index}].role is invalid.`;
+      }
+      if (typeof message.content !== "string") {
+        return `compactHistory[${index}].content must be a string.`;
+      }
+      if (message.content.length > MAX_MESSAGE_CONTENT_LENGTH) {
+        return `compactHistory[${index}].content is too long (max ${MAX_MESSAGE_CONTENT_LENGTH} chars).`;
+      }
+    }
+  }
+
+  if (body.variationCount !== undefined && !isIntegerInRange(body.variationCount, 1, 3)) {
+    return "variationCount must be an integer between 1 and 3.";
+  }
+
+  if (body.variationIndex !== undefined) {
+    const maxVariationIndex = isIntegerInRange(body.variationCount, 1, 3)
+      ? body.variationCount
+      : 3;
+    if (!isIntegerInRange(body.variationIndex, 1, maxVariationIndex)) {
+      return `variationIndex must be an integer between 1 and ${maxVariationIndex}.`;
+    }
+  }
+
+  if (body.variationThemeHint !== undefined) {
+    if (typeof body.variationThemeHint !== "string") {
+      return "variationThemeHint must be a string.";
+    }
+    if (body.variationThemeHint.length > MAX_VARIATION_THEME_HINT_LENGTH) {
+      return `variationThemeHint is too long (max ${MAX_VARIATION_THEME_HINT_LENGTH} chars).`;
+    }
+  }
+
+  return null;
+};
+
+const getClientIp = (request: Request) => {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const firstIp = forwardedFor.split(",")[0]?.trim();
+    if (firstIp) return firstIp;
+  }
+
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+};
+
+const withRateLimitHeaders = (response: Response, headers: Record<string, string>) => {
+  for (const [name, value] of Object.entries(headers)) {
+    response.headers.set(name, value);
+  }
+  return response;
+};
 
 const insufficientFundsResponse = () =>
   new Response("Can't process request due to insufficient funds.", {
@@ -121,7 +286,7 @@ const serializeError = (error: unknown) => {
       {
         name: error.name,
         message: error.message,
-        stack: error.stack,
+        ...(includeErrorStack ? { stack: error.stack } : {}),
         cause: (error as { cause?: unknown }).cause,
       },
       null,
@@ -163,6 +328,7 @@ const isModelError = (error: unknown) => {
 const parseMessages = (value: unknown): WireMessage[] => {
   if (!Array.isArray(value)) return [];
   return value
+    .slice(-MAX_MESSAGE_COUNT)
     .filter(
       (item): item is Record<string, unknown> =>
         !!item && typeof item === "object",
@@ -174,7 +340,7 @@ const parseMessages = (value: unknown): WireMessage[] => {
         (role === "system" || role === "user" || role === "assistant") &&
         typeof content === "string"
       ) {
-        return { role, content };
+        return { role, content: content.slice(0, MAX_MESSAGE_CONTENT_LENGTH) };
       }
       return null;
     })
@@ -184,6 +350,7 @@ const parseMessages = (value: unknown): WireMessage[] => {
 const parseCompactHistory = (value: unknown): CompactHistoryMessage[] => {
   if (!Array.isArray(value)) return [];
   return value
+    .slice(-MAX_COMPACT_HISTORY_COUNT)
     .filter(
       (item): item is Record<string, unknown> =>
         !!item && typeof item === "object",
@@ -192,7 +359,7 @@ const parseCompactHistory = (value: unknown): CompactHistoryMessage[] => {
       const role = item.role;
       const content = item.content;
       if ((role === "user" || role === "assistant") && typeof content === "string") {
-        const trimmed = content.trim();
+        const trimmed = content.trim().slice(0, MAX_MESSAGE_CONTENT_LENGTH);
         if (!trimmed) return null;
         return { role, content: trimmed };
       }
@@ -214,11 +381,11 @@ const getLatestUserPrompt = (messages: WireMessage[]) => {
 
 const parsePromptText = (value: unknown) => {
   if (typeof value !== "string") return "";
-  return value.trim();
+  return value.trim().slice(0, MAX_PROMPT_TEXT_LENGTH);
 };
 
-const parseOptionalString = (value: unknown) =>
-  typeof value === "string" ? value.trim() : "";
+const parseOptionalString = (value: unknown, maxLength = MAX_TARGET_PAGE_TITLE_LENGTH) =>
+  typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 
 const buildPageScopedPrompt = ({
   userPrompt,
@@ -426,7 +593,7 @@ const persistConversationTurn = async ({
       });
     }
   } catch (error) {
-    console.error("[wire] conversation_persist_failed", error);
+    logger.error("wire_conversation_persist_failed", { error });
   }
 };
 
@@ -465,7 +632,7 @@ const streamWithSelectedModel = async ({
       messages,
       system: systemPrompt,
       onError: ({ error }) => {
-        console.error("[wire] Gemini stream error", {
+        logger.error("wire_gemini_stream_error", {
           modelName,
           status: getStatusCode(error),
           message: getErrorMessage(error),
@@ -501,7 +668,7 @@ const streamWithSelectedModel = async ({
     messages,
     system: systemPrompt,
     onError: ({ error }) => {
-      console.error("[wire] OpenRouter stream error", {
+      logger.error("wire_openrouter_stream_error", {
         modelName,
         status: getStatusCode(error),
         message: getErrorMessage(error),
@@ -555,13 +722,13 @@ const streamWithOpenRouter = async ({
 
   for (const modelName of OPENROUTER_MODELS) {
     try {
-      console.info("[wire] OpenRouter attempt", { modelName });
+      logger.info("wire_openrouter_attempt", { modelName });
       return streamText({
         model: provider(modelName),
         messages,
         system: systemPrompt,
         onError: ({ error }) => {
-          console.error("[wire] OpenRouter stream error", {
+          logger.error("wire_openrouter_stream_error", {
             modelName,
             status: getStatusCode(error),
             message: getErrorMessage(error),
@@ -587,7 +754,7 @@ const streamWithOpenRouter = async ({
       });
     } catch (error) {
       lastError = error;
-      console.error("[wire] OpenRouter error", {
+      logger.error("wire_openrouter_error", {
         modelName,
         status: getStatusCode(error),
         message: getErrorMessage(error),
@@ -611,15 +778,56 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
+  const rateLimitResult = wireRateLimiter.check(
+    `${sessionUser.id}:${getClientIp(request)}:/api/wire/[id]`,
+  );
+  if (!rateLimitResult.allowed) {
+    return withRateLimitHeaders(
+      Response.json(
+        {
+          error: "Rate limit exceeded.",
+          retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+        },
+        { status: 429 },
+      ),
+      rateLimitResult.headers,
+    );
+  }
+  const applyRateHeaders = (response: Response) =>
+    withRateLimitHeaders(response, rateLimitResult.headers);
+
   const project = await getProjectForUser(id, sessionUser.id);
   if (!project) {
-    return Response.json({ error: "Project not found." }, { status: 404 });
+    return applyRateHeaders(
+      Response.json({ error: "Project not found." }, { status: 404 }),
+    );
   }
 
-  const body = (await request.json()) as WireRequestBody;
+  const parsedBody = await readJsonBodyWithLimit<unknown>(request);
+  if (!parsedBody.ok) {
+    return applyRateHeaders(parsedBody.response);
+  }
+  if (!isRecord(parsedBody.data)) {
+    return applyRateHeaders(
+      Response.json(
+      { error: "Request body must be a JSON object." },
+      { status: 400 },
+      ),
+    );
+  }
+  const body = parsedBody.data as WireRequestBody;
+  const validationError = validateRequestBody(body);
+  if (validationError) {
+    return applyRateHeaders(
+      Response.json({ error: validationError }, { status: 400 }),
+    );
+  }
+
   const requestedModelRaw = body?.modelName;
   if (requestedModelRaw !== undefined && !isWireModelName(requestedModelRaw)) {
-    return Response.json({ error: "Unsupported modelName." }, { status: 400 });
+    return applyRateHeaders(
+      Response.json({ error: "Unsupported modelName." }, { status: 400 }),
+    );
   }
 
   const requestedModelName = isWireModelName(requestedModelRaw)
@@ -627,10 +835,10 @@ export async function POST(request: Request, context: RouteContext) {
     : undefined;
   const variationCount = parseVariationCount(body.variationCount);
   const variationIndex = parseVariationIndex(body.variationIndex, variationCount);
-  const variationThemeHint =
-    typeof body.variationThemeHint === "string"
-      ? body.variationThemeHint.trim()
-      : "";
+  const variationThemeHint = parseOptionalString(
+    body.variationThemeHint,
+    MAX_VARIATION_THEME_HINT_LENGTH,
+  );
   const isBatchVariationRequest = variationCount > 1 && variationIndex === undefined;
   const variationThemeHints = parseVariationThemeHints(
     variationThemeHint,
@@ -642,12 +850,23 @@ export async function POST(request: Request, context: RouteContext) {
   const promptText = parsePromptText(body?.promptText);
   const latestUserPrompt = promptText || getLatestUserPrompt(fallbackMessages);
   if (!latestUserPrompt) {
-    return Response.json({ error: "Missing promptText." }, { status: 400 });
+    return applyRateHeaders(
+      Response.json({ error: "Missing promptText." }, { status: 400 }),
+    );
   }
 
-  const rawTargetPageId = parseOptionalString(body?.targetPageId);
-  const rawTargetPageTitle = parseOptionalString(body?.targetPageTitle);
-  const rawTargetPageHtml = typeof body?.targetPageHtml === "string" ? body.targetPageHtml : "";
+  const rawTargetPageId = parseOptionalString(
+    body?.targetPageId,
+    MAX_TARGET_PAGE_ID_LENGTH,
+  );
+  const rawTargetPageTitle = parseOptionalString(
+    body?.targetPageTitle,
+    MAX_TARGET_PAGE_TITLE_LENGTH,
+  );
+  const rawTargetPageHtml =
+    typeof body?.targetPageHtml === "string"
+      ? body.targetPageHtml.slice(0, MAX_TARGET_PAGE_HTML_LENGTH)
+      : "";
 
   let resolvedTargetPageId: string | null = null;
   let resolvedTargetPageTitle = rawTargetPageTitle;
@@ -660,7 +879,9 @@ export async function POST(request: Request, context: RouteContext) {
       userId: sessionUser.id,
     });
     if (!targetPage) {
-      return Response.json({ error: "Target page not found." }, { status: 404 });
+      return applyRateHeaders(
+        Response.json({ error: "Target page not found." }, { status: 404 }),
+      );
     }
     resolvedTargetPageId = targetPage.id;
     if (!resolvedTargetPageTitle) {
@@ -730,7 +951,7 @@ export async function POST(request: Request, context: RouteContext) {
     ? `${coreSystemPrompt}\n\n${pageScopeDirective}`
     : coreSystemPrompt;
 
-  console.info("[wire] generation_attempt", {
+  logger.info("wire_generation_attempt", {
     stylePresetId: stylePreset.id,
     requestedModelName,
     targetPageId: resolvedTargetPageId,
@@ -754,19 +975,21 @@ export async function POST(request: Request, context: RouteContext) {
         targetPageId: resolvedTargetPageId ?? undefined,
       });
 
-      return selectedResult.toDataStreamResponse();
+      return applyRateHeaders(selectedResult.toDataStreamResponse());
     } catch (error) {
-      console.error("[wire] selected model stream error", {
+      logger.error("wire_selected_model_stream_error", {
         modelName: requestedModelName,
         status: getStatusCode(error),
         message: getErrorMessage(error),
         responseBody: getErrorBody(error),
         error: serializeError(error),
       });
-      return selectedModelFailureResponse({
-        modelName: requestedModelName,
-        error,
-      });
+      return applyRateHeaders(
+        selectedModelFailureResponse({
+          modelName: requestedModelName,
+          error,
+        }),
+      );
     }
   }
 
@@ -776,7 +999,7 @@ export async function POST(request: Request, context: RouteContext) {
       messages,
       system: systemPrompt,
       onError: ({ error }) => {
-        console.error("[wire] Gemini stream error", {
+        logger.error("wire_gemini_stream_error", {
           modelName: GEMINI_MODEL_NAME,
           status: getStatusCode(error),
           message: getErrorMessage(error),
@@ -801,9 +1024,9 @@ export async function POST(request: Request, context: RouteContext) {
       },
     });
 
-    return result.toDataStreamResponse();
+    return applyRateHeaders(result.toDataStreamResponse());
   } catch (error) {
-    console.error("[wire] Gemini error", {
+    logger.error("wire_gemini_error", {
       modelName: GEMINI_MODEL_NAME,
       status: getStatusCode(error),
       message: getErrorMessage(error),
@@ -823,9 +1046,9 @@ export async function POST(request: Request, context: RouteContext) {
         targetPageId: resolvedTargetPageId ?? undefined,
       });
 
-      return result.toDataStreamResponse();
+      return applyRateHeaders(result.toDataStreamResponse());
     } catch (openRouterError) {
-      console.error("[wire] OpenRouter fallback error", {
+      logger.error("wire_openrouter_fallback_error", {
         status: getStatusCode(openRouterError),
         message: getErrorMessage(openRouterError),
         responseBody: getErrorBody(openRouterError),
@@ -833,10 +1056,10 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (isInsufficientFunds(openRouterError)) {
-        return insufficientFundsResponse();
+        return applyRateHeaders(insufficientFundsResponse());
       }
 
-      return insufficientFundsResponse();
+      return applyRateHeaders(insufficientFundsResponse());
     }
   }
 }

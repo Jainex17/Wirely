@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth/client";
+import { toast } from "@/components/ui/sonner";
 
 interface LoginClientProps {
   nextPath?: string;
@@ -11,6 +12,11 @@ interface LoginClientProps {
 export default function LoginClient({ nextPath }: LoginClientProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const setLoginError = (message: string) => {
+    setErrorMessage(message);
+    toast.error(message);
+  };
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
@@ -22,10 +28,10 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
       });
 
       if (result.error) {
-        setErrorMessage(result.error.message || "Unable to sign in with Google.");
+        setLoginError(result.error.message || "Unable to sign in with Google.");
       }
     } catch {
-      setErrorMessage("Unable to sign in with Google.");
+      setLoginError("Unable to sign in with Google.");
     } finally {
       setIsLoading(false);
     }

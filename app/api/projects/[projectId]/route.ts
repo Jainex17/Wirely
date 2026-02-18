@@ -5,6 +5,8 @@ import {
   deleteProjectForUser,
 } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -26,7 +28,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json(detail);
   } catch (error) {
-    console.error("[projects:get]", error);
+    logger.error("projects_get_failed", { error });
     return NextResponse.json({ error: "Failed to load project." }, { status: 500 });
   }
 }
@@ -39,10 +41,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as {
+    const parsed = await readJsonBodyWithLimit<{
       title?: unknown;
       status?: unknown;
-    };
+    }>(request);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const body = parsed.data;
 
     const updated = await updateProjectForUser({
       projectId,
@@ -60,7 +66,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json({ project: updated });
   } catch (error) {
-    console.error("[projects:update]", error);
+    logger.error("projects_update_failed", { error });
     return NextResponse.json({ error: "Failed to update project." }, { status: 500 });
   }
 }
@@ -84,7 +90,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[projects:delete]", error);
+    logger.error("projects_delete_failed", { error });
     return NextResponse.json({ error: "Failed to delete project." }, { status: 500 });
   }
 }
