@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
+import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { DEFAULT_WIRE_MODEL } from "@/lib/wireModels";
 import WireEditor from "./WireEditor";
 
@@ -38,7 +39,8 @@ export default async function WirePage({ params }: WirePageProps) {
           },
         ];
   const projectTitle = projectDetail.project.title;
-  const initialModelName = DEFAULT_WIRE_MODEL;
+  const userAiSettings = await getUserAiSettingsForGeneration(sessionUser.id);
+  const initialModelName = userAiSettings?.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
 
   return (
     <WireEditor

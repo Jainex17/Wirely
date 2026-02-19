@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useChat } from "ai/react";
 import type { Message } from "ai";
+import Link from "next/link";
 import { Send, ChevronDown, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,9 +29,11 @@ import {
 import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
+  DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   isWireModelName,
+  normalizeEnabledWireModels,
   type WireModelName,
 } from "@/lib/wireModels";
 import { toast } from "@/components/ui/sonner";
@@ -41,6 +44,10 @@ interface WirePromptSidebarProps {
   variant?: "floating" | "panel";
   initialModelName?: WireModelName;
   initialMessages?: Message[];
+}
+
+interface AiSettingsResponse {
+  enabledModelIds: WireModelName[];
 }
 
 interface CompactHistoryMessage {
@@ -167,6 +174,9 @@ export default function WirePromptSidebar({
   const [qualityNotice, setQualityNotice] = useState<string | null>(null);
   const [activeModelName, setActiveModelName] =
     useState<WireModelName>(initialModelName);
+  const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
+    ...DEFAULT_ENABLED_WIRE_MODELS,
+  ]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
   const autoRunRef = useRef(false);
@@ -343,9 +353,13 @@ export default function WirePromptSidebar({
       requestBody,
     }) => {
       const body = (requestBody ?? {}) as Record<string, unknown>;
-      const selectedModel = isWireModelName(body.modelName)
+      const preferredModel = isWireModelName(body.modelName)
         ? body.modelName
         : activeModelName;
+      const selectedModel =
+        enabledModelIds.find((modelId) => modelId === preferredModel) ??
+        enabledModelIds[0] ??
+        activeModelName;
       const variationCount =
         typeof body.variationCount === "number"
           ? body.variationCount
@@ -602,10 +616,17 @@ export default function WirePromptSidebar({
         return false;
       }
 
+      if (enabledModelIds.length === 0) {
+        reportError("No models are enabled. Enable at least one model in Profile.");
+        return false;
+      }
+
       const trimmedPrompt = promptText.trim();
       if (!trimmedPrompt) return false;
 
-      const selectedModel = modelName ?? activeModelName;
+      const preferredModel = modelName ?? activeModelName;
+      const selectedModel =
+        enabledModelIds.find((id) => id === preferredModel) ?? enabledModelIds[0];
 
       pendingTargetPageIdRef.current = targetPageId;
       pendingCreatedPageIdRef.current = createdPageId ?? null;
@@ -645,7 +666,9 @@ export default function WirePromptSidebar({
     [
       activeModelName,
       append,
+      enabledModelIds,
       isLoading,
+      reportError,
       rollbackPendingCreatedPages,
       snapshotCurrentPageHtml,
     ],
@@ -664,14 +687,21 @@ export default function WirePromptSidebar({
       modelName: WireModelName;
     }) => {
       if (isLoading) return false;
+      if (enabledModelIds.length === 0) {
+        reportError("No models are enabled. Enable at least one model in Profile.");
+        return false;
+      }
       const trimmedPrompt = promptText.trim();
       if (!trimmedPrompt || targetPageIds.length <= 1) return false;
+
+      const selectedModel =
+        enabledModelIds.find((id) => id === modelName) ?? enabledModelIds[0];
 
       pendingTargetPageIdRef.current = null;
       pendingCreatedPageIdRef.current = null;
       pendingBatchTargetPageIdsRef.current = targetPageIds;
       pendingBatchCreatedPageIdsRef.current = createdPageIds;
-      pendingModelNameRef.current = modelName;
+      pendingModelNameRef.current = selectedModel;
       pendingGenerationFailedRef.current = false;
       pendingGenerationErrorRef.current = null;
       hasShownErrorToastRef.current = false;
@@ -682,7 +712,7 @@ export default function WirePromptSidebar({
       markPagesAsLoading(targetPageIds);
 
       const body = {
-        modelName,
+        modelName: selectedModel,
         variationCount: targetPageIds.length,
         variationThemeHint: VARIATION_THEME_HINTS.slice(
           0,
@@ -696,7 +726,7 @@ export default function WirePromptSidebar({
         if (pendingGenerationFailedRef.current) {
           const failureMessage =
             pendingGenerationErrorRef.current ??
-            `Generation failed with ${modelName}. Try another model.`;
+            `Generation failed with ${selectedModel}. Try another model.`;
           pendingGenerationFailedRef.current = false;
           pendingGenerationErrorRef.current = null;
           throw new Error(failureMessage);
@@ -710,8 +740,10 @@ export default function WirePromptSidebar({
     },
     [
       append,
+      enabledModelIds,
       isLoading,
       markPagesAsLoading,
+      reportError,
       rollbackPendingCreatedPages,
       snapshotCurrentPageHtml,
     ],
@@ -771,16 +803,67 @@ export default function WirePromptSidebar({
   }, [prompt, resizePromptTextarea]);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    const loadAiSettings = async () => {
+      try {
+        const response = await fetch("/api/profile/ai-settings", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (!isCancelled) {
+            setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+          }
+          return;
+        }
+
+        const payload = (await response.json()) as AiSettingsResponse;
+        if (!isCancelled) {
+          setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
+        }
+      } catch {
+        if (!isCancelled) {
+          setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+        }
+      }
+    };
+
+    void loadAiSettings();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (enabledModelIds.length === 0) return;
+    if (!enabledModelIds.includes(activeModelName)) {
+      setActiveModelName(enabledModelIds[0]);
+    }
+  }, [activeModelName, enabledModelIds]);
+
+  useEffect(() => {
     if (autoRunRef.current) return;
     const autoRunTimerId = window.setTimeout(() => {
       if (autoRunRef.current) return;
 
+      if (enabledModelIds.length === 0) {
+        autoRunRef.current = true;
+        reportError("No models are enabled. Enable at least one model in Profile.");
+        return;
+      }
+
       const storedModel = sessionStorage.getItem(`wireModel:${wireId}`);
-      const resolvedModel = isWireModelName(storedModel)
-        ? storedModel
-        : activeModelName;
-      if (isWireModelName(storedModel)) {
-        setActiveModelName(storedModel);
+      const resolvedModel =
+        isWireModelName(storedModel) && enabledModelIds.includes(storedModel)
+          ? storedModel
+          : enabledModelIds.includes(activeModelName)
+            ? activeModelName
+            : enabledModelIds[0];
+      if (
+        isWireModelName(storedModel) &&
+        enabledModelIds.includes(storedModel)
+      ) {
+        setActiveModelName(resolvedModel);
       }
 
       const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
@@ -864,6 +947,7 @@ export default function WirePromptSidebar({
     activeModelName,
     createPageLocal,
     createPageOnServer,
+    enabledModelIds,
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
@@ -920,14 +1004,17 @@ export default function WirePromptSidebar({
   const selectedPageTitle =
     pages.find((page) => page.id === selectedPageId)?.title ?? "Select page";
 
-  const geminiModelOptions = useMemo(
-    () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "gemini"),
-    [],
+  const enabledModelOptions = useMemo(
+    () =>
+      enabledModelIds
+        .map((modelId) => WIRE_MODEL_OPTIONS.find((model) => model.id === modelId))
+        .filter((model): model is (typeof WIRE_MODEL_OPTIONS)[number] => Boolean(model)),
+    [enabledModelIds],
   );
-  const openRouterModelOptions = useMemo(
-    () => WIRE_MODEL_OPTIONS.filter((model) => model.provider === "openrouter"),
-    [],
-  );
+  const noModelsEnabled = enabledModelIds.length === 0;
+  const activeModelLabel =
+    WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
+    activeModelName;
 
   return (
     <aside className={containerClassName}>
@@ -964,6 +1051,21 @@ export default function WirePromptSidebar({
             }`}
           >
             Thinking...
+          </div>
+        ) : null}
+        {noModelsEnabled ? (
+          <div
+            className={`max-w-[95%] rounded-xl px-4 py-3 text-sm ${
+              variant === "panel"
+                ? "border border-destructive/30 bg-destructive/5 text-destructive"
+                : "border border-white/20 bg-neutral-800/60 text-neutral-100"
+            }`}
+          >
+            No models are enabled. Open{" "}
+            <Link href="/profile" className="underline underline-offset-2">
+              Profile
+            </Link>{" "}
+            to enable at least one model.
           </div>
         ) : null}
       </div>
@@ -1006,15 +1108,15 @@ export default function WirePromptSidebar({
                         ? "text-muted-foreground hover:bg-accent"
                         : "text-neutral-400 hover:bg-white/10"
                     }`}
+                    disabled={noModelsEnabled}
                   >
                     <Circle className="h-3 w-3 text-primary" />
-                    {WIRE_MODEL_OPTIONS.find((m) => m.id === activeModelName)
-                      ?.label || activeModelName}
+                    {activeModelLabel}
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-card border-border">
-                  {geminiModelOptions.map((model) => (
+                  {enabledModelOptions.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
                       onClick={() => setActiveModelName(model.id)}
@@ -1022,14 +1124,9 @@ export default function WirePromptSidebar({
                       {model.label}
                     </DropdownMenuItem>
                   ))}
-                  {openRouterModelOptions.map((model) => (
-                    <DropdownMenuItem
-                      key={model.id}
-                      onClick={() => setActiveModelName(model.id)}
-                    >
-                      {model.label}
-                    </DropdownMenuItem>
-                  ))}
+                  {enabledModelOptions.length === 0 ? (
+                    <DropdownMenuItem disabled>No models enabled</DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -1064,7 +1161,7 @@ export default function WirePromptSidebar({
 
             <Button
               type="submit"
-              disabled={isLoading || !prompt.trim() || !selectedPageId}
+              disabled={isLoading || !prompt.trim() || !selectedPageId || noModelsEnabled}
               size="icon"
               className={`h-8 w-8 shrink-0 ${
                 variant === "panel"

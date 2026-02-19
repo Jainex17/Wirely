@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -24,6 +25,8 @@ export const users = pgTable(
     email: text("email"),
     name: text("name"),
     avatarUrl: text("avatar_url"),
+    googleApiKey: text("google_api_key"),
+    enabledGoogleModels: jsonb("enabled_google_models").$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

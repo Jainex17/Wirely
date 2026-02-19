@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
+  DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
+  normalizeEnabledWireModels,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -55,6 +57,10 @@ interface ProjectsResponse {
   }>;
 }
 
+interface AiSettingsResponse {
+  enabledModelIds: WireModelName[];
+}
+
 const PAGE_VARIATION_OPTIONS: Array<{
   value: 1 | 2 | 3;
   label: string;
@@ -89,19 +95,21 @@ export default function Home() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedModel, setSelectedModel] =
     useState<WireModelName>(DEFAULT_WIRE_MODEL);
+  const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
+    ...DEFAULT_ENABLED_WIRE_MODELS,
+  ]);
   const [selectedPageCount, setSelectedPageCount] = useState<1 | 2 | 3>(1);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const placeholder = useMemo(() => "Ask Wirely to build...", []);
-  const geminiModels = useMemo(
-    () => WIRE_MODEL_OPTIONS.filter((item) => item.provider === "gemini"),
-    [],
-  );
-  const openRouterModels = useMemo(
-    () => WIRE_MODEL_OPTIONS.filter((item) => item.provider === "openrouter"),
-    [],
+  const enabledModelOptions = useMemo(
+    () =>
+      enabledModelIds
+        .map((modelId) => WIRE_MODEL_OPTIONS.find((model) => model.id === modelId))
+        .filter((model): model is (typeof WIRE_MODEL_OPTIONS)[number] => Boolean(model)),
+    [enabledModelIds],
   );
 
   useEffect(() => {
@@ -165,9 +173,64 @@ export default function Home() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!user) {
+      setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadAiSettings = async () => {
+      try {
+        const response = await fetch("/api/profile/ai-settings", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (!isCancelled) {
+            setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+          }
+          return;
+        }
+
+        const payload = (await response.json()) as AiSettingsResponse;
+        if (!isCancelled) {
+          const normalized = normalizeEnabledWireModels(payload.enabledModelIds);
+          setEnabledModelIds(normalized);
+        }
+      } catch {
+        if (!isCancelled) {
+          setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+        }
+      }
+    };
+
+    void loadAiSettings();
+    return () => {
+      isCancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (enabledModelIds.length === 0) return;
+    if (!enabledModelIds.includes(selectedModel)) {
+      setSelectedModel(enabledModelIds[0]);
+    }
+  }, [enabledModelIds, selectedModel]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting) return;
+    if (enabledModelIds.length === 0) {
+      setErrorMessage("No models are enabled. Enable at least one model in Profile.");
+      toast.error("No models are enabled. Open Profile to enable one.");
+      return;
+    }
+
+    const modelToUse = enabledModelIds.includes(selectedModel)
+      ? selectedModel
+      : enabledModelIds[0];
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -201,7 +264,7 @@ export default function Home() {
       if (trimmedPrompt) {
         sessionStorage.setItem(`wirePrompt:${projectId}`, trimmedPrompt);
       }
-      sessionStorage.setItem(`wireModel:${projectId}`, selectedModel);
+      sessionStorage.setItem(`wireModel:${projectId}`, modelToUse);
       sessionStorage.setItem(
         `wirePageCount:${projectId}`,
         String(selectedPageCount),
@@ -277,6 +340,11 @@ export default function Home() {
     }
   };
 
+  const hasNoEnabledModels = Boolean(user) && enabledModelIds.length === 0;
+  const selectedModelLabel =
+    WIRE_MODEL_OPTIONS.find((model) => model.id === selectedModel)?.label ??
+    selectedModel;
+
   return (
     <div className="h-screen w-full flex flex-col bg-muted p-3 gap-2 overflow-hidden">
       <AppHeader
@@ -309,16 +377,15 @@ export default function Home() {
                           variant="outline"
                           size="sm"
                           className="bg-transparent border-border hover:bg-muted"
+                          disabled={hasNoEnabledModels}
                         >
                           <Circle size={16} className="text-primary mr-2" />
-                          {WIRE_MODEL_OPTIONS.find(
-                            (m) => m.id === selectedModel,
-                          )?.label || selectedModel}{" "}
+                          {selectedModelLabel}{" "}
                           <ChevronDown size={16} className="ml-2" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-card border-border">
-                        {geminiModels.map((model) => (
+                        {enabledModelOptions.map((model) => (
                           <DropdownMenuItem
                             key={model.id}
                             onClick={() => setSelectedModel(model.id)}
@@ -326,14 +393,11 @@ export default function Home() {
                             {model.label}
                           </DropdownMenuItem>
                         ))}
-                        {openRouterModels.map((model) => (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() => setSelectedModel(model.id)}
-                          >
-                            {model.label}
+                        {enabledModelOptions.length === 0 ? (
+                          <DropdownMenuItem disabled>
+                            No models enabled
                           </DropdownMenuItem>
-                        ))}
+                        ) : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
                     <DropdownMenu>
@@ -365,9 +429,11 @@ export default function Home() {
                   </div>
                   <Button
                     type="submit"
-                    disabled={isSubmitting || prompt.trim().length < 10}
+                    disabled={
+                      isSubmitting || prompt.trim().length < 10 || hasNoEnabledModels
+                    }
                     className={
-                      prompt.trim().length >= 10
+                      prompt.trim().length >= 10 && !hasNoEnabledModels
                         ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
                         : "bg-muted text-muted-foreground"
                     }
@@ -382,7 +448,20 @@ export default function Home() {
               </div>
             </form>
             <div className="text-center text-sm text-muted-foreground mt-2">
-              Select a model and start building{" "}
+              {hasNoEnabledModels ? (
+                <>
+                  No models enabled. Update your settings in{" "}
+                  <Link
+                    href="/profile"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    Profile
+                  </Link>
+                  .
+                </>
+              ) : (
+                "Select a model and start building"
+              )}
             </div>
             {errorMessage ? (
               <div className="mt-3 text-center text-sm text-destructive">

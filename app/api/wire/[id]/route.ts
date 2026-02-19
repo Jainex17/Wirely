@@ -1,6 +1,5 @@
 import { streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   composeGenerateSystemPrompt,
   selectWireStylePreset,
@@ -12,9 +11,6 @@ import {
   userExplicitlyRequestedImages,
 } from "@/lib/wireOutput";
 import {
-  DEFAULT_WIRE_MODEL,
-  OPENROUTER_FREE_MODELS,
-  getWireModelProvider,
   isWireModelName,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -24,12 +20,11 @@ import {
   getProjectPageForUser,
   getProjectForUser,
 } from "@/lib/db/queries/projects";
+import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { createRateLimiter } from "@/lib/rate-limit";
 
-const OPENROUTER_MODELS = Array.from(new Set(OPENROUTER_FREE_MODELS));
-const GEMINI_MODEL_NAME = DEFAULT_WIRE_MODEL;
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
 
@@ -312,19 +307,6 @@ const isInsufficientFunds = (error: unknown) => {
   );
 };
 
-const isModelError = (error: unknown) => {
-  const status = getStatusCode(error);
-  if (status === 404) return true;
-  const message = getErrorMessage(error).toLowerCase();
-  return (
-    message.includes("model") &&
-    (message.includes("not found") ||
-      message.includes("no endpoints") ||
-      message.includes("invalid") ||
-      message.includes("404"))
-  );
-};
-
 const parseMessages = (value: unknown): WireMessage[] => {
   if (!Array.isArray(value)) return [];
   return value
@@ -601,7 +583,6 @@ const streamWithSelectedModel = async ({
   projectId,
   modelName,
   googleApiKey,
-  openrouterApiKey,
   messages,
   systemPrompt,
   stylePreset,
@@ -611,8 +592,7 @@ const streamWithSelectedModel = async ({
 }: {
   projectId: string;
   modelName: WireModelName;
-  googleApiKey: string | undefined;
-  openrouterApiKey: string | undefined;
+  googleApiKey: string;
   messages: WireMessage[];
   systemPrompt: string;
   stylePreset: WireStylePreset;
@@ -620,55 +600,13 @@ const streamWithSelectedModel = async ({
   userPrompt: string;
   targetPageId?: string;
 }) => {
-  const providerType = getWireModelProvider(modelName);
-  if (!providerType) {
-    throw new Error("Unsupported model");
-  }
-
-  if (providerType === "gemini") {
-    const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
-    return streamText({
-      model: googleProvider(modelName),
-      messages,
-      system: systemPrompt,
-      onError: ({ error }) => {
-        logger.error("wire_gemini_stream_error", {
-          modelName,
-          status: getStatusCode(error),
-          message: getErrorMessage(error),
-          responseBody: getErrorBody(error),
-          error: serializeError(error),
-        });
-      },
-      onFinish: ({ text }) => {
-        logQualityTelemetry({
-          text,
-          stylePreset,
-          allowImages,
-          userPrompt,
-          modelName,
-        });
-        void persistConversationTurn({
-          projectId,
-          userPrompt,
-          assistantSummary: extractAssistantSummary(text),
-          targetPageId,
-        });
-      },
-    });
-  }
-
-  if (!openrouterApiKey) {
-    throw new Error("Missing OpenRouter API key");
-  }
-
-  const openRouterProvider = createOpenRouter({ apiKey: openrouterApiKey });
+  const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
   return streamText({
-    model: openRouterProvider(modelName),
+    model: googleProvider(modelName),
     messages,
     system: systemPrompt,
     onError: ({ error }) => {
-      logger.error("wire_openrouter_stream_error", {
+      logger.error("wire_gemini_stream_error", {
         modelName,
         status: getStatusCode(error),
         message: getErrorMessage(error),
@@ -692,83 +630,6 @@ const streamWithSelectedModel = async ({
       });
     },
   });
-};
-
-const streamWithOpenRouter = async ({
-  projectId,
-  apiKey,
-  messages,
-  systemPrompt,
-  stylePreset,
-  allowImages,
-  userPrompt,
-  targetPageId,
-}: {
-  projectId: string;
-  apiKey: string | undefined;
-  messages: WireMessage[];
-  systemPrompt: string;
-  stylePreset: WireStylePreset;
-  allowImages: boolean;
-  userPrompt: string;
-  targetPageId?: string;
-}) => {
-  if (!apiKey) {
-    throw new Error("Missing OpenRouter API key");
-  }
-
-  const provider = createOpenRouter({ apiKey });
-  let lastError: unknown;
-
-  for (const modelName of OPENROUTER_MODELS) {
-    try {
-      logger.info("wire_openrouter_attempt", { modelName });
-      return streamText({
-        model: provider(modelName),
-        messages,
-        system: systemPrompt,
-        onError: ({ error }) => {
-          logger.error("wire_openrouter_stream_error", {
-            modelName,
-            status: getStatusCode(error),
-            message: getErrorMessage(error),
-            responseBody: getErrorBody(error),
-            error: serializeError(error),
-          });
-        },
-        onFinish: ({ text }) => {
-          logQualityTelemetry({
-            text,
-            stylePreset,
-            allowImages,
-            userPrompt,
-            modelName,
-          });
-          void persistConversationTurn({
-            projectId,
-            userPrompt,
-            assistantSummary: extractAssistantSummary(text),
-            targetPageId,
-          });
-        },
-      });
-    } catch (error) {
-      lastError = error;
-      logger.error("wire_openrouter_error", {
-        modelName,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-      });
-      if (isInsufficientFunds(error)) {
-        throw error;
-      }
-      if (!isModelError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError ?? new Error("OpenRouter models unavailable");
 };
 
 export async function POST(request: Request, context: RouteContext) {
@@ -913,9 +774,39 @@ export async function POST(request: Request, context: RouteContext) {
     userPrompt: latestUserPrompt,
   });
 
-  const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
-  const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
+  const userAiSettings = await getUserAiSettingsForGeneration(sessionUser.id);
+  if (!userAiSettings) {
+    return applyRateHeaders(
+      Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),
+    );
+  }
+  if (!userAiSettings.googleApiKey) {
+    return applyRateHeaders(
+      new Response(
+        "Google API key is not configured. Add it in Profile to generate output.",
+        { status: 400 },
+      ),
+    );
+  }
+  if (userAiSettings.enabledModelIds.length === 0) {
+    return applyRateHeaders(
+      new Response(
+        "No models are enabled. Enable at least one model in Profile.",
+        { status: 400 },
+      ),
+    );
+  }
+
+  const effectiveModelName =
+    requestedModelName ?? userAiSettings.enabledModelIds[0];
+  if (!userAiSettings.enabledModelIds.includes(effectiveModelName)) {
+    return applyRateHeaders(
+      new Response(
+        `Model ${effectiveModelName} is disabled. Enable it in Profile first.`,
+        { status: 403 },
+      ),
+    );
+  }
 
   const baseSystemPrompt = composeGenerateSystemPrompt({
     stylePreset,
@@ -954,112 +845,40 @@ export async function POST(request: Request, context: RouteContext) {
   logger.info("wire_generation_attempt", {
     stylePresetId: stylePreset.id,
     requestedModelName,
+    effectiveModelName,
     targetPageId: resolvedTargetPageId,
     variationCount,
     variationIndex: variationIndex ?? null,
     batchMode: isBatchVariationRequest,
   });
 
-  if (requestedModelName) {
-    try {
-      const selectedResult = await streamWithSelectedModel({
-        projectId: id,
-        modelName: requestedModelName,
-        googleApiKey,
-        openrouterApiKey,
-        messages,
-        systemPrompt,
-        stylePreset,
-        allowImages,
-        userPrompt: latestUserPrompt,
-        targetPageId: resolvedTargetPageId ?? undefined,
-      });
-
-      return applyRateHeaders(selectedResult.toDataStreamResponse());
-    } catch (error) {
-      logger.error("wire_selected_model_stream_error", {
-        modelName: requestedModelName,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-        responseBody: getErrorBody(error),
-        error: serializeError(error),
-      });
-      return applyRateHeaders(
-        selectedModelFailureResponse({
-          modelName: requestedModelName,
-          error,
-        }),
-      );
-    }
-  }
-
   try {
-    const result = streamText({
-      model: googleProvider(GEMINI_MODEL_NAME),
+    const result = await streamWithSelectedModel({
+      projectId: id,
+      modelName: effectiveModelName,
+      googleApiKey: userAiSettings.googleApiKey,
       messages,
-      system: systemPrompt,
-      onError: ({ error }) => {
-        logger.error("wire_gemini_stream_error", {
-          modelName: GEMINI_MODEL_NAME,
-          status: getStatusCode(error),
-          message: getErrorMessage(error),
-          responseBody: getErrorBody(error),
-          error: serializeError(error),
-        });
-      },
-      onFinish: ({ text }) => {
-        logQualityTelemetry({
-          text,
-          stylePreset,
-          allowImages,
-          userPrompt: latestUserPrompt,
-          modelName: GEMINI_MODEL_NAME,
-        });
-        void persistConversationTurn({
-          projectId: id,
-          userPrompt: latestUserPrompt,
-          assistantSummary: extractAssistantSummary(text),
-          targetPageId: resolvedTargetPageId ?? undefined,
-        });
-      },
+      systemPrompt,
+      stylePreset,
+      allowImages,
+      userPrompt: latestUserPrompt,
+      targetPageId: resolvedTargetPageId ?? undefined,
     });
 
     return applyRateHeaders(result.toDataStreamResponse());
   } catch (error) {
-    logger.error("wire_gemini_error", {
-      modelName: GEMINI_MODEL_NAME,
+    logger.error("wire_selected_model_stream_error", {
+      modelName: effectiveModelName,
       status: getStatusCode(error),
       message: getErrorMessage(error),
       responseBody: getErrorBody(error),
       error: serializeError(error),
     });
-
-    try {
-      const result = await streamWithOpenRouter({
-        projectId: id,
-        apiKey: openrouterApiKey,
-        messages,
-        systemPrompt,
-        stylePreset,
-        allowImages,
-        userPrompt: latestUserPrompt,
-        targetPageId: resolvedTargetPageId ?? undefined,
-      });
-
-      return applyRateHeaders(result.toDataStreamResponse());
-    } catch (openRouterError) {
-      logger.error("wire_openrouter_fallback_error", {
-        status: getStatusCode(openRouterError),
-        message: getErrorMessage(openRouterError),
-        responseBody: getErrorBody(openRouterError),
-        error: serializeError(openRouterError),
-      });
-
-      if (isInsufficientFunds(openRouterError)) {
-        return applyRateHeaders(insufficientFundsResponse());
-      }
-
-      return applyRateHeaders(insufficientFundsResponse());
-    }
+    return applyRateHeaders(
+      selectedModelFailureResponse({
+        modelName: effectiveModelName,
+        error,
+      }),
+    );
   }
 }

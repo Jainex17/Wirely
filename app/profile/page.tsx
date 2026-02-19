@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
+import ProfileAiSettingsClient from "./ProfileAiSettingsClient";
 
 export default async function ProfilePage() {
   const sessionUser = await getServerSessionUser();
@@ -25,6 +26,7 @@ export default async function ProfilePage() {
             </p>
           </div>
         </div>
+        <ProfileAiSettingsClient />
       </div>
     </main>
   );
