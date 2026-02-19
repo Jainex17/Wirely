@@ -6,6 +6,7 @@ import {
   type UserAiSettings,
 } from "@/lib/db/queries/users";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 import {
   WIRE_MODEL_OPTIONS,
   isWireModelName,
@@ -157,12 +158,29 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const updated = await updateUserAiSettings({
-    userId: sessionUser.id,
-    ...(googleApiKey !== undefined ? { googleApiKey } : {}),
-    ...(clearGoogleApiKey ? { clearGoogleApiKey } : {}),
-    ...(enabledModelIds !== undefined ? { enabledGoogleModels: enabledModelIds } : {}),
-  });
+  let updated: UserAiSettings | null = null;
+  try {
+    updated = await updateUserAiSettings({
+      userId: sessionUser.id,
+      ...(googleApiKey !== undefined ? { googleApiKey } : {}),
+      ...(clearGoogleApiKey ? { clearGoogleApiKey } : {}),
+      ...(enabledModelIds !== undefined
+        ? { enabledGoogleModels: enabledModelIds }
+        : {}),
+    });
+  } catch (error) {
+    if (isUserApiKeyCryptoError(error) && error.code === "CRYPTO_CONFIG_ERROR") {
+      return NextResponse.json(
+        { error: "Server encryption is not configured correctly." },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json(
+      { error: "Unable to update AI settings." },
+      { status: 500 },
+    );
+  }
 
   if (!updated) {
     return NextResponse.json(

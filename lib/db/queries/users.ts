@@ -2,6 +2,11 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import {
+  decryptUserApiKey,
+  encryptUserApiKey,
+  hasEncryptedApiKeyMaterial,
+} from "@/lib/security/userApiKeyCrypto";
+import {
   normalizeEnabledWireModels,
   resolveEnabledWireModels,
   type WireModelName,
@@ -32,13 +37,24 @@ export interface UpdateUserAiSettingsInput {
 }
 
 export const toPublicUserAiSettings = ({
-  googleApiKey,
+  googleApiKeyCiphertext,
+  googleApiKeyIv,
+  googleApiKeyHmac,
+  googleApiKeyKeyVersion,
   enabledGoogleModels,
 }: {
-  googleApiKey: string | null | undefined;
+  googleApiKeyCiphertext: string | null | undefined;
+  googleApiKeyIv: string | null | undefined;
+  googleApiKeyHmac: string | null | undefined;
+  googleApiKeyKeyVersion: number | null | undefined;
   enabledGoogleModels: unknown;
 }): UserAiSettings => ({
-  hasGoogleApiKey: Boolean(googleApiKey?.trim()),
+  hasGoogleApiKey: hasEncryptedApiKeyMaterial({
+    googleApiKeyCiphertext,
+    googleApiKeyIv,
+    googleApiKeyHmac,
+    googleApiKeyKeyVersion,
+  }),
   enabledModelIds: resolveEnabledWireModels(enabledGoogleModels),
 });
 
@@ -84,7 +100,10 @@ export const getUserAiSettings = async (
 
   const [user] = await db
     .select({
-      googleApiKey: users.googleApiKey,
+      googleApiKeyCiphertext: users.googleApiKeyCiphertext,
+      googleApiKeyIv: users.googleApiKeyIv,
+      googleApiKeyHmac: users.googleApiKeyHmac,
+      googleApiKeyKeyVersion: users.googleApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
     })
     .from(users)
@@ -94,7 +113,10 @@ export const getUserAiSettings = async (
   if (!user) return null;
 
   return toPublicUserAiSettings({
-    googleApiKey: user.googleApiKey,
+    googleApiKeyCiphertext: user.googleApiKeyCiphertext,
+    googleApiKeyIv: user.googleApiKeyIv,
+    googleApiKeyHmac: user.googleApiKeyHmac,
+    googleApiKeyKeyVersion: user.googleApiKeyKeyVersion,
     enabledGoogleModels: user.enabledGoogleModels,
   });
 };
@@ -106,7 +128,10 @@ export const getUserAiSettingsForGeneration = async (
 
   const [user] = await db
     .select({
-      googleApiKey: users.googleApiKey,
+      googleApiKeyCiphertext: users.googleApiKeyCiphertext,
+      googleApiKeyIv: users.googleApiKeyIv,
+      googleApiKeyHmac: users.googleApiKeyHmac,
+      googleApiKeyKeyVersion: users.googleApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
     })
     .from(users)
@@ -115,8 +140,26 @@ export const getUserAiSettingsForGeneration = async (
 
   if (!user) return null;
 
+  let decryptedApiKey: string | null = null;
+  if (
+    hasEncryptedApiKeyMaterial({
+      googleApiKeyCiphertext: user.googleApiKeyCiphertext,
+      googleApiKeyIv: user.googleApiKeyIv,
+      googleApiKeyHmac: user.googleApiKeyHmac,
+      googleApiKeyKeyVersion: user.googleApiKeyKeyVersion,
+    })
+  ) {
+    decryptedApiKey = decryptUserApiKey({
+      userId,
+      ciphertext: user.googleApiKeyCiphertext as string,
+      iv: user.googleApiKeyIv as string,
+      hmac: user.googleApiKeyHmac as string,
+      keyVersion: user.googleApiKeyKeyVersion as number,
+    });
+  }
+
   return {
-    googleApiKey: user.googleApiKey?.trim() || null,
+    googleApiKey: decryptedApiKey,
     enabledModelIds: resolveEnabledWireModels(user.enabledGoogleModels),
   };
 };
@@ -133,10 +176,22 @@ export const updateUserAiSettings = async ({
     updatedAt: new Date(),
   };
 
+  if (googleApiKey !== undefined) {
+    const encrypted = encryptUserApiKey({
+      userId,
+      plaintextKey: googleApiKey,
+    });
+    setPayload.googleApiKeyCiphertext = encrypted.ciphertext;
+    setPayload.googleApiKeyIv = encrypted.iv;
+    setPayload.googleApiKeyHmac = encrypted.hmac;
+    setPayload.googleApiKeyKeyVersion = encrypted.keyVersion;
+  }
+
   if (clearGoogleApiKey) {
-    setPayload.googleApiKey = null;
-  } else if (googleApiKey !== undefined) {
-    setPayload.googleApiKey = googleApiKey.trim();
+    setPayload.googleApiKeyCiphertext = null;
+    setPayload.googleApiKeyIv = null;
+    setPayload.googleApiKeyHmac = null;
+    setPayload.googleApiKeyKeyVersion = null;
   }
 
   if (enabledGoogleModels !== undefined) {

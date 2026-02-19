@@ -36,6 +36,20 @@
       "when": 1771507252131,
       "tag": "0004_silly_sharon_carter",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771508213273,
+      "tag": "0005_cute_callisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771509145294,
+      "tag": "0006_flashy_prism",
+      "breakpoints": true
     }
   ]
 }

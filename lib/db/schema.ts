@@ -25,7 +25,11 @@ export const users = pgTable(
     email: text("email"),
     name: text("name"),
     avatarUrl: text("avatar_url"),
-    googleApiKey: text("google_api_key"),
+    googleApiKeyCiphertext: text("google_api_key_ciphertext"),
+    googleApiKeyIv: text("google_api_key_iv"),
+    // Legacy column name kept for compatibility; stores AES-GCM auth tag.
+    googleApiKeyHmac: text("google_api_key_hmac"),
+    googleApiKeyKeyVersion: integer("google_api_key_key_version"),
     enabledGoogleModels: jsonb("enabled_google_models").$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

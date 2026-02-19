@@ -4,7 +4,10 @@ import { toPublicUserAiSettings } from "@/lib/db/queries/users";
 describe("toPublicUserAiSettings", () => {
   it("returns only public AI settings without exposing raw api keys", () => {
     const publicSettings = toPublicUserAiSettings({
-      googleApiKey: "secret-key-value",
+      googleApiKeyCiphertext: "ciphertext",
+      googleApiKeyIv: "iv",
+      googleApiKeyHmac: "hmac",
+      googleApiKeyKeyVersion: 1,
       enabledGoogleModels: ["gemini-2.5-pro", "gemini-2.5-flash-lite"],
     });
 
@@ -15,5 +18,26 @@ describe("toPublicUserAiSettings", () => {
     expect(
       Object.prototype.hasOwnProperty.call(publicSettings, "googleApiKey"),
     ).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        publicSettings,
+        "googleApiKeyCiphertext",
+      ),
+    ).toBe(false);
+  });
+
+  it("marks api key as not configured when encrypted key material is incomplete", () => {
+    const publicSettings = toPublicUserAiSettings({
+      googleApiKeyCiphertext: "ciphertext",
+      googleApiKeyIv: null,
+      googleApiKeyHmac: "hmac",
+      googleApiKeyKeyVersion: 1,
+      enabledGoogleModels: ["gemini-2.5-flash"],
+    });
+
+    expect(publicSettings).toEqual({
+      hasGoogleApiKey: false,
+      enabledModelIds: ["gemini-2.5-flash"],
+    });
   });
 });

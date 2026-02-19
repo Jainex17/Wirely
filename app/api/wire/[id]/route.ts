@@ -24,6 +24,7 @@ import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { createRateLimiter } from "@/lib/rate-limit";
+import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
@@ -774,7 +775,33 @@ export async function POST(request: Request, context: RouteContext) {
     userPrompt: latestUserPrompt,
   });
 
-  const userAiSettings = await getUserAiSettingsForGeneration(sessionUser.id);
+  let userAiSettings: Awaited<
+    ReturnType<typeof getUserAiSettingsForGeneration>
+  > = null;
+  try {
+    userAiSettings = await getUserAiSettingsForGeneration(sessionUser.id);
+  } catch (error) {
+    if (isUserApiKeyCryptoError(error)) {
+      if (error.code === "CRYPTO_CONFIG_ERROR") {
+        return applyRateHeaders(
+          new Response("Server encryption is not configured correctly.", {
+            status: 500,
+          }),
+        );
+      }
+
+      return applyRateHeaders(
+        new Response("API key is invalid or needs to be reconfigured.", {
+          status: 400,
+        }),
+      );
+    }
+
+    logger.error("wire_user_ai_settings_resolve_failed", { error });
+    return applyRateHeaders(
+      Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),
+    );
+  }
   if (!userAiSettings) {
     return applyRateHeaders(
       Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),

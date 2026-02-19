@@ -13,6 +13,11 @@ const REDACTED_KEY_MARKERS = [
   "html",
   "responsebody",
   "response_body",
+  "ciphertext",
+  "hmac",
+  "encrypted",
+  "googleapikey",
+  "google_api_key",
   "stack",
 ];
 
@@ -93,4 +98,3 @@ export const logger = {
   warn: (event: string, context?: unknown) => writeLog("warn", event, context),
   error: (event: string, context?: unknown) => writeLog("error", event, context),
 };
-
