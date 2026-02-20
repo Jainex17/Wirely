@@ -98,10 +98,20 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   };
 
   if (detailsIndex === -1 && htmlIndex === -1) {
+    const htmlLikeStart = source.search(/<!doctype html>|<html[\s>]|<body[\s>]/i);
+    if (htmlLikeStart === -1) {
+      const trimmed = source.trim();
+      return {
+        raw: source,
+        details: trimmed,
+        html: extractHtmlFallback(source),
+      };
+    }
+
     return {
       raw: source,
-      details: "",
-      html: extractHtmlFallback(source),
+      details: source.slice(0, htmlLikeStart).trim(),
+      html: source.slice(htmlLikeStart).trim() || extractHtmlFallback(source),
     };
   }
 

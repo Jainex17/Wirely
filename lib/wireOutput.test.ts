@@ -23,4 +23,12 @@ HTML:
     expect(parsed.details).toBe("Summary text.");
     expect(parsed.html).toContain("<main>Page</main>");
   });
+
+  it("treats plain text responses as details when no markers exist", () => {
+    const raw =
+      "LyricFlow is a sleek, dark-themed application workspace featuring a slate and steel palette with electric sky-blue accents.";
+
+    const parsed = parseWireOutput(raw);
+    expect(parsed.details).toContain("LyricFlow is a sleek, dark-themed");
+  });
 });
