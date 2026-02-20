@@ -26,6 +26,10 @@ import { logger } from "@/lib/logger";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
 

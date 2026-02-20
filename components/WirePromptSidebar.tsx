@@ -104,6 +104,39 @@ const hasChartIconQualityViolation = (violations: string[]) =>
     ].includes(violation),
   );
 
+const normalizeGenerationErrorMessage = ({
+  error,
+  modelName,
+}: {
+  error: unknown;
+  modelName: WireModelName;
+}) => {
+  const fallback = `Generation failed with ${modelName}. Try another model.`;
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  const message = raw.trim();
+
+  if (!message) return fallback;
+  if (/aborted|cancelled|network|fetch failed|stream closed/i.test(message)) {
+    return "Generation stream closed early. Retry, or switch to Gemini 2.5 Flash Lite.";
+  }
+  if (/quota|rate limit|resource exhausted|429|too many requests/i.test(message)) {
+    return "Gemini quota/rate limit reached. Retry later or switch to Gemini 2.5 Flash Lite.";
+  }
+  if (/deadline|timeout|max duration/i.test(message)) {
+    return "Generation timed out on the server. Retry with a shorter prompt or use Gemini 2.5 Flash Lite.";
+  }
+  if (/api key|permission|unauthorized|403|401/i.test(message)) {
+    return "Google API key is invalid or missing required access for this model.";
+  }
+
+  return message;
+};
+
 const getPrimaryGeneratedHtml = (content: string) => {
   const parsedBatch = parseBatchWireOutput(content);
   const firstBatchHtml = parsedBatch.htmlByIndex.find(
@@ -420,8 +453,15 @@ export default function WirePromptSidebar({
       }
       setErrorMessage(null);
     },
-    onError: () => {
-      const failureMessage = `Generation failed with ${pendingModelNameRef.current}. Try another model.`;
+    onError: (error) => {
+      logger.error("wire_use_chat_stream_error", {
+        modelName: pendingModelNameRef.current,
+        error,
+      });
+      const failureMessage = normalizeGenerationErrorMessage({
+        error,
+        modelName: pendingModelNameRef.current,
+      });
       pendingGenerationFailedRef.current = true;
       pendingGenerationErrorRef.current = failureMessage;
       rollbackPendingCreatedPages();
