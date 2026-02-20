@@ -50,6 +50,9 @@ export async function POST(request: Request, context: RouteContext) {
 
     const headers = new Headers(proxyResponse.headers);
     headers.delete("content-length");
+    headers.delete("content-encoding");
+    headers.delete("transfer-encoding");
+    headers.set("cache-control", "no-store, no-transform");
 
     return new Response(proxyResponse.body, {
       status: proxyResponse.status,

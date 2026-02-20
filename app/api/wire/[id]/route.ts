@@ -896,7 +896,13 @@ export async function POST(request: Request, context: RouteContext) {
       targetPageId: resolvedTargetPageId ?? undefined,
     });
 
-    return applyRateHeaders(result.toDataStreamResponse());
+    return applyRateHeaders(
+      result.toDataStreamResponse({
+        headers: {
+          "cache-control": "no-store, no-transform",
+        },
+      }),
+    );
   } catch (error) {
     logger.error("wire_selected_model_stream_error", {
       modelName: effectiveModelName,

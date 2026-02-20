@@ -378,7 +378,7 @@ export default function WirePromptSidebar({
   );
 
   const { messages, append, isLoading, stop } = useChat({
-    api: `/api/projects/${wireId}/generate`,
+    api: `/api/wire/${wireId}`,
     body: { wireId },
     initialMessages,
     experimental_prepareRequestBody: ({
