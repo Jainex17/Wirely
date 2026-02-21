@@ -70,17 +70,19 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
   const project = await getProjectForUser(projectId, userId);
   if (!project) return null;
 
-  const pages = await db
-    .select()
-    .from(projectPages)
-    .where(eq(projectPages.projectId, projectId))
-    .orderBy(asc(projectPages.sortOrder));
-
-  const [conversation] = await db
-    .select()
-    .from(conversations)
-    .where(eq(conversations.projectId, projectId))
-    .limit(1);
+  const [pages, conversationResult] = await Promise.all([
+    db
+      .select()
+      .from(projectPages)
+      .where(eq(projectPages.projectId, projectId))
+      .orderBy(asc(projectPages.sortOrder)),
+    db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.projectId, projectId))
+      .limit(1),
+  ]);
+  const [conversation] = conversationResult;
 
   const messages = conversation
     ? await db

@@ -19,6 +19,18 @@ export interface UpsertUserInput {
   avatarUrl?: string | null;
 }
 
+export const getUserByAuthSub = async (authSub: string) => {
+  const db = getDb();
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.authSub, authSub))
+    .limit(1);
+
+  return user ?? null;
+};
+
 export interface UserAiSettings {
   hasGoogleApiKey: boolean;
   enabledModelIds: WireModelName[];
@@ -66,7 +78,7 @@ export const upsertUserByAuthSub = async ({
 }: UpsertUserInput) => {
   const db = getDb();
 
-  await db
+  const [user] = await db
     .insert(users)
     .values({
       authSub,
@@ -82,13 +94,8 @@ export const upsertUserByAuthSub = async ({
         avatarUrl: avatarUrl ?? null,
         updatedAt: new Date(),
       },
-    });
-
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.authSub, authSub))
-    .limit(1);
+    })
+    .returning();
 
   return user ?? null;
 };

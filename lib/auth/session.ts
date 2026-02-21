@@ -1,4 +1,4 @@
-import { upsertUserByAuthSub } from "@/lib/db/queries/users";
+import { getUserByAuthSub, upsertUserByAuthSub } from "@/lib/db/queries/users";
 import { auth } from "@/lib/auth/server";
 
 export interface SessionUser {
@@ -22,7 +22,17 @@ const authUserToSessionUser = async (authUser: {
   const name = typeof authUser.name === "string" ? authUser.name : null;
   const avatarUrl = typeof authUser.image === "string" ? authUser.image : null;
 
-  const user = await upsertUserByAuthSub({ authSub, email, name, avatarUrl });
+  const existingUser = await getUserByAuthSub(authSub);
+  const shouldUpsert =
+    !existingUser ||
+    existingUser.email !== email ||
+    existingUser.name !== name ||
+    existingUser.avatarUrl !== avatarUrl;
+
+  const user = shouldUpsert
+    ? await upsertUserByAuthSub({ authSub, email, name, avatarUrl })
+    : existingUser;
+
   if (!user) return null;
 
   return {

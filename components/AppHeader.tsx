@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -35,6 +36,11 @@ export default function AppHeader({
   isLoggingOut = false,
 }: AppHeaderProps) {
   const router = useRouter();
+
+  useEffect(() => {
+    router.prefetch("/");
+    router.prefetch("/profile");
+  }, [router]);
 
   const name = user?.name ?? user?.email ?? "Guest";
   const initials = name

@@ -22,10 +22,11 @@ export default async function WirePage({ params }: WirePageProps) {
     redirect(`/login?next=/wire/${resolvedParams.id}`);
   }
 
-  const projectDetail = await getProjectDetailForUser(
-    resolvedParams.id,
-    sessionUser.id,
-  );
+  const [projectDetail, userAiSettings] = await Promise.all([
+    getProjectDetailForUser(resolvedParams.id, sessionUser.id),
+    getUserAiSettingsForGeneration(sessionUser.id),
+  ]);
+
   if (!projectDetail) {
     notFound();
   }
@@ -45,7 +46,6 @@ export default async function WirePage({ params }: WirePageProps) {
           },
         ];
   const projectTitle = projectDetail.project.title;
-  const userAiSettings = await getUserAiSettingsForGeneration(sessionUser.id);
   const initialModelName = userAiSettings?.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
 
   return (

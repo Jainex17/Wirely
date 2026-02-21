@@ -58,6 +58,11 @@ export default function WireEditor({
     );
   }, [hydrateProject, initialProject.pages]);
 
+  useEffect(() => {
+    router.prefetch("/");
+    router.prefetch("/profile");
+  }, [router]);
+
   const name = sessionUser.name ?? sessionUser.email ?? "User";
   const initials = useMemo(
     () =>
