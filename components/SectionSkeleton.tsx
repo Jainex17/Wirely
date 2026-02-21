@@ -33,7 +33,7 @@ export const SectionSkeleton = ({ type }: SectionSkeletonProps) => {
     };
 
     return (
-        <div className={`w-full ${getHeightClass()} bg-gray-700 dark:bg-gray-800/40 animate-pulse relative overflow-hidden`}>
+        <div className={`w-full ${getHeightClass()} bg-muted/80 animate-pulse relative overflow-hidden`}>
         </div>
     );
 };

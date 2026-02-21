@@ -59,7 +59,7 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
             {isLoading ? "Redirecting..." : "Continue with Google"}
           </button>
 
-          {errorMessage ? <p className="text-sm text-red-500">{errorMessage}</p> : null}
+          {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
           <p className="text-sm text-muted-foreground text-center">
             <Link href="/" className="text-primary hover:underline underline-offset-4">

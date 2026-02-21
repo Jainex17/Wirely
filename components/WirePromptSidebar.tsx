@@ -11,7 +11,7 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import Link from "next/link";
-import { Send, ChevronDown, Circle } from "lucide-react";
+import { Send, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +38,7 @@ import {
 } from "@/lib/wireModels";
 import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
+import GeminiIcon from "@/components/icons/GeminiIcon";
 
 interface WirePromptSidebarProps {
   wireId: string;
@@ -998,7 +999,7 @@ export default function WirePromptSidebar({
   const containerClassName =
     variant === "panel"
       ? "h-full w-full p-4 flex flex-col gap-4 bg-transparent text-foreground"
-      : "fixed right-5 top-5 bottom-5 w-80 p-4 flex flex-col gap-4 bg-transparent text-neutral-100";
+      : "fixed right-5 top-5 bottom-5 w-80 p-4 flex flex-col gap-4 bg-transparent text-sidebar-foreground";
 
   const renderedMessages = useMemo(() => {
     return messages.map((message, index) => {
@@ -1010,7 +1011,7 @@ export default function WirePromptSidebar({
             className={`ml-auto max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
               variant === "panel"
                 ? "bg-primary text-primary-foreground"
-                : "bg-neutral-200 text-neutral-900"
+                : "bg-sidebar-accent text-sidebar-accent-foreground"
             }`}
           >
             {message.content}
@@ -1029,7 +1030,7 @@ export default function WirePromptSidebar({
             className={`max-w-[90%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
               variant === "panel"
                 ? "bg-muted text-foreground"
-                : "bg-neutral-800/60 text-neutral-200"
+                : "bg-sidebar/60 text-sidebar-foreground"
             }`}
           >
             {details}
@@ -1065,7 +1066,7 @@ export default function WirePromptSidebar({
             className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
               variant === "panel"
                 ? "bg-destructive/10 text-destructive"
-                : "bg-neutral-800/60 text-neutral-100"
+                : "bg-sidebar/60 text-sidebar-foreground"
             }`}
           >
             {errorMessage}
@@ -1076,7 +1077,7 @@ export default function WirePromptSidebar({
             className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
               variant === "panel"
                 ? "bg-secondary text-secondary-foreground"
-                : "bg-neutral-800/60 text-neutral-100"
+                : "bg-sidebar/60 text-sidebar-foreground"
             }`}
           >
             {qualityNotice}
@@ -1087,7 +1088,7 @@ export default function WirePromptSidebar({
             className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
               variant === "panel"
                 ? "bg-muted text-muted-foreground"
-                : "bg-neutral-800/40 text-neutral-200"
+                : "bg-sidebar/40 text-sidebar-foreground"
             }`}
           >
             Thinking...
@@ -1098,7 +1099,7 @@ export default function WirePromptSidebar({
             className={`max-w-[95%] rounded-xl px-4 py-3 text-sm ${
               variant === "panel"
                 ? "border border-destructive/30 bg-destructive/5 text-destructive"
-                : "border border-white/20 bg-neutral-800/60 text-neutral-100"
+                : "border border-border/60 bg-sidebar/60 text-sidebar-foreground"
             }`}
           >
             No models are enabled. Open{" "}
@@ -1112,10 +1113,10 @@ export default function WirePromptSidebar({
 
       <form onSubmit={handleSubmit} className="shrink-0">
         <div
-          className={`relative flex w-full flex-col overflow-hidden rounded-xl bg-neutral-900/60 shadow-2xl transition-all ${
+          className={`relative flex w-full flex-col overflow-hidden rounded-xl shadow-2xl transition-all ${
             variant === "panel"
-              ? "border-border bg-card"
-              : "border border-white/10"
+              ? "border border-border bg-card"
+              : "border border-border/60 bg-sidebar/80"
           }`}
         >
           <textarea
@@ -1128,12 +1129,12 @@ export default function WirePromptSidebar({
             className={`w-full resize-none bg-transparent px-3 pb-2 pt-3 text-sm leading-5 focus:outline-none focus-visible:outline-none focus:ring-0 ${
               variant === "panel"
                 ? "text-foreground placeholder:text-muted-foreground/60"
-                : "text-neutral-100 placeholder:text-neutral-500"
+                : "text-sidebar-foreground placeholder:text-sidebar-foreground/60"
             }`}
           />
           <div
             className={`flex items-center justify-between gap-2 px-2 pb-2 pt-1 ${
-              variant === "panel" ? "border-t border-border/60" : "border-t border-white/10"
+              variant === "panel" ? "border-t border-border/60" : "border-t border-border/60"
             }`}
           >
             <div className="flex min-w-0 items-center gap-1.5">
@@ -1146,11 +1147,11 @@ export default function WirePromptSidebar({
                     className={`flex h-8 items-center gap-1 rounded-md px-2 text-xs ${
                       variant === "panel"
                         ? "text-muted-foreground hover:bg-accent"
-                        : "text-neutral-400 hover:bg-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
                     }`}
                     disabled={noModelsEnabled}
                   >
-                    <Circle className="h-3 w-3 text-primary" />
+                    <GeminiIcon className="h-3 w-3 text-primary" />
                     {activeModelLabel}
                     <ChevronDown className="h-3 w-3" />
                   </Button>
@@ -1161,6 +1162,7 @@ export default function WirePromptSidebar({
                       key={model.id}
                       onClick={() => setActiveModelName(model.id)}
                     >
+                      <GeminiIcon className="mr-2 size-4 text-primary" />
                       {model.label}
                     </DropdownMenuItem>
                   ))}
@@ -1179,7 +1181,7 @@ export default function WirePromptSidebar({
                     className={`flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs ${
                       variant === "panel"
                         ? "text-muted-foreground hover:bg-accent"
-                        : "text-neutral-400 hover:bg-white/10"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
                     }`}
                   >
                     <span className="truncate">Edit: {selectedPageTitle}</span>
@@ -1206,7 +1208,7 @@ export default function WirePromptSidebar({
               className={`h-8 w-8 shrink-0 ${
                 variant === "panel"
                   ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
-                  : "bg-white/10 text-neutral-200 hover:bg-white/20 disabled:opacity-20"
+                  : "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/80 disabled:opacity-20"
               }`}
               aria-label="Send message"
             >

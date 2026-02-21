@@ -30,7 +30,6 @@ import {
   ArrowUp,
   AlertTriangle,
   ChevronDown,
-  Circle,
   Loader2,
   MoreHorizontal,
   Trash2,
@@ -38,6 +37,7 @@ import {
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "@/components/ui/sonner";
+import GeminiIcon from "@/components/icons/GeminiIcon";
 
 export interface HomeClientInitialData {
   user: {
@@ -356,12 +356,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           className="bg-transparent border-border hover:bg-muted"
                           disabled={hasNoEnabledModels}
                         >
-                          <Circle size={16} className="text-primary mr-2" />
+                          <GeminiIcon className="mr-2 size-4 text-primary" />
                           {selectedModelLabel}{" "}
                           {showApiKeyWarning ? (
                             <AlertTriangle
                               size={14}
-                              className="ml-1 mr-1 text-amber-500"
+                              className="ml-1 mr-1 text-destructive"
                             />
                           ) : null}
                           <ChevronDown size={16} className="ml-2" />
@@ -372,7 +372,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           <>
                             <DropdownMenuItem
                               onClick={() => router.push("/profile")}
-                              className="text-amber-700 focus:text-amber-700"
+                              className="text-destructive focus:text-destructive"
                             >
                               <AlertTriangle size={14} className="mr-2" />
                               First configure API keys
@@ -387,6 +387,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                               dispatch({ type: "patch", payload: { selectedModel: model.id } })
                             }
                           >
+                            <GeminiIcon className="mr-2 size-4 text-primary" />
                             {model.label}
                           </DropdownMenuItem>
                         ))}

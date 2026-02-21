@@ -339,8 +339,8 @@ export default function ProfileAiSettingsClient({
         <span
           className={`rounded-full px-2.5 py-1 text-xs font-medium ${
             hasGoogleApiKey
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-amber-100 text-amber-700"
+              ? "bg-secondary text-secondary-foreground"
+              : "bg-destructive/10 text-destructive"
           }`}
         >
           {hasGoogleApiKey ? "Configured" : "Not configured"}
@@ -496,7 +496,7 @@ export default function ProfileAiSettingsClient({
       {activeTab === "models" ? renderModelsTab() : null}
 
       {!hasGoogleApiKey ? (
-        <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           API key is not configured. Add it in the Connect API keys tab before
           generating new pages.

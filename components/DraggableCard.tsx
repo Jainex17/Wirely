@@ -7,7 +7,7 @@ interface CardProps {
 export default function Card({ title }: CardProps) {
   return (
     <div
-      className="bg-white border-2 border-gray-300 rounded-lg shadow-lg p-6"
+      className="bg-card border-2 border-border rounded-lg shadow-lg p-6"
       style={{
         width: "1080px",
         minHeight: "2080px",
@@ -15,11 +15,11 @@ export default function Card({ title }: CardProps) {
     >
       <div className="w-full h-full flex flex-col gap-4">
         <div className="w-full h-32 rounded-md"></div>
-        <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
-        <p className="text-gray-600 text-sm">
+        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
+        <p className="text-muted-foreground text-sm">
           This is a fixed-size card representing a website section.
         </p>
-        <div className="flex-1 border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center text-gray-400">
+        <div className="flex-1 border-2 border-dashed border-border rounded-md flex items-center justify-center text-muted-foreground">
           Content Area
         </div>
       </div>
