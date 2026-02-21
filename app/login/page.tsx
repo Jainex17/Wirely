@@ -1,6 +1,12 @@
+import type { Metadata } from "next";
 import LoginClient from "./LoginClient";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/server";
+
+export const metadata: Metadata = {
+  title: "Login | Wirely",
+  description: "Sign in to Wirely to create and manage projects.",
+};
 
 interface LoginPageProps {
   searchParams: Promise<{ next?: string }>;

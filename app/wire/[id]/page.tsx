@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
 import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { DEFAULT_WIRE_MODEL } from "@/lib/wireModels";
 import WireEditor from "./WireEditor";
+
+export const metadata: Metadata = {
+  title: "Editor | Wirely",
+  description: "Edit and iterate on your Wirely project pages.",
+};
 
 interface WirePageProps {
   params: Promise<{ id: string }>;

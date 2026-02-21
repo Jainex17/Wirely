@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth/client";
+
+const passthroughImageLoader = ({ src }: { src: string }) => src;
 
 interface AppHeaderProps {
   user: {
@@ -35,21 +37,21 @@ export default function AppHeader({
   const router = useRouter();
 
   const name = user?.name ?? user?.email ?? "Guest";
-  const initials = useMemo(
-    () =>
-      name
-        .split(" ")
-        .map((part) => part[0] ?? "")
-        .join("")
-        .slice(0, 2)
-        .toUpperCase(),
-    [name],
-  );
+  const initials = name
+    .split(" ")
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   const handleLogout = async () => {
-    if (isLoggingOut || !onLogout) return;
+    if (isLoggingOut) return;
     await authClient.signOut();
-    onLogout();
+    if (onLogout) {
+      onLogout();
+      return;
+    }
+    router.push("/login?next=/");
   };
 
   return (
@@ -88,9 +90,14 @@ export default function AppHeader({
                   {name}
                 </span>
                 {user?.avatarUrl ? (
-                  <img
+                  <Image
+                    loader={passthroughImageLoader}
+                    unoptimized
                     src={user.avatarUrl}
-                    alt=""
+                    alt={`${name} avatar`}
+                    width={28}
+                    height={28}
+                    sizes="28px"
                     className="h-7 w-7 rounded-full object-cover"
                     referrerPolicy="no-referrer"
                   />
