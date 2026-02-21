@@ -23,14 +23,20 @@ const authUserToSessionUser = async (authUser: {
   const avatarUrl = typeof authUser.image === "string" ? authUser.image : null;
 
   const existingUser = await getUserByAuthSub(authSub);
+  const nameToPersist = existingUser?.name ?? name;
   const shouldUpsert =
     !existingUser ||
     existingUser.email !== email ||
-    existingUser.name !== name ||
-    existingUser.avatarUrl !== avatarUrl;
+    existingUser.avatarUrl !== avatarUrl ||
+    existingUser.name !== nameToPersist;
 
   const user = shouldUpsert
-    ? await upsertUserByAuthSub({ authSub, email, name, avatarUrl })
+    ? await upsertUserByAuthSub({
+        authSub,
+        email,
+        name: nameToPersist,
+        avatarUrl,
+      })
     : existingUser;
 
   if (!user) return null;

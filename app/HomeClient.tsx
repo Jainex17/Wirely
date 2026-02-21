@@ -220,6 +220,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     event.preventDefault();
     if (state.isSubmitting) return;
 
+    if (!state.user) {
+      toast.error("Sign in to generate designs.");
+      router.push("/login?next=/");
+      return;
+    }
+
     if (state.enabledModelIds.length === 0) {
       dispatch({
         type: "patch",

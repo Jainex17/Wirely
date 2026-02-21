@@ -35,6 +35,17 @@ const stabilizeViewportHeightClasses = (
     );
 };
 
+const injectIframeHeightReporter = (html: string, reporterId: string) => {
+  if (!html) return html;
+
+  const script = `<script>(function(){const reporterId=${JSON.stringify(reporterId)};let rafId=0;const measure=()=>{const root=document.documentElement;const body=document.body;if(!root||!body)return;const bodyRect=body.getBoundingClientRect();let maxHeight=Math.max(root.scrollHeight||0,root.offsetHeight||0,root.clientHeight||0,body.scrollHeight||0,body.offsetHeight||0,body.clientHeight||0);const allElements=body.querySelectorAll("*");for(const node of allElements){const element=node;const computed=window.getComputedStyle(element);if(computed.display==="none")continue;const rect=element.getBoundingClientRect();const relativeTop=rect.top-bodyRect.top;const visualBottom=rect.bottom-bodyRect.top;const scrollBottom=relativeTop+Math.max(element.scrollHeight||0,element.clientHeight||0,element.offsetHeight||0);maxHeight=Math.max(maxHeight,visualBottom,scrollBottom);}window.parent.postMessage({type:"wirely-iframe-height",id:reporterId,height:Math.ceil(maxHeight)},"*");};const queueMeasure=()=>{if(rafId)return;rafId=window.requestAnimationFrame(()=>{rafId=0;measure();});};if(typeof ResizeObserver==="function"){const resizeObserver=new ResizeObserver(queueMeasure);resizeObserver.observe(document.documentElement);resizeObserver.observe(document.body);}if(typeof MutationObserver==="function"){const mutationObserver=new MutationObserver(queueMeasure);mutationObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});}window.addEventListener("load",queueMeasure);document.addEventListener("DOMContentLoaded",queueMeasure);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(queueMeasure).catch(()=>{});}window.setTimeout(queueMeasure,40);window.setTimeout(queueMeasure,180);window.setTimeout(queueMeasure,500);window.setTimeout(queueMeasure,1200);queueMeasure();})();</script>`;
+
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${script}</body>`);
+  }
+  return `${html}${script}`;
+};
+
 interface PageRendererProps {
   page: {
     id: string;
@@ -57,9 +68,14 @@ export default React.memo(function PageRenderer({
   onDeletePage,
   currentDevice,
 }: PageRendererProps) {
-  const MAX_IFRAME_HEIGHT = 5000;
+  const MAX_IFRAME_HEIGHT = 20000;
   const CHART_CANVAS_HEIGHT = 320;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
+  const mutationObserverRef = React.useRef<MutationObserver | null>(null);
+  const rafIdRef = React.useRef<number | null>(null);
+  const timeoutIdsRef = React.useRef<number[]>([]);
+  const imageListenerCleanupRef = React.useRef<(() => void) | null>(null);
   const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
@@ -68,6 +84,10 @@ export default React.memo(function PageRenderer({
     [hasRawHtml, page.iframeHtml],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
+  const iframeReporterId = React.useMemo(
+    () => `wirely-height-${page.id}-${sanitizedHtml.length}`,
+    [page.id, sanitizedHtml.length],
+  );
   const canvasSrcDoc = React.useMemo(
     () =>
       hasHtml
@@ -75,7 +95,35 @@ export default React.memo(function PageRenderer({
         : "",
     [hasHtml, sanitizedHtml, currentDevice.height],
   );
+  const measuredSrcDoc = React.useMemo(
+    () =>
+      hasHtml ? injectIframeHeightReporter(canvasSrcDoc, iframeReporterId) : "",
+    [canvasSrcDoc, hasHtml, iframeReporterId],
+  );
   const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
+  const disconnectAutoHeightSync = React.useCallback(() => {
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+      resizeObserverRef.current = null;
+    }
+    if (mutationObserverRef.current) {
+      mutationObserverRef.current.disconnect();
+      mutationObserverRef.current = null;
+    }
+    if (rafIdRef.current !== null) {
+      window.cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    for (const timeoutId of timeoutIdsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    timeoutIdsRef.current = [];
+    if (imageListenerCleanupRef.current) {
+      imageListenerCleanupRef.current();
+      imageListenerCleanupRef.current = null;
+    }
+  }, []);
+
   const stabilizeChartCanvases = React.useCallback(() => {
     let doc: Document | null = null;
     try {
@@ -119,13 +167,48 @@ export default React.memo(function PageRenderer({
     }
     if (!doc) return;
     stabilizeChartCanvases();
-    // eslint-disable-next-line react-hooks/immutability
-    doc.documentElement.style.overflow = "hidden";
-    doc.body.style.overflow = "hidden";
+    const bodyRect = doc.body.getBoundingClientRect();
+    const docWindow = doc.defaultView ?? window;
+    let farthestBottom = Math.max(
+      doc.documentElement?.getBoundingClientRect().bottom - bodyRect.top,
+      doc.body?.getBoundingClientRect().bottom - bodyRect.top,
+      0,
+    );
+
+    const allElements = doc.body.querySelectorAll("*");
+    for (const node of allElements) {
+      const element = node as HTMLElement;
+      const computed = docWindow.getComputedStyle(element);
+      if (computed.position === "fixed") continue;
+      if (computed.display === "none") continue;
+      const rect = element.getBoundingClientRect();
+      const relativeTop = rect.top - bodyRect.top;
+      const visualBottom = rect.bottom - bodyRect.top;
+      const scrollContainerBottom =
+        relativeTop +
+        Math.max(
+          element.scrollHeight || 0,
+          element.clientHeight || 0,
+          element.offsetHeight || 0,
+        );
+      farthestBottom = Math.max(
+        farthestBottom,
+        visualBottom,
+        scrollContainerBottom,
+      );
+    }
+
     const measuredHeight = Math.max(
       currentDevice.height,
+      doc.scrollingElement?.scrollHeight ?? 0,
+      doc.scrollingElement?.clientHeight ?? 0,
       doc.documentElement?.scrollHeight ?? 0,
+      doc.documentElement?.offsetHeight ?? 0,
+      doc.documentElement?.clientHeight ?? 0,
       doc.body?.scrollHeight ?? 0,
+      doc.body?.offsetHeight ?? 0,
+      doc.body?.clientHeight ?? 0,
+      Math.ceil(farthestBottom),
     );
     const boundedHeight = Math.min(
       MAX_IFRAME_HEIGHT,
@@ -134,15 +217,109 @@ export default React.memo(function PageRenderer({
     setIframeHeight(boundedHeight);
   }, [currentDevice.height, stabilizeChartCanvases]);
 
-  const handleLoad = React.useCallback(() => {
-    syncIframeHeight();
-    window.setTimeout(syncIframeHeight, 250);
-    window.setTimeout(syncIframeHeight, 900);
+  const queueIframeHeightSync = React.useCallback(() => {
+    if (rafIdRef.current !== null) return;
+    rafIdRef.current = window.requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      syncIframeHeight();
+    });
   }, [syncIframeHeight]);
+
+  const startAutoHeightSync = React.useCallback(() => {
+    disconnectAutoHeightSync();
+    let doc: Document | null = null;
+    try {
+      doc = iframeRef.current?.contentDocument ?? null;
+    } catch {
+      doc = null;
+    }
+    if (!doc) return;
+
+    queueIframeHeightSync();
+
+    const resizeObserver = new ResizeObserver(() => {
+      queueIframeHeightSync();
+    });
+    resizeObserverRef.current = resizeObserver;
+    resizeObserver.observe(doc.documentElement);
+    resizeObserver.observe(doc.body);
+
+    const mutationObserver = new MutationObserver(() => {
+      queueIframeHeightSync();
+    });
+    mutationObserverRef.current = mutationObserver;
+    mutationObserver.observe(doc.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
+
+    const images = Array.from(doc.images);
+    const onImageLoad = () => queueIframeHeightSync();
+    for (const image of images) {
+      image.addEventListener("load", onImageLoad);
+      image.addEventListener("error", onImageLoad);
+    }
+    imageListenerCleanupRef.current = () => {
+      for (const image of images) {
+        image.removeEventListener("load", onImageLoad);
+        image.removeEventListener("error", onImageLoad);
+      }
+    };
+
+    void doc.fonts?.ready?.then(() => {
+      queueIframeHeightSync();
+    });
+
+    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 250));
+    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 900));
+    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 1800));
+  }, [disconnectAutoHeightSync, queueIframeHeightSync]);
+
+  const handleLoad = React.useCallback(() => {
+    startAutoHeightSync();
+  }, [startAutoHeightSync]);
 
   React.useEffect(() => {
     setIframeHeight(currentDevice.height);
-  }, [currentDevice.height, page.id, page.iframeHtml]);
+    disconnectAutoHeightSync();
+    return () => {
+      disconnectAutoHeightSync();
+    };
+  }, [currentDevice.height, disconnectAutoHeightSync, page.id, page.iframeHtml]);
+
+  React.useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+
+      const payload = data as {
+        type?: string;
+        id?: string;
+        height?: number;
+      };
+      if (payload.type !== "wirely-iframe-height") return;
+      if (payload.id !== iframeReporterId) return;
+      if (typeof payload.height !== "number" || !Number.isFinite(payload.height)) {
+        return;
+      }
+
+      const boundedHeight = Math.min(
+        MAX_IFRAME_HEIGHT,
+        Math.max(currentDevice.height, Math.ceil(payload.height)),
+      );
+      setIframeHeight((previous) =>
+        previous === boundedHeight ? previous : boundedHeight,
+      );
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [currentDevice.height, iframeReporterId]);
 
   return (
     <div className="relative flex flex-col items-center gap-2">
@@ -170,7 +347,7 @@ export default React.memo(function PageRenderer({
           <iframe
             ref={iframeRef}
             title={page.title}
-            srcDoc={canvasSrcDoc}
+            srcDoc={measuredSrcDoc}
             onLoad={handleLoad}
             className="h-full w-full border-0 pointer-events-none bg-background"
             style={{ overflow: "hidden" }}

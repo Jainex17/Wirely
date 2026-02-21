@@ -48,6 +48,11 @@ export interface UpdateUserAiSettingsInput {
   enabledGoogleModels?: WireModelName[];
 }
 
+export interface UserProfileDetails {
+  name: string | null;
+  email: string | null;
+}
+
 export const toPublicUserAiSettings = ({
   googleApiKeyCiphertext,
   googleApiKeyIv,
@@ -214,4 +219,30 @@ export const updateUserAiSettings = async ({
   if (!updated) return null;
 
   return getUserAiSettings(userId);
+};
+
+export interface UpdateUserProfileDetailsInput {
+  userId: string;
+  name: string | null;
+}
+
+export const updateUserProfileDetails = async ({
+  userId,
+  name,
+}: UpdateUserProfileDetailsInput): Promise<UserProfileDetails | null> => {
+  const db = getDb();
+
+  const [updated] = await db
+    .update(users)
+    .set({
+      name,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+    .returning({
+      name: users.name,
+      email: users.email,
+    });
+
+  return updated ?? null;
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -12,6 +12,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { authClient } from "@/lib/auth/client";
 
 const passthroughImageLoader = ({ src }: { src: string }) => src;
@@ -36,6 +46,7 @@ export default function AppHeader({
   isLoggingOut = false,
 }: AppHeaderProps) {
   const router = useRouter();
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   useEffect(() => {
     router.prefetch("/");
@@ -52,6 +63,7 @@ export default function AppHeader({
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
+    setIsLogoutConfirmOpen(false);
     await authClient.signOut();
     if (onLogout) {
       onLogout();
@@ -122,7 +134,7 @@ export default function AppHeader({
                 Profile
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={handleLogout}
+                onClick={() => setIsLogoutConfirmOpen(true)}
                 disabled={isLoggingOut}
                 variant="destructive"
               >
@@ -140,6 +152,31 @@ export default function AppHeader({
           </Button>
         )}
       </div>
+      <AlertDialog
+        open={isLogoutConfirmOpen}
+        onOpenChange={(open) => {
+          if (!isLoggingOut) setIsLogoutConfirmOpen(open);
+        }}
+      >
+        <AlertDialogContent className="logout-dialog sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Log out of Wirely?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will need to sign in again to continue working on your projects.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="logout-dialog-action"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "Logging out..." : "Log out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </header>
   );
 }

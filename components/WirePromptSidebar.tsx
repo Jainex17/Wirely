@@ -1126,10 +1126,10 @@ export default function WirePromptSidebar({
             onInput={resizePromptTextarea}
             placeholder="Ask a follow-up..."
             rows={3}
-            className={`w-full resize-none bg-transparent px-3 pb-2 pt-3 text-sm leading-5 focus:outline-none focus-visible:outline-none focus:ring-0 ${
+            className={`mx-2 mt-2 w-[calc(100%-1rem)] resize-none rounded-md border px-3 pb-2 pt-3 text-sm leading-5 focus:outline-none focus-visible:outline-none focus:ring-0 ${
               variant === "panel"
-                ? "text-foreground placeholder:text-muted-foreground/60"
-                : "text-sidebar-foreground placeholder:text-sidebar-foreground/60"
+                ? "border-border bg-muted/30 text-foreground placeholder:text-muted-foreground/60"
+                : "border-border/60 bg-sidebar/40 text-sidebar-foreground placeholder:text-sidebar-foreground/60"
             }`}
           />
           <div
@@ -1156,7 +1156,7 @@ export default function WirePromptSidebar({
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-card border-border">
+                <DropdownMenuContent className="border-border bg-card shadow-xl">
                   {enabledModelOptions.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
@@ -1188,7 +1188,7 @@ export default function WirePromptSidebar({
                     <ChevronDown className="h-3 w-3 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-card border-border">
+                <DropdownMenuContent className="border-border bg-card shadow-xl">
                   {pages.map((page) => (
                     <DropdownMenuItem
                       key={page.id}

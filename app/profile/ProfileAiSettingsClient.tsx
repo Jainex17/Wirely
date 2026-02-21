@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, KeyRound, PencilLine, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,9 +33,9 @@ const PROFILE_SETTINGS_TABS: Array<{
   id: ProfileSettingsTab;
   label: string;
 }> = [
-  { id: "details", label: "Change details" },
-  { id: "api-keys", label: "Connect API keys" },
-  { id: "models", label: "Select models" },
+  { id: "details", label: "Details" },
+  { id: "api-keys", label: "API keys" },
+  { id: "models", label: "Models" },
 ];
 
 const tabPanelId = (tabId: ProfileSettingsTab) => `profile-tabpanel-${tabId}`;
@@ -74,14 +75,16 @@ export default function ProfileAiSettingsClient({
   userName,
   userEmail,
 }: ProfileAiSettingsClientProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<ProfileSettingsTab>("details");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [isSavingModels, setIsSavingModels] = useState(false);
   const [hasGoogleApiKey, setHasGoogleApiKey] = useState(false);
   const [googleApiKey, setGoogleApiKey] = useState("");
   const [displayName, setDisplayName] = useState(userName ?? "");
-  const [email, setEmail] = useState(userEmail ?? "");
+  const [savedDisplayName, setSavedDisplayName] = useState(userName ?? "");
   const [models, setModels] = useState<AiSettingsModel[]>([]);
 
   const freeModels = useMemo(
@@ -97,15 +100,13 @@ export default function ProfileAiSettingsClient({
     [models],
   );
   const detailsChanged = useMemo(
-    () =>
-      displayName.trim() !== (userName ?? "").trim() ||
-      email.trim() !== (userEmail ?? "").trim(),
-    [displayName, email, userEmail, userName],
+    () => displayName.trim() !== savedDisplayName.trim(),
+    [displayName, savedDisplayName],
   );
 
   useEffect(() => {
     setDisplayName(userName ?? "");
-    setEmail(userEmail ?? "");
+    setSavedDisplayName(userName ?? "");
   }, [userName, userEmail]);
 
   const applySettings = useCallback((payload: AiSettingsResponse) => {
@@ -254,10 +255,40 @@ export default function ProfileAiSettingsClient({
     void persistEnabledModels(nextEnabledModelIds);
   };
 
-  const handleSaveDetails = () => {
-    toast(
-      "Profile detail edits are coming soon. API keys and model selection are ready now.",
-    );
+  const handleSaveDetails = async () => {
+    if (isSavingDetails || !detailsChanged) return;
+
+    setIsSavingDetails(true);
+    try {
+      const response = await fetch("/api/profile/details", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: displayName,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Unable to save profile details.");
+      }
+
+      const payload = (await response.json()) as {
+        name?: string | null;
+      };
+      const nextName = (payload.name ?? "").trim();
+      setDisplayName(nextName);
+      setSavedDisplayName(nextName);
+      toast.success("Profile details saved.");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save details.",
+      );
+    } finally {
+      setIsSavingDetails(false);
+    }
   };
 
   const renderDetailsTab = () => (
@@ -265,22 +296,23 @@ export default function ProfileAiSettingsClient({
       id={tabPanelId("details")}
       role="tabpanel"
       aria-labelledby={tabId("details")}
-      className="rounded-lg border border-border bg-card p-5 sm:p-6"
+      className="rounded-lg border border-border bg-card p-4 sm:p-5"
     >
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-muted p-2 text-muted-foreground">
           <PencilLine className="h-4 w-4" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-foreground">Change details</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            Profile details
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Update your display details. Profile write support is being rolled
-            out.
+            Edit your display information.
           </p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
           <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
             Name
@@ -289,6 +321,7 @@ export default function ProfileAiSettingsClient({
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
             placeholder="Your name"
+            disabled={isSavingDetails}
           />
         </div>
         <div>
@@ -296,21 +329,22 @@ export default function ProfileAiSettingsClient({
             Email
           </p>
           <Input
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            value={userEmail ?? ""}
             placeholder="you@example.com"
             type="email"
+            disabled
           />
         </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
-        <Button type="button" onClick={handleSaveDetails} disabled={!detailsChanged}>
-          Save details
+      <div className="mt-3 flex items-center gap-2">
+        <Button
+          type="button"
+          onClick={handleSaveDetails}
+          disabled={!detailsChanged || isSavingDetails}
+        >
+          {isSavingDetails ? "Saving..." : "Save details"}
         </Button>
-        {!detailsChanged ? (
-          <span className="text-xs text-muted-foreground">No unsaved changes</span>
-        ) : null}
       </div>
     </section>
   );
@@ -320,7 +354,7 @@ export default function ProfileAiSettingsClient({
       id={tabPanelId("api-keys")}
       role="tabpanel"
       aria-labelledby={tabId("api-keys")}
-      className="rounded-lg border border-border bg-card p-5 sm:p-6"
+      className="rounded-lg border border-border bg-card p-4 sm:p-5"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -328,11 +362,11 @@ export default function ProfileAiSettingsClient({
             <KeyRound className="h-4 w-4" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-foreground">
-              Google AI Configuration
+            <h3 className="text-base font-semibold text-foreground">
+              Google AI key
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Configure your personal Google API key for generation requests.
+              Configure your personal key used for generation.
             </p>
           </div>
         </div>
@@ -346,7 +380,7 @@ export default function ProfileAiSettingsClient({
           {hasGoogleApiKey ? "Configured" : "Not configured"}
         </span>
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="mt-3 space-y-3">
         <Input
           type="password"
           placeholder="Paste Google API key"
@@ -358,9 +392,15 @@ export default function ProfileAiSettingsClient({
           <Button
             type="button"
             onClick={handleSaveGoogleApiKey}
-            disabled={isLoading || isSavingKey || googleApiKey.trim().length === 0}
+            disabled={
+              isLoading || isSavingKey || googleApiKey.trim().length === 0
+            }
           >
-            {isSavingKey ? "Saving..." : hasGoogleApiKey ? "Update key" : "Save key"}
+            {isSavingKey
+              ? "Saving..."
+              : hasGoogleApiKey
+                ? "Update key"
+                : "Save key"}
           </Button>
           <Button
             type="button"
@@ -380,26 +420,28 @@ export default function ProfileAiSettingsClient({
       id={tabPanelId("models")}
       role="tabpanel"
       aria-labelledby={tabId("models")}
-      className="rounded-lg border border-border bg-card p-5 sm:p-6"
+      className="rounded-lg border border-border bg-card p-4 sm:p-5"
     >
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-muted p-2 text-muted-foreground">
           <Sparkles className="h-4 w-4" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-foreground">Enabled Models</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            Enabled models
+          </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Only enabled models appear in homepage and sidebar dropdowns.
+            Enabled models appear in home and sidebar dropdowns.
           </p>
         </div>
       </div>
 
-      <div className="mt-5 space-y-5">
+      <div className="mt-4 space-y-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Free models
           </p>
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 space-y-1.5">
             {freeModels.map((model) => (
               <div
                 key={model.id}
@@ -424,7 +466,7 @@ export default function ProfileAiSettingsClient({
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Paid models
           </p>
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 space-y-1.5">
             {paidModels.map((model) => (
               <div
                 key={model.id}
@@ -447,21 +489,20 @@ export default function ProfileAiSettingsClient({
       </div>
 
       {enabledModelIds.length === 0 ? (
-        <p className="mt-4 flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <p className="mt-3 flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           No models are enabled. Enable at least one model to generate pages.
         </p>
       ) : null}
 
-      <p className="mt-4 text-xs text-muted-foreground">
-        OpenRouter settings will be added in a future update. For now, only
-        Google models are configurable here.
+      <p className="mt-3 text-xs text-muted-foreground">
+        Only Google models are configurable in this release.
       </p>
     </section>
   );
 
   return (
-    <div className="mt-7 space-y-6">
+    <div className="mt-5 space-y-4">
       <div className="border-b border-border/70">
         <div
           role="tablist"
@@ -479,7 +520,7 @@ export default function ProfileAiSettingsClient({
               variant="ghost"
               size="sm"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-none border-b-2 px-4 whitespace-nowrap ${
+              className={`rounded-none border-b-2 px-3 whitespace-nowrap ${
                 activeTab === tab.id
                   ? "border-foreground text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -494,21 +535,6 @@ export default function ProfileAiSettingsClient({
       {activeTab === "details" ? renderDetailsTab() : null}
       {activeTab === "api-keys" ? renderApiKeysTab() : null}
       {activeTab === "models" ? renderModelsTab() : null}
-
-      {!hasGoogleApiKey ? (
-        <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          API key is not configured. Add it in the Connect API keys tab before
-          generating new pages.
-        </p>
-      ) : null}
-
-      <p className="text-sm text-muted-foreground">
-        Settings apply to both homepage and sidebar dropdowns.{" "}
-        <Link href="/" className="text-primary underline underline-offset-2">
-          Back to home
-        </Link>
-      </p>
     </div>
   );
 }

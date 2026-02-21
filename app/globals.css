@@ -213,3 +213,20 @@
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   backdrop-filter: blur(18px);
 }
+
+.logout-dialog {
+  background: color-mix(in srgb, var(--card) 96%, var(--background) 4%);
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  box-shadow: var(--shadow-lg);
+}
+
+.logout-dialog-action {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border: 1px solid color-mix(in srgb, var(--destructive) 90%, black 10%);
+  transition: filter 120ms ease;
+}
+
+.logout-dialog-action:hover {
+  filter: brightness(0.95);
+}
