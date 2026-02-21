@@ -24,6 +24,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const shouldRenderAnalytics = process.env.VERCEL === "1";
+
   return (
     <html lang="en" className="dark">
       <body
@@ -31,7 +33,7 @@ export default function RootLayout({
       >
         {children}
         <Toaster />
-        <Analytics />
+        {shouldRenderAnalytics ? <Analytics /> : null}
       </body>
     </html>
   );
