@@ -6,49 +6,87 @@ export const GEMINI_FREE_MODELS = [
 ] as const;
 
 export const GEMINI_PAID_MODELS = ["gemini-2.5-pro"] as const;
+export const OPENCODE_FREE_MODELS = [
+  "minimax-m2.5-free",
+  "glm-5-free",
+  "big-pickle",
+] as const;
 
 export type WireModelTier = "free" | "paid";
+export type WireModelProvider = "google" | "opencode";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
-  | (typeof GEMINI_PAID_MODELS)[number];
+  | (typeof GEMINI_PAID_MODELS)[number]
+  | (typeof OPENCODE_FREE_MODELS)[number];
 
 export type WireModelOption = {
   id: WireModelName;
   label: string;
+  description: string;
   tier: WireModelTier;
+  provider: WireModelProvider;
 };
 
 export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
   {
     id: "gemini-2.5-flash-lite",
     label: "Gemini 2.5 Flash Lite",
+    description: "Fast, lightweight Gemini model for quick and low-cost tasks.",
     tier: "free",
+    provider: "google",
   },
   {
     id: "gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
+    description: "Balanced speed and quality for most day-to-day generation.",
     tier: "free",
+    provider: "google",
   },
   {
     id: "gemini-2.5-pro",
     label: "Gemini 2.5 Pro",
+    description: "Highest-quality Gemini option, billed by your Google plan.",
     tier: "paid",
+    provider: "google",
+  },
+  {
+    id: "minimax-m2.5-free",
+    label: "MiniMax M2.5 Free (OpenCode)",
+    description: "OpenCode Zen free model offered for limited-time feedback.",
+    tier: "free",
+    provider: "opencode",
+  },
+  {
+    id: "glm-5-free",
+    label: "GLM-5 Free (OpenCode)",
+    description: "OpenCode Zen free model offered for limited-time feedback.",
+    tier: "free",
+    provider: "opencode",
+  },
+  {
+    id: "big-pickle",
+    label: "Big Pickle (OpenCode)",
+    description: "OpenCode Zen stealth free model offered for limited-time feedback.",
+    tier: "free",
+    provider: "opencode",
   },
 ];
 
-export const FREE_MODELS_FIRST: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
+export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
   (option) => option.id,
 );
 
-export const DEFAULT_ENABLED_WIRE_MODELS: readonly WireModelName[] =
-  GEMINI_FREE_MODELS;
+export const DEFAULT_ENABLED_WIRE_MODELS: readonly WireModelName[] = [
+  ...GEMINI_FREE_MODELS,
+  ...OPENCODE_FREE_MODELS,
+];
 
 const WIRE_MODEL_NAME_SET = new Set<WireModelName>(
   WIRE_MODEL_OPTIONS.map((option) => option.id),
 );
 
 const WIRE_MODEL_ORDER_MAP = new Map<WireModelName, number>(
-  FREE_MODELS_FIRST.map((modelName, index) => [modelName, index]),
+  DISPLAY_ORDER_MODELS.map((modelName, index) => [modelName, index]),
 );
 
 export const isWireModelName = (value: unknown): value is WireModelName =>
@@ -61,6 +99,17 @@ export const sortWireModelsFreeFirst = (modelNames: WireModelName[]) =>
     const rightOrder = WIRE_MODEL_ORDER_MAP.get(right) ?? Number.MAX_SAFE_INTEGER;
     return leftOrder - rightOrder;
   });
+
+const WIRE_MODEL_PROVIDER_MAP = new Map<WireModelName, WireModelProvider>(
+  WIRE_MODEL_OPTIONS.map((option) => [option.id, option.provider]),
+);
+
+export const getWireModelProvider = (
+  modelName: WireModelName,
+): WireModelProvider => WIRE_MODEL_PROVIDER_MAP.get(modelName) ?? "google";
+
+export const isGoogleWireModel = (modelName: WireModelName) =>
+  getWireModelProvider(modelName) === "google";
 
 export const normalizeEnabledWireModels = (
   modelNames: unknown,

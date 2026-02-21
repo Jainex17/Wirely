@@ -1,18 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, KeyRound, PencilLine, Sparkles } from "lucide-react";
+import { AlertTriangle, KeyRound, PencilLine, Sparkles, Shield, Zap, Server, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
-import type { WireModelName, WireModelTier } from "@/lib/wireModels";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type {
+  WireModelName,
+  WireModelProvider,
+  WireModelTier,
+} from "@/lib/wireModels";
 
 interface AiSettingsModel {
   id: WireModelName;
   label: string;
+  description: string;
   tier: WireModelTier;
+  provider: WireModelProvider;
   enabled: boolean;
 }
 
@@ -27,15 +40,14 @@ interface ProfileAiSettingsClientProps {
   userEmail: string | null;
 }
 
-type ProfileSettingsTab = "details" | "api-keys" | "models";
+type ProfileSettingsTab = "api-keys" | "details";
 
 const PROFILE_SETTINGS_TABS: Array<{
   id: ProfileSettingsTab;
   label: string;
 }> = [
+  { id: "api-keys", label: "API keys & models" },
   { id: "details", label: "Details" },
-  { id: "api-keys", label: "API keys" },
-  { id: "models", label: "Models" },
 ];
 
 const tabPanelId = (tabId: ProfileSettingsTab) => `profile-tabpanel-${tabId}`;
@@ -59,8 +71,11 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
       !Array.isArray(model) &&
       typeof (model as AiSettingsModel).id === "string" &&
       typeof (model as AiSettingsModel).label === "string" &&
+      typeof (model as AiSettingsModel).description === "string" &&
       ((model as AiSettingsModel).tier === "free" ||
         (model as AiSettingsModel).tier === "paid") &&
+      ((model as AiSettingsModel).provider === "google" ||
+        (model as AiSettingsModel).provider === "opencode") &&
       typeof (model as AiSettingsModel).enabled === "boolean",
   );
 
@@ -76,7 +91,7 @@ export default function ProfileAiSettingsClient({
   userEmail,
 }: ProfileAiSettingsClientProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<ProfileSettingsTab>("details");
+  const [activeTab, setActiveTab] = useState<ProfileSettingsTab>("api-keys");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
@@ -86,15 +101,13 @@ export default function ProfileAiSettingsClient({
   const [displayName, setDisplayName] = useState(userName ?? "");
   const [savedDisplayName, setSavedDisplayName] = useState(userName ?? "");
   const [models, setModels] = useState<AiSettingsModel[]>([]);
+  const [opencodeEnabled, setOpencodeEnabled] = useState(false);
+  const [opencodeStatus, setOpencodeStatus] = useState<"inactive" | "checking" | "active" | "running">("inactive");
+  const [showOpencodeModal, setShowOpencodeModal] = useState(false);
+  const [showGoogleConfig, setShowGoogleConfig] = useState(false);
+  const [googleModelsExpanded, setGoogleModelsExpanded] = useState(true);
+  const [opencodeModelsExpanded, setOpencodeModelsExpanded] = useState(true);
 
-  const freeModels = useMemo(
-    () => models.filter((model) => model.tier === "free"),
-    [models],
-  );
-  const paidModels = useMemo(
-    () => models.filter((model) => model.tier === "paid"),
-    [models],
-  );
   const enabledModelIds = useMemo(
     () => models.filter((model) => model.enabled).map((model) => model.id),
     [models],
@@ -113,6 +126,38 @@ export default function ProfileAiSettingsClient({
     setHasGoogleApiKey(payload.hasGoogleApiKey);
     setModels(payload.models);
   }, []);
+
+  const checkOpencodeStatus = useCallback(async () => {
+    if (!opencodeEnabled) return;
+    setOpencodeStatus("checking");
+    try {
+      const response = await fetch("/api/opencode/status", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      setOpencodeStatus(data.active ? "running" : "inactive");
+    } catch {
+      setOpencodeStatus("inactive");
+    }
+  }, [opencodeEnabled]);
+
+  const handleEnableOpencode = () => {
+    setShowOpencodeModal(true);
+  };
+
+  const handleConfirmOpencode = () => {
+    setShowOpencodeModal(false);
+    setOpencodeEnabled(true);
+    setOpencodeStatus("active");
+  };
+
+  useEffect(() => {
+    if (opencodeEnabled) {
+      checkOpencodeStatus();
+      const interval = setInterval(checkOpencodeStatus, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [opencodeEnabled, checkOpencodeStatus]);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
@@ -349,157 +394,538 @@ export default function ProfileAiSettingsClient({
     </section>
   );
 
-  const renderApiKeysTab = () => (
+  const renderModelsContent = () => {
+    const googleModels = models.filter((model) => model.provider === "google");
+    const opencodeModels = models.filter((model) => model.provider === "opencode");
+
+    if (isLoading) {
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card/50 p-3">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading models...</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div className="space-y-3">
+          {googleModels.length > 0 && (
+            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setGoogleModelsExpanded(!googleModelsExpanded)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    setGoogleModelsExpanded(!googleModelsExpanded);
+                  }
+                }}
+                className="flex w-full items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors cursor-pointer"
+              >
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">Google Models</h4>
+                  <p className="text-xs text-muted-foreground">Powered by Google AI</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowGoogleConfig(true);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground h-7"
+                  >
+                    <KeyRound className="mr-1 h-3 w-3" />
+                    Key
+                  </Button>
+                  <ChevronDownIcon
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      googleModelsExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+              </div>
+              {googleModelsExpanded && (
+                <div className="border-t border-border px-3 pb-3 space-y-2">
+                  {googleModels.map((model) => (
+                    <div
+                      key={model.id}
+                      className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{model.label}</p>
+                        <p className="text-xs text-muted-foreground">{model.description}</p>
+                      </div>
+                      <button
+                        onClick={() => toggleModel(model.id)}
+                        disabled={isLoading || isSavingModels}
+                        className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                          model.enabled ? "bg-primary" : "bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                            model.enabled ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (opencodeEnabled && opencodeStatus === "running") {
+                  setOpencodeModelsExpanded(!opencodeModelsExpanded);
+                }
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && opencodeEnabled && opencodeStatus === "running") {
+                  setOpencodeModelsExpanded(!opencodeModelsExpanded);
+                }
+              }}
+              className={`flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors ${
+                opencodeEnabled && opencodeStatus === "running" ? "cursor-pointer" : ""
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
+                  <Zap className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">OpenCode Zen</h4>
+                  <p className="text-xs text-muted-foreground">Experimental AI models</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {!opencodeEnabled ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEnableOpencode();
+                    }}
+                  >
+                    Enable
+                  </Button>
+                ) : (
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      opencodeStatus === "running"
+                        ? "bg-green-500/10 text-green-500"
+                        : opencodeStatus === "active"
+                        ? "bg-blue-500/10 text-blue-500"
+                        : "bg-yellow-500/10 text-yellow-500"
+                    }`}
+                  >
+                    {opencodeStatus === "running" ? "Running" : opencodeStatus === "active" ? "Active" : "Inactive"}
+                  </span>
+                )}
+                {opencodeEnabled && opencodeStatus === "running" && (
+                  <ChevronDownIcon
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      opencodeModelsExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                )}
+              </div>
+            </div>
+
+            {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded && opencodeModels.length > 0 && (
+              <div className="border-t border-border px-3 pb-3 space-y-2">
+                {opencodeModels.map((model) => (
+                  <div
+                    key={model.id}
+                    className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{model.label}</p>
+                      <p className="text-xs text-muted-foreground">{model.description}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleModel(model.id)}
+                      disabled={isLoading || isSavingModels}
+                      className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                        model.enabled ? "bg-primary" : "bg-muted"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                          model.enabled ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {opencodeEnabled && opencodeStatus !== "running" && (
+              <div className="border-t border-border px-3 pb-3">
+                <div className="flex items-center gap-2 rounded-md border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-600">
+                  <Server className="h-4 w-4" />
+                  <span>Run <code className="text-xs bg-yellow-500/10 px-1.5 py-0.5 rounded">opencode serve</code> in your terminal to activate</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {enabledModelIds.length === 0 ? (
+          <p className="mt-4 flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            No models are enabled. Enable at least one model to generate pages.
+          </p>
+        ) : null}
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Model tier and notes are based on provider metadata.
+        </p>
+      </>
+    );
+  };
+
+  const renderApiKeysTab = () => {
+    if (isLoading) {
+      return (
+        <section
+          id={tabPanelId("api-keys")}
+          role="tabpanel"
+          aria-labelledby={tabId("api-keys")}
+          className="space-y-6"
+        >
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-muted animate-pulse" />
+              <div className="space-y-2">
+                <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+                <div className="h-3 w-48 bg-muted rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    return (
     <section
       id={tabPanelId("api-keys")}
       role="tabpanel"
       aria-labelledby={tabId("api-keys")}
-      className="rounded-lg border border-border bg-card p-4 sm:p-5"
+      className="space-y-6"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-            <KeyRound className="h-4 w-4" />
+      {!hasGoogleApiKey || showGoogleConfig ? (
+        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+              <KeyRound className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground">
+                Configure Google AI
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Enter your Google API key to enable AI-powered page generation.
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-base font-semibold text-foreground">
-              Google AI key
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Configure your personal key used for generation.
+          
+          <div className="mt-4 flex items-start gap-2 rounded-md border border-green-500/20 bg-green-500/5 px-3 py-2.5">
+            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+            <p className="text-xs text-green-600 dark:text-green-400">
+              Your API key is encrypted and stored securely. We never share it with third parties.
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <Input
+              type="password"
+              placeholder="Paste your Google API key (e.g., AIza...)"
+              value={googleApiKey}
+              onChange={(event) => setGoogleApiKey(event.target.value)}
+              disabled={isLoading || isSavingKey}
+              className="font-mono text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleSaveGoogleApiKey}
+                disabled={
+                  isLoading || isSavingKey || googleApiKey.trim().length === 0
+                }
+              >
+                {isSavingKey
+                  ? "Saving..."
+                  : hasGoogleApiKey
+                  ? "Update key"
+                  : "Save key"}
+              </Button>
+              {hasGoogleApiKey && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowGoogleConfig(false);
+                    setGoogleApiKey("");
+                  }}
+                  disabled={isLoading || isSavingKey}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
+              Don&apos;t have an API key?{" "}
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                Get one from Google AI Studio
+                <ExternalLink className="h-3 w-3" />
+              </a>
             </p>
           </div>
         </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-            hasGoogleApiKey
-              ? "bg-secondary text-secondary-foreground"
-              : "bg-destructive/10 text-destructive"
-          }`}
-        >
-          {hasGoogleApiKey ? "Configured" : "Not configured"}
-        </span>
-      </div>
-      <div className="mt-3 space-y-3">
-        <Input
-          type="password"
-          placeholder="Paste Google API key"
-          value={googleApiKey}
-          onChange={(event) => setGoogleApiKey(event.target.value)}
-          disabled={isLoading || isSavingKey}
-        />
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={handleSaveGoogleApiKey}
-            disabled={
-              isLoading || isSavingKey || googleApiKey.trim().length === 0
-            }
-          >
-            {isSavingKey
-              ? "Saving..."
-              : hasGoogleApiKey
-                ? "Update key"
-                : "Save key"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClearGoogleApiKey}
-            disabled={isLoading || isSavingKey || !hasGoogleApiKey}
-          >
-            Clear key
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
-
-  const renderModelsTab = () => (
-    <section
-      id={tabPanelId("models")}
-      role="tabpanel"
-      aria-labelledby={tabId("models")}
-      className="rounded-lg border border-border bg-card p-4 sm:p-5"
-    >
-      <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-          <Sparkles className="h-4 w-4" />
-        </div>
-        <div>
-          <h3 className="text-base font-semibold text-foreground">
-            Enabled models
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Enabled models appear in home and sidebar dropdowns.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Free models
-          </p>
-          <div className="mt-2 space-y-1.5">
-            {freeModels.map((model) => (
-              <div
-                key={model.id}
-                className="flex items-center justify-between rounded-md border border-border px-3 py-2"
-              >
-                <span className="text-sm text-foreground">{model.label}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={model.enabled ? "default" : "outline"}
-                  onClick={() => toggleModel(model.id)}
-                  disabled={isLoading || isSavingModels}
-                >
-                  {model.enabled ? "Enabled" : "Enable"}
-                </Button>
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                <KeyRound className="h-4 w-4" />
               </div>
-            ))}
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Google AI
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Your Google API key is configured and ready.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+                Configured
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowGoogleConfig(true)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Change
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearGoogleApiKey}
+                disabled={isLoading || isSavingKey}
+                className="text-xs text-destructive hover:text-destructive"
+              >
+                Remove
+              </Button>
+            </div>
           </div>
         </div>
+      )}
 
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Paid models
-          </p>
-          <div className="mt-2 space-y-1.5">
-            {paidModels.map((model) => (
-              <div
-                key={model.id}
-                className="flex items-center justify-between rounded-md border border-border px-3 py-2"
-              >
-                <span className="text-sm text-foreground">{model.label}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={model.enabled ? "default" : "outline"}
-                  onClick={() => toggleModel(model.id)}
-                  disabled={isLoading || isSavingModels}
-                >
-                  {model.enabled ? "Enabled" : "Enable"}
-                </Button>
-              </div>
-            ))}
+      {hasGoogleApiKey && !showGoogleConfig && (
+        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground">
+                Enabled Models
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Toggle models on or off to control which ones appear in generation.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            {renderModelsContent()}
           </div>
         </div>
-      </div>
+      )}
 
-      {enabledModelIds.length === 0 ? (
-        <p className="mt-3 flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          No models are enabled. Enable at least one model to generate pages.
-        </p>
-      ) : null}
+      {!hasGoogleApiKey && isLoading && (
+        <div className="rounded-lg border border-border bg-card/50 p-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 animate-pulse" />
+            <div className="space-y-2">
+              <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+              <div className="h-3 w-40 bg-muted rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
 
-      <p className="mt-3 text-xs text-muted-foreground">
-        Only Google models are configurable in this release.
-      </p>
+      {!hasGoogleApiKey && !isLoading && (() => {
+        const opencodeModelsSection = models.filter((model) => model.provider === "opencode");
+        return (
+        <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (opencodeEnabled && opencodeStatus === "running") {
+                setOpencodeModelsExpanded(!opencodeModelsExpanded);
+              }
+            }}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && opencodeEnabled && opencodeStatus === "running") {
+                setOpencodeModelsExpanded(!opencodeModelsExpanded);
+              }
+            }}
+            className={`flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors ${
+              opencodeEnabled && opencodeStatus === "running" ? "cursor-pointer" : ""
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
+                <Zap className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-foreground">OpenCode Zen</h4>
+                <p className="text-xs text-muted-foreground">Experimental AI models</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {!opencodeEnabled ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEnableOpencode();
+                  }}
+                >
+                  Enable
+                </Button>
+              ) : (
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    opencodeStatus === "running"
+                      ? "bg-green-500/10 text-green-500"
+                      : opencodeStatus === "active"
+                      ? "bg-blue-500/10 text-blue-500"
+                      : "bg-yellow-500/10 text-yellow-500"
+                  }`}
+                >
+                  {opencodeStatus === "running" ? "Running" : opencodeStatus === "active" ? "Active" : "Inactive"}
+                </span>
+              )}
+              {opencodeEnabled && opencodeStatus === "running" && (
+                <ChevronDownIcon
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${
+                    opencodeModelsExpanded ? "rotate-180" : ""
+                  }`}
+                />
+              )}
+            </div>
+          </div>
+
+          {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded && opencodeModelsSection.length > 0 && (
+            <div className="border-t border-border px-3 pb-3 space-y-2">
+              {opencodeModelsSection.map((model: AiSettingsModel) => (
+                <div
+                  key={model.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{model.label}</p>
+                    <p className="text-xs text-muted-foreground">{model.description}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleModel(model.id)}
+                    disabled={isLoading || isSavingModels}
+                    className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                      model.enabled ? "bg-primary" : "bg-muted"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        model.enabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {opencodeEnabled && opencodeStatus !== "running" && (
+            <div className="border-t border-border px-3 pb-3">
+              <div className="flex items-center gap-2 rounded-md border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-600">
+                <Server className="h-4 w-4" />
+                <span>Run <code className="text-xs bg-yellow-500/10 px-1.5 py-0.5 rounded">opencode serve</code> in your terminal to activate</span>
+              </div>
+            </div>
+          )}
+        </div>
+        );
+      })()}
+
+      <Dialog open={showOpencodeModal} onOpenChange={setShowOpencodeModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-violet-500" />
+              Enable OpenCode Zen
+            </DialogTitle>
+            <DialogDescription>
+              OpenCode Zen provides experimental AI models for page generation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
+              <h4 className="text-sm font-medium text-foreground mb-2">How it works</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <Zap className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                  <span>Runs locally on your machine via <code className="text-xs bg-violet-500/10 px-1.5 py-0.5 rounded">opencode serve</code></span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Shield className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                  <span>Your data stays on your device - no external API calls</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Server className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                  <span>Experimental: quality and behavior may vary</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowOpencodeModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmOpencode}>
+              Enable OpenCode Zen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
-  );
+    );
+  };
 
   return (
     <div className="mt-5 space-y-4">
@@ -532,9 +958,8 @@ export default function ProfileAiSettingsClient({
         </div>
       </div>
 
-      {activeTab === "details" ? renderDetailsTab() : null}
       {activeTab === "api-keys" ? renderApiKeysTab() : null}
-      {activeTab === "models" ? renderModelsTab() : null}
+      {activeTab === "details" ? renderDetailsTab() : null}
     </div>
   );
 }

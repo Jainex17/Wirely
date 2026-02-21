@@ -8,9 +8,12 @@ import {
 describe("wireModels settings helpers", () => {
   it("drops unknown models, removes duplicates, and sorts free-first", () => {
     const normalized = normalizeEnabledWireModels([
+      "minimax-m2.5-free",
       "gemini-2.5-pro",
       "gemini-2.5-flash-lite",
       "gemini-2.5-flash-lite",
+      "gpt-5-nano",
+      "trinity-large-preview-free",
       "unknown-model",
       "gemini-2.5-flash",
     ]);
@@ -19,6 +22,7 @@ describe("wireModels settings helpers", () => {
       "gemini-2.5-flash-lite",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
+      "minimax-m2.5-free",
     ]);
   });
 

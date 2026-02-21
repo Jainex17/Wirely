@@ -1,4 +1,4 @@
-import { streamText } from "ai";
+import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import {
   composeGenerateSystemPrompt,
@@ -11,6 +11,8 @@ import {
   userExplicitlyRequestedImages,
 } from "@/lib/wireOutput";
 import {
+  getWireModelProvider,
+  isGoogleWireModel,
   isWireModelName,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -32,6 +34,12 @@ export const maxDuration = 60;
 
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
+const OPENCODE_SERVER_URL =
+  process.env.OPENCODE_SERVER_URL?.trim() || "http://127.0.0.1:4096";
+const OPENCODE_DIRECTORY = process.env.OPENCODE_DIRECTORY?.trim() || process.cwd();
+const OPENCODE_AGENT = process.env.OPENCODE_AGENT?.trim() || "build";
+const OPENCODE_INACTIVE_MESSAGE =
+  "OpenCode is inactive. Run `opencode serve` in your terminal and retry.";
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -233,6 +241,10 @@ const selectedModelFailureResponse = ({
   modelName: string;
   error: unknown;
 }) => {
+  if (isOpenCodeInactiveError(error)) {
+    return new Response(error.message, { status: 503 });
+  }
+
   if (isInsufficientFunds(error)) {
     return insufficientFundsResponse();
   }
@@ -584,7 +596,7 @@ const persistConversationTurn = async ({
   }
 };
 
-const streamWithSelectedModel = async ({
+const streamWithGoogleModel = async ({
   projectId,
   modelName,
   googleApiKey,
@@ -635,6 +647,269 @@ const streamWithSelectedModel = async ({
       });
     },
   });
+};
+
+const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+
+const createBasicAuthHeader = () => {
+  const username = process.env.OPENCODE_SERVER_USERNAME?.trim();
+  const password = process.env.OPENCODE_SERVER_PASSWORD?.trim();
+
+  if (!password) return null;
+  const normalizedUsername = username || "opencode";
+  return `Basic ${Buffer.from(`${normalizedUsername}:${password}`).toString(
+    "base64",
+  )}`;
+};
+
+const openCodeHeaders = (contentType = false) => {
+  const authHeader = createBasicAuthHeader();
+  return {
+    ...(contentType ? { "Content-Type": "application/json" } : {}),
+    ...(authHeader ? { Authorization: authHeader } : {}),
+    "x-opencode-directory": OPENCODE_DIRECTORY,
+  };
+};
+
+const getSessionIdFromOpenCodeResponse = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id === "string") return record.id;
+  if (record.session && typeof record.session === "object") {
+    const sessionRecord = record.session as Record<string, unknown>;
+    if (typeof sessionRecord.id === "string") return sessionRecord.id;
+  }
+  return null;
+};
+
+const extractOpenCodeText = (value: unknown): string => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const record = value as Record<string, unknown>;
+
+  const parts = Array.isArray(record.parts) ? record.parts : [];
+  const textFromParts = parts
+    .map((part) => {
+      if (!part || typeof part !== "object" || Array.isArray(part)) return "";
+      const partRecord = part as Record<string, unknown>;
+      if (partRecord.type !== "text") return "";
+      if (typeof partRecord.text === "string") return partRecord.text;
+      if (
+        partRecord.text &&
+        typeof partRecord.text === "object" &&
+        typeof (partRecord.text as Record<string, unknown>).value === "string"
+      ) {
+        return String((partRecord.text as Record<string, unknown>).value);
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("");
+  if (textFromParts.trim()) return textFromParts;
+
+  if (typeof record.text === "string" && record.text.trim()) {
+    return record.text;
+  }
+
+  if (record.info && typeof record.info === "object") {
+    const info = record.info as Record<string, unknown>;
+    if (typeof info.text === "string" && info.text.trim()) {
+      return info.text;
+    }
+    if (typeof info.content === "string" && info.content.trim()) {
+      return info.content;
+    }
+  }
+
+  return "";
+};
+
+const buildOpenCodePrompt = ({
+  systemPrompt,
+  messages,
+}: {
+  systemPrompt: string;
+  messages: WireMessage[];
+}) => {
+  const transcript = messages
+    .map(
+      (message) =>
+        `${message.role.toUpperCase()}:\n${message.content.trim()}`,
+    )
+    .join("\n\n");
+
+  return [
+    "Follow these instructions exactly.",
+    "",
+    "SYSTEM:",
+    systemPrompt,
+    "",
+    "CONVERSATION:",
+    transcript,
+  ].join("\n");
+};
+
+class OpenCodeInactiveError extends Error {
+  constructor(message = OPENCODE_INACTIVE_MESSAGE) {
+    super(message);
+    this.name = "OpenCodeInactiveError";
+  }
+}
+
+const isOpenCodeInactiveError = (error: unknown): error is OpenCodeInactiveError =>
+  error instanceof OpenCodeInactiveError ||
+  (error instanceof Error && error.name === "OpenCodeInactiveError");
+
+const isOpenCodeStatusActive = (payload: unknown): boolean => {
+  if (typeof payload === "boolean") {
+    return payload;
+  }
+
+  if (typeof payload === "string") {
+    const normalized = payload.trim().toLowerCase();
+    if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+      return false;
+    }
+    if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+      return true;
+    }
+    return false;
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidateRecords: Record<string, unknown>[] = [record];
+  if (record.session && typeof record.session === "object" && !Array.isArray(record.session)) {
+    candidateRecords.push(record.session as Record<string, unknown>);
+  }
+  if (record.server && typeof record.server === "object" && !Array.isArray(record.server)) {
+    candidateRecords.push(record.server as Record<string, unknown>);
+  }
+
+  const directBooleanFields = [
+    "active",
+    "isActive",
+    "connected",
+    "isConnected",
+    "running",
+    "ready",
+  ] as const;
+
+  for (const candidate of candidateRecords) {
+    for (const field of directBooleanFields) {
+      if (typeof candidate[field] === "boolean") {
+        return candidate[field] as boolean;
+      }
+    }
+
+    const statusField = candidate.status;
+    if (typeof statusField === "string") {
+      const normalized = statusField.trim().toLowerCase();
+      if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+        return false;
+      }
+      if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const generateWithOpenCode = async ({
+  modelName,
+  systemPrompt,
+  messages,
+}: {
+  modelName: WireModelName;
+  systemPrompt: string;
+  messages: WireMessage[];
+}) => {
+  const baseUrl = stripTrailingSlash(OPENCODE_SERVER_URL);
+  const directoryParam = encodeURIComponent(OPENCODE_DIRECTORY);
+  const statusUrl = `${baseUrl}/session/status`;
+
+  let statusResponse: Response;
+  try {
+    statusResponse = await fetch(statusUrl, {
+      method: "GET",
+      headers: openCodeHeaders(),
+      cache: "no-store",
+    });
+  } catch {
+    throw new OpenCodeInactiveError();
+  }
+  if (!statusResponse.ok) {
+    throw new OpenCodeInactiveError();
+  }
+
+  let statusPayload: unknown = null;
+  try {
+    statusPayload = (await statusResponse.json()) as unknown;
+  } catch {
+    statusPayload = null;
+  }
+  if (!isOpenCodeStatusActive(statusPayload)) {
+    throw new OpenCodeInactiveError();
+  }
+
+  const createSessionResponse = await fetch(`${baseUrl}/session`, {
+    method: "POST",
+    headers: openCodeHeaders(),
+    cache: "no-store",
+  });
+  if (!createSessionResponse.ok) {
+    throw new Error("OpenCode could not create a session.");
+  }
+
+  const sessionPayload = (await createSessionResponse.json()) as unknown;
+  const sessionId = getSessionIdFromOpenCodeResponse(sessionPayload);
+  if (!sessionId) {
+    throw new Error("OpenCode did not return a session id.");
+  }
+
+  const prompt = buildOpenCodePrompt({ systemPrompt, messages });
+  const messageResponse = await fetch(
+    `${baseUrl}/session/${sessionId}/message?directory=${directoryParam}`,
+    {
+      method: "POST",
+      headers: openCodeHeaders(true),
+      cache: "no-store",
+      body: JSON.stringify({
+        agent: OPENCODE_AGENT,
+        model: {
+          providerID: getWireModelProvider(modelName),
+          modelID: modelName,
+        },
+        messageID: `msg_${Date.now()}`,
+        parts: [
+          {
+            id: `prt_${Date.now()}`,
+            type: "text",
+            text: prompt,
+          },
+        ],
+      }),
+    },
+  );
+
+  if (!messageResponse.ok) {
+    const errorBody = await messageResponse.text();
+    throw new Error(
+      errorBody.trim() || `OpenCode request failed (${messageResponse.status}).`,
+    );
+  }
+
+  const responsePayload = (await messageResponse.json()) as unknown;
+  const text = extractOpenCodeText(responsePayload).trim();
+  if (!text) {
+    throw new Error("OpenCode returned an empty response.");
+  }
+
+  return text;
 };
 
 export async function POST(request: Request, context: RouteContext) {
@@ -811,14 +1086,6 @@ export async function POST(request: Request, context: RouteContext) {
       Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),
     );
   }
-  if (!userAiSettings.googleApiKey) {
-    return applyRateHeaders(
-      new Response(
-        "Google API key is not configured. Add it in Profile to generate output.",
-        { status: 400 },
-      ),
-    );
-  }
   if (userAiSettings.enabledModelIds.length === 0) {
     return applyRateHeaders(
       new Response(
@@ -835,6 +1102,14 @@ export async function POST(request: Request, context: RouteContext) {
       new Response(
         `Model ${effectiveModelName} is disabled. Enable it in Profile first.`,
         { status: 403 },
+      ),
+    );
+  }
+  if (isGoogleWireModel(effectiveModelName) && !userAiSettings.googleApiKey) {
+    return applyRateHeaders(
+      new Response(
+        "Google API key is not configured. Add it in Profile to generate output.",
+        { status: 400 },
       ),
     );
   }
@@ -884,22 +1159,58 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   try {
-    const result = await streamWithSelectedModel({
-      projectId: id,
+    if (isGoogleWireModel(effectiveModelName)) {
+      const result = await streamWithGoogleModel({
+        projectId: id,
+        modelName: effectiveModelName,
+        googleApiKey: userAiSettings.googleApiKey as string,
+        messages,
+        systemPrompt,
+        stylePreset,
+        allowImages,
+        userPrompt: latestUserPrompt,
+        targetPageId: resolvedTargetPageId ?? undefined,
+      });
+
+      return applyRateHeaders(
+        result.toDataStreamResponse({
+          headers: {
+            "cache-control": "no-store, no-transform",
+          },
+        }),
+      );
+    }
+
+    const opencodeText = await generateWithOpenCode({
       modelName: effectiveModelName,
-      googleApiKey: userAiSettings.googleApiKey,
-      messages,
       systemPrompt,
+      messages,
+    });
+
+    logQualityTelemetry({
+      text: opencodeText,
       stylePreset,
       allowImages,
       userPrompt: latestUserPrompt,
+      modelName: effectiveModelName,
+    });
+    void persistConversationTurn({
+      projectId: id,
+      userPrompt: latestUserPrompt,
+      assistantSummary: extractAssistantSummary(opencodeText),
       targetPageId: resolvedTargetPageId ?? undefined,
     });
 
     return applyRateHeaders(
-      result.toDataStreamResponse({
+      createDataStreamResponse({
         headers: {
           "cache-control": "no-store, no-transform",
+        },
+        execute: (dataStream) => {
+          dataStream.write(formatDataStreamPart("text", opencodeText));
+          dataStream.write(
+            formatDataStreamPart("finish_message", { finishReason: "stop" }),
+          );
         },
       }),
     );

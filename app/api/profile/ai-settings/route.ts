@@ -31,7 +31,9 @@ const toAiSettingsResponse = (settings: UserAiSettings) => ({
   models: WIRE_MODEL_OPTIONS.map((model) => ({
     id: model.id,
     label: model.label,
+    description: model.description,
     tier: model.tier,
+    provider: model.provider,
     enabled: settings.enabledModelIds.includes(model.id),
   })),
 });

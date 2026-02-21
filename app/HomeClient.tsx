@@ -7,6 +7,7 @@ import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
+  isGoogleWireModel,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -33,6 +34,7 @@ import {
   Loader2,
   MoreHorizontal,
   Trash2,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
@@ -211,10 +213,23 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     : state.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
 
   const hasNoEnabledModels = Boolean(state.user) && state.enabledModelIds.length === 0;
-  const showApiKeyWarning = Boolean(state.user) && !state.hasGoogleApiKey;
+  const selectedModelRequiresGoogleKey = isGoogleWireModel(activeSelectedModel);
+  const hasAtLeastOneRunnableModel = enabledModelOptions.some(
+    (model) => !isGoogleWireModel(model.id) || state.hasGoogleApiKey,
+  );
+  const hasNoRunnableModels = Boolean(state.user) && !hasAtLeastOneRunnableModel;
+  const showApiKeyWarning =
+    Boolean(state.user) &&
+    selectedModelRequiresGoogleKey &&
+    !state.hasGoogleApiKey;
+  const showConfigureApiKeysCta =
+    Boolean(state.user) &&
+    !state.hasGoogleApiKey &&
+    enabledModelOptions.some((model) => isGoogleWireModel(model.id));
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
+  const selectedModelIsOpenCode = WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.provider === "opencode";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -232,6 +247,19 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         payload: { errorMessage: "No models are enabled. Enable at least one model in Profile." },
       });
       toast.error("No models are enabled. Open Profile to enable one.");
+      return;
+    }
+    if (selectedModelRequiresGoogleKey && !state.hasGoogleApiKey) {
+      dispatch({
+        type: "patch",
+        payload: {
+          errorMessage:
+            "Selected model requires Google API key. Choose MiniMax M2.5 Free or add Google key in Profile.",
+        },
+      });
+      toast.error(
+        "Selected model requires Google API key. Choose MiniMax M2.5 Free or add Google key in Profile.",
+      );
       return;
     }
 
@@ -362,7 +390,11 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           className="bg-transparent border-border hover:bg-muted"
                           disabled={hasNoEnabledModels}
                         >
-                          <GeminiIcon className="mr-2 size-4 text-primary" />
+                          {selectedModelIsOpenCode ? (
+                            <Zap className="mr-2 size-4 text-violet-500" />
+                          ) : (
+                            <GeminiIcon className="mr-2 size-4 text-primary" />
+                          )}
                           {selectedModelLabel}{" "}
                           {showApiKeyWarning ? (
                             <AlertTriangle
@@ -374,7 +406,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-card border-border">
-                        {showApiKeyWarning ? (
+                        {showConfigureApiKeysCta ? (
                           <>
                             <DropdownMenuItem
                               onClick={() => router.push("/profile")}
@@ -386,17 +418,30 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                             <DropdownMenuSeparator />
                           </>
                         ) : null}
-                        {enabledModelOptions.map((model) => (
+                        {enabledModelOptions.map((model) => {
+                          const isOpenCode = model.provider === "opencode";
+                          return (
                           <DropdownMenuItem
                             key={model.id}
                             onClick={() =>
                               dispatch({ type: "patch", payload: { selectedModel: model.id } })
                             }
+                            className="flex items-start gap-2"
                           >
-                            <GeminiIcon className="mr-2 size-4 text-primary" />
-                            {model.label}
+                            {isOpenCode ? (
+                              <Zap className="mr-2 mt-0.5 size-4 text-violet-500" />
+                            ) : (
+                              <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
+                            )}
+                            <div className="flex flex-col">
+                              <span>{model.label}</span>
+                              <span className="text-[10px] text-muted-foreground">{model.description}</span>
+                              <span className={`text-[10px] font-medium ${model.tier === "free" ? "text-green-600" : "text-orange-600"}`}>
+                                {model.tier === "free" ? "Free" : "Paid"}
+                              </span>
+                            </div>
                           </DropdownMenuItem>
-                        ))}
+                        )})}
                         {enabledModelOptions.length === 0 ? (
                           <DropdownMenuItem disabled>
                             No models enabled
@@ -441,10 +486,13 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                     disabled={
                       state.isSubmitting ||
                       state.prompt.trim().length < 10 ||
-                      hasNoEnabledModels
+                      hasNoEnabledModels ||
+                      hasNoRunnableModels
                     }
                     className={
-                      state.prompt.trim().length >= 10 && !hasNoEnabledModels
+                      state.prompt.trim().length >= 10 &&
+                      !hasNoEnabledModels &&
+                      !hasNoRunnableModels
                         ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
                         : "bg-muted text-muted-foreground"
                     }
@@ -469,6 +517,17 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                     Profile
                   </Link>
                   .
+                </>
+              ) : hasNoRunnableModels ? (
+                <>
+                  Enabled models require Google API key. Add it in{" "}
+                  <Link
+                    href="/profile"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    Profile
+                  </Link>{" "}
+                  or choose MiniMax M2.5 Free.
                 </>
               ) : (
                 "Select a model and start building"
