@@ -1056,6 +1056,14 @@ export default function WirePromptSidebar({
   const activeModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
+  const dropdownContentClassName =
+    variant === "panel"
+      ? "border-border bg-card text-foreground shadow-xl"
+      : "border-border/70 bg-sidebar text-sidebar-foreground shadow-xl";
+  const dropdownItemClassName =
+    variant === "panel"
+      ? undefined
+      : "focus:bg-sidebar-accent focus:text-sidebar-accent-foreground";
 
   return (
     <aside className={containerClassName}>
@@ -1156,18 +1164,21 @@ export default function WirePromptSidebar({
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="border-border bg-card shadow-xl">
+                <DropdownMenuContent className={dropdownContentClassName}>
                   {enabledModelOptions.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
                       onClick={() => setActiveModelName(model.id)}
+                      className={dropdownItemClassName}
                     >
                       <GeminiIcon className="mr-2 size-4 text-primary" />
                       {model.label}
                     </DropdownMenuItem>
                   ))}
                   {enabledModelOptions.length === 0 ? (
-                    <DropdownMenuItem disabled>No models enabled</DropdownMenuItem>
+                    <DropdownMenuItem disabled className={dropdownItemClassName}>
+                      No models enabled
+                    </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1188,11 +1199,12 @@ export default function WirePromptSidebar({
                     <ChevronDown className="h-3 w-3 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="border-border bg-card shadow-xl">
+                <DropdownMenuContent className={dropdownContentClassName}>
                   {pages.map((page) => (
                     <DropdownMenuItem
                       key={page.id}
                       onClick={() => setSelectedPageId(page.id)}
+                      className={dropdownItemClassName}
                     >
                       {page.title}
                     </DropdownMenuItem>

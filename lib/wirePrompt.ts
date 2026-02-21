@@ -236,7 +236,8 @@ Quality requirements:
 - Avoid Inter, Roboto, Arial, and generic system-only font stacks.
 - Pair a distinctive display font with a refined readable body font.
 - Use a clear palette with dominant colors and controlled accents.
-- Use depth/atmosphere (gradients, texture, pattern, or layered surfaces) when appropriate to the chosen tone.
+- Use depth/atmosphere (texture, pattern, radial gradients, or layered surfaces) when appropriate to the chosen tone.
+- Do not use linear gradients anywhere unless the user explicitly asks for them.
 - Avoid emoji-only iconography.
 - Prefer searchable Bootstrap Icons by class name and use semantic icon names for context (for example: bi-house, bi-graph-up, bi-gear, bi-people, bi-lightning).
 - For decorative icons, use markup like <i class="bi bi-ICON_NAME" aria-hidden="true"></i>.
