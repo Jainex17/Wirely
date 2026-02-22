@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 
 const OPENCODE_SERVER_URL =
   process.env.OPENCODE_SERVER_URL?.trim() || "http://127.0.0.1:4096";
-const OPENCODE_DIRECTORY = process.env.OPENCODE_DIRECTORY?.trim() || process.cwd();
+const OPENCODE_DIRECTORY =
+  process.env.OPENCODE_DIRECTORY?.trim() || process.cwd();
 const OPENCODE_INACTIVE_MESSAGE =
   "OpenCode is inactive. Run `opencode serve` in your terminal and retry.";
 
@@ -31,30 +32,62 @@ const openCodeHeaders = () => {
   };
 };
 
-const isStatusActive = (payload: unknown): boolean => {
+const isStatusActive = (payload: unknown): boolean | null => {
   if (typeof payload === "boolean") return payload;
 
   if (typeof payload === "string") {
     const normalized = payload.trim().toLowerCase();
-    if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
+    if (
+      [
+        "inactive",
+        "stopped",
+        "offline",
+        "disconnected",
+        "down",
+        "unhealthy",
+        "error",
+        "fail",
+        "failed",
+      ].includes(normalized)
+    ) {
       return false;
     }
-    if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
+    if (
+      [
+        "active",
+        "running",
+        "ready",
+        "connected",
+        "up",
+        "ok",
+        "healthy",
+        "pass",
+        "success",
+      ].includes(normalized)
+    ) {
       return true;
     }
-    return false;
+    return null;
   }
 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return false;
+    return null;
   }
 
   const record = payload as Record<string, unknown>;
   const candidateRecords: Record<string, unknown>[] = [record];
-  if (record.session && typeof record.session === "object" && !Array.isArray(record.session)) {
+  if (
+    record.session &&
+    typeof record.session === "object" &&
+    !Array.isArray(record.session)
+  ) {
     candidateRecords.push(record.session as Record<string, unknown>);
   }
-  if (record.server && typeof record.server === "object" && !Array.isArray(record.server)) {
+  if (
+    record.server &&
+    typeof record.server === "object" &&
+    !Array.isArray(record.server)
+  ) {
     candidateRecords.push(record.server as Record<string, unknown>);
   }
 
@@ -65,6 +98,9 @@ const isStatusActive = (payload: unknown): boolean => {
     "isConnected",
     "running",
     "ready",
+    "ok",
+    "healthy",
+    "success",
   ] as const;
 
   for (const candidate of candidateRecords) {
@@ -77,26 +113,66 @@ const isStatusActive = (payload: unknown): boolean => {
     const statusField = candidate.status;
     if (typeof statusField === "string") {
       const normalized = statusField.trim().toLowerCase();
-      if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
+      if (
+        [
+          "inactive",
+          "stopped",
+          "offline",
+          "disconnected",
+          "down",
+          "unhealthy",
+          "error",
+          "fail",
+          "failed",
+        ].includes(normalized)
+      ) {
         return false;
       }
-      if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
+      if (
+        [
+          "active",
+          "running",
+          "ready",
+          "connected",
+          "up",
+          "ok",
+          "healthy",
+          "pass",
+          "success",
+        ].includes(normalized)
+      ) {
         return true;
       }
     }
   }
 
-  return false;
+  return null;
 };
 
 const noStoreHeaders = {
   "Cache-Control": "no-store",
 };
 
+const statusJsonResponse = ({
+  status = 200,
+  active,
+  message,
+}: {
+  status?: number;
+  active?: boolean;
+  message?: string;
+}) => {
+  const body =
+    active === undefined && message === undefined
+      ? ({ error: "Unauthenticated" } as const)
+      : ({ active, message } as const);
+  return NextResponse.json(body, { status, headers: noStoreHeaders });
+};
+
 export async function GET() {
   const sessionUser = await getRequestSessionUser();
   if (!sessionUser) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    return statusJsonResponse({ status: 401 });
   }
 
   const statusUrl = `${stripTrailingSlash(OPENCODE_SERVER_URL)}/global/health`;
@@ -109,10 +185,10 @@ export async function GET() {
     });
 
     if (!response.ok) {
-      return NextResponse.json(
-        { active: false, message: OPENCODE_INACTIVE_MESSAGE },
-        { headers: noStoreHeaders },
-      );
+      return statusJsonResponse({
+        active: false,
+        message: OPENCODE_INACTIVE_MESSAGE,
+      });
     }
 
     const raw = await response.text();
@@ -125,18 +201,15 @@ export async function GET() {
       }
     }
 
-    const active = payload === null ? true : isStatusActive(payload);
-    return NextResponse.json(
-      {
-        active,
-        message: active ? "OpenCode is active." : OPENCODE_INACTIVE_MESSAGE,
-      },
-      { headers: noStoreHeaders },
-    );
+    const active = payload === null ? true : (isStatusActive(payload) ?? true);
+    return statusJsonResponse({
+      active,
+      message: active ? "OpenCode is active." : OPENCODE_INACTIVE_MESSAGE,
+    });
   } catch {
-    return NextResponse.json(
-      { active: false, message: OPENCODE_INACTIVE_MESSAGE },
-      { headers: noStoreHeaders },
-    );
+    return statusJsonResponse({
+      active: false,
+      message: OPENCODE_INACTIVE_MESSAGE,
+    });
   }
 }
