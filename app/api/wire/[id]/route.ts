@@ -766,10 +766,10 @@ const isOpenCodeStatusActive = (payload: unknown): boolean => {
 
   if (typeof payload === "string") {
     const normalized = payload.trim().toLowerCase();
-    if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+    if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
       return false;
     }
-    if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+    if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
       return true;
     }
     return false;
@@ -807,10 +807,10 @@ const isOpenCodeStatusActive = (payload: unknown): boolean => {
     const statusField = candidate.status;
     if (typeof statusField === "string") {
       const normalized = statusField.trim().toLowerCase();
-      if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+      if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
         return false;
       }
-      if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+      if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
         return true;
       }
     }
@@ -830,7 +830,7 @@ const generateWithOpenCode = async ({
 }) => {
   const baseUrl = stripTrailingSlash(OPENCODE_SERVER_URL);
   const directoryParam = encodeURIComponent(OPENCODE_DIRECTORY);
-  const statusUrl = `${baseUrl}/session/status`;
+  const statusUrl = `${baseUrl}/global/health`;
 
   let statusResponse: Response;
   try {
@@ -846,13 +846,17 @@ const generateWithOpenCode = async ({
     throw new OpenCodeInactiveError();
   }
 
+  const statusRaw = await statusResponse.text();
   let statusPayload: unknown = null;
-  try {
-    statusPayload = (await statusResponse.json()) as unknown;
-  } catch {
-    statusPayload = null;
+  if (statusRaw.trim()) {
+    try {
+      statusPayload = JSON.parse(statusRaw) as unknown;
+    } catch {
+      statusPayload = statusRaw.trim();
+    }
   }
-  if (!isOpenCodeStatusActive(statusPayload)) {
+
+  if (statusPayload !== null && !isOpenCodeStatusActive(statusPayload)) {
     throw new OpenCodeInactiveError();
   }
 

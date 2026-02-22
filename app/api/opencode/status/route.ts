@@ -36,10 +36,10 @@ const isStatusActive = (payload: unknown): boolean => {
 
   if (typeof payload === "string") {
     const normalized = payload.trim().toLowerCase();
-    if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+    if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
       return false;
     }
-    if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+    if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
       return true;
     }
     return false;
@@ -77,10 +77,10 @@ const isStatusActive = (payload: unknown): boolean => {
     const statusField = candidate.status;
     if (typeof statusField === "string") {
       const normalized = statusField.trim().toLowerCase();
-      if (["inactive", "stopped", "offline", "disconnected", "down"].includes(normalized)) {
+      if (["inactive", "stopped", "offline", "disconnected", "down", "unhealthy", "error"].includes(normalized)) {
         return false;
       }
-      if (["active", "running", "ready", "connected", "up"].includes(normalized)) {
+      if (["active", "running", "ready", "connected", "up", "ok", "healthy"].includes(normalized)) {
         return true;
       }
     }
@@ -99,7 +99,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   }
 
-  const statusUrl = `${stripTrailingSlash(OPENCODE_SERVER_URL)}/session/status`;
+  const statusUrl = `${stripTrailingSlash(OPENCODE_SERVER_URL)}/global/health`;
 
   try {
     const response = await fetch(statusUrl, {
@@ -125,7 +125,7 @@ export async function GET() {
       }
     }
 
-    const active = isStatusActive(payload);
+    const active = payload === null ? true : isStatusActive(payload);
     return NextResponse.json(
       {
         active,
