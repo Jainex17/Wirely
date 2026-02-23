@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, KeyRound, PencilLine, Sparkles, Shield, Zap, Server, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
+import { AlertTriangle, KeyRound, PencilLine, Sparkles, Zap, Server, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
@@ -480,10 +480,96 @@ export default function ProfileAiSettingsClient({
     );
     const opencodeModels = models.filter((model) => model.provider === "opencode");
 
+    const renderModelRow = (model: AiSettingsModel) => (
+      <div
+        key={model.id}
+        className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">{model.label}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {model.description} • {model.tier}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={model.enabled}
+          aria-label={`${model.enabled ? "Disable" : "Enable"} ${model.label}`}
+          onClick={() => toggleModel(model.id)}
+          disabled={isLoading || isSavingModels}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+            model.enabled ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span
+            className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+              model.enabled ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+        </button>
+      </div>
+    );
+
+    const renderProviderModelsSection = ({
+      title,
+      modelsForProvider,
+      expanded,
+      setExpanded,
+      onManageKey,
+    }: {
+      title: string;
+      modelsForProvider: AiSettingsModel[];
+      expanded: boolean;
+      setExpanded: (next: boolean) => void;
+      onManageKey?: () => void;
+    }) => (
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setExpanded(!expanded)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              setExpanded(!expanded);
+            }
+          }}
+          className="flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40"
+        >
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          <div className="flex items-center gap-2">
+            {onManageKey ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onManageKey();
+                }}
+                className="h-7 px-2 text-xs"
+              >
+                Key
+              </Button>
+            ) : null}
+            <ChevronDownIcon
+              className={`h-4 w-4 text-muted-foreground transition-transform ${
+                expanded ? "rotate-180" : ""
+              }`}
+            />
+          </div>
+        </div>
+        {expanded ? (
+          <div className="space-y-2 border-t border-border p-3">
+            {modelsForProvider.map(renderModelRow)}
+          </div>
+        ) : null}
+      </div>
+    );
+
     if (isLoading) {
       return (
         <div className="space-y-3">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-card/50 p-3">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-card p-3">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Loading models...</span>
           </div>
@@ -493,148 +579,35 @@ export default function ProfileAiSettingsClient({
 
     return (
       <>
+        {isSavingModels ? (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Saving model changes...
+          </div>
+        ) : null}
+
         <div className="space-y-3">
-          {googleModels.length > 0 && (
-            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setGoogleModelsExpanded(!googleModelsExpanded)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    setGoogleModelsExpanded(!googleModelsExpanded);
-                  }
-                }}
-                className="flex w-full items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors cursor-pointer"
-              >
-                <div>
-                  <h4 className="text-sm font-medium text-foreground">Google Models</h4>
-                  <p className="text-xs text-muted-foreground">Powered by Google AI</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowGoogleConfig(true);
-                    }}
-                    className="text-xs text-muted-foreground hover:text-foreground h-7"
-                  >
-                    <KeyRound className="mr-1 h-3 w-3" />
-                    Key
-                  </Button>
-                  <ChevronDownIcon
-                    className={`h-4 w-4 text-muted-foreground transition-transform ${
-                      googleModelsExpanded ? "rotate-180" : ""
-                    }`}
-                  />
-                </div>
-              </div>
-              {googleModelsExpanded && (
-                <div className="border-t border-border px-3 pb-3 space-y-2">
-                  {googleModels.map((model) => (
-                    <div
-                      key={model.id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{model.label}</p>
-                        <p className="text-xs text-muted-foreground">{model.description}</p>
-                      </div>
-                      <button
-                        onClick={() => toggleModel(model.id)}
-                        disabled={isLoading || isSavingModels}
-                        className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
-                          model.enabled ? "bg-primary" : "bg-muted"
-                        }`}
-                      >
-                        <span
-                          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                            model.enabled ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {googleModels.length > 0
+            ? renderProviderModelsSection({
+                title: "Google models",
+                modelsForProvider: googleModels,
+                expanded: googleModelsExpanded,
+                setExpanded: setGoogleModelsExpanded,
+                onManageKey: () => setShowGoogleConfig(true),
+              })
+            : null}
 
-          {openRouterModels.length > 0 && (
-            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setOpenRouterModelsExpanded(!openRouterModelsExpanded)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    setOpenRouterModelsExpanded(!openRouterModelsExpanded);
-                  }
-                }}
-                className="flex w-full items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors cursor-pointer"
-              >
-                <div>
-                  <h4 className="text-sm font-medium text-foreground">
-                    OpenRouter Models
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Powered by OpenRouter
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowOpenRouterConfig(true);
-                    }}
-                    className="text-xs text-muted-foreground hover:text-foreground h-7"
-                  >
-                    <KeyRound className="mr-1 h-3 w-3" />
-                    Key
-                  </Button>
-                  <ChevronDownIcon
-                    className={`h-4 w-4 text-muted-foreground transition-transform ${
-                      openRouterModelsExpanded ? "rotate-180" : ""
-                    }`}
-                  />
-                </div>
-              </div>
-              {openRouterModelsExpanded && (
-                <div className="border-t border-border px-3 pb-3 space-y-2">
-                  {openRouterModels.map((model) => (
-                    <div
-                      key={model.id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{model.label}</p>
-                        <p className="text-xs text-muted-foreground">{model.description}</p>
-                      </div>
-                      <button
-                        onClick={() => toggleModel(model.id)}
-                        disabled={isLoading || isSavingModels}
-                        className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
-                          model.enabled ? "bg-primary" : "bg-muted"
-                        }`}
-                      >
-                        <span
-                          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                            model.enabled ? "translate-x-5" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {openRouterModels.length > 0
+            ? renderProviderModelsSection({
+                title: "OpenRouter models",
+                modelsForProvider: openRouterModels,
+                expanded: openRouterModelsExpanded,
+                setExpanded: setOpenRouterModelsExpanded,
+                onManageKey: () => setShowOpenRouterConfig(true),
+              })
+            : null}
 
-          <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+          <div className="overflow-hidden rounded-lg border border-border bg-card">
             <div
               role="button"
               tabIndex={0}
@@ -648,17 +621,21 @@ export default function ProfileAiSettingsClient({
                   setOpencodeModelsExpanded(!opencodeModelsExpanded);
                 }
               }}
-              className={`flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors ${
+              className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 ${
                 opencodeEnabled && opencodeStatus === "running" ? "cursor-pointer" : ""
               }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
-                  <Zap className="h-5 w-5 text-white" />
+              <div className="flex items-center gap-2">
+                <div className="rounded-md bg-muted p-1.5 text-muted-foreground">
+                  <Zap className="h-4 w-4" />
                 </div>
                 <div>
                   <h4 className="text-sm font-medium text-foreground">OpenCode Zen</h4>
-                  <p className="text-xs text-muted-foreground">Experimental AI models</p>
+                  {opencodeEnabled ? (
+                    <p className="text-xs text-muted-foreground">
+                      {opencodeStatus === "running" ? "Running" : "Not running"}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -673,19 +650,7 @@ export default function ProfileAiSettingsClient({
                   >
                     Enable
                   </Button>
-                ) : (
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      opencodeStatus === "running"
-                        ? "bg-green-500/10 text-green-500"
-                        : opencodeStatus === "active"
-                        ? "bg-blue-500/10 text-blue-500"
-                        : "bg-yellow-500/10 text-yellow-500"
-                    }`}
-                  >
-                    {opencodeStatus === "running" ? "Running" : opencodeStatus === "active" ? "Active" : "Inactive"}
-                  </span>
-                )}
+                ) : null}
                 {opencodeEnabled && opencodeStatus === "running" && (
                   <ChevronDownIcon
                     className={`h-4 w-4 text-muted-foreground transition-transform ${
@@ -696,40 +661,27 @@ export default function ProfileAiSettingsClient({
               </div>
             </div>
 
-            {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded && opencodeModels.length > 0 && (
-              <div className="border-t border-border px-3 pb-3 space-y-2">
-                {opencodeModels.map((model) => (
-                  <div
-                    key={model.id}
-                    className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{model.label}</p>
-                      <p className="text-xs text-muted-foreground">{model.description}</p>
-                    </div>
-                    <button
-                      onClick={() => toggleModel(model.id)}
-                      disabled={isLoading || isSavingModels}
-                      className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
-                        model.enabled ? "bg-primary" : "bg-muted"
-                      }`}
-                    >
-                      <span
-                        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                          model.enabled ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                ))}
+            {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded ? (
+              <div className="space-y-2 border-t border-border p-3">
+                {opencodeModels.length > 0 ? (
+                  opencodeModels.map(renderModelRow)
+                ) : (
+                  <p className="text-xs text-muted-foreground">No OpenCode models found.</p>
+                )}
               </div>
-            )}
+            ) : null}
 
             {opencodeEnabled && opencodeStatus !== "running" && (
-              <div className="border-t border-border px-3 pb-3">
-                <div className="flex items-center gap-2 rounded-md border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-600">
+              <div className="border-t border-border p-3">
+                <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                   <Server className="h-4 w-4" />
-                  <span>Run <code className="text-xs bg-yellow-500/10 px-1.5 py-0.5 rounded">opencode serve</code> in your terminal to activate</span>
+                  <span>
+                    Run{" "}
+                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                      opencode serve
+                    </code>{" "}
+                    in your terminal to activate.
+                  </span>
                 </div>
               </div>
             )}
@@ -742,10 +694,6 @@ export default function ProfileAiSettingsClient({
             No models are enabled. Enable at least one model to generate pages.
           </p>
         ) : null}
-
-        <p className="mt-4 text-xs text-muted-foreground">
-          Model tier and notes are based on provider metadata.
-        </p>
       </>
     );
   };
@@ -757,7 +705,7 @@ export default function ProfileAiSettingsClient({
           id={tabPanelId("api-keys")}
           role="tabpanel"
           aria-labelledby={tabId("api-keys")}
-          className="space-y-6"
+          className="space-y-4"
         >
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
             <div className="flex items-center gap-3">
@@ -777,257 +725,225 @@ export default function ProfileAiSettingsClient({
         id={tabPanelId("api-keys")}
         role="tabpanel"
         aria-labelledby={tabId("api-keys")}
-        className="space-y-6"
+        className="space-y-4"
       >
-        {!hasGoogleApiKey || showGoogleConfig ? (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  Configure Google AI
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Enter your Google API key to enable Google models.
-                </p>
-              </div>
-            </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
+            Add your API keys and enable the models you want to use.
+          </p>
+        </div>
 
-            <div className="mt-4 flex items-start gap-2 rounded-md border border-green-500/20 bg-green-500/5 px-3 py-2.5">
-              <Shield className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-              <p className="text-xs text-green-600 dark:text-green-400">
-                Your API keys are encrypted and stored securely. We never share
-                them with third parties.
-              </p>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <Input
-                type="password"
-                placeholder="Paste your Google API key (e.g., AIza...)"
-                value={googleApiKey}
-                onChange={(event) => setGoogleApiKey(event.target.value)}
-                disabled={isLoading || isSavingKey}
-                className="font-mono text-sm"
-              />
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={handleSaveGoogleApiKey}
-                  disabled={
-                    isLoading || isSavingKey || googleApiKey.trim().length === 0
-                  }
-                >
-                  {isSavingKey
-                    ? "Saving..."
-                    : hasGoogleApiKey
-                      ? "Update key"
-                      : "Save key"}
-                </Button>
-                {hasGoogleApiKey && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setShowGoogleConfig(false);
-                      setGoogleApiKey("");
-                    }}
-                    disabled={isLoading || isSavingKey}
-                  >
-                    Cancel
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-xs text-muted-foreground">
-                Don&apos;t have an API key?{" "}
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  Get one from Google AI Studio
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+        <div className="space-y-4">
+          {!hasGoogleApiKey || showGoogleConfig ? (
+            <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
                   <KeyRound className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-foreground">
-                    Google AI
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Your Google API key is configured and ready.
-                  </p>
+                  <h3 className="text-base font-semibold text-foreground">Google AI</h3>
+                  <p className="text-sm text-muted-foreground">Paste your Google API key.</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                  Configured
-                </span>
+
+              <div className="mt-3 space-y-3">
+                <Input
+                  type="password"
+                  placeholder="Paste your Google API key (e.g., AIza...)"
+                  value={googleApiKey}
+                  onChange={(event) => setGoogleApiKey(event.target.value)}
+                  disabled={isLoading || isSavingKey}
+                  className="font-mono text-sm"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleSaveGoogleApiKey}
+                    disabled={
+                      isLoading || isSavingKey || googleApiKey.trim().length === 0
+                    }
+                  >
+                    {isSavingKey
+                      ? "Saving..."
+                      : hasGoogleApiKey
+                        ? "Update key"
+                        : "Save key"}
+                  </Button>
+                  {hasGoogleApiKey && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowGoogleConfig(false);
+                        setGoogleApiKey("");
+                      }}
+                      disabled={isLoading || isSavingKey}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 border-t border-border pt-3">
+                <p className="text-xs text-muted-foreground">
+                  Don&apos;t have an API key?{" "}
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    Get one from Google AI Studio
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Google AI</h3>
+                  <p className="text-sm text-muted-foreground">API key configured.</p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowGoogleConfig(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  Change
+                  Change key
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleClearGoogleApiKey}
                   disabled={isLoading || isSavingKey}
-                  className="text-xs text-destructive hover:text-destructive"
+                  className="text-destructive hover:text-destructive"
                 >
                   Remove
                 </Button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {!hasOpenRouterApiKey || showOpenRouterConfig ? (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  Configure OpenRouter
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Enter your OpenRouter API key to enable OpenRouter models.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <Input
-                type="password"
-                placeholder="Paste your OpenRouter API key (e.g., sk-or-v1-...)"
-                value={openRouterApiKey}
-                onChange={(event) => setOpenRouterApiKey(event.target.value)}
-                disabled={isLoading || isSavingKey}
-                className="font-mono text-sm"
-              />
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={handleSaveOpenRouterApiKey}
-                  disabled={
-                    isLoading ||
-                    isSavingKey ||
-                    openRouterApiKey.trim().length === 0
-                  }
-                >
-                  {isSavingKey
-                    ? "Saving..."
-                    : hasOpenRouterApiKey
-                      ? "Update key"
-                      : "Save key"}
-                </Button>
-                {hasOpenRouterApiKey && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setShowOpenRouterConfig(false);
-                      setOpenRouterApiKey("");
-                    }}
-                    disabled={isLoading || isSavingKey}
-                  >
-                    Cancel
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="text-xs text-muted-foreground">
-                Don&apos;t have an API key?{" "}
-                <a
-                  href="https://openrouter.ai/keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  Get one from OpenRouter
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+          {!hasOpenRouterApiKey || showOpenRouterConfig ? (
+            <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
                   <KeyRound className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-foreground">
-                    OpenRouter
-                  </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Your OpenRouter API key is configured and ready.
-                  </p>
+                  <h3 className="text-base font-semibold text-foreground">OpenRouter</h3>
+                  <p className="text-sm text-muted-foreground">Paste your OpenRouter API key.</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                  Configured
-                </span>
+
+              <div className="mt-3 space-y-3">
+                <Input
+                  type="password"
+                  placeholder="Paste your OpenRouter API key (e.g., sk-or-v1-...)"
+                  value={openRouterApiKey}
+                  onChange={(event) => setOpenRouterApiKey(event.target.value)}
+                  disabled={isLoading || isSavingKey}
+                  className="font-mono text-sm"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleSaveOpenRouterApiKey}
+                    disabled={
+                      isLoading ||
+                      isSavingKey ||
+                      openRouterApiKey.trim().length === 0
+                    }
+                  >
+                    {isSavingKey
+                      ? "Saving..."
+                      : hasOpenRouterApiKey
+                        ? "Update key"
+                        : "Save key"}
+                  </Button>
+                  {hasOpenRouterApiKey && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowOpenRouterConfig(false);
+                        setOpenRouterApiKey("");
+                      }}
+                      disabled={isLoading || isSavingKey}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-3 border-t border-border pt-3">
+                <p className="text-xs text-muted-foreground">
+                  Don&apos;t have an API key?{" "}
+                  <a
+                    href="https://openrouter.ai/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    Get one from OpenRouter
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">OpenRouter</h3>
+                  <p className="text-sm text-muted-foreground">API key configured.</p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowOpenRouterConfig(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  Change
+                  Change key
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleClearOpenRouterApiKey}
                   disabled={isLoading || isSavingKey}
-                  className="text-xs text-destructive hover:text-destructive"
+                  className="text-destructive hover:text-destructive"
                 >
                   Remove
                 </Button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+        <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+            <div className="rounded-md bg-muted p-2 text-muted-foreground">
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-foreground">
-                Enabled Models
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Toggle models on or off to control which ones appear in generation.
-              </p>
+              <h3 className="text-base font-semibold text-foreground">Models</h3>
+              <p className="text-sm text-muted-foreground">Turn models on or off.</p>
             </div>
           </div>
-          <div className="mt-4">
+          <div className="mt-3">
             {renderModelsContent()}
           </div>
         </div>
@@ -1036,38 +952,19 @@ export default function ProfileAiSettingsClient({
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-violet-500" />
+                <Zap className="h-5 w-5 text-muted-foreground" />
                 Enable OpenCode Zen
               </DialogTitle>
               <DialogDescription>
-                OpenCode Zen provides experimental AI models for page generation.
+                OpenCode Zen adds local experimental models.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
-                <h4 className="text-sm font-medium text-foreground mb-2">
-                  How it works
-                </h4>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <Zap className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                    <span>
-                      Runs locally on your machine via{" "}
-                      <code className="text-xs bg-violet-500/10 px-1.5 py-0.5 rounded">
-                        opencode serve
-                      </code>
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Shield className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                    <span>Your data stays on your device - no external API calls</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Server className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                    <span>Experimental: quality and behavior may vary</span>
-                  </li>
-                </ul>
-              </div>
+            <div className="py-3 text-sm text-muted-foreground">
+              Start it by running{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                opencode serve
+              </code>{" "}
+              in your terminal.
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowOpencodeModal(false)}>
