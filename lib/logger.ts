@@ -18,6 +18,10 @@ const REDACTED_KEY_MARKERS = [
   "encrypted",
   "googleapikey",
   "google_api_key",
+  "openrouterapikey",
+  "openrouter_api_key",
+  "openrouterkey",
+  "open_router_key",
   "stack",
 ];
 

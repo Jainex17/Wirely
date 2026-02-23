@@ -17,16 +17,20 @@ import {
 type UpdateAiSettingsRequestBody = {
   googleApiKey?: unknown;
   clearGoogleApiKey?: unknown;
+  openRouterApiKey?: unknown;
+  clearOpenRouterApiKey?: unknown;
   enabledModelIds?: unknown;
 };
 
 const MAX_GOOGLE_API_KEY_LENGTH = 512;
+const MAX_OPENROUTER_API_KEY_LENGTH = 512;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
 const toAiSettingsResponse = (settings: UserAiSettings) => ({
   hasGoogleApiKey: settings.hasGoogleApiKey,
+  hasOpenRouterApiKey: settings.hasOpenRouterApiKey,
   enabledModelIds: settings.enabledModelIds,
   models: WIRE_MODEL_OPTIONS.map((model) => ({
     id: model.id,
@@ -82,6 +86,10 @@ export async function PATCH(request: Request) {
     body.clearGoogleApiKey === undefined
       ? false
       : body.clearGoogleApiKey === true;
+  const clearOpenRouterApiKey =
+    body.clearOpenRouterApiKey === undefined
+      ? false
+      : body.clearOpenRouterApiKey === true;
 
   if (
     body.clearGoogleApiKey !== undefined &&
@@ -89,6 +97,15 @@ export async function PATCH(request: Request) {
   ) {
     return NextResponse.json(
       { error: "clearGoogleApiKey must be a boolean." },
+      { status: 400 },
+    );
+  }
+  if (
+    body.clearOpenRouterApiKey !== undefined &&
+    typeof body.clearOpenRouterApiKey !== "boolean"
+  ) {
+    return NextResponse.json(
+      { error: "clearOpenRouterApiKey must be a boolean." },
       { status: 400 },
     );
   }
@@ -127,6 +144,43 @@ export async function PATCH(request: Request) {
     );
   }
 
+  let openRouterApiKey: string | undefined;
+  if (body.openRouterApiKey !== undefined) {
+    if (typeof body.openRouterApiKey !== "string") {
+      return NextResponse.json(
+        { error: "openRouterApiKey must be a string." },
+        { status: 400 },
+      );
+    }
+
+    const trimmedKey = body.openRouterApiKey.trim();
+    if (!trimmedKey) {
+      return NextResponse.json(
+        { error: "openRouterApiKey cannot be empty." },
+        { status: 400 },
+      );
+    }
+    if (trimmedKey.length > MAX_OPENROUTER_API_KEY_LENGTH) {
+      return NextResponse.json(
+        {
+          error: `openRouterApiKey is too long (max ${MAX_OPENROUTER_API_KEY_LENGTH} chars).`,
+        },
+        { status: 400 },
+      );
+    }
+    openRouterApiKey = trimmedKey;
+  }
+
+  if (openRouterApiKey && clearOpenRouterApiKey) {
+    return NextResponse.json(
+      {
+        error:
+          "Provide either openRouterApiKey or clearOpenRouterApiKey, not both.",
+      },
+      { status: 400 },
+    );
+  }
+
   let enabledModelIds: WireModelName[] | undefined;
   if (body.enabledModelIds !== undefined) {
     if (!Array.isArray(body.enabledModelIds)) {
@@ -152,6 +206,8 @@ export async function PATCH(request: Request) {
   if (
     googleApiKey === undefined &&
     !clearGoogleApiKey &&
+    openRouterApiKey === undefined &&
+    !clearOpenRouterApiKey &&
     enabledModelIds === undefined
   ) {
     return NextResponse.json(
@@ -166,6 +222,8 @@ export async function PATCH(request: Request) {
       userId: sessionUser.id,
       ...(googleApiKey !== undefined ? { googleApiKey } : {}),
       ...(clearGoogleApiKey ? { clearGoogleApiKey } : {}),
+      ...(openRouterApiKey !== undefined ? { openRouterApiKey } : {}),
+      ...(clearOpenRouterApiKey ? { clearOpenRouterApiKey } : {}),
       ...(enabledModelIds !== undefined
         ? { enabledGoogleModels: enabledModelIds }
         : {}),

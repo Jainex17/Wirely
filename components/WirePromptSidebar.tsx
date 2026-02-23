@@ -122,6 +122,13 @@ const normalizeGenerationErrorMessage = ({
   modelName: WireModelName;
 }) => {
   const fallback = `Generation failed with ${modelName}. Try another model.`;
+  const provider = getWireModelProvider(modelName);
+  const providerName =
+    provider === "openrouter"
+      ? "OpenRouter"
+      : provider === "google"
+        ? "Google"
+        : "Provider";
   const raw =
     error instanceof Error
       ? error.message
@@ -141,7 +148,7 @@ const normalizeGenerationErrorMessage = ({
     return "Generation timed out on the server. Retry with a shorter prompt or switch models.";
   }
   if (/api key|permission|unauthorized|403|401/i.test(message)) {
-    return "Google API key is invalid or missing required access for this model.";
+    return `${providerName} API key is invalid or missing required access for this model.`;
   }
 
   return message;

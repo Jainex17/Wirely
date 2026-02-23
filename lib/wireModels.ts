@@ -6,6 +6,11 @@ export const GEMINI_FREE_MODELS = [
 ] as const;
 
 export const GEMINI_PAID_MODELS = ["gemini-2.5-pro"] as const;
+export const OPENROUTER_GEMINI_FREE_MODELS = [
+  "google/gemini-2.5-flash-lite",
+  "google/gemini-2.5-flash",
+] as const;
+export const OPENROUTER_GEMINI_PAID_MODELS = ["google/gemini-2.5-pro"] as const;
 export const OPENCODE_FREE_MODELS = [
   "minimax-m2.5-free",
   "glm-5-free",
@@ -13,10 +18,12 @@ export const OPENCODE_FREE_MODELS = [
 ] as const;
 
 export type WireModelTier = "free" | "paid";
-export type WireModelProvider = "google" | "opencode";
+export type WireModelProvider = "google" | "openrouter" | "opencode";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
   | (typeof GEMINI_PAID_MODELS)[number]
+  | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
+  | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
   | (typeof OPENCODE_FREE_MODELS)[number];
 
 export type WireModelOption = {
@@ -48,6 +55,30 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     description: "Highest-quality Gemini option, billed by your Google plan.",
     tier: "paid",
     provider: "google",
+  },
+  {
+    id: "google/gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash Lite (OpenRouter)",
+    description:
+      "Fast Gemini model via OpenRouter using your OpenRouter account.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "google/gemini-2.5-flash",
+    label: "Gemini 2.5 Flash (OpenRouter)",
+    description:
+      "Balanced Gemini model via OpenRouter using your OpenRouter account.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "google/gemini-2.5-pro",
+    label: "Gemini 2.5 Pro (OpenRouter)",
+    description:
+      "Highest-quality Gemini option via OpenRouter using your OpenRouter account.",
+    tier: "paid",
+    provider: "openrouter",
   },
   {
     id: "minimax-m2.5-free",
@@ -110,6 +141,9 @@ export const getWireModelProvider = (
 
 export const isGoogleWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "google";
+
+export const isOpenRouterWireModel = (modelName: WireModelName) =>
+  getWireModelProvider(modelName) === "openrouter";
 
 export const normalizeEnabledWireModels = (
   modelNames: unknown,

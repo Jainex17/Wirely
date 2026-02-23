@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import LoginClient from "./LoginClient";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth/server";
+import { getServerSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "Login | Wirely",
@@ -14,8 +14,7 @@ interface LoginPageProps {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const resolvedParams = await searchParams;
-  const { data } = await auth.getSession();
-  const user = data?.user ?? null;
+  const user = await getServerSessionUser();
   const nextPath =
     typeof resolvedParams.next === "string" &&
     resolvedParams.next.startsWith("/") &&

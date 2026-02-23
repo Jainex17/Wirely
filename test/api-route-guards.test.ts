@@ -44,10 +44,16 @@ describe("api route guard coverage", () => {
     const source = read("app/api/profile/ai-settings/route.ts");
 
     expect(source.includes("MAX_GOOGLE_API_KEY_LENGTH")).toBe(true);
+    expect(source.includes("MAX_OPENROUTER_API_KEY_LENGTH")).toBe(true);
     expect(source.includes("enabledModelIds must be an array")).toBe(true);
     expect(source.includes("Provide either googleApiKey or clearGoogleApiKey")).toBe(
       true,
     );
+    expect(
+      source.includes(
+        "Provide either openRouterApiKey or clearOpenRouterApiKey, not both.",
+      ),
+    ).toBe(true);
     expect(source.includes("CRYPTO_CONFIG_ERROR")).toBe(true);
   });
 

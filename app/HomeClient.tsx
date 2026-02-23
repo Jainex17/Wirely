@@ -7,7 +7,7 @@ import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
-  isGoogleWireModel,
+  getWireModelProvider,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -57,6 +57,7 @@ export interface HomeClientInitialData {
   }>;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
+  hasOpenRouterApiKey: boolean;
 }
 
 const PAGE_VARIATION_OPTIONS: Array<{
@@ -90,6 +91,7 @@ interface HomeState {
   selectedModel: WireModelName;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
+  hasOpenRouterApiKey: boolean;
   selectedPageCount: 1 | 2 | 3;
   isLoggingOut: boolean;
   projectToDelete: string | null;
@@ -126,6 +128,7 @@ const createHomeInitialState = (
   selectedModel: initialData.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL,
   enabledModelIds: initialData.enabledModelIds,
   hasGoogleApiKey: initialData.hasGoogleApiKey,
+  hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
   selectedPageCount: 1,
   isLoggingOut: false,
   projectToDelete: null,
@@ -145,6 +148,7 @@ const homeReducer = (state: HomeState, action: HomeAction): HomeState => {
         historyItems: [],
         enabledModelIds: [...DEFAULT_ENABLED_WIRE_MODELS],
         hasGoogleApiKey: true,
+        hasOpenRouterApiKey: true,
         selectedModel: DEFAULT_WIRE_MODEL,
         isLoggingOut: false,
         errorMessage: null,
@@ -200,6 +204,21 @@ interface HomeClientProps {
   initialData: HomeClientInitialData;
 }
 
+const modelRequiresMissingKey = ({
+  modelName,
+  hasGoogleApiKey,
+  hasOpenRouterApiKey,
+}: {
+  modelName: WireModelName;
+  hasGoogleApiKey: boolean;
+  hasOpenRouterApiKey: boolean;
+}) => {
+  const provider = getWireModelProvider(modelName);
+  if (provider === "google") return !hasGoogleApiKey;
+  if (provider === "openrouter") return !hasOpenRouterApiKey;
+  return false;
+};
+
 export default function HomeClient({ initialData }: HomeClientProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(homeReducer, initialData, createHomeInitialState);
@@ -213,23 +232,38 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     : state.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
 
   const hasNoEnabledModels = Boolean(state.user) && state.enabledModelIds.length === 0;
-  const selectedModelRequiresGoogleKey = isGoogleWireModel(activeSelectedModel);
+  const activeSelectedModelProvider = getWireModelProvider(activeSelectedModel);
+  const selectedModelRequiresMissingKey = modelRequiresMissingKey({
+    modelName: activeSelectedModel,
+    hasGoogleApiKey: state.hasGoogleApiKey,
+    hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+  });
   const hasAtLeastOneRunnableModel = enabledModelOptions.some(
-    (model) => !isGoogleWireModel(model.id) || state.hasGoogleApiKey,
+    (model) =>
+      !modelRequiresMissingKey({
+        modelName: model.id,
+        hasGoogleApiKey: state.hasGoogleApiKey,
+        hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+      }),
   );
   const hasNoRunnableModels = Boolean(state.user) && !hasAtLeastOneRunnableModel;
   const showApiKeyWarning =
     Boolean(state.user) &&
-    selectedModelRequiresGoogleKey &&
-    !state.hasGoogleApiKey;
+    selectedModelRequiresMissingKey;
   const showConfigureApiKeysCta =
     Boolean(state.user) &&
-    !state.hasGoogleApiKey &&
-    enabledModelOptions.some((model) => isGoogleWireModel(model.id));
+    enabledModelOptions.some((model) =>
+      modelRequiresMissingKey({
+        modelName: model.id,
+        hasGoogleApiKey: state.hasGoogleApiKey,
+        hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+      }),
+    );
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
-  const selectedModelIsOpenCode = WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.provider === "opencode";
+  const selectedModelIsOpenCode =
+    activeSelectedModelProvider === "opencode";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -249,16 +283,18 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       toast.error("No models are enabled. Open Profile to enable one.");
       return;
     }
-    if (selectedModelRequiresGoogleKey && !state.hasGoogleApiKey) {
+    if (selectedModelRequiresMissingKey) {
+      const selectedModelProviderLabel =
+        activeSelectedModelProvider === "openrouter" ? "OpenRouter" : "Google";
       dispatch({
         type: "patch",
         payload: {
           errorMessage:
-            "Selected model requires Google API key. Choose MiniMax M2.5 Free or add Google key in Profile.",
+            `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Profile or choose another model.`,
         },
       });
       toast.error(
-        "Selected model requires Google API key. Choose MiniMax M2.5 Free or add Google key in Profile.",
+        `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Profile or choose another model.`,
       );
       return;
     }
@@ -520,14 +556,14 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 </>
               ) : hasNoRunnableModels ? (
                 <>
-                  Enabled models require Google API key. Add it in{" "}
+                  Enabled models require provider API keys. Configure them in{" "}
                   <Link
                     href="/profile"
                     className="text-primary underline underline-offset-2"
                   >
                     Profile
                   </Link>{" "}
-                  or choose MiniMax M2.5 Free.
+                  or choose a model that does not require one.
                 </>
               ) : (
                 "Select a model and start building"

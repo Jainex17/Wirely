@@ -246,16 +246,16 @@ export const decryptUserApiKey = ({
 };
 
 export const hasEncryptedApiKeyMaterial = (record: {
-  googleApiKeyCiphertext: string | null | undefined;
-  googleApiKeyIv: string | null | undefined;
-  googleApiKeyHmac: string | null | undefined;
-  googleApiKeyKeyVersion: number | null | undefined;
+  ciphertext: string | null | undefined;
+  iv: string | null | undefined;
+  hmac: string | null | undefined;
+  keyVersion: number | null | undefined;
 }) =>
   Boolean(
-    record.googleApiKeyCiphertext &&
-      record.googleApiKeyIv &&
-      record.googleApiKeyHmac &&
-      typeof record.googleApiKeyKeyVersion === "number" &&
-      Number.isInteger(record.googleApiKeyKeyVersion) &&
-      record.googleApiKeyKeyVersion > 0,
+    record.ciphertext &&
+      record.iv &&
+      record.hmac &&
+      typeof record.keyVersion === "number" &&
+      Number.isInteger(record.keyVersion) &&
+      record.keyVersion > 0,
   );

@@ -31,6 +31,7 @@ interface AiSettingsModel {
 
 interface AiSettingsResponse {
   hasGoogleApiKey: boolean;
+  hasOpenRouterApiKey: boolean;
   enabledModelIds: WireModelName[];
   models: AiSettingsModel[];
 }
@@ -58,6 +59,7 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   const record = value as Record<string, unknown>;
   if (
     typeof record.hasGoogleApiKey !== "boolean" ||
+    typeof record.hasOpenRouterApiKey !== "boolean" ||
     !Array.isArray(record.enabledModelIds) ||
     !Array.isArray(record.models)
   ) {
@@ -75,12 +77,14 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
       ((model as AiSettingsModel).tier === "free" ||
         (model as AiSettingsModel).tier === "paid") &&
       ((model as AiSettingsModel).provider === "google" ||
+        (model as AiSettingsModel).provider === "openrouter" ||
         (model as AiSettingsModel).provider === "opencode") &&
       typeof (model as AiSettingsModel).enabled === "boolean",
   );
 
   return {
     hasGoogleApiKey: record.hasGoogleApiKey,
+    hasOpenRouterApiKey: record.hasOpenRouterApiKey,
     enabledModelIds: record.enabledModelIds as WireModelName[],
     models,
   };
@@ -97,7 +101,9 @@ export default function ProfileAiSettingsClient({
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [isSavingModels, setIsSavingModels] = useState(false);
   const [hasGoogleApiKey, setHasGoogleApiKey] = useState(false);
+  const [hasOpenRouterApiKey, setHasOpenRouterApiKey] = useState(false);
   const [googleApiKey, setGoogleApiKey] = useState("");
+  const [openRouterApiKey, setOpenRouterApiKey] = useState("");
   const [displayName, setDisplayName] = useState(userName ?? "");
   const [savedDisplayName, setSavedDisplayName] = useState(userName ?? "");
   const [models, setModels] = useState<AiSettingsModel[]>([]);
@@ -105,7 +111,9 @@ export default function ProfileAiSettingsClient({
   const [opencodeStatus, setOpencodeStatus] = useState<"inactive" | "checking" | "active" | "running">("inactive");
   const [showOpencodeModal, setShowOpencodeModal] = useState(false);
   const [showGoogleConfig, setShowGoogleConfig] = useState(false);
+  const [showOpenRouterConfig, setShowOpenRouterConfig] = useState(false);
   const [googleModelsExpanded, setGoogleModelsExpanded] = useState(true);
+  const [openRouterModelsExpanded, setOpenRouterModelsExpanded] = useState(true);
   const [opencodeModelsExpanded, setOpencodeModelsExpanded] = useState(true);
 
   const enabledModelIds = useMemo(
@@ -124,6 +132,7 @@ export default function ProfileAiSettingsClient({
 
   const applySettings = useCallback((payload: AiSettingsResponse) => {
     setHasGoogleApiKey(payload.hasGoogleApiKey);
+    setHasOpenRouterApiKey(payload.hasOpenRouterApiKey);
     setModels(payload.models);
   }, []);
 
@@ -250,6 +259,76 @@ export default function ProfileAiSettingsClient({
       applySettings(payload);
       setGoogleApiKey("");
       toast.success("Google API key removed.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to clear API key.",
+      );
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
+  const handleSaveOpenRouterApiKey = async () => {
+    const trimmed = openRouterApiKey.trim();
+    if (!trimmed) {
+      toast.error("Enter an OpenRouter API key.");
+      return;
+    }
+
+    setIsSavingKey(true);
+    try {
+      const response = await fetch("/api/profile/ai-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          openRouterApiKey: trimmed,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Unable to save OpenRouter API key.");
+      }
+      const payload = parseSettingsResponse(await response.json());
+      if (!payload) {
+        throw new Error("Unexpected AI settings response.");
+      }
+      applySettings(payload);
+      setOpenRouterApiKey("");
+      toast.success("OpenRouter API key saved.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save API key.",
+      );
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
+  const handleClearOpenRouterApiKey = async () => {
+    setIsSavingKey(true);
+    try {
+      const response = await fetch("/api/profile/ai-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clearOpenRouterApiKey: true,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error || "Unable to clear OpenRouter API key.");
+      }
+      const payload = parseSettingsResponse(await response.json());
+      if (!payload) {
+        throw new Error("Unexpected AI settings response.");
+      }
+      applySettings(payload);
+      setOpenRouterApiKey("");
+      toast.success("OpenRouter API key removed.");
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to clear API key.",
@@ -396,6 +475,9 @@ export default function ProfileAiSettingsClient({
 
   const renderModelsContent = () => {
     const googleModels = models.filter((model) => model.provider === "google");
+    const openRouterModels = models.filter(
+      (model) => model.provider === "openrouter",
+    );
     const opencodeModels = models.filter((model) => model.provider === "opencode");
 
     if (isLoading) {
@@ -452,6 +534,78 @@ export default function ProfileAiSettingsClient({
               {googleModelsExpanded && (
                 <div className="border-t border-border px-3 pb-3 space-y-2">
                   {googleModels.map((model) => (
+                    <div
+                      key={model.id}
+                      className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{model.label}</p>
+                        <p className="text-xs text-muted-foreground">{model.description}</p>
+                      </div>
+                      <button
+                        onClick={() => toggleModel(model.id)}
+                        disabled={isLoading || isSavingModels}
+                        className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                          model.enabled ? "bg-primary" : "bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                            model.enabled ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {openRouterModels.length > 0 && (
+            <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpenRouterModelsExpanded(!openRouterModelsExpanded)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    setOpenRouterModelsExpanded(!openRouterModelsExpanded);
+                  }
+                }}
+                className="flex w-full items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors cursor-pointer"
+              >
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">
+                    OpenRouter Models
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Powered by OpenRouter
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowOpenRouterConfig(true);
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground h-7"
+                  >
+                    <KeyRound className="mr-1 h-3 w-3" />
+                    Key
+                  </Button>
+                  <ChevronDownIcon
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      openRouterModelsExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+              </div>
+              {openRouterModelsExpanded && (
+                <div className="border-t border-border px-3 pb-3 space-y-2">
+                  {openRouterModels.map((model) => (
                     <div
                       key={model.id}
                       className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
@@ -619,132 +773,246 @@ export default function ProfileAiSettingsClient({
     }
 
     return (
-    <section
-      id={tabPanelId("api-keys")}
-      role="tabpanel"
-      aria-labelledby={tabId("api-keys")}
-      className="space-y-6"
-    >
-      {!hasGoogleApiKey || showGoogleConfig ? (
-        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-muted p-2 text-muted-foreground">
-              <KeyRound className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-foreground">
-                Configure Google AI
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Enter your Google API key to enable AI-powered page generation.
-              </p>
-            </div>
-          </div>
-          
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-green-500/20 bg-green-500/5 px-3 py-2.5">
-            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
-            <p className="text-xs text-green-600 dark:text-green-400">
-              Your API key is encrypted and stored securely. We never share it with third parties.
-            </p>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <Input
-              type="password"
-              placeholder="Paste your Google API key (e.g., AIza...)"
-              value={googleApiKey}
-              onChange={(event) => setGoogleApiKey(event.target.value)}
-              disabled={isLoading || isSavingKey}
-              className="font-mono text-sm"
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                onClick={handleSaveGoogleApiKey}
-                disabled={
-                  isLoading || isSavingKey || googleApiKey.trim().length === 0
-                }
-              >
-                {isSavingKey
-                  ? "Saving..."
-                  : hasGoogleApiKey
-                  ? "Update key"
-                  : "Save key"}
-              </Button>
-              {hasGoogleApiKey && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowGoogleConfig(false);
-                    setGoogleApiKey("");
-                  }}
-                  disabled={isLoading || isSavingKey}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 border-t border-border pt-4">
-            <p className="text-xs text-muted-foreground">
-              Don&apos;t have an API key?{" "}
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline inline-flex items-center gap-1"
-              >
-                Get one from Google AI Studio
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-4">
+      <section
+        id={tabPanelId("api-keys")}
+        role="tabpanel"
+        aria-labelledby={tabId("api-keys")}
+        className="space-y-6"
+      >
+        {!hasGoogleApiKey || showGoogleConfig ? (
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
             <div className="flex items-start gap-3">
               <div className="rounded-lg bg-muted p-2 text-muted-foreground">
                 <KeyRound className="h-4 w-4" />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-foreground">
-                  Google AI
+                  Configure Google AI
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Your Google API key is configured and ready.
+                  Enter your Google API key to enable Google models.
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                Configured
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowGoogleConfig(true)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Change
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearGoogleApiKey}
+
+            <div className="mt-4 flex items-start gap-2 rounded-md border border-green-500/20 bg-green-500/5 px-3 py-2.5">
+              <Shield className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+              <p className="text-xs text-green-600 dark:text-green-400">
+                Your API keys are encrypted and stored securely. We never share
+                them with third parties.
+              </p>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <Input
+                type="password"
+                placeholder="Paste your Google API key (e.g., AIza...)"
+                value={googleApiKey}
+                onChange={(event) => setGoogleApiKey(event.target.value)}
                 disabled={isLoading || isSavingKey}
-                className="text-xs text-destructive hover:text-destructive"
-              >
-                Remove
-              </Button>
+                className="font-mono text-sm"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleSaveGoogleApiKey}
+                  disabled={
+                    isLoading || isSavingKey || googleApiKey.trim().length === 0
+                  }
+                >
+                  {isSavingKey
+                    ? "Saving..."
+                    : hasGoogleApiKey
+                      ? "Update key"
+                      : "Save key"}
+                </Button>
+                {hasGoogleApiKey && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setShowGoogleConfig(false);
+                      setGoogleApiKey("");
+                    }}
+                    disabled={isLoading || isSavingKey}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-xs text-muted-foreground">
+                Don&apos;t have an API key?{" "}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  Get one from Google AI Studio
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    Google AI
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your Google API key is configured and ready.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+                  Configured
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowGoogleConfig(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Change
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearGoogleApiKey}
+                  disabled={isLoading || isSavingKey}
+                  className="text-xs text-destructive hover:text-destructive"
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {hasGoogleApiKey && !showGoogleConfig && (
+        {!hasOpenRouterApiKey || showOpenRouterConfig ? (
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                <KeyRound className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Configure OpenRouter
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Enter your OpenRouter API key to enable OpenRouter models.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <Input
+                type="password"
+                placeholder="Paste your OpenRouter API key (e.g., sk-or-v1-...)"
+                value={openRouterApiKey}
+                onChange={(event) => setOpenRouterApiKey(event.target.value)}
+                disabled={isLoading || isSavingKey}
+                className="font-mono text-sm"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleSaveOpenRouterApiKey}
+                  disabled={
+                    isLoading ||
+                    isSavingKey ||
+                    openRouterApiKey.trim().length === 0
+                  }
+                >
+                  {isSavingKey
+                    ? "Saving..."
+                    : hasOpenRouterApiKey
+                      ? "Update key"
+                      : "Save key"}
+                </Button>
+                {hasOpenRouterApiKey && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setShowOpenRouterConfig(false);
+                      setOpenRouterApiKey("");
+                    }}
+                    disabled={isLoading || isSavingKey}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-xs text-muted-foreground">
+                Don&apos;t have an API key?{" "}
+                <a
+                  href="https://openrouter.ai/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline inline-flex items-center gap-1"
+                >
+                  Get one from OpenRouter
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    OpenRouter
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your OpenRouter API key is configured and ready.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+                  Configured
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowOpenRouterConfig(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Change
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearOpenRouterApiKey}
+                  disabled={isLoading || isSavingKey}
+                  className="text-xs text-destructive hover:text-destructive"
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-muted p-2 text-muted-foreground">
@@ -763,167 +1031,55 @@ export default function ProfileAiSettingsClient({
             {renderModelsContent()}
           </div>
         </div>
-      )}
 
-      {!hasGoogleApiKey && isLoading && (
-        <div className="rounded-lg border border-border bg-card/50 p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 animate-pulse" />
-            <div className="space-y-2">
-              <div className="h-4 w-32 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-40 bg-muted rounded animate-pulse" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!hasGoogleApiKey && !isLoading && (() => {
-        const opencodeModelsSection = models.filter((model) => model.provider === "opencode");
-        return (
-        <div className="rounded-lg border border-border bg-card/50 overflow-hidden">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              if (opencodeEnabled && opencodeStatus === "running") {
-                setOpencodeModelsExpanded(!opencodeModelsExpanded);
-              }
-            }}
-            onKeyDown={(e) => {
-              if ((e.key === "Enter" || e.key === " ") && opencodeEnabled && opencodeStatus === "running") {
-                setOpencodeModelsExpanded(!opencodeModelsExpanded);
-              }
-            }}
-            className={`flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 transition-colors ${
-              opencodeEnabled && opencodeStatus === "running" ? "cursor-pointer" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
-                <Zap className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-foreground">OpenCode Zen</h4>
-                <p className="text-xs text-muted-foreground">Experimental AI models</p>
+        <Dialog open={showOpencodeModal} onOpenChange={setShowOpencodeModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-violet-500" />
+                Enable OpenCode Zen
+              </DialogTitle>
+              <DialogDescription>
+                OpenCode Zen provides experimental AI models for page generation.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
+                <h4 className="text-sm font-medium text-foreground mb-2">
+                  How it works
+                </h4>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex items-start gap-2">
+                    <Zap className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                    <span>
+                      Runs locally on your machine via{" "}
+                      <code className="text-xs bg-violet-500/10 px-1.5 py-0.5 rounded">
+                        opencode serve
+                      </code>
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Shield className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                    <span>Your data stays on your device - no external API calls</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Server className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
+                    <span>Experimental: quality and behavior may vary</span>
+                  </li>
+                </ul>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {!opencodeEnabled ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEnableOpencode();
-                  }}
-                >
-                  Enable
-                </Button>
-              ) : (
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                    opencodeStatus === "running"
-                      ? "bg-green-500/10 text-green-500"
-                      : opencodeStatus === "active"
-                      ? "bg-blue-500/10 text-blue-500"
-                      : "bg-yellow-500/10 text-yellow-500"
-                  }`}
-                >
-                  {opencodeStatus === "running" ? "Running" : opencodeStatus === "active" ? "Active" : "Inactive"}
-                </span>
-              )}
-              {opencodeEnabled && opencodeStatus === "running" && (
-                <ChevronDownIcon
-                  className={`h-4 w-4 text-muted-foreground transition-transform ${
-                    opencodeModelsExpanded ? "rotate-180" : ""
-                  }`}
-                />
-              )}
-            </div>
-          </div>
-
-          {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded && opencodeModelsSection.length > 0 && (
-            <div className="border-t border-border px-3 pb-3 space-y-2">
-              {opencodeModelsSection.map((model: AiSettingsModel) => (
-                <div
-                  key={model.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-all hover:border-border/80"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{model.label}</p>
-                    <p className="text-xs text-muted-foreground">{model.description}</p>
-                  </div>
-                  <button
-                    onClick={() => toggleModel(model.id)}
-                    disabled={isLoading || isSavingModels}
-                    className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
-                      model.enabled ? "bg-primary" : "bg-muted"
-                    }`}
-                  >
-                    <span
-                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                        model.enabled ? "translate-x-5" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {opencodeEnabled && opencodeStatus !== "running" && (
-            <div className="border-t border-border px-3 pb-3">
-              <div className="flex items-center gap-2 rounded-md border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-600">
-                <Server className="h-4 w-4" />
-                <span>Run <code className="text-xs bg-yellow-500/10 px-1.5 py-0.5 rounded">opencode serve</code> in your terminal to activate</span>
-              </div>
-            </div>
-          )}
-        </div>
-        );
-      })()}
-
-      <Dialog open={showOpencodeModal} onOpenChange={setShowOpencodeModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-violet-500" />
-              Enable OpenCode Zen
-            </DialogTitle>
-            <DialogDescription>
-              OpenCode Zen provides experimental AI models for page generation.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
-              <h4 className="text-sm font-medium text-foreground mb-2">How it works</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <Zap className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                  <span>Runs locally on your machine via <code className="text-xs bg-violet-500/10 px-1.5 py-0.5 rounded">opencode serve</code></span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Shield className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                  <span>Your data stays on your device - no external API calls</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Server className="mt-0.5 h-4 w-4 text-violet-500 shrink-0" />
-                  <span>Experimental: quality and behavior may vary</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowOpencodeModal(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmOpencode}>
-              Enable OpenCode Zen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowOpencodeModal(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmOpencode}>
+                Enable OpenCode Zen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </section>
     );
   };
 

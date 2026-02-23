@@ -57,7 +57,14 @@ export const getRequestSessionUser = async (): Promise<SessionUser | null> => {
 };
 
 export const getServerSessionUser = async (): Promise<SessionUser | null> => {
-  const { data } = await auth.getSession();
+  // Server Components cannot mutate cookies during render. Read session in
+  // no-mutation mode and let middleware/route handlers handle refresh writes.
+  const { data } = await auth.getSession({
+    query: {
+      disableCookieCache: true,
+      disableRefresh: true,
+    },
+  });
   if (!data?.user) return null;
   return authUserToSessionUser(data.user);
 };

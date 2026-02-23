@@ -50,6 +50,13 @@
       "when": 1771509145294,
       "tag": "0006_flashy_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1771861737216,
+      "tag": "0007_first_maelstrom",
+      "breakpoints": true
     }
   ]
 }

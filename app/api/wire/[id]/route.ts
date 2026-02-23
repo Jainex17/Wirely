@@ -1,5 +1,6 @@
 import { createDataStreamResponse, formatDataStreamPart, streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   composeGenerateSystemPrompt,
   selectWireStylePreset,
@@ -13,6 +14,7 @@ import {
 import {
   getWireModelProvider,
   isGoogleWireModel,
+  isOpenRouterWireModel,
   isWireModelName,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -649,6 +651,59 @@ const streamWithGoogleModel = async ({
   });
 };
 
+const streamWithOpenRouterModel = async ({
+  projectId,
+  modelName,
+  openRouterApiKey,
+  messages,
+  systemPrompt,
+  stylePreset,
+  allowImages,
+  userPrompt,
+  targetPageId,
+}: {
+  projectId: string;
+  modelName: WireModelName;
+  openRouterApiKey: string;
+  messages: WireMessage[];
+  systemPrompt: string;
+  stylePreset: WireStylePreset;
+  allowImages: boolean;
+  userPrompt: string;
+  targetPageId?: string;
+}) => {
+  const openRouterProvider = createOpenRouter({ apiKey: openRouterApiKey });
+  return streamText({
+    model: openRouterProvider(modelName),
+    messages,
+    system: systemPrompt,
+    onError: ({ error }) => {
+      logger.error("wire_openrouter_stream_error", {
+        modelName,
+        status: getStatusCode(error),
+        message: getErrorMessage(error),
+        responseBody: getErrorBody(error),
+        error: serializeError(error),
+      });
+    },
+    onFinish: ({ text }) => {
+      logQualityTelemetry({
+        text,
+        stylePreset,
+        allowImages,
+        userPrompt,
+        modelName,
+      });
+      void persistConversationTurn({
+        projectId,
+        userPrompt,
+        assistantSummary: extractAssistantSummary(text),
+        targetPageId,
+      });
+    },
+  });
+};
+
 const stripTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 const createBasicAuthHeader = () => {
@@ -1117,6 +1172,17 @@ export async function POST(request: Request, context: RouteContext) {
       ),
     );
   }
+  if (
+    isOpenRouterWireModel(effectiveModelName) &&
+    !userAiSettings.openRouterApiKey
+  ) {
+    return applyRateHeaders(
+      new Response(
+        "OpenRouter API key is not configured. Add it in Profile to generate output.",
+        { status: 400 },
+      ),
+    );
+  }
 
   const baseSystemPrompt = composeGenerateSystemPrompt({
     stylePreset,
@@ -1168,6 +1234,28 @@ export async function POST(request: Request, context: RouteContext) {
         projectId: id,
         modelName: effectiveModelName,
         googleApiKey: userAiSettings.googleApiKey as string,
+        messages,
+        systemPrompt,
+        stylePreset,
+        allowImages,
+        userPrompt: latestUserPrompt,
+        targetPageId: resolvedTargetPageId ?? undefined,
+      });
+
+      return applyRateHeaders(
+        result.toDataStreamResponse({
+          headers: {
+            "cache-control": "no-store, no-transform",
+          },
+        }),
+      );
+    }
+
+    if (isOpenRouterWireModel(effectiveModelName)) {
+      const result = await streamWithOpenRouterModel({
+        projectId: id,
+        modelName: effectiveModelName,
+        openRouterApiKey: userAiSettings.openRouterApiKey as string,
         messages,
         systemPrompt,
         stylePreset,
