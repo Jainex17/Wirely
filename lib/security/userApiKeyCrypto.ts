@@ -98,8 +98,31 @@ const readCryptoConfig = (): CryptoConfig => ({
   currentKeyVersion: readKeyVersion(),
 });
 
-const getAad = (keyVersion: number) =>
+const normalizeUserId = (userId: string) => {
+  const normalized = userId.trim();
+  if (!normalized) {
+    throw new UserApiKeyCryptoError(
+      "INVALID_ENCRYPTED_API_KEY",
+      "userId is required for API key encryption.",
+    );
+  }
+  return normalized;
+};
+
+const getLegacyAad = (keyVersion: number) =>
   Buffer.from(`wirely:user-api-key:v${keyVersion}`, "utf8");
+
+const getUserBoundAad = ({
+  keyVersion,
+  userId,
+}: {
+  keyVersion: number;
+  userId: string;
+}) =>
+  Buffer.from(
+    `wirely:user-api-key:v${keyVersion}:user:${normalizeUserId(userId)}`,
+    "utf8",
+  );
 
 export const encryptUserApiKey = ({
   userId,
@@ -108,7 +131,7 @@ export const encryptUserApiKey = ({
   userId: string;
   plaintextKey: string;
 }) => {
-  void userId;
+  const normalizedUserId = normalizeUserId(userId);
 
   const trimmed = plaintextKey.trim();
   if (!trimmed) {
@@ -122,7 +145,7 @@ export const encryptUserApiKey = ({
   const keyVersion = config.currentKeyVersion;
   const iv = randomBytes(GCM_IV_LENGTH_BYTES);
   const cipher = createCipheriv(AES_ALGORITHM, config.currentMasterSecret, iv);
-  cipher.setAAD(getAad(keyVersion));
+  cipher.setAAD(getUserBoundAad({ keyVersion, userId: normalizedUserId }));
 
   const ciphertext = Buffer.concat([
     cipher.update(Buffer.from(trimmed, "utf8")),
@@ -143,13 +166,13 @@ const tryDecryptWithSecret = ({
   ciphertext,
   iv,
   hmac,
-  keyVersion,
+  aad,
 }: {
   masterSecret: Buffer;
   ciphertext: string;
   iv: string;
   hmac: string;
-  keyVersion: number;
+  aad: Buffer;
 }) => {
   const ivBuffer = Buffer.from(iv, "base64");
   const ciphertextBuffer = Buffer.from(ciphertext, "base64");
@@ -175,7 +198,7 @@ const tryDecryptWithSecret = ({
   }
 
   const decipher = createDecipheriv(AES_ALGORITHM, masterSecret, ivBuffer);
-  decipher.setAAD(getAad(keyVersion));
+  decipher.setAAD(aad);
   decipher.setAuthTag(authTagBuffer);
   const plaintext = Buffer.concat([
     decipher.update(ciphertextBuffer),
@@ -197,7 +220,7 @@ export const decryptUserApiKey = ({
   hmac: string;
   keyVersion: number;
 }) => {
-  void userId;
+  const normalizedUserId = normalizeUserId(userId);
 
   if (
     !ciphertext ||
@@ -217,25 +240,32 @@ export const decryptUserApiKey = ({
     config.currentMasterSecret,
     ...(config.previousMasterSecret ? [config.previousMasterSecret] : []),
   ];
+  const aadCandidates = [
+    getUserBoundAad({ keyVersion, userId: normalizedUserId }),
+    // Backward compatibility for keys encrypted before user-bound AAD.
+    getLegacyAad(keyVersion),
+  ];
 
   for (const masterSecret of candidateMasterSecrets) {
-    try {
-      const decrypted = tryDecryptWithSecret({
-        masterSecret,
-        ciphertext,
-        iv,
-        hmac,
-        keyVersion,
-      });
-      if (!decrypted) {
-        throw new UserApiKeyCryptoError(
-          "INVALID_ENCRYPTED_API_KEY",
-          "Decrypted API key is empty.",
-        );
+    for (const aad of aadCandidates) {
+      try {
+        const decrypted = tryDecryptWithSecret({
+          masterSecret,
+          ciphertext,
+          iv,
+          hmac,
+          aad,
+        });
+        if (!decrypted) {
+          throw new UserApiKeyCryptoError(
+            "INVALID_ENCRYPTED_API_KEY",
+            "Decrypted API key is empty.",
+          );
+        }
+        return decrypted;
+      } catch {
+        continue;
       }
-      return decrypted;
-    } catch {
-      continue;
     }
   }
 

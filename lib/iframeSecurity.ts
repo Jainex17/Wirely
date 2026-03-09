@@ -6,7 +6,22 @@ const ALLOWED_EXTERNAL_SCRIPT_PATTERNS = [
 ] as const;
 
 const UNSAFE_INLINE_SCRIPT_PATTERN =
-  /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon)\b|window\.(?:top|parent)/i;
+  /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon|websocket|eventsource|broadcastchannel|sharedworker|worker|window\.location|document\.location)\b|window\.(?:top|parent)|\bnew\s+Image\s*\(|(?:^|[^\w$])Image\s*\(|(?:^|[^\w$.])postMessage\s*\(|\.\s*src\s*=/i;
+
+const IFRAME_CSP = [
+  "default-src 'none'",
+  "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+  "style-src https://cdn.jsdelivr.net 'unsafe-inline'",
+  "img-src https: data: blob:",
+  "font-src https: data:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join("; ");
+
+const IFRAME_CSP_META_TAG = `<meta http-equiv="Content-Security-Policy" content="${IFRAME_CSP}">`;
 
 const DISALLOWED_CONTAINER_TAGS = [
   "iframe",
@@ -65,9 +80,33 @@ const sanitizeUnsafeNavigation = (value: string) =>
     .replace(/\s(href|src)\s*=\s*("|\')\s*javascript:[^"']*\2/gi, ' $1="#"')
     .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, ' $1="#"');
 
+const ensureIframeCspMeta = (value: string) => {
+  const withoutExistingCsp = value.replace(
+    /<meta\b[^>]*http-equiv\s*=\s*("|\')content-security-policy\1[^>]*>/gi,
+    "",
+  );
+
+  if (/<head[\s>]/i.test(withoutExistingCsp)) {
+    return withoutExistingCsp.replace(
+      /<head([^>]*)>/i,
+      `<head$1>${IFRAME_CSP_META_TAG}`,
+    );
+  }
+
+  if (/<html[\s>]/i.test(withoutExistingCsp)) {
+    return withoutExistingCsp.replace(
+      /<html([^>]*)>/i,
+      `<html$1><head>${IFRAME_CSP_META_TAG}</head>`,
+    );
+  }
+
+  return `<!doctype html><html><head>${IFRAME_CSP_META_TAG}</head><body>${withoutExistingCsp}</body></html>`;
+};
+
 export const sanitizeIframeHtml = (html: string): string => {
   if (!html) return "";
-  return sanitizeUnsafeNavigation(
+  const sanitized = sanitizeUnsafeNavigation(
     removeEventHandlers(removeDisallowedTags(sanitizeScriptTags(html))),
   );
+  return ensureIframeCspMeta(sanitized);
 };

