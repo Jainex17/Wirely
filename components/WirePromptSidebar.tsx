@@ -11,7 +11,7 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import Link from "next/link";
-import { Send, ChevronDown, Zap } from "lucide-react";
+import { Send, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -57,11 +57,6 @@ interface CompactHistoryMessage {
   content: string;
 }
 
-interface OpenCodeStatusResponse {
-  active?: unknown;
-  message?: unknown;
-}
-
 const VARIATION_THEME_HINTS = [
   "Editorial minimal layout with restrained monochrome palette and precise typography.",
   "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
@@ -82,9 +77,6 @@ const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
 
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
-const OPENCODE_INACTIVE_CLIENT_MESSAGE =
-  "OpenCode is inactive. Run `opencode serve` in your terminal and retry.";
-const OPENCODE_STATUS_CACHE_MS = 10_000;
 
 const GENERATION_FAILURE_PREVIEW_HTML = [
   "<!doctype html>",
@@ -227,7 +219,6 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
-  const [isOpenCodeActive, setIsOpenCodeActive] = useState<boolean | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
   const autoRunRef = useRef(false);
@@ -242,9 +233,6 @@ export default function WirePromptSidebar({
   const pendingGenerationFailedRef = useRef(false);
   const pendingGenerationErrorRef = useRef<string | null>(null);
   const hasShownErrorToastRef = useRef(false);
-  const opencodeStatusCacheRef = useRef<{ active: boolean; checkedAt: number } | null>(
-    null,
-  );
 
   const pages = useEditorStore((state) => state.pages);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
@@ -266,63 +254,6 @@ export default function WirePromptSidebar({
       hasShownErrorToastRef.current = true;
     }
   }, []);
-
-  const ensureOpenCodeIsActive = useCallback(
-    async ({
-      forceRefresh = false,
-      silent = false,
-    }: {
-      forceRefresh?: boolean;
-      silent?: boolean;
-    } = {}) => {
-      const now = Date.now();
-      const cached = opencodeStatusCacheRef.current;
-      if (
-        !forceRefresh &&
-        cached?.active &&
-        now - cached.checkedAt < OPENCODE_STATUS_CACHE_MS
-      ) {
-        setIsOpenCodeActive(true);
-        return true;
-      }
-
-      try {
-        const response = await fetch("/api/opencode/status", {
-          cache: "no-store",
-        });
-        if (!response.ok) {
-          opencodeStatusCacheRef.current = { active: false, checkedAt: now };
-          setIsOpenCodeActive(false);
-          if (!silent) {
-            reportError(OPENCODE_INACTIVE_CLIENT_MESSAGE);
-          }
-          return false;
-        }
-
-        const payload = (await response.json()) as OpenCodeStatusResponse;
-        const active = payload.active === true;
-        const message =
-          typeof payload.message === "string" && payload.message.trim().length > 0
-            ? payload.message
-            : OPENCODE_INACTIVE_CLIENT_MESSAGE;
-
-        opencodeStatusCacheRef.current = { active, checkedAt: now };
-        setIsOpenCodeActive(active);
-        if (!active && !silent) {
-          reportError(message);
-        }
-        return active;
-      } catch {
-        opencodeStatusCacheRef.current = { active: false, checkedAt: now };
-        setIsOpenCodeActive(false);
-        if (!silent) {
-          reportError(OPENCODE_INACTIVE_CLIENT_MESSAGE);
-        }
-        return false;
-      }
-    },
-    [reportError],
-  );
 
   const persistPageUpdate = useCallback(
     async (
@@ -745,12 +676,6 @@ export default function WirePromptSidebar({
       const preferredModel = modelName ?? activeModelName;
       const selectedModel =
         enabledModelIds.find((id) => id === preferredModel) ?? enabledModelIds[0];
-      if (getWireModelProvider(selectedModel) === "opencode") {
-        const isActive = await ensureOpenCodeIsActive();
-        if (!isActive) {
-          return false;
-        }
-      }
 
       pendingTargetPageIdRef.current = targetPageId;
       pendingCreatedPageIdRef.current = createdPageId ?? null;
@@ -791,7 +716,6 @@ export default function WirePromptSidebar({
       activeModelName,
       append,
       enabledModelIds,
-      ensureOpenCodeIsActive,
       isLoading,
       reportError,
       rollbackPendingCreatedPages,
@@ -821,12 +745,6 @@ export default function WirePromptSidebar({
 
       const selectedModel =
         enabledModelIds.find((id) => id === modelName) ?? enabledModelIds[0];
-      if (getWireModelProvider(selectedModel) === "opencode") {
-        const isActive = await ensureOpenCodeIsActive();
-        if (!isActive) {
-          return false;
-        }
-      }
 
       pendingTargetPageIdRef.current = null;
       pendingCreatedPageIdRef.current = null;
@@ -872,7 +790,6 @@ export default function WirePromptSidebar({
     [
       append,
       enabledModelIds,
-      ensureOpenCodeIsActive,
       isLoading,
       markPagesAsLoading,
       reportError,
@@ -972,19 +889,6 @@ export default function WirePromptSidebar({
       setActiveModelName(enabledModelIds[0]);
     }
   }, [activeModelName, enabledModelIds]);
-
-  useEffect(() => {
-    const hasOpenCodeModelEnabled = enabledModelIds.some(
-      (modelId) => getWireModelProvider(modelId) === "opencode",
-    );
-    if (!hasOpenCodeModelEnabled) {
-      setIsOpenCodeActive(null);
-      opencodeStatusCacheRef.current = null;
-      return;
-    }
-
-    void ensureOpenCodeIsActive({ silent: true });
-  }, [enabledModelIds, ensureOpenCodeIsActive]);
 
   useEffect(() => {
     if (autoRunRef.current) return;
@@ -1100,15 +1004,9 @@ export default function WirePromptSidebar({
     wireId,
   ]);
 
-  const handleModelSelection = useCallback(
-    (modelId: WireModelName) => {
-      setActiveModelName(modelId);
-      if (getWireModelProvider(modelId) === "opencode") {
-        void ensureOpenCodeIsActive({ forceRefresh: true, silent: true });
-      }
-    },
-    [ensureOpenCodeIsActive],
-  );
+  const handleModelSelection = useCallback((modelId: WireModelName) => {
+    setActiveModelName(modelId);
+  }, []);
 
   const containerClassName =
     variant === "panel"
@@ -1160,9 +1058,6 @@ export default function WirePromptSidebar({
     pages.find((page) => page.id === selectedPageId)?.title ?? "Select page";
 
   const noModelsEnabled = enabledModelIds.length === 0;
-  const activeModelProvider = getWireModelProvider(activeModelName);
-  const openCodeModelUnavailable =
-    activeModelProvider === "opencode" && isOpenCodeActive === false;
   const activeModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
@@ -1227,17 +1122,6 @@ export default function WirePromptSidebar({
             to enable at least one model.
           </div>
         ) : null}
-        {openCodeModelUnavailable ? (
-          <div
-            className={`max-w-[95%] rounded-xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "border border-destructive/30 bg-destructive/5 text-destructive"
-                : "border border-border/60 bg-sidebar/60 text-sidebar-foreground"
-            }`}
-          >
-            {OPENCODE_INACTIVE_CLIENT_MESSAGE}
-          </div>
-        ) : null}
       </div>
 
       <form onSubmit={handleSubmit} className="shrink-0">
@@ -1280,11 +1164,7 @@ export default function WirePromptSidebar({
                     }`}
                     disabled={noModelsEnabled}
                   >
-                    {activeModelProvider === "opencode" ? (
-                      <Zap className="h-3 w-3 text-violet-500" />
-                    ) : (
-                      <GeminiIcon className="h-3 w-3 text-primary" />
-                    )}
+                    <GeminiIcon className="h-3 w-3 text-primary" />
                     {activeModelLabel}
                     <ChevronDown className="h-3 w-3" />
                   </Button>
@@ -1293,21 +1173,14 @@ export default function WirePromptSidebar({
                   {enabledModelIds.map((modelId) => {
                     const model = WIRE_MODEL_OPTIONS.find((m) => m.id === modelId);
                     if (!model) return null;
-                    const isOpenCode = model.provider === "opencode";
-                    const isDisabled = isOpenCode && isOpenCodeActive === false;
                     return (
                     <DropdownMenuItem
                       key={model.id}
                       onClick={() => handleModelSelection(model.id)}
-                      disabled={isDisabled}
                       className={dropdownItemClassName}
                     >
                       <div className="flex items-start gap-2">
-                        {isOpenCode ? (
-                          <Zap className="mr-1 mt-0.5 size-4 text-violet-500" />
-                        ) : (
-                          <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
-                        )}
+                        <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
                         <div className="flex flex-col">
                           <span>{model.label}</span>
                           <span className="text-[10px] text-muted-foreground">{model.description}</span>

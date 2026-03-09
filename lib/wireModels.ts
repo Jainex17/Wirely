@@ -11,20 +11,14 @@ export const OPENROUTER_GEMINI_FREE_MODELS = [
   "google/gemini-2.5-flash",
 ] as const;
 export const OPENROUTER_GEMINI_PAID_MODELS = ["google/gemini-2.5-pro"] as const;
-export const OPENCODE_FREE_MODELS = [
-  "minimax-m2.5-free",
-  "glm-5-free",
-  "big-pickle",
-] as const;
 
 export type WireModelTier = "free" | "paid";
-export type WireModelProvider = "google" | "openrouter" | "opencode";
+export type WireModelProvider = "google" | "openrouter";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
   | (typeof GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
-  | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
-  | (typeof OPENCODE_FREE_MODELS)[number];
+  | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number];
 
 export type WireModelOption = {
   id: WireModelName;
@@ -80,27 +74,6 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     tier: "paid",
     provider: "openrouter",
   },
-  {
-    id: "minimax-m2.5-free",
-    label: "MiniMax M2.5 Free (OpenCode)",
-    description: "OpenCode Zen free model offered for limited-time feedback.",
-    tier: "free",
-    provider: "opencode",
-  },
-  {
-    id: "glm-5-free",
-    label: "GLM-5 Free (OpenCode)",
-    description: "OpenCode Zen free model offered for limited-time feedback.",
-    tier: "free",
-    provider: "opencode",
-  },
-  {
-    id: "big-pickle",
-    label: "Big Pickle (OpenCode)",
-    description: "OpenCode Zen stealth free model offered for limited-time feedback.",
-    tier: "free",
-    provider: "opencode",
-  },
 ];
 
 export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
@@ -109,7 +82,6 @@ export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS
 
 export const DEFAULT_ENABLED_WIRE_MODELS: readonly WireModelName[] = [
   ...GEMINI_FREE_MODELS,
-  ...OPENCODE_FREE_MODELS,
 ];
 
 const WIRE_MODEL_NAME_SET = new Set<WireModelName>(

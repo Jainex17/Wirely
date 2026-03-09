@@ -2,18 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, KeyRound, PencilLine, Sparkles, Zap, Server, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
+import { AlertTriangle, KeyRound, PencilLine, Sparkles, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type {
   WireModelName,
   WireModelProvider,
@@ -77,8 +69,7 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
       ((model as AiSettingsModel).tier === "free" ||
         (model as AiSettingsModel).tier === "paid") &&
       ((model as AiSettingsModel).provider === "google" ||
-        (model as AiSettingsModel).provider === "openrouter" ||
-        (model as AiSettingsModel).provider === "opencode") &&
+        (model as AiSettingsModel).provider === "openrouter") &&
       typeof (model as AiSettingsModel).enabled === "boolean",
   );
 
@@ -107,14 +98,10 @@ export default function ProfileAiSettingsClient({
   const [displayName, setDisplayName] = useState(userName ?? "");
   const [savedDisplayName, setSavedDisplayName] = useState(userName ?? "");
   const [models, setModels] = useState<AiSettingsModel[]>([]);
-  const [opencodeEnabled, setOpencodeEnabled] = useState(false);
-  const [opencodeStatus, setOpencodeStatus] = useState<"inactive" | "checking" | "active" | "running">("inactive");
-  const [showOpencodeModal, setShowOpencodeModal] = useState(false);
   const [showGoogleConfig, setShowGoogleConfig] = useState(false);
   const [showOpenRouterConfig, setShowOpenRouterConfig] = useState(false);
   const [googleModelsExpanded, setGoogleModelsExpanded] = useState(true);
   const [openRouterModelsExpanded, setOpenRouterModelsExpanded] = useState(true);
-  const [opencodeModelsExpanded, setOpencodeModelsExpanded] = useState(true);
 
   const enabledModelIds = useMemo(
     () => models.filter((model) => model.enabled).map((model) => model.id),
@@ -135,38 +122,6 @@ export default function ProfileAiSettingsClient({
     setHasOpenRouterApiKey(payload.hasOpenRouterApiKey);
     setModels(payload.models);
   }, []);
-
-  const checkOpencodeStatus = useCallback(async () => {
-    if (!opencodeEnabled) return;
-    setOpencodeStatus("checking");
-    try {
-      const response = await fetch("/api/opencode/status", {
-        cache: "no-store",
-      });
-      const data = await response.json();
-      setOpencodeStatus(data.active ? "running" : "inactive");
-    } catch {
-      setOpencodeStatus("inactive");
-    }
-  }, [opencodeEnabled]);
-
-  const handleEnableOpencode = () => {
-    setShowOpencodeModal(true);
-  };
-
-  const handleConfirmOpencode = () => {
-    setShowOpencodeModal(false);
-    setOpencodeEnabled(true);
-    setOpencodeStatus("active");
-  };
-
-  useEffect(() => {
-    if (opencodeEnabled) {
-      checkOpencodeStatus();
-      const interval = setInterval(checkOpencodeStatus, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [opencodeEnabled, checkOpencodeStatus]);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
@@ -478,7 +433,6 @@ export default function ProfileAiSettingsClient({
     const openRouterModels = models.filter(
       (model) => model.provider === "openrouter",
     );
-    const opencodeModels = models.filter((model) => model.provider === "opencode");
 
     const renderModelRow = (model: AiSettingsModel) => (
       <div
@@ -606,86 +560,6 @@ export default function ProfileAiSettingsClient({
                 onManageKey: () => setShowOpenRouterConfig(true),
               })
             : null}
-
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                if (opencodeEnabled && opencodeStatus === "running") {
-                  setOpencodeModelsExpanded(!opencodeModelsExpanded);
-                }
-              }}
-              onKeyDown={(e) => {
-                if ((e.key === "Enter" || e.key === " ") && opencodeEnabled && opencodeStatus === "running") {
-                  setOpencodeModelsExpanded(!opencodeModelsExpanded);
-                }
-              }}
-              className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 ${
-                opencodeEnabled && opencodeStatus === "running" ? "cursor-pointer" : ""
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <div className="rounded-md bg-muted p-1.5 text-muted-foreground">
-                  <Zap className="h-4 w-4" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-foreground">OpenCode Zen</h4>
-                  {opencodeEnabled ? (
-                    <p className="text-xs text-muted-foreground">
-                      {opencodeStatus === "running" ? "Running" : "Not running"}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {!opencodeEnabled ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEnableOpencode();
-                    }}
-                  >
-                    Enable
-                  </Button>
-                ) : null}
-                {opencodeEnabled && opencodeStatus === "running" && (
-                  <ChevronDownIcon
-                    className={`h-4 w-4 text-muted-foreground transition-transform ${
-                      opencodeModelsExpanded ? "rotate-180" : ""
-                    }`}
-                  />
-                )}
-              </div>
-            </div>
-
-            {opencodeEnabled && opencodeStatus === "running" && opencodeModelsExpanded ? (
-              <div className="space-y-2 border-t border-border p-3">
-                {opencodeModels.length > 0 ? (
-                  opencodeModels.map(renderModelRow)
-                ) : (
-                  <p className="text-xs text-muted-foreground">No OpenCode models found.</p>
-                )}
-              </div>
-            ) : null}
-
-            {opencodeEnabled && opencodeStatus !== "running" && (
-              <div className="border-t border-border p-3">
-                <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  <Server className="h-4 w-4" />
-                  <span>
-                    Run{" "}
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
-                      opencode serve
-                    </code>{" "}
-                    in your terminal to activate.
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         {enabledModelIds.length === 0 ? (
@@ -947,35 +821,6 @@ export default function ProfileAiSettingsClient({
             {renderModelsContent()}
           </div>
         </div>
-
-        <Dialog open={showOpencodeModal} onOpenChange={setShowOpencodeModal}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-muted-foreground" />
-                Enable OpenCode Zen
-              </DialogTitle>
-              <DialogDescription>
-                OpenCode Zen adds local experimental models.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-3 text-sm text-muted-foreground">
-              Start it by running{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
-                opencode serve
-              </code>{" "}
-              in your terminal.
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowOpencodeModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmOpencode}>
-                Enable OpenCode Zen
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </section>
     );
   };

@@ -34,7 +34,6 @@ import {
   Loader2,
   MoreHorizontal,
   Trash2,
-  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
@@ -262,9 +261,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
-  const selectedModelIsOpenCode =
-    activeSelectedModelProvider === "opencode";
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.isSubmitting) return;
@@ -426,11 +422,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           className="bg-transparent border-border hover:bg-muted"
                           disabled={hasNoEnabledModels}
                         >
-                          {selectedModelIsOpenCode ? (
-                            <Zap className="mr-2 size-4 text-violet-500" />
-                          ) : (
-                            <GeminiIcon className="mr-2 size-4 text-primary" />
-                          )}
+                          <GeminiIcon className="mr-2 size-4 text-primary" />
                           {selectedModelLabel}{" "}
                           {showApiKeyWarning ? (
                             <AlertTriangle
@@ -455,7 +447,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           </>
                         ) : null}
                         {enabledModelOptions.map((model) => {
-                          const isOpenCode = model.provider === "opencode";
                           return (
                           <DropdownMenuItem
                             key={model.id}
@@ -464,11 +455,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                             }
                             className="flex items-start gap-2"
                           >
-                            {isOpenCode ? (
-                              <Zap className="mr-2 mt-0.5 size-4 text-violet-500" />
-                            ) : (
-                              <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
-                            )}
+                            <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
                             <div className="flex flex-col">
                               <span>{model.label}</span>
                               <span className="text-[10px] text-muted-foreground">{model.description}</span>
