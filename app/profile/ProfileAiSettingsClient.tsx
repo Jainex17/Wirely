@@ -2,8 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, KeyRound, PencilLine, Sparkles, ExternalLink, ChevronDownIcon, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDownIcon,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  PencilLine,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import type {
@@ -32,6 +51,8 @@ interface ProfileAiSettingsClientProps {
   userName: string | null;
   userEmail: string | null;
 }
+
+type ApiKeyProvider = "google" | "openrouter";
 
 type ProfileSettingsTab = "api-keys" | "details";
 
@@ -93,13 +114,14 @@ export default function ProfileAiSettingsClient({
   const [isSavingModels, setIsSavingModels] = useState(false);
   const [hasGoogleApiKey, setHasGoogleApiKey] = useState(false);
   const [hasOpenRouterApiKey, setHasOpenRouterApiKey] = useState(false);
-  const [googleApiKey, setGoogleApiKey] = useState("");
-  const [openRouterApiKey, setOpenRouterApiKey] = useState("");
+  const [apiKeyInput, setApiKeyInput] = useState("");
   const [displayName, setDisplayName] = useState(userName ?? "");
   const [savedDisplayName, setSavedDisplayName] = useState(userName ?? "");
   const [models, setModels] = useState<AiSettingsModel[]>([]);
-  const [showGoogleConfig, setShowGoogleConfig] = useState(false);
-  const [showOpenRouterConfig, setShowOpenRouterConfig] = useState(false);
+  const [apiKeyModalProvider, setApiKeyModalProvider] = useState<ApiKeyProvider | null>(
+    null,
+  );
+  const [showApiKeyValue, setShowApiKeyValue] = useState(false);
   const [googleModelsExpanded, setGoogleModelsExpanded] = useState(true);
   const [openRouterModelsExpanded, setOpenRouterModelsExpanded] = useState(true);
 
@@ -152,10 +174,27 @@ export default function ProfileAiSettingsClient({
     void loadSettings();
   }, [loadSettings]);
 
-  const handleSaveGoogleApiKey = async () => {
-    const trimmed = googleApiKey.trim();
+  const closeApiKeyModal = () => {
+    setApiKeyModalProvider(null);
+    setApiKeyInput("");
+  };
+
+  const openApiKeyModal = (provider: ApiKeyProvider) => {
+    setApiKeyModalProvider(provider);
+    setApiKeyInput("");
+    setShowApiKeyValue(false);
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!apiKeyModalProvider) return;
+
+    const trimmed = apiKeyInput.trim();
     if (!trimmed) {
-      toast.error("Enter a Google API key.");
+      toast.error(
+        apiKeyModalProvider === "google"
+          ? "Enter a Google API key."
+          : "Enter an OpenRouter API key.",
+      );
       return;
     }
 
@@ -166,13 +205,15 @@ export default function ProfileAiSettingsClient({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          googleApiKey: trimmed,
-        }),
+        body: JSON.stringify(
+          apiKeyModalProvider === "google"
+            ? { googleApiKey: trimmed }
+            : { openRouterApiKey: trimmed },
+        ),
       });
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Unable to save Google API key.");
+        throw new Error(payload.error || "Unable to save API key.");
       }
 
       const payload = parseSettingsResponse(await response.json());
@@ -180,8 +221,13 @@ export default function ProfileAiSettingsClient({
         throw new Error("Unexpected AI settings response.");
       }
       applySettings(payload);
-      setGoogleApiKey("");
-      toast.success("Google API key saved.");
+      setApiKeyInput("");
+      toast.success(
+        apiKeyModalProvider === "google"
+          ? "Google API key saved."
+          : "OpenRouter API key saved.",
+      );
+      closeApiKeyModal();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to save API key.",
@@ -191,7 +237,9 @@ export default function ProfileAiSettingsClient({
     }
   };
 
-  const handleClearGoogleApiKey = async () => {
+  const handleClearApiKey = async () => {
+    if (!apiKeyModalProvider) return;
+
     setIsSavingKey(true);
     try {
       const response = await fetch("/api/profile/ai-settings", {
@@ -199,91 +247,28 @@ export default function ProfileAiSettingsClient({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          clearGoogleApiKey: true,
-        }),
+        body: JSON.stringify(
+          apiKeyModalProvider === "google"
+            ? { clearGoogleApiKey: true }
+            : { clearOpenRouterApiKey: true },
+        ),
       });
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Unable to clear Google API key.");
+        throw new Error(payload.error || "Unable to clear API key.");
       }
       const payload = parseSettingsResponse(await response.json());
       if (!payload) {
         throw new Error("Unexpected AI settings response.");
       }
       applySettings(payload);
-      setGoogleApiKey("");
-      toast.success("Google API key removed.");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to clear API key.",
+      setApiKeyInput("");
+      toast.success(
+        apiKeyModalProvider === "google"
+          ? "Google API key removed."
+          : "OpenRouter API key removed.",
       );
-    } finally {
-      setIsSavingKey(false);
-    }
-  };
-
-  const handleSaveOpenRouterApiKey = async () => {
-    const trimmed = openRouterApiKey.trim();
-    if (!trimmed) {
-      toast.error("Enter an OpenRouter API key.");
-      return;
-    }
-
-    setIsSavingKey(true);
-    try {
-      const response = await fetch("/api/profile/ai-settings", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          openRouterApiKey: trimmed,
-        }),
-      });
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Unable to save OpenRouter API key.");
-      }
-      const payload = parseSettingsResponse(await response.json());
-      if (!payload) {
-        throw new Error("Unexpected AI settings response.");
-      }
-      applySettings(payload);
-      setOpenRouterApiKey("");
-      toast.success("OpenRouter API key saved.");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to save API key.",
-      );
-    } finally {
-      setIsSavingKey(false);
-    }
-  };
-
-  const handleClearOpenRouterApiKey = async () => {
-    setIsSavingKey(true);
-    try {
-      const response = await fetch("/api/profile/ai-settings", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          clearOpenRouterApiKey: true,
-        }),
-      });
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
-        throw new Error(payload.error || "Unable to clear OpenRouter API key.");
-      }
-      const payload = parseSettingsResponse(await response.json());
-      if (!payload) {
-        throw new Error("Unexpected AI settings response.");
-      }
-      applySettings(payload);
-      setOpenRouterApiKey("");
-      toast.success("OpenRouter API key removed.");
+      closeApiKeyModal();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to clear API key.",
@@ -502,7 +487,7 @@ export default function ProfileAiSettingsClient({
                 }}
                 className="h-7 px-2 text-xs"
               >
-                Key
+                Manage key
               </Button>
             ) : null}
             <ChevronDownIcon
@@ -547,7 +532,7 @@ export default function ProfileAiSettingsClient({
                 modelsForProvider: googleModels,
                 expanded: googleModelsExpanded,
                 setExpanded: setGoogleModelsExpanded,
-                onManageKey: () => setShowGoogleConfig(true),
+                onManageKey: () => openApiKeyModal("google"),
               })
             : null}
 
@@ -557,7 +542,7 @@ export default function ProfileAiSettingsClient({
                 modelsForProvider: openRouterModels,
                 expanded: openRouterModelsExpanded,
                 setExpanded: setOpenRouterModelsExpanded,
-                onManageKey: () => setShowOpenRouterConfig(true),
+                onManageKey: () => openApiKeyModal("openrouter"),
               })
             : null}
         </div>
@@ -594,6 +579,12 @@ export default function ProfileAiSettingsClient({
       );
     }
 
+    const googleModels = models.filter((model) => model.provider === "google");
+    const openRouterModels = models.filter((model) => model.provider === "openrouter");
+    const googleEnabledModels = googleModels.filter((model) => model.enabled).length;
+    const openRouterEnabledModels = openRouterModels.filter((model) => model.enabled).length;
+    const configuredProvidersCount = Number(hasGoogleApiKey) + Number(hasOpenRouterApiKey);
+
     return (
       <section
         id={tabPanelId("api-keys")}
@@ -602,210 +593,95 @@ export default function ProfileAiSettingsClient({
         className="space-y-4"
       >
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-sm text-muted-foreground">
-            Add your API keys and enable the models you want to use.
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              Configure provider API keys in modal, then enable the models you want.
+            </p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {configuredProvidersCount}/2 providers configured
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div
+            className={`rounded-lg border bg-card p-4 ${
+              hasGoogleApiKey ? "border-emerald-500/30" : "border-border"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Google AI</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {hasGoogleApiKey ? "API key configured" : "API key missing"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {googleEnabledModels}/{googleModels.length} models enabled
+                  </p>
+                </div>
+              </div>
+              {hasGoogleApiKey ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Ready
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3">
+              <Button variant="outline" size="sm" onClick={() => openApiKeyModal("google")}>
+                {hasGoogleApiKey ? "Manage key" : "Add key"}
+              </Button>
+            </div>
+          </div>
+
+          <div
+            className={`rounded-lg border bg-card p-4 ${
+              hasOpenRouterApiKey ? "border-emerald-500/30" : "border-border"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md bg-muted p-2 text-muted-foreground">
+                  <KeyRound className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">OpenRouter</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {hasOpenRouterApiKey ? "API key configured" : "API key missing"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {openRouterEnabledModels}/{openRouterModels.length} models enabled
+                  </p>
+                </div>
+              </div>
+              {hasOpenRouterApiKey ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Ready
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openApiKeyModal("openrouter")}
+              >
+                {hasOpenRouterApiKey ? "Manage key" : "Add key"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {!hasGoogleApiKey || !hasOpenRouterApiKey ? (
+          <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-700">
+            Missing provider keys can block generation for models that depend on them.
           </p>
-        </div>
-
-        <div className="space-y-4">
-          {!hasGoogleApiKey || showGoogleConfig ? (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-md bg-muted p-2 text-muted-foreground">
-                  <KeyRound className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">Google AI</h3>
-                  <p className="text-sm text-muted-foreground">Paste your Google API key.</p>
-                </div>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                <Input
-                  type="password"
-                  placeholder="Paste your Google API key (e.g., AIza...)"
-                  value={googleApiKey}
-                  onChange={(event) => setGoogleApiKey(event.target.value)}
-                  disabled={isLoading || isSavingKey}
-                  className="font-mono text-sm"
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleSaveGoogleApiKey}
-                    disabled={
-                      isLoading || isSavingKey || googleApiKey.trim().length === 0
-                    }
-                  >
-                    {isSavingKey
-                      ? "Saving..."
-                      : hasGoogleApiKey
-                        ? "Update key"
-                        : "Save key"}
-                  </Button>
-                  {hasGoogleApiKey && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setShowGoogleConfig(false);
-                        setGoogleApiKey("");
-                      }}
-                      disabled={isLoading || isSavingKey}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-3 border-t border-border pt-3">
-                <p className="text-xs text-muted-foreground">
-                  Don&apos;t have an API key?{" "}
-                  <a
-                    href="https://aistudio.google.com/app/apikey"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary hover:underline"
-                  >
-                    Get one from Google AI Studio
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-md bg-muted p-2 text-muted-foreground">
-                  <KeyRound className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">Google AI</h3>
-                  <p className="text-sm text-muted-foreground">API key configured.</p>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowGoogleConfig(true)}
-                >
-                  Change key
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearGoogleApiKey}
-                  disabled={isLoading || isSavingKey}
-                  className="text-destructive hover:text-destructive"
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {!hasOpenRouterApiKey || showOpenRouterConfig ? (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-md bg-muted p-2 text-muted-foreground">
-                  <KeyRound className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">OpenRouter</h3>
-                  <p className="text-sm text-muted-foreground">Paste your OpenRouter API key.</p>
-                </div>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                <Input
-                  type="password"
-                  placeholder="Paste your OpenRouter API key (e.g., sk-or-v1-...)"
-                  value={openRouterApiKey}
-                  onChange={(event) => setOpenRouterApiKey(event.target.value)}
-                  disabled={isLoading || isSavingKey}
-                  className="font-mono text-sm"
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleSaveOpenRouterApiKey}
-                    disabled={
-                      isLoading ||
-                      isSavingKey ||
-                      openRouterApiKey.trim().length === 0
-                    }
-                  >
-                    {isSavingKey
-                      ? "Saving..."
-                      : hasOpenRouterApiKey
-                        ? "Update key"
-                        : "Save key"}
-                  </Button>
-                  {hasOpenRouterApiKey && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setShowOpenRouterConfig(false);
-                        setOpenRouterApiKey("");
-                      }}
-                      disabled={isLoading || isSavingKey}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-3 border-t border-border pt-3">
-                <p className="text-xs text-muted-foreground">
-                  Don&apos;t have an API key?{" "}
-                  <a
-                    href="https://openrouter.ai/keys"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary hover:underline"
-                  >
-                    Get one from OpenRouter
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-md bg-muted p-2 text-muted-foreground">
-                  <KeyRound className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">OpenRouter</h3>
-                  <p className="text-sm text-muted-foreground">API key configured.</p>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowOpenRouterConfig(true)}
-                >
-                  Change key
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearOpenRouterApiKey}
-                  disabled={isLoading || isSavingKey}
-                  className="text-destructive hover:text-destructive"
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
+        ) : null}
 
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-start gap-3">
@@ -824,6 +700,123 @@ export default function ProfileAiSettingsClient({
       </section>
     );
   };
+
+  const activeProviderLabel =
+    apiKeyModalProvider === "openrouter"
+      ? "OpenRouter"
+      : apiKeyModalProvider === "google"
+        ? "Google"
+        : "Provider";
+  const activeProviderHasKey =
+    apiKeyModalProvider === "google"
+      ? hasGoogleApiKey
+      : apiKeyModalProvider === "openrouter"
+        ? hasOpenRouterApiKey
+        : false;
+  const activeProviderPlaceholder =
+    apiKeyModalProvider === "openrouter"
+      ? "Paste your OpenRouter API key (e.g., sk-or-v1-...)"
+      : "Paste your Google API key (e.g., AIza...)";
+  const activeProviderLearnMoreUrl =
+    apiKeyModalProvider === "openrouter"
+      ? "https://openrouter.ai/keys"
+      : "https://aistudio.google.com/app/apikey";
+
+  const renderApiKeyModal = () => (
+    <Dialog
+      open={apiKeyModalProvider !== null}
+      onOpenChange={(open) => {
+        if (!open && !isSavingKey) {
+          closeApiKeyModal();
+        }
+      }}
+    >
+      <DialogContent className="border-border bg-card" showCloseButton={!isSavingKey}>
+        <DialogHeader>
+          <DialogTitle>{activeProviderLabel} API key</DialogTitle>
+          <DialogDescription>
+            Add or update your {activeProviderLabel} API key here.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="relative">
+            <Input
+              type={showApiKeyValue ? "text" : "password"}
+              placeholder={activeProviderPlaceholder}
+              value={apiKeyInput}
+              autoFocus
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && apiKeyInput.trim().length > 0 && !isSavingKey) {
+                  event.preventDefault();
+                  void handleSaveApiKey();
+                }
+              }}
+              disabled={isSavingKey}
+              className="pr-11 font-mono text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKeyValue((prev) => !prev)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted"
+              aria-label={showApiKeyValue ? "Hide API key" : "Show API key"}
+            >
+              {showApiKeyValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">Press Enter to save quickly.</p>
+            <p className="text-xs text-muted-foreground">
+              Don&apos;t have an API key?{" "}
+              <a
+                href={activeProviderLearnMoreUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                Get one now
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div className="flex items-center gap-2">
+            {activeProviderHasKey ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleClearApiKey}
+                disabled={isSavingKey}
+                className="text-destructive hover:text-destructive"
+              >
+                Remove key
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={closeApiKeyModal}
+              disabled={isSavingKey}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveApiKey}
+              disabled={isSavingKey || apiKeyInput.trim().length === 0}
+            >
+              {isSavingKey ? "Saving..." : activeProviderHasKey ? "Update key" : "Save key"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <div className="mt-5 space-y-4">
@@ -858,6 +851,7 @@ export default function ProfileAiSettingsClient({
 
       {activeTab === "api-keys" ? renderApiKeysTab() : null}
       {activeTab === "details" ? renderDetailsTab() : null}
+      {renderApiKeyModal()}
     </div>
   );
 }
