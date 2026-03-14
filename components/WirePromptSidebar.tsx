@@ -1235,8 +1235,7 @@ export default function WirePromptSidebar({
                 isLoading ||
                 !prompt.trim() ||
                 !selectedPageId ||
-                noModelsEnabled ||
-                openCodeModelUnavailable
+                noModelsEnabled
               }
               size="icon"
               className={`h-8 w-8 shrink-0 ${
