@@ -238,6 +238,8 @@ export default function WirePromptSidebar({
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
   const createPageLocal = useEditorStore((state) => state.createPage);
   const deletePageLocal = useEditorStore((state) => state.deletePage);
+  const beginSaving = useEditorStore((state) => state.beginSaving);
+  const endSaving = useEditorStore((state) => state.endSaving);
 
   const clearPendingGeneration = useCallback(() => {
     pendingTargetPageIdRef.current = null;
@@ -260,19 +262,24 @@ export default function WirePromptSidebar({
       pageId: string,
       payload: { title?: string; htmlContent?: string },
     ) => {
-      const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      beginSaving();
+      try {
+        const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      if (!response.ok) {
-        throw new Error(
-          `Page persistence failed with status ${response.status}`,
-        );
+        if (!response.ok) {
+          throw new Error(
+            `Page persistence failed with status ${response.status}`,
+          );
+        }
+      } finally {
+        endSaving();
       }
     },
-    [wireId],
+    [beginSaving, endSaving, wireId],
   );
 
   const persistPageHtml = useCallback(
@@ -284,35 +291,45 @@ export default function WirePromptSidebar({
 
   const createPageOnServer = useCallback(
     async (title: string) => {
-      const response = await fetch(`/api/projects/${wireId}/pages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-      if (!response.ok) {
-        throw new Error(`Page creation failed with status ${response.status}`);
+      beginSaving();
+      try {
+        const response = await fetch(`/api/projects/${wireId}/pages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+        if (!response.ok) {
+          throw new Error(`Page creation failed with status ${response.status}`);
+        }
+        const payload = (await response.json()) as {
+          page?: { id: string; title: string };
+        };
+        if (!payload.page) {
+          throw new Error("Page creation response missing page payload.");
+        }
+        return payload.page;
+      } finally {
+        endSaving();
       }
-      const payload = (await response.json()) as {
-        page?: { id: string; title: string };
-      };
-      if (!payload.page) {
-        throw new Error("Page creation response missing page payload.");
-      }
-      return payload.page;
     },
-    [wireId],
+    [beginSaving, endSaving, wireId],
   );
 
   const deletePageOnServer = useCallback(
     async (pageId: string) => {
-      const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        throw new Error(`Page deletion failed with status ${response.status}`);
+      beginSaving();
+      try {
+        const response = await fetch(`/api/projects/${wireId}/pages/${pageId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error(`Page deletion failed with status ${response.status}`);
+        }
+      } finally {
+        endSaving();
       }
     },
-    [wireId],
+    [beginSaving, endSaving, wireId],
   );
 
   const rollbackPendingCreatedPages = useCallback(() => {
@@ -1183,10 +1200,9 @@ export default function WirePromptSidebar({
                         <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
                         <div className="flex flex-col">
                           <span>{model.label}</span>
-                          <span className="text-[10px] text-muted-foreground">{model.description}</span>
-                          <span className={`text-[10px] font-medium ${model.tier === "free" ? "text-green-600" : "text-orange-600"}`}>
-                            {model.tier === "free" ? "Free" : "Paid"}
-                          </span>
+                          {model.tier === "paid" ? (
+                            <span className="text-[10px] font-medium text-orange-600">Paid</span>
+                          ) : null}
                         </div>
                       </div>
                     </DropdownMenuItem>

@@ -10,6 +10,9 @@ export interface CanvasState {
   panOffset: { x: number; y: number };
   activeDevice: DeviceType;
   isDragging: boolean;
+  pendingSaveCount: number;
+  pagePositions: Record<string, { x: number; y: number }>;
+  pageStackOrder: string[];
 }
 
 export interface SectionData {
@@ -40,6 +43,14 @@ export interface EditorState extends CanvasState, ProjectState {
   setZoom: (zoom: number) => void;
   setPanOffset: (offset: { x: number; y: number }) => void;
   setActiveDevice: (device: DeviceType) => void;
+  beginSaving: () => void;
+  endSaving: () => void;
+  setPagePosition: (pageId: string, position: { x: number; y: number }) => void;
+  bringPageToFront: (pageId: string) => void;
+  hydratePageLayout: (layout: {
+    pagePositions: Record<string, { x: number; y: number }>;
+    pageStackOrder: string[];
+  }) => void;
   setSelectedSection: (id: string | null) => void;
   setDraggingSection: (id: string | null) => void;
   updateSectionLayout: (sectionId: string, layoutId: string) => void;
@@ -71,6 +82,9 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   panOffset: { x: 0, y: 0 },
   activeDevice: "desktop",
   isDragging: false,
+  pendingSaveCount: 0,
+  pagePositions: {},
+  pageStackOrder: [],
 };
 
 const createPageId = () => {
@@ -85,6 +99,25 @@ const createPageId = () => {
   });
 };
 
+const filterPagePositions = (
+  pagePositions: Record<string, { x: number; y: number }>,
+  pageIds: string[],
+) =>
+  Object.fromEntries(
+    Object.entries(pagePositions).filter(([pageId]) => pageIds.includes(pageId)),
+  );
+
+const mergePageStackOrder = (pageIds: string[], persistedStackOrder: string[]) => {
+  const nextStackOrder = persistedStackOrder.filter((pageId) => pageIds.includes(pageId));
+
+  for (const pageId of pageIds) {
+    if (nextStackOrder.includes(pageId)) continue;
+    nextStackOrder.push(pageId);
+  }
+
+  return nextStackOrder;
+};
+
 export const useEditorStore = create<EditorState>()(
   persist(
     (set) => ({
@@ -94,6 +127,41 @@ export const useEditorStore = create<EditorState>()(
       setZoom: (zoom) => set({ zoom }),
       setPanOffset: (panOffset) => set({ panOffset }),
       setActiveDevice: (activeDevice) => set({ activeDevice }),
+      beginSaving: () =>
+        set((state) => ({ pendingSaveCount: state.pendingSaveCount + 1 })),
+      endSaving: () =>
+        set((state) => ({
+          pendingSaveCount: Math.max(0, state.pendingSaveCount - 1),
+        })),
+      setPagePosition: (pageId, position) =>
+        set((state) => ({
+          pagePositions: {
+            ...state.pagePositions,
+            [pageId]: position,
+          },
+        })),
+      bringPageToFront: (pageId) =>
+        set((state) => {
+          if (!state.pages.some((page) => page.id === pageId)) {
+            return state;
+          }
+
+          const nextStackOrder = state.pageStackOrder.filter((id) => id !== pageId);
+          nextStackOrder.push(pageId);
+
+          return {
+            pageStackOrder: nextStackOrder,
+          };
+        }),
+      hydratePageLayout: ({ pagePositions, pageStackOrder }) =>
+        set((state) => {
+          const pageIds = state.pages.map((page) => page.id);
+
+          return {
+            pagePositions: filterPagePositions(pagePositions, pageIds),
+            pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
+          };
+        }),
       setSelectedSection: (selectedSectionId) => set({ selectedSectionId }),
       setDraggingSection: (draggingSectionId) => set({ draggingSectionId }),
 
@@ -213,6 +281,7 @@ export const useEditorStore = create<EditorState>()(
           if (!afterPageId) {
             return {
               pages: [...state.pages, newPage],
+              pageStackOrder: [...state.pageStackOrder, newPageId],
             };
           }
 
@@ -220,6 +289,7 @@ export const useEditorStore = create<EditorState>()(
           if (targetIndex === -1) {
             return {
               pages: [...state.pages, newPage],
+              pageStackOrder: [...state.pageStackOrder, newPageId],
             };
           }
 
@@ -228,6 +298,7 @@ export const useEditorStore = create<EditorState>()(
 
           return {
             pages: nextPages,
+            pageStackOrder: [...state.pageStackOrder, newPageId],
           };
         });
 
@@ -265,13 +336,20 @@ export const useEditorStore = create<EditorState>()(
         }),
 
       hydrateProject: (pages) =>
-        set(() => ({
-          ...generateEmptyState(),
-          pages:
+        set((state) => {
+          const nextPages =
             pages.length > 0
               ? pages
-              : [{ id: "page-home", title: "Page 1", sections: [] }],
-        })),
+              : [{ id: "page-home", title: "Page 1", sections: [] }];
+          const nextPageIds = nextPages.map((page) => page.id);
+
+          return {
+            ...generateEmptyState(),
+            pages: nextPages,
+            pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
+            pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
+          };
+        }),
 
       deletePage: (pageId) =>
         set((state) => {
@@ -289,6 +367,10 @@ export const useEditorStore = create<EditorState>()(
             pages: state.pages.filter((p) => p.id !== pageId),
             sections: newSections,
             selectedSectionId: null,
+            pagePositions: Object.fromEntries(
+              Object.entries(state.pagePositions).filter(([id]) => id !== pageId),
+            ),
+            pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
           };
         }),
 
@@ -297,17 +379,29 @@ export const useEditorStore = create<EditorState>()(
           ...generateEmptyState(),
           zoom: 20,
           panOffset: { x: 0, y: 0 },
+          pagePositions: {},
+          pageStackOrder: [],
         })),
     }),
     {
       name: "wirely-editor-storage",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => createSafeLocalStorage("wirely-editor-storage")),
       partialize: (state) => ({
         zoom: state.zoom,
         panOffset: state.panOffset,
         activeDevice: state.activeDevice,
       }),
+      migrate: (persistedState, version) => {
+        if (version >= 3) return persistedState;
+        const state = persistedState as Partial<CanvasState> | undefined;
+
+        return {
+          ...persistedState,
+          pagePositions: state?.pagePositions ?? {},
+          pageStackOrder: state?.pageStackOrder ?? [],
+        };
+      },
     },
   ),
 );

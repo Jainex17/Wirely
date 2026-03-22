@@ -458,10 +458,9 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                             <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
                             <div className="flex flex-col">
                               <span>{model.label}</span>
-                              <span className="text-[10px] text-muted-foreground">{model.description}</span>
-                              <span className={`text-[10px] font-medium ${model.tier === "free" ? "text-green-600" : "text-orange-600"}`}>
-                                {model.tier === "free" ? "Free" : "Paid"}
-                              </span>
+                              {model.tier === "paid" ? (
+                                <span className="text-[10px] font-medium text-orange-600">Paid</span>
+                              ) : null}
                             </div>
                           </DropdownMenuItem>
                         )})}

@@ -34,6 +34,8 @@ export default function EditorWorkspace({
     zoom,
     panOffset,
     activeDevice,
+    beginSaving,
+    endSaving,
     setZoom,
     setPanOffset,
     setSelectedSection,
@@ -69,6 +71,7 @@ export default function EditorWorkspace({
 
       if (!projectId) return;
 
+      beginSaving();
       try {
         const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
           method: "PATCH",
@@ -83,9 +86,11 @@ export default function EditorWorkspace({
         logger.error("pages_rename_failed", { pageId, projectId, error });
         renamePage(pageId, existingPage.title);
         toast.error("Could not rename page. Please try again.");
+      } finally {
+        endSaving();
       }
     },
-    [pages, projectId, renamePage],
+    [beginSaving, endSaving, pages, projectId, renamePage],
   );
 
   const handleDeletePage = useCallback(
@@ -97,6 +102,7 @@ export default function EditorWorkspace({
 
       if (!projectId) return;
 
+      beginSaving();
       try {
         const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
           method: "DELETE",
@@ -136,9 +142,11 @@ export default function EditorWorkspace({
           });
           toast.error("Could not restore latest server data.");
         }
+      } finally {
+        endSaving();
       }
     },
-    [deletePage, hydrateProject, pages, projectId],
+    [beginSaving, deletePage, endSaving, hydrateProject, pages, projectId],
   );
 
   useEffect(() => {
@@ -268,6 +276,7 @@ export default function EditorWorkspace({
     <div data-sidebar-mode={sidebarMode} className="relative w-full h-full">
       <Canvas
         canvasRef={canvasRef}
+        projectId={projectId}
         panOffset={panOffset}
         zoom={zoom}
         activeDevice={activeDevice}

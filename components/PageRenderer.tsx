@@ -1,8 +1,6 @@
 import React from "react";
 import { FileIcon } from "lucide-react";
-import { useEditorStore } from "@/store/useEditorStore";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
-import PageOptionsMenu from "./PageOptionsMenu";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 
 const stabilizeViewportHeightClasses = (
@@ -60,13 +58,13 @@ interface PageRendererProps {
     height: number;
     label: string;
   };
+  zoom: number;
 }
 
 export default React.memo(function PageRenderer({
   page,
-  onRenamePage,
-  onDeletePage,
   currentDevice,
+  zoom,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
   const CHART_CANVAS_HEIGHT = 320;
@@ -100,7 +98,15 @@ export default React.memo(function PageRenderer({
       hasHtml ? injectIframeHeightReporter(canvasSrcDoc, iframeReporterId) : "",
     [canvasSrcDoc, hasHtml, iframeReporterId],
   );
-  const isOnlyPage = useEditorStore((state) => state.pages.length <= 1);
+  const titleScale = React.useMemo(() => 100 / Math.max(20, zoom), [zoom]);
+  const titleFontSizePx = React.useMemo(
+    () => Math.min(40, Math.max(14, 16 * titleScale)),
+    [titleScale],
+  );
+  const titleIconSizePx = React.useMemo(
+    () => Math.min(28, Math.max(12, 14 * titleScale)),
+    [titleScale],
+  );
   const disconnectAutoHeightSync = React.useCallback(() => {
     if (resizeObserverRef.current) {
       resizeObserverRef.current.disconnect();
@@ -322,21 +328,21 @@ export default React.memo(function PageRenderer({
   }, [currentDevice.height, iframeReporterId]);
 
   return (
-    <div className="relative flex flex-col items-center gap-2">
-      <div className="w-full h-[50px] flex items-center pl-4 pr-2 rounded-[var(--radius)] justify-between bg-secondary">
-        <p className="text-foreground font-medium text-md flex items-center gap-2">
-          <FileIcon width={18} />
+    <div className="group relative flex flex-col items-center gap-1">
+      <div className="flex h-[50px] w-full items-center pl-3 pr-1 pb-1">
+        <p
+          className="flex items-center gap-2 font-medium text-foreground"
+          style={{ fontSize: `${titleFontSizePx}px` }}
+        >
+          <FileIcon
+            className="text-muted-foreground"
+            style={{ width: `${titleIconSizePx}px`, height: `${titleIconSizePx}px` }}
+          />
           {page.title}
         </p>
-        <PageOptionsMenu
-          pageTitle={page.title}
-          isOnlyPage={isOnlyPage}
-          onRename={(newTitle) => onRenamePage(page.id, newTitle)}
-          onDelete={() => onDeletePage(page.id)}
-        />
       </div>
       <div
-        className="bg-transparent rounded-[var(--radius)] relative border border-border shadow-lg overflow-hidden"
+        className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-transparent shadow-lg transition-all duration-150 group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30"
         style={{
           width: `${currentDevice.width}px`,
           minHeight: `${currentDevice.height}px`,

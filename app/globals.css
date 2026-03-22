@@ -200,12 +200,12 @@
 .canvas-dots {
   background-image: radial-gradient(
     circle,
-    color-mix(in srgb, var(--chart-2) 42%, transparent) 1.2px,
-    transparent 1.25px
+    color-mix(in srgb, var(--chart-2) 62%, transparent) 1.6px,
+    transparent 1.9px
   );
   background-size: 20px 20px;
   background-position: 0 0;
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .glass-panel {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "ai";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Cloud } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,8 @@ interface WireEditorProps {
   initialMessages: Message[];
 }
 
+const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
+
 export default function WireEditor({
   wireId,
   sessionUser,
@@ -57,6 +59,8 @@ export default function WireEditor({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
+  const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
+  const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
 
   useEffect(() => {
     hydrateProject(
@@ -68,6 +72,30 @@ export default function WireEditor({
       })),
     );
   }, [hydrateProject, initialProject.pages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(getWireLayoutStorageKey(wireId));
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as {
+        pagePositions?: Record<string, { x: number; y: number }>;
+        pageStackOrder?: string[];
+      };
+
+      hydratePageLayout({
+        pagePositions: parsed.pagePositions ?? {},
+        pageStackOrder: parsed.pageStackOrder ?? [],
+      });
+    } catch {
+      hydratePageLayout({
+        pagePositions: {},
+        pageStackOrder: [],
+      });
+    }
+  }, [hydratePageLayout, wireId]);
 
   useEffect(() => {
     router.prefetch("/");
@@ -139,6 +167,16 @@ export default function WireEditor({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isSaving ? (
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/70 text-muted-foreground"
+                aria-live="polite"
+                aria-label="Saving changes"
+                title="Saving changes"
+              >
+                <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
+              </div>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
