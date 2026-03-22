@@ -10,6 +10,20 @@ const MIN_ZOOM = 5;
 const MAX_ZOOM = 200;
 const TRACKPAD_ZOOM_SENSITIVITY = 0.007;
 const MOUSE_WHEEL_ZOOM_SENSITIVITY = 0.0025;
+const CANVAS_TOP_OFFSET = 100;
+const PAGE_GAP = 120;
+
+const DEVICE_WIDTHS = {
+  desktop: 1440,
+  tablet: 768,
+  mobile: 375,
+} as const;
+
+const DEVICE_HEIGHTS = {
+  desktop: 900,
+  tablet: 1024,
+  mobile: 812,
+} as const;
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
@@ -21,6 +35,7 @@ export default function EditorWorkspace({
   projectId,
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const hasInitializedViewportRef = useRef(false);
   const panDragRef = useRef<{
     startX: number;
     startY: number;
@@ -42,6 +57,7 @@ export default function EditorWorkspace({
     renamePage,
     deletePage,
     hydrateProject,
+    pagePositions,
     pages,
   } = useEditorStore();
 
@@ -271,6 +287,58 @@ export default function EditorWorkspace({
       stopPanning();
     };
   }, [activeTool]);
+
+  useEffect(() => {
+    hasInitializedViewportRef.current = false;
+  }, [projectId]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || pages.length === 0) return;
+    if (hasInitializedViewportRef.current) return;
+
+    const pageWidth = DEVICE_WIDTHS[activeDevice];
+    const pageHeight = DEVICE_HEIGHTS[activeDevice];
+    const defaultTotalWidth =
+      pages.length * pageWidth + Math.max(0, pages.length - 1) * PAGE_GAP;
+    const scale = zoom / 100;
+    const viewportLeft = -panOffset.x / scale;
+    const viewportTop = -panOffset.y / scale;
+    const viewportRight = viewportLeft + canvas.clientWidth / scale;
+    const viewportBottom = viewportTop + canvas.clientHeight / scale;
+
+    const hasVisiblePage = pages.some((page, index) => {
+      const fallbackX = index * (pageWidth + PAGE_GAP) - defaultTotalWidth / 2;
+      const position = pagePositions[page.id] ?? { x: fallbackX, y: 0 };
+      const pageLeft = position.x;
+      const pageTop = position.y;
+      const pageRight = pageLeft + pageWidth;
+      const pageBottom = pageTop + pageHeight;
+
+      return (
+        pageRight > viewportLeft &&
+        pageLeft < viewportRight &&
+        pageBottom > viewportTop &&
+        pageTop < viewportBottom
+      );
+    });
+
+    hasInitializedViewportRef.current = true;
+    if (hasVisiblePage) return;
+
+    const targetPage = pages[0];
+    if (!targetPage) return;
+
+    const fallbackX = -defaultTotalWidth / 2;
+    const targetPosition = pagePositions[targetPage.id] ?? { x: fallbackX, y: 0 };
+    const centeredPanX = canvas.clientWidth / 2 - (targetPosition.x + pageWidth / 2) * scale;
+    const centeredPanY = CANVAS_TOP_OFFSET + 48 - targetPosition.y * scale;
+
+    setPanOffset({
+      x: centeredPanX,
+      y: centeredPanY,
+    });
+  }, [activeDevice, pagePositions, pages, panOffset.x, panOffset.y, projectId, setPanOffset, zoom]);
 
   return (
     <div data-sidebar-mode={sidebarMode} className="relative w-full h-full">

@@ -388,8 +388,6 @@ export const useEditorStore = create<EditorState>()(
       version: 3,
       storage: createJSONStorage(() => createSafeLocalStorage("wirely-editor-storage")),
       partialize: (state) => ({
-        zoom: state.zoom,
-        panOffset: state.panOffset,
         activeDevice: state.activeDevice,
       }),
       migrate: (persistedState, version) => {
