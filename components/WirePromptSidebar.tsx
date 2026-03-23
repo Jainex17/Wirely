@@ -40,12 +40,21 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
 import GeminiIcon from "@/components/icons/GeminiIcon";
+import {
+  isNewPagePromptTarget,
+  NEW_PAGE_PROMPT_TARGET_ID,
+  resolvePromptTargetPageId,
+  resolvePromptTargetPageTitle,
+} from "@/lib/wirePromptTarget";
 
 interface WirePromptSidebarProps {
   wireId: string;
   variant?: "floating" | "panel";
   initialModelName?: WireModelName;
   initialMessages?: Message[];
+  selectedPageId: string | null;
+  onSelectedPageIdChange: (pageId: string | null) => void;
+  focusRequestKey?: number;
 }
 
 interface AiSettingsResponse {
@@ -210,6 +219,9 @@ export default function WirePromptSidebar({
   variant = "floating",
   initialModelName = DEFAULT_WIRE_MODEL,
   initialMessages = [],
+  selectedPageId,
+  onSelectedPageIdChange,
+  focusRequestKey = 0,
 }: WirePromptSidebarProps) {
   const [prompt, setPrompt] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -219,7 +231,6 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
-  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
 
   const autoRunRef = useRef(false);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -428,11 +439,14 @@ export default function WirePromptSidebar({
         variationCount > 1 &&
         body.variationIndex === undefined;
       const storePages = useEditorStore.getState().pages;
+      const effectiveTargetPageId = resolvePromptTargetPageId(
+        storePages,
+        selectedPageId,
+      );
       const targetPageId = isBatchRequest
         ? undefined
         : (pendingTargetPageIdRef.current ??
-          selectedPageId ??
-          storePages[0]?.id ??
+          effectiveTargetPageId ??
           undefined);
       const targetPage = targetPageId
         ? storePages.find((page) => page.id === targetPageId)
@@ -819,8 +833,36 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      const targetPageId =
-        selectedPageId ?? useEditorStore.getState().pages[0]?.id;
+      if (isNewPagePromptTarget(selectedPageId)) {
+        try {
+          const nextPageNumber = useEditorStore.getState().pages.length + 1;
+          const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
+          createPageLocal(createdPage.title, undefined, createdPage.id);
+          onSelectedPageIdChange(createdPage.id);
+
+          const generated = await startGenerationForPage({
+            promptText: prompt,
+            targetPageId: createdPage.id,
+            createdPageId: createdPage.id,
+          });
+
+          if (generated) {
+            setPrompt("");
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Could not create a new page. Please try again.";
+          reportError(message);
+        }
+        return;
+      }
+
+      const targetPageId = resolvePromptTargetPageId(
+        useEditorStore.getState().pages,
+        selectedPageId,
+      );
       if (!targetPageId) return;
 
       const generated = await startGenerationForPage({
@@ -832,7 +874,15 @@ export default function WirePromptSidebar({
         setPrompt("");
       }
     },
-    [prompt, selectedPageId, startGenerationForPage],
+    [
+      createPageLocal,
+      createPageOnServer,
+      onSelectedPageIdChange,
+      prompt,
+      reportError,
+      selectedPageId,
+      startGenerationForPage,
+    ],
   );
 
   const resizePromptTextarea = useCallback(() => {
@@ -854,19 +904,28 @@ export default function WirePromptSidebar({
   }, []);
 
   useEffect(() => {
-    if (pages.length === 0) {
-      setSelectedPageId(null);
-      return;
-    }
-
-    if (!selectedPageId || !pages.some((page) => page.id === selectedPageId)) {
-      setSelectedPageId(pages[0].id);
-    }
-  }, [pages, selectedPageId]);
-
-  useEffect(() => {
     resizePromptTextarea();
   }, [prompt, resizePromptTextarea]);
+
+  useEffect(() => {
+    const effectiveSelectedPageId = resolvePromptTargetPageId(
+      pages,
+      selectedPageId,
+    );
+    if (!focusRequestKey || !effectiveSelectedPageId) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const textarea = promptTextareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      const cursorPosition = textarea.value.length;
+      textarea.setSelectionRange(cursorPosition, cursorPosition);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [focusRequestKey, pages, selectedPageId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1071,8 +1130,11 @@ export default function WirePromptSidebar({
     });
   }, [messages, variant]);
 
-  const selectedPageTitle =
-    pages.find((page) => page.id === selectedPageId)?.title ?? "Select page";
+  const effectiveSelectedPageId = resolvePromptTargetPageId(pages, selectedPageId);
+  const selectedPageTitle = resolvePromptTargetPageTitle(
+    pages,
+    effectiveSelectedPageId,
+  );
 
   const noModelsEnabled = enabledModelIds.length === 0;
   const activeModelLabel =
@@ -1149,6 +1211,22 @@ export default function WirePromptSidebar({
               : "border border-border/60 bg-sidebar/80"
           }`}
         >
+          {effectiveSelectedPageId ? (
+            <div className="px-2 pt-2">
+              <div
+                className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] ${
+                  variant === "panel"
+                    ? "border-border bg-muted/50 text-muted-foreground"
+                    : "border-border/60 bg-sidebar/50 text-sidebar-foreground/75"
+                }`}
+              >
+                <span className="text-[10px] opacity-70">Editing</span>
+                <span className="max-w-[180px] truncate normal-case tracking-normal text-foreground">
+                  {selectedPageTitle}
+                </span>
+              </div>
+            </div>
+          ) : null}
           <textarea
             ref={promptTextareaRef}
             value={prompt}
@@ -1232,10 +1310,16 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
+                  <DropdownMenuItem
+                    onClick={() => onSelectedPageIdChange(NEW_PAGE_PROMPT_TARGET_ID)}
+                    className={dropdownItemClassName}
+                  >
+                    New page
+                  </DropdownMenuItem>
                   {pages.map((page) => (
                     <DropdownMenuItem
                       key={page.id}
-                      onClick={() => setSelectedPageId(page.id)}
+                      onClick={() => onSelectedPageIdChange(page.id)}
                       className={dropdownItemClassName}
                     >
                       {page.title}
@@ -1250,7 +1334,7 @@ export default function WirePromptSidebar({
               disabled={
                 isLoading ||
                 !prompt.trim() ||
-                !selectedPageId ||
+                !effectiveSelectedPageId ||
                 noModelsEnabled
               }
               size="icon"

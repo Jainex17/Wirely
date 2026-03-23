@@ -28,11 +28,13 @@ const DEVICE_HEIGHTS = {
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
   projectId?: string;
+  onEditPage?: (pageId: string) => void;
 }
 
 export default function EditorWorkspace({
   sidebarMode = "default",
   projectId,
+  onEditPage,
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const hasInitializedViewportRef = useRef(false);
@@ -353,6 +355,7 @@ export default function EditorWorkspace({
         onCanvasClick={handleCanvasClick}
         onRenamePage={handleRenamePage}
         onDeletePage={handleDeletePage}
+        onEditPage={onEditPage}
         onToolChange={setActiveTool}
         onZoomChange={handleZoomChange}
         onReset={handleReset}

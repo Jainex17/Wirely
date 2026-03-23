@@ -1,7 +1,14 @@
 import React from "react";
-import { FileIcon } from "lucide-react";
+import { FileIcon, MoreHorizontal, PencilLine } from "lucide-react";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -53,6 +60,7 @@ interface PageRendererProps {
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
+  onEditPage?: (pageId: string) => void;
   currentDevice: {
     width: number;
     height: number;
@@ -63,6 +71,7 @@ interface PageRendererProps {
 
 export default React.memo(function PageRenderer({
   page,
+  onEditPage,
   currentDevice,
   zoom,
 }: PageRendererProps) {
@@ -329,7 +338,7 @@ export default React.memo(function PageRenderer({
 
   return (
     <div className="group relative flex flex-col items-center gap-1">
-      <div className="flex h-[50px] w-full items-center pl-3 pr-1 pb-1">
+      <div className="flex h-[50px] w-full items-center justify-between gap-3 pl-3 pr-1 pb-1">
         <p
           className="flex items-center gap-2 font-medium text-foreground"
           style={{ fontSize: `${titleFontSizePx}px` }}
@@ -340,6 +349,42 @@ export default React.memo(function PageRenderer({
           />
           {page.title}
         </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
+              aria-label={`Open tools for ${page.title}`}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-36"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DropdownMenuItem
+              onSelect={() => onEditPage?.(page.id)}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <PencilLine className="mr-2 h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div
         className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-transparent shadow-lg transition-all duration-150 group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30"

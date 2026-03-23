@@ -54,6 +54,7 @@ export default async function WirePage({ params }: WirePageProps) {
       sessionUser={{
         name: sessionUser.name,
         email: sessionUser.email,
+        avatarUrl: sessionUser.avatarUrl,
       }}
       initialProject={{
         projectTitle,

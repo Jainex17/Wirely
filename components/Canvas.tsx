@@ -34,6 +34,7 @@ interface CanvasProps {
   onCanvasClick: () => void;
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
+  onEditPage?: (pageId: string) => void;
   onToolChange: (tool: "select" | "grab") => void;
   onZoomChange: (zoom: number) => void;
   onReset: () => void;
@@ -50,6 +51,7 @@ export default function Canvas({
   onCanvasClick,
   onRenamePage,
   onDeletePage,
+  onEditPage,
   onToolChange,
   onZoomChange,
   onReset,
@@ -264,6 +266,7 @@ export default function Canvas({
                     page={page}
                     onRenamePage={onRenamePage}
                     onDeletePage={onDeletePage}
+                    onEditPage={onEditPage}
                     currentDevice={currentDevice}
                     zoom={zoom}
                   />

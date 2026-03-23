@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Message } from "ai";
@@ -27,12 +28,14 @@ import {
 import { useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
+import { resolvePromptTargetPageId } from "@/lib/wirePromptTarget";
 
 interface WireEditorProps {
   wireId: string;
   sessionUser: {
     name: string | null;
     email: string | null;
+    avatarUrl: string | null;
   };
   initialProject: {
     projectTitle: string;
@@ -47,6 +50,7 @@ interface WireEditorProps {
 }
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
+const passthroughImageLoader = ({ src }: { src: string }) => src;
 
 export default function WireEditor({
   wireId,
@@ -58,9 +62,14 @@ export default function WireEditor({
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [selectedPromptPageId, setSelectedPromptPageId] = useState<string | null>(
+    null,
+  );
+  const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
   const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
+  const pages = useEditorStore((state) => state.pages);
 
   useEffect(() => {
     hydrateProject(
@@ -102,6 +111,12 @@ export default function WireEditor({
     router.prefetch("/profile");
   }, [router]);
 
+  useEffect(() => {
+    setSelectedPromptPageId((currentPageId) =>
+      resolvePromptTargetPageId(pages, currentPageId),
+    );
+  }, [pages]);
+
   const name = sessionUser.name ?? sessionUser.email ?? "User";
   const initials = useMemo(
     () =>
@@ -126,6 +141,11 @@ export default function WireEditor({
       router.refresh();
       setIsLoggingOut(false);
     }
+  };
+
+  const handleEditPage = (pageId: string) => {
+    setSelectedPromptPageId(pageId);
+    setPromptFocusRequestKey((currentKey) => currentKey + 1);
   };
 
   return (
@@ -187,9 +207,23 @@ export default function WireEditor({
                   <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
                     {name}
                   </span>
-                  <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
-                    {initials || "U"}
-                  </div>
+                  {sessionUser.avatarUrl ? (
+                    <Image
+                      loader={passthroughImageLoader}
+                      unoptimized
+                      src={sessionUser.avatarUrl}
+                      alt={`${name} avatar`}
+                      width={28}
+                      height={28}
+                      sizes="28px"
+                      className="h-7 w-7 rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
+                      {initials || "U"}
+                    </div>
+                  )}
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -238,7 +272,11 @@ export default function WireEditor({
         <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
           <EditorErrorBoundary title="Workspace canvas crashed">
             <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
-              <EditorWorkspace sidebarMode="wire" projectId={wireId} />
+              <EditorWorkspace
+                sidebarMode="wire"
+                projectId={wireId}
+                onEditPage={handleEditPage}
+              />
             </div>
           </EditorErrorBoundary>
           <EditorErrorBoundary title="Prompt panel crashed">
@@ -248,6 +286,9 @@ export default function WireEditor({
                 wireId={wireId}
                 initialModelName={initialModelName}
                 initialMessages={initialMessages}
+                selectedPageId={selectedPromptPageId}
+                onSelectedPageIdChange={setSelectedPromptPageId}
+                focusRequestKey={promptFocusRequestKey}
               />
             </div>
           </EditorErrorBoundary>
