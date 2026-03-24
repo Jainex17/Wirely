@@ -1,14 +1,30 @@
 import React from "react";
-import { FileIcon, MoreHorizontal, PencilLine } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Copy, FileCode2, FileIcon, PencilLine, Trash2 } from "lucide-react";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -66,23 +82,45 @@ interface PageRendererProps {
     height: number;
     label: string;
   };
+  isOnlyPage: boolean;
   zoom: number;
+}
+
+interface ContextMenuAction {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  destructive?: boolean;
+  disabled?: boolean;
 }
 
 export default React.memo(function PageRenderer({
   page,
+  onRenamePage,
+  onDeletePage,
   onEditPage,
   currentDevice,
+  isOnlyPage,
   zoom,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
   const CHART_CANVAS_HEIGHT = 320;
+  const CONTEXT_MENU_WIDTH = 216;
+  const CONTEXT_MENU_MARGIN = 12;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const contextMenuRef = React.useRef<HTMLDivElement | null>(null);
   const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
   const mutationObserverRef = React.useRef<MutationObserver | null>(null);
   const rafIdRef = React.useRef<number | null>(null);
   const timeoutIdsRef = React.useRef<number[]>([]);
   const imageListenerCleanupRef = React.useRef<(() => void) | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
   const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
@@ -116,6 +154,125 @@ export default React.memo(function PageRenderer({
     () => Math.min(28, Math.max(12, 14 * titleScale)),
     [titleScale],
   );
+  React.useEffect(() => {
+    setNextPageTitle(page.title);
+  }, [page.title]);
+
+  const closeContextMenu = React.useCallback(() => {
+    setContextMenuPosition(null);
+  }, []);
+
+  const copyToClipboard = React.useCallback(async (label: string, value: string) => {
+    if (!value.trim()) {
+      toast.error(`No ${label.toLowerCase()} available to copy.`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error(`Could not copy ${label.toLowerCase()}.`);
+    }
+  }, []);
+
+  const openContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      setContextMenuPosition({
+        x: Math.min(
+          event.clientX,
+          Math.max(CONTEXT_MENU_MARGIN, viewportWidth - CONTEXT_MENU_WIDTH),
+        ),
+        y: Math.min(event.clientY, Math.max(CONTEXT_MENU_MARGIN, viewportHeight - 260)),
+      });
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (!contextMenuPosition) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (contextMenuRef.current?.contains(event.target as Node)) return;
+      closeContextMenu();
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    const handleViewportChange = () => {
+      closeContextMenu();
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("contextmenu", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("contextmenu", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeContextMenu, contextMenuPosition]);
+
+  const submitRename = React.useCallback(() => {
+    const trimmedTitle = nextPageTitle.trim();
+    if (!trimmedTitle) return;
+
+    onRenamePage(page.id, trimmedTitle);
+    setIsRenameDialogOpen(false);
+  }, [nextPageTitle, onRenamePage, page.id]);
+
+  const contextMenuActions = React.useMemo<ContextMenuAction[]>(
+    () => [
+      {
+        label: "Edit",
+        icon: PencilLine,
+        onClick: () => {
+          onEditPage?.(page.id);
+        },
+      },
+      {
+        label: "Rename",
+        icon: FileCode2,
+        onClick: () => {
+          setNextPageTitle(page.title);
+          setIsRenameDialogOpen(true);
+        },
+      },
+      {
+        label: "Copy HTML",
+        icon: Copy,
+        onClick: () => {
+          void copyToClipboard("Page HTML", page.iframeHtml ?? "");
+        },
+      },
+      {
+        label: "Delete",
+        icon: Trash2,
+        destructive: true,
+        disabled: isOnlyPage,
+        onClick: () => {
+          if (isOnlyPage) return;
+          setIsDeleteDialogOpen(true);
+        },
+      },
+    ],
+    [copyToClipboard, isOnlyPage, onEditPage, page.id, page.iframeHtml, page.title],
+  );
+
   const disconnectAutoHeightSync = React.useCallback(() => {
     if (resizeObserverRef.current) {
       resizeObserverRef.current.disconnect();
@@ -337,80 +494,170 @@ export default React.memo(function PageRenderer({
   }, [currentDevice.height, iframeReporterId]);
 
   return (
-    <div className="group relative flex flex-col items-center gap-1">
-      <div className="flex h-[50px] w-full items-center justify-between gap-3 pl-3 pr-1 pb-1">
-        <p
-          className="flex items-center gap-2 font-medium text-foreground"
-          style={{ fontSize: `${titleFontSizePx}px` }}
-        >
-          <FileIcon
-            className="text-muted-foreground"
-            style={{ width: `${titleIconSizePx}px`, height: `${titleIconSizePx}px` }}
-          />
-          {page.title}
-        </p>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100"
-              aria-label={`Open tools for ${page.title}`}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="w-36"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-            }}
-          >
-            <DropdownMenuItem
-              onSelect={() => onEditPage?.(page.id)}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              <PencilLine className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+    <>
       <div
-        className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-transparent shadow-lg transition-all duration-150 group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30"
-        style={{
-          width: `${currentDevice.width}px`,
-          minHeight: `${currentDevice.height}px`,
-          height: hasHtml ? `${iframeHeight}px` : `${currentDevice.height}px`,
+        className="group relative flex flex-col items-center gap-1"
+        onContextMenu={openContextMenu}
+      >
+        <div className="flex h-[50px] w-full items-center gap-3 px-3 pb-1">
+          <p
+            className="flex items-center gap-2 font-medium text-foreground"
+            style={{ fontSize: `${titleFontSizePx}px` }}
+          >
+            <FileIcon
+              className="text-muted-foreground"
+              style={{ width: `${titleIconSizePx}px`, height: `${titleIconSizePx}px` }}
+            />
+            {page.title}
+          </p>
+        </div>
+        <div
+          className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-transparent shadow-lg transition-all duration-150 group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30"
+          style={{
+            width: `${currentDevice.width}px`,
+            minHeight: `${currentDevice.height}px`,
+            height: hasHtml ? `${iframeHeight}px` : `${currentDevice.height}px`,
+          }}
+        >
+          {hasHtml ? (
+            <iframe
+              ref={iframeRef}
+              title={page.title}
+              srcDoc={measuredSrcDoc}
+              onLoad={handleLoad}
+              className="h-full w-full border-0 pointer-events-none bg-background"
+              style={{ overflow: "hidden" }}
+              loading="eager"
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              scrolling="no"
+            />
+          ) : (
+            <GeneratingPreviewPlaceholder />
+          )}
+        </div>
+      </div>
+
+      {contextMenuPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={contextMenuRef}
+              className="fixed z-50 w-[216px] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{
+                left: `${contextMenuPosition.x}px`,
+                top: `${contextMenuPosition.y}px`,
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <div className="px-2 py-1.5 text-sm font-medium">{page.title}</div>
+              <div className="-mx-1 my-1 h-px bg-border" />
+              {contextMenuActions.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden transition-colors",
+                      item.disabled
+                        ? "cursor-not-allowed opacity-50"
+                        : item.destructive
+                          ? "text-destructive hover:bg-destructive/10 focus:bg-destructive/10"
+                          : "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+                    )}
+                    disabled={item.disabled}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={() => {
+                      item.onClick();
+                      closeContextMenu();
+                    }}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-4 w-4",
+                        item.destructive ? "text-destructive" : "text-muted-foreground",
+                      )}
+                    />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
+
+      <Dialog
+        open={isRenameDialogOpen}
+        onOpenChange={(open) => {
+          setIsRenameDialogOpen(open);
+          if (open) {
+            closeContextMenu();
+          }
         }}
       >
-        {hasHtml ? (
-          <iframe
-            ref={iframeRef}
-            title={page.title}
-            srcDoc={measuredSrcDoc}
-            onLoad={handleLoad}
-            className="h-full w-full border-0 pointer-events-none bg-background"
-            style={{ overflow: "hidden" }}
-            loading="eager"
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-            scrolling="no"
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Page</DialogTitle>
+            <DialogDescription>Enter a new name for this page.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={nextPageTitle}
+            onChange={(event) => setNextPageTitle(event.target.value)}
+            placeholder="Page title"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                submitRename();
+              }
+            }}
+            autoFocus
           />
-        ) : (
-          <GeneratingPreviewPlaceholder />
-        )}
-      </div>
-    </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRename}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (open) {
+            closeContextMenu();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Page</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{page.title}&quot;? This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onDeletePage(page.id);
+                setIsDeleteDialogOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 });

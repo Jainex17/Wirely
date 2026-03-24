@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  ALL_PAGES_PROMPT_TARGET_ID,
+  isAllPagesPromptTarget,
   isNewPagePromptTarget,
   NEW_PAGE_PROMPT_TARGET_ID,
   resolvePromptTargetPageId,
@@ -17,6 +19,9 @@ describe("wirePromptTarget helpers", () => {
     expect(resolvePromptTargetPageId(pages, NEW_PAGE_PROMPT_TARGET_ID)).toBe(
       NEW_PAGE_PROMPT_TARGET_ID,
     );
+    expect(resolvePromptTargetPageId(pages, ALL_PAGES_PROMPT_TARGET_ID)).toBe(
+      ALL_PAGES_PROMPT_TARGET_ID,
+    );
     expect(resolvePromptTargetPageId(pages, "missing-page")).toBe("page-1");
     expect(resolvePromptTargetPageId([], "missing-page")).toBeNull();
   });
@@ -25,6 +30,9 @@ describe("wirePromptTarget helpers", () => {
     expect(resolvePromptTargetPageTitle(pages, "page-2")).toBe("Pricing");
     expect(resolvePromptTargetPageTitle(pages, NEW_PAGE_PROMPT_TARGET_ID)).toBe(
       "New page",
+    );
+    expect(resolvePromptTargetPageTitle(pages, ALL_PAGES_PROMPT_TARGET_ID)).toBe(
+      "All pages",
     );
 
     const renamedPages = [
@@ -42,5 +50,11 @@ describe("wirePromptTarget helpers", () => {
     expect(isNewPagePromptTarget(NEW_PAGE_PROMPT_TARGET_ID)).toBe(true);
     expect(isNewPagePromptTarget("page-1")).toBe(false);
     expect(isNewPagePromptTarget(null)).toBe(false);
+  });
+
+  it("recognizes the special all-pages prompt target", () => {
+    expect(isAllPagesPromptTarget(ALL_PAGES_PROMPT_TARGET_ID)).toBe(true);
+    expect(isAllPagesPromptTarget("page-1")).toBe(false);
+    expect(isAllPagesPromptTarget(null)).toBe(false);
   });
 });

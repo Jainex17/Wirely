@@ -268,6 +268,7 @@ export default function Canvas({
                     onDeletePage={onDeletePage}
                     onEditPage={onEditPage}
                     currentDevice={currentDevice}
+                    isOnlyPage={pages.length <= 1}
                     zoom={zoom}
                   />
                 </div>

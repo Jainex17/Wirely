@@ -41,6 +41,8 @@ import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
 import GeminiIcon from "@/components/icons/GeminiIcon";
 import {
+  ALL_PAGES_PROMPT_TARGET_ID,
+  isAllPagesPromptTarget,
   isNewPagePromptTarget,
   NEW_PAGE_PROMPT_TARGET_ID,
   resolvePromptTargetPageId,
@@ -833,6 +835,35 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
+      if (isAllPagesPromptTarget(selectedPageId)) {
+        const targetPageIds = useEditorStore.getState().pages.map((page) => page.id);
+        if (targetPageIds.length === 0) return;
+
+        if (targetPageIds.length === 1) {
+          const generated = await startGenerationForPage({
+            promptText: prompt,
+            targetPageId: targetPageIds[0],
+          });
+
+          if (generated) {
+            setPrompt("");
+          }
+          return;
+        }
+
+        const generated = await startBatchGeneration({
+          promptText: prompt,
+          targetPageIds,
+          createdPageIds: [],
+          modelName: activeModelName,
+        });
+
+        if (generated) {
+          setPrompt("");
+        }
+        return;
+      }
+
       if (isNewPagePromptTarget(selectedPageId)) {
         try {
           const nextPageNumber = useEditorStore.getState().pages.length + 1;
@@ -877,10 +908,12 @@ export default function WirePromptSidebar({
     [
       createPageLocal,
       createPageOnServer,
+      activeModelName,
       onSelectedPageIdChange,
       prompt,
       reportError,
       selectedPageId,
+      startBatchGeneration,
       startGenerationForPage,
     ],
   );
@@ -912,7 +945,9 @@ export default function WirePromptSidebar({
       pages,
       selectedPageId,
     );
-    if (!focusRequestKey || !effectiveSelectedPageId) return;
+    if (!focusRequestKey || (!effectiveSelectedPageId && !isAllPagesPromptTarget(selectedPageId))) {
+      return;
+    }
 
     const frameId = window.requestAnimationFrame(() => {
       const textarea = promptTextareaRef.current;
@@ -1220,7 +1255,6 @@ export default function WirePromptSidebar({
                     : "border-border/60 bg-sidebar/50 text-sidebar-foreground/75"
                 }`}
               >
-                <span className="text-[10px] opacity-70">Editing</span>
                 <span className="max-w-[180px] truncate normal-case tracking-normal text-foreground">
                   {selectedPageTitle}
                 </span>
@@ -1310,6 +1344,12 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
+                  <DropdownMenuItem
+                    onClick={() => onSelectedPageIdChange(ALL_PAGES_PROMPT_TARGET_ID)}
+                    className={dropdownItemClassName}
+                  >
+                    All pages
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => onSelectedPageIdChange(NEW_PAGE_PROMPT_TARGET_ID)}
                     className={dropdownItemClassName}
