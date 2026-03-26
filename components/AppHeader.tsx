@@ -50,7 +50,7 @@ export default function AppHeader({
 
   useEffect(() => {
     router.prefetch("/");
-    router.prefetch("/profile");
+    router.prefetch("/setting/profile");
   }, [router]);
 
   const name = user?.name ?? user?.email ?? "Guest";
@@ -130,7 +130,7 @@ export default function AppHeader({
               align="end"
               className="w-44 border-0 shadow-none"
             >
-              <DropdownMenuItem onClick={() => router.push("/profile")}>
+              <DropdownMenuItem onClick={() => router.push("/setting/profile")}>
                 Profile
               </DropdownMenuItem>
               <DropdownMenuItem

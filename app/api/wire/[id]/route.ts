@@ -870,7 +870,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (userAiSettings.enabledModelIds.length === 0) {
     return applyRateHeaders(
       new Response(
-        "No models are enabled. Enable at least one model in Profile.",
+        "No models are enabled. Enable at least one model in Models.",
         { status: 400 },
       ),
     );
@@ -881,7 +881,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!userAiSettings.enabledModelIds.includes(effectiveModelName)) {
     return applyRateHeaders(
       new Response(
-        `Model ${effectiveModelName} is disabled. Enable it in Profile first.`,
+        `Model ${effectiveModelName} is disabled. Enable it in Models first.`,
         { status: 403 },
       ),
     );
@@ -889,7 +889,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (isGoogleWireModel(effectiveModelName) && !userAiSettings.googleApiKey) {
     return applyRateHeaders(
       new Response(
-        "Google API key is not configured. Add it in Profile to generate output.",
+        "Google API key is not configured. Add it in Providers to generate output.",
         { status: 400 },
       ),
     );
@@ -900,7 +900,7 @@ export async function POST(request: Request, context: RouteContext) {
   ) {
     return applyRateHeaders(
       new Response(
-        "OpenRouter API key is not configured. Add it in Profile to generate output.",
+        "OpenRouter API key is not configured. Add it in Providers to generate output.",
         { status: 400 },
       ),
     );
@@ -997,7 +997,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return applyRateHeaders(
       new Response(
-        `Model ${effectiveModelName} is not available. Enable a supported model in Profile.`,
+        `Model ${effectiveModelName} is not available. Enable a supported model in Models.`,
         { status: 400 },
       ),
     );

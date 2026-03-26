@@ -9,8 +9,8 @@ describe("route loading files", () => {
   });
 
   it("includes profile loading boundary", () => {
-    const source = readFileSync("app/profile/loading.tsx", "utf8");
-    expect(source.includes("export default function ProfileLoading")).toBe(true);
+    const source = readFileSync("app/setting/loading.tsx", "utf8");
+    expect(source.includes("export default function SettingLoading")).toBe(true);
     expect(source.includes("animate-pulse")).toBe(true);
   });
 });

@@ -16,7 +16,10 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/store/useEditorStore";
@@ -88,6 +91,11 @@ const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
 
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
+
+const MODEL_PROVIDER_LABEL = {
+  google: "Google",
+  openrouter: "OpenRouter",
+} as const;
 
 const GENERATION_FAILURE_PREVIEW_HTML = [
   "<!doctype html>",
@@ -703,7 +711,7 @@ export default function WirePromptSidebar({
       }
 
       if (enabledModelIds.length === 0) {
-        reportError("No models are enabled. Enable at least one model in Profile.");
+        reportError("No models are enabled. Enable at least one model in Models.");
         return false;
       }
 
@@ -774,7 +782,7 @@ export default function WirePromptSidebar({
     }) => {
       if (isLoading) return false;
       if (enabledModelIds.length === 0) {
-        reportError("No models are enabled. Enable at least one model in Profile.");
+        reportError("No models are enabled. Enable at least one model in Models.");
         return false;
       }
       const trimmedPrompt = promptText.trim();
@@ -1012,7 +1020,7 @@ export default function WirePromptSidebar({
 
       if (enabledModelIds.length === 0) {
         autoRunRef.current = true;
-        reportError("No models are enabled. Enable at least one model in Profile.");
+        reportError("No models are enabled. Enable at least one model in Models.");
         return;
       }
 
@@ -1176,6 +1184,21 @@ export default function WirePromptSidebar({
   );
 
   const noModelsEnabled = enabledModelIds.length === 0;
+  const groupedEnabledModels = useMemo(() => {
+    const grouped = {
+      google: [] as typeof WIRE_MODEL_OPTIONS,
+      openrouter: [] as typeof WIRE_MODEL_OPTIONS,
+    };
+
+    enabledModelIds.forEach((modelId) => {
+      const model = WIRE_MODEL_OPTIONS.find((option) => option.id === modelId);
+      if (model) {
+        grouped[model.provider].push(model);
+      }
+    });
+
+    return grouped;
+  }, [enabledModelIds]);
   const activeModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
@@ -1234,8 +1257,8 @@ export default function WirePromptSidebar({
             }`}
           >
             No models are enabled. Open{" "}
-            <Link href="/profile" className="underline underline-offset-2">
-              Profile
+            <Link href="/setting/model" className="underline underline-offset-2">
+              Models
             </Link>{" "}
             to enable at least one model.
           </div>
@@ -1303,26 +1326,31 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
-                  {enabledModelIds.map((modelId) => {
-                    const model = WIRE_MODEL_OPTIONS.find((m) => m.id === modelId);
-                    if (!model) return null;
+                  {(["google", "openrouter"] as const).map((provider, index) => {
+                    const providerModels = groupedEnabledModels[provider];
+                    if (providerModels.length === 0) return null;
+
                     return (
-                    <DropdownMenuItem
-                      key={model.id}
-                      onClick={() => handleModelSelection(model.id)}
-                      className={dropdownItemClassName}
-                    >
-                      <div className="flex items-start gap-2">
-                        <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
-                        <div className="flex flex-col">
-                          <span>{model.label}</span>
-                          {model.tier === "paid" ? (
-                            <span className="text-[10px] font-medium text-orange-600">Paid</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                  )})}
+                      <DropdownMenuGroup key={provider}>
+                        {index > 0 ? <DropdownMenuSeparator /> : null}
+                        <DropdownMenuLabel className="px-2 py-1.5 text-xs">
+                          {MODEL_PROVIDER_LABEL[provider]}
+                        </DropdownMenuLabel>
+                        {providerModels.map((model) => (
+                          <DropdownMenuItem
+                            key={model.id}
+                            onClick={() => handleModelSelection(model.id)}
+                            className={dropdownItemClassName}
+                          >
+                            <div className="flex items-start gap-2">
+                              <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
+                              <span>{model.label}</span>
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    );
+                  })}
                   {enabledModelIds.length === 0 ? (
                     <DropdownMenuItem disabled className={dropdownItemClassName}>
                       No models enabled

@@ -13,7 +13,9 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -80,6 +82,11 @@ const PAGE_VARIATION_OPTIONS: Array<{
     hint: "Generate 3 pages with different designs",
   },
 ];
+
+const MODEL_PROVIDER_LABEL: Record<"google" | "openrouter", string> = {
+  google: "Google",
+  openrouter: "OpenRouter",
+};
 
 interface HomeState {
   prompt: string;
@@ -274,9 +281,9 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     if (state.enabledModelIds.length === 0) {
       dispatch({
         type: "patch",
-        payload: { errorMessage: "No models are enabled. Enable at least one model in Profile." },
+        payload: { errorMessage: "No models are enabled. Enable at least one model in Models." },
       });
-      toast.error("No models are enabled. Open Profile to enable one.");
+      toast.error("No models are enabled. Open Models to enable one.");
       return;
     }
     if (selectedModelRequiresMissingKey) {
@@ -286,11 +293,11 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         type: "patch",
         payload: {
           errorMessage:
-            `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Profile or choose another model.`,
+            `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Providers or choose another model.`,
         },
       });
       toast.error(
-        `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Profile or choose another model.`,
+        `Selected model requires ${selectedModelProviderLabel} API key. Configure it in Providers or choose another model.`,
       );
       return;
     }
@@ -437,7 +444,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                         {showConfigureApiKeysCta ? (
                           <>
                             <DropdownMenuItem
-                              onClick={() => router.push("/profile")}
+                              onClick={() => router.push("/setting/provider")}
                               className="text-destructive focus:text-destructive"
                             >
                               <AlertTriangle size={14} className="mr-2" />
@@ -446,24 +453,38 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                             <DropdownMenuSeparator />
                           </>
                         ) : null}
-                        {enabledModelOptions.map((model) => {
+                        {(["google", "openrouter"] as const).map((provider, index) => {
+                          const providerModels = enabledModelOptions.filter(
+                            (model) => model.provider === provider,
+                          );
+                          if (providerModels.length === 0) return null;
+
                           return (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() =>
-                              dispatch({ type: "patch", payload: { selectedModel: model.id } })
-                            }
-                            className="flex items-start gap-2"
-                          >
-                            <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
-                            <div className="flex flex-col">
-                              <span>{model.label}</span>
-                              {model.tier === "paid" ? (
-                                <span className="text-[10px] font-medium text-orange-600">Paid</span>
+                            <DropdownMenuGroup key={provider}>
+                              {index > 0 || showConfigureApiKeysCta ? (
+                                <DropdownMenuSeparator />
                               ) : null}
-                            </div>
-                          </DropdownMenuItem>
-                        )})}
+                              <DropdownMenuLabel className="px-2 py-1.5 text-xs">
+                                {MODEL_PROVIDER_LABEL[provider]}
+                              </DropdownMenuLabel>
+                              {providerModels.map((model) => (
+                                <DropdownMenuItem
+                                  key={model.id}
+                                  onClick={() =>
+                                    dispatch({
+                                      type: "patch",
+                                      payload: { selectedModel: model.id },
+                                    })
+                                  }
+                                  className="flex items-start gap-2"
+                                >
+                                  <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
+                                  <span>{model.label}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuGroup>
+                          );
+                        })}
                         {enabledModelOptions.length === 0 ? (
                           <DropdownMenuItem disabled>
                             No models enabled
@@ -533,10 +554,10 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 <>
                   No models enabled. Update your settings in{" "}
                   <Link
-                    href="/profile"
+                    href="/setting/model"
                     className="text-primary underline underline-offset-2"
                   >
-                    Profile
+                    Models
                   </Link>
                   .
                 </>
@@ -544,10 +565,10 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 <>
                   Enabled models require provider API keys. Configure them in{" "}
                   <Link
-                    href="/profile"
+                    href="/setting/provider"
                     className="text-primary underline underline-offset-2"
                   >
-                    Profile
+                    Providers
                   </Link>{" "}
                   or choose a model that does not require one.
                 </>
