@@ -1,6 +1,6 @@
 "use client";
 
-import { Hand, MousePointer2, Minus, Plus } from "lucide-react";
+import { Hand, Minus, MousePointer2, Plus } from "lucide-react";
 
 interface CanvasToolbarProps {
   activeTool: "select" | "grab";
@@ -61,11 +61,11 @@ export default function CanvasToolbar({
           <Hand className="w-3.5 h-3.5" />
         </button>
       </div>
-
       <div className="h-6 w-px bg-border/70" />
 
       <div className="flex items-center gap-1 px-2">
         <button
+          type="button"
           onClick={handleZoomOut}
           disabled={zoom <= zoomLevels[0]}
           className="p-1.5 text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -75,6 +75,7 @@ export default function CanvasToolbar({
         </button>
 
         <button
+          type="button"
           onClick={onReset}
           className="min-w-13 px-2 py-1 text-sm font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors text-center"
           title="Reset zoom"
@@ -83,6 +84,7 @@ export default function CanvasToolbar({
         </button>
 
         <button
+          type="button"
           onClick={handleZoomIn}
           disabled={zoom >= zoomLevels[zoomLevels.length - 1]}
           className="px-2 py-1 text-xs font-medium text-foreground hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"

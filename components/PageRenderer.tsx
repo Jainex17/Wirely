@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
+import type { PageRenderMode } from "@/lib/canvasScene";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -77,12 +78,17 @@ interface PageRendererProps {
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
   onEditPage?: (pageId: string) => void;
+  onFocusPage?: (pageId: string) => void;
+  onMeasuredHeightChange?: (pageId: string, height: number) => void;
   currentDevice: {
     width: number;
     height: number;
     label: string;
   };
   isOnlyPage: boolean;
+  isFocused: boolean;
+  frameHeight: number;
+  renderMode: PageRenderMode;
   zoom: number;
 }
 
@@ -99,8 +105,13 @@ export default React.memo(function PageRenderer({
   onRenamePage,
   onDeletePage,
   onEditPage,
+  onFocusPage,
+  onMeasuredHeightChange,
   currentDevice,
   isOnlyPage,
+  isFocused,
+  frameHeight,
+  renderMode,
   zoom,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
@@ -121,12 +132,15 @@ export default React.memo(function PageRenderer({
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
-  const [iframeHeight, setIframeHeight] = React.useState(currentDevice.height);
+  const [iframeHeight, setIframeHeight] = React.useState(
+    Math.max(currentDevice.height, frameHeight),
+  );
+  const isLive = renderMode === "live";
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
   const sanitizedHtml = React.useMemo(
-    () => (hasRawHtml ? sanitizeIframeHtml(page.iframeHtml ?? "") : ""),
-    [hasRawHtml, page.iframeHtml],
+    () => (hasRawHtml && isLive ? sanitizeIframeHtml(page.iframeHtml ?? "") : ""),
+    [hasRawHtml, isLive, page.iframeHtml],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
   const iframeReporterId = React.useMemo(
@@ -158,6 +172,14 @@ export default React.memo(function PageRenderer({
     setNextPageTitle(page.title);
   }, [page.title]);
 
+  React.useEffect(() => {
+    setIframeHeight(Math.max(currentDevice.height, frameHeight));
+  }, [currentDevice.height, frameHeight]);
+
+  React.useEffect(() => {
+    onMeasuredHeightChange?.(page.id, Math.max(currentDevice.height, iframeHeight));
+  }, [currentDevice.height, iframeHeight, onMeasuredHeightChange, page.id]);
+
   const closeContextMenu = React.useCallback(() => {
     setContextMenuPosition(null);
   }, []);
@@ -180,6 +202,7 @@ export default React.memo(function PageRenderer({
     (event: React.MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      onFocusPage?.(page.id);
 
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -191,7 +214,7 @@ export default React.memo(function PageRenderer({
         y: Math.min(event.clientY, Math.max(CONTEXT_MENU_MARGIN, viewportHeight - 260)),
       });
     },
-    [],
+    [onFocusPage, page.id],
   );
 
   React.useEffect(() => {
@@ -241,6 +264,7 @@ export default React.memo(function PageRenderer({
         label: "Edit",
         icon: PencilLine,
         onClick: () => {
+          onFocusPage?.(page.id);
           onEditPage?.(page.id);
         },
       },
@@ -270,7 +294,15 @@ export default React.memo(function PageRenderer({
         },
       },
     ],
-    [copyToClipboard, isOnlyPage, onEditPage, page.id, page.iframeHtml, page.title],
+    [
+      copyToClipboard,
+      isOnlyPage,
+      onEditPage,
+      onFocusPage,
+      page.id,
+      page.iframeHtml,
+      page.title,
+    ],
   );
 
   const disconnectAutoHeightSync = React.useCallback(() => {
@@ -398,6 +430,7 @@ export default React.memo(function PageRenderer({
   }, [syncIframeHeight]);
 
   const startAutoHeightSync = React.useCallback(() => {
+    if (!isLive) return;
     disconnectAutoHeightSync();
     let doc: Document | null = null;
     try {
@@ -447,21 +480,37 @@ export default React.memo(function PageRenderer({
     timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 250));
     timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 900));
     timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 1800));
-  }, [disconnectAutoHeightSync, queueIframeHeightSync]);
+  }, [disconnectAutoHeightSync, isLive, queueIframeHeightSync]);
 
   const handleLoad = React.useCallback(() => {
     startAutoHeightSync();
   }, [startAutoHeightSync]);
 
   React.useEffect(() => {
-    setIframeHeight(currentDevice.height);
+    if (!isLive) {
+      disconnectAutoHeightSync();
+      return;
+    }
+
+    setIframeHeight(Math.max(currentDevice.height, frameHeight));
     disconnectAutoHeightSync();
     return () => {
       disconnectAutoHeightSync();
     };
-  }, [currentDevice.height, disconnectAutoHeightSync, page.id, page.iframeHtml]);
+  }, [
+    currentDevice.height,
+    disconnectAutoHeightSync,
+    frameHeight,
+    isLive,
+    page.id,
+    page.iframeHtml,
+  ]);
 
   React.useEffect(() => {
+    if (!isLive) {
+      return;
+    }
+
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
       const data = event.data;
@@ -491,13 +540,16 @@ export default React.memo(function PageRenderer({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [currentDevice.height, iframeReporterId]);
+  }, [currentDevice.height, iframeReporterId, isLive]);
+
+  const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
 
   return (
     <>
       <div
         className="group relative flex flex-col items-center gap-1"
         onContextMenu={openContextMenu}
+        onPointerDown={() => onFocusPage?.(page.id)}
       >
         <div className="flex h-[50px] w-full items-center gap-3 px-3 pb-1">
           <p
@@ -512,14 +564,19 @@ export default React.memo(function PageRenderer({
           </p>
         </div>
         <div
-          className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-transparent shadow-lg transition-all duration-150 group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30"
+          className={cn(
+            "relative overflow-hidden rounded-[var(--radius)] border bg-transparent shadow-lg transition-all duration-150",
+            isFocused
+              ? "border-2 border-sky-500 ring-2 ring-sky-500/20"
+              : "border-border group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30",
+          )}
           style={{
             width: `${currentDevice.width}px`,
             minHeight: `${currentDevice.height}px`,
-            height: hasHtml ? `${iframeHeight}px` : `${currentDevice.height}px`,
+            height: `${pageHeight}px`,
           }}
         >
-          {hasHtml ? (
+          {hasHtml && isLive ? (
             <iframe
               ref={iframeRef}
               title={page.title}
@@ -532,6 +589,16 @@ export default React.memo(function PageRenderer({
               referrerPolicy="no-referrer"
               scrolling="no"
             />
+          ) : hasRawHtml ? (
+            <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
+              <p className="text-sm font-medium text-foreground">Preview offscreen</p>
+              <p className="mt-2 max-w-[280px] text-xs leading-5 text-muted-foreground">
+                This page stays lightweight until it returns to the active viewport.
+              </p>
+              <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {currentDevice.label}
+              </div>
+            </div>
           ) : (
             <GeneratingPreviewPlaceholder />
           )}

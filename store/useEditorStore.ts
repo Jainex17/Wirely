@@ -2,17 +2,45 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { type SectionType } from "@/lib/sectionLayouts";
 import { createSafeLocalStorage } from "@/lib/storage/safeLocalStorage";
+import {
+  type CameraState,
+  type PageBounds,
+  type ViewportSize,
+  CANVAS_TOP_OFFSET,
+  clampZoom,
+  createBounds,
+  createDefaultCamera,
+  fitBounds,
+  getDefaultPageX,
+  getPageBounds,
+  scaleFromZoom,
+  zoomAtViewportPoint as getZoomedCameraAtPoint,
+} from "@/lib/canvasScene";
 
 export type DeviceType = "desktop" | "tablet" | "mobile";
 
+const DEVICE_WIDTHS = {
+  desktop: 1440,
+  tablet: 768,
+  mobile: 375,
+} as const;
+
+const DEVICE_HEIGHTS = {
+  desktop: 900,
+  tablet: 1024,
+  mobile: 812,
+} as const;
+
 export interface CanvasState {
-  zoom: number;
-  panOffset: { x: number; y: number };
+  camera: CameraState;
   activeDevice: DeviceType;
-  isDragging: boolean;
   pendingSaveCount: number;
   pagePositions: Record<string, { x: number; y: number }>;
   pageStackOrder: string[];
+  pageFrameHeights: Record<string, number>;
+  focusedPageId: string | null;
+  requestedGeneratedPageFocusId: string | null;
+  viewportSize: ViewportSize;
 }
 
 export interface SectionData {
@@ -39,18 +67,35 @@ export interface ProjectState {
   draggingSectionId: string | null;
 }
 
+export interface PersistedWireLayout {
+  version?: number;
+  camera?: CameraState;
+  pagePositions?: Record<string, { x: number; y: number }>;
+  pageStackOrder?: string[];
+}
+
 export interface EditorState extends CanvasState, ProjectState {
-  setZoom: (zoom: number) => void;
-  setPanOffset: (offset: { x: number; y: number }) => void;
+  setCamera: (camera: CameraState) => void;
+  panBy: (delta: { x: number; y: number }) => void;
+  zoomAtViewportPoint: (viewportPoint: { x: number; y: number }, zoom: number) => void;
+  resetView: () => void;
+  setViewportSize: (viewportSize: ViewportSize) => void;
   setActiveDevice: (device: DeviceType) => void;
   beginSaving: () => void;
   endSaving: () => void;
   setPagePosition: (pageId: string, position: { x: number; y: number }) => void;
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: {
+    camera?: CameraState;
     pagePositions: Record<string, { x: number; y: number }>;
     pageStackOrder: string[];
   }) => void;
+  setFocusedPage: (pageId: string | null) => void;
+  setPageFrameHeight: (pageId: string, height: number) => void;
+  focusPage: (pageId: string) => void;
+  fitAllPages: () => void;
+  requestGeneratedPageFocusCheck: (pageId: string | null) => void;
+  clearRequestedGeneratedPageFocusCheck: () => void;
   setSelectedSection: (id: string | null) => void;
   setDraggingSection: (id: string | null) => void;
   updateSectionLayout: (sectionId: string, layoutId: string) => void;
@@ -78,13 +123,15 @@ const generateEmptyState = (): Pick<
 });
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
-  zoom: 50,
-  panOffset: { x: 0, y: 0 },
+  camera: createDefaultCamera(),
   activeDevice: "desktop",
-  isDragging: false,
   pendingSaveCount: 0,
   pagePositions: {},
   pageStackOrder: [],
+  pageFrameHeights: {},
+  focusedPageId: "page-home",
+  requestedGeneratedPageFocusId: null,
+  viewportSize: { width: 0, height: 0 },
 };
 
 const createPageId = () => {
@@ -107,6 +154,14 @@ const filterPagePositions = (
     Object.entries(pagePositions).filter(([pageId]) => pageIds.includes(pageId)),
   );
 
+const filterPageFrameHeights = (
+  pageFrameHeights: Record<string, number>,
+  pageIds: string[],
+) =>
+  Object.fromEntries(
+    Object.entries(pageFrameHeights).filter(([pageId]) => pageIds.includes(pageId)),
+  );
+
 const mergePageStackOrder = (pageIds: string[], persistedStackOrder: string[]) => {
   const nextStackOrder = persistedStackOrder.filter((pageId) => pageIds.includes(pageId));
 
@@ -118,14 +173,107 @@ const mergePageStackOrder = (pageIds: string[], persistedStackOrder: string[]) =
   return nextStackOrder;
 };
 
+const getDeviceDimensions = (device: DeviceType) => ({
+  width: DEVICE_WIDTHS[device],
+  height: DEVICE_HEIGHTS[device],
+});
+
+const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
+  const { width: deviceWidth, height: deviceHeight } = getDeviceDimensions(
+    state.activeDevice,
+  );
+  const totalPages = state.pages.length;
+
+  return state.pages.map((page, index) => {
+    const position = state.pagePositions[page.id] ?? {
+      x: getDefaultPageX(index, totalPages, deviceWidth),
+      y: 0,
+    };
+    const frameHeight = Math.max(
+      deviceHeight,
+      state.pageFrameHeights[page.id] ?? deviceHeight,
+    );
+
+    return getPageBounds({
+      pageId: page.id,
+      position,
+      width: deviceWidth,
+      height: frameHeight,
+    });
+  });
+};
+
+const getPageBoundsById = (state: EditorState, pageId: string) =>
+  getPageBoundsCollection(state).find((page) => page.pageId === pageId) ?? null;
+
+const hasUsableViewport = (viewportSize: ViewportSize) =>
+  viewportSize.width > 0 && viewportSize.height > 0;
+
+const getFittedCamera = (state: EditorState) => {
+  const boundsList = getPageBoundsCollection(state);
+  if (boundsList.length === 0 || !hasUsableViewport(state.viewportSize)) {
+    return state.camera;
+  }
+
+  let union = createBounds(
+    boundsList[0].left,
+    boundsList[0].top,
+    boundsList[0].right,
+    boundsList[0].bottom,
+  );
+
+  for (let index = 1; index < boundsList.length; index += 1) {
+    const bounds = boundsList[index];
+    union = createBounds(
+      Math.min(union.left, bounds.left),
+      Math.min(union.top, bounds.top),
+      Math.max(union.right, bounds.right),
+      Math.max(union.bottom, bounds.bottom),
+    );
+  }
+
+  return fitBounds({
+    bounds: union,
+    viewport: state.viewportSize,
+  });
+};
+
 export const useEditorStore = create<EditorState>()(
   persist(
     (set) => ({
       ...DEFAULT_CANVAS_STATE,
       ...generateEmptyState(),
 
-      setZoom: (zoom) => set({ zoom }),
-      setPanOffset: (panOffset) => set({ panOffset }),
+      setCamera: (camera) =>
+        set({
+          camera: {
+            x: camera.x,
+            y: camera.y,
+            zoom: clampZoom(camera.zoom),
+          },
+        }),
+      panBy: (delta) =>
+        set((state) => ({
+          camera: {
+            ...state.camera,
+            x: state.camera.x + delta.x,
+            y: state.camera.y + delta.y,
+          },
+        })),
+      zoomAtViewportPoint: (viewportPoint, zoom) =>
+        set((state) => ({
+          camera: getZoomedCameraAtPoint({
+            camera: state.camera,
+            viewportPoint,
+            viewport: state.viewportSize,
+            nextZoom: zoom,
+          }),
+        })),
+      resetView: () =>
+        set({
+          camera: createDefaultCamera(),
+        }),
+      setViewportSize: (viewportSize) => set({ viewportSize }),
       setActiveDevice: (activeDevice) => set({ activeDevice }),
       beginSaving: () =>
         set((state) => ({ pendingSaveCount: state.pendingSaveCount + 1 })),
@@ -153,15 +301,76 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: nextStackOrder,
           };
         }),
-      hydratePageLayout: ({ pagePositions, pageStackOrder }) =>
+      hydratePageLayout: ({ camera, pagePositions, pageStackOrder }) =>
         set((state) => {
           const pageIds = state.pages.map((page) => page.id);
 
           return {
+            camera: camera
+              ? {
+                  x: camera.x ?? 0,
+                  y: camera.y ?? 0,
+                  zoom: clampZoom(camera.zoom ?? DEFAULT_CANVAS_STATE.camera.zoom),
+                }
+              : createDefaultCamera(),
             pagePositions: filterPagePositions(pagePositions, pageIds),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
+            focusedPageId:
+              state.focusedPageId && pageIds.includes(state.focusedPageId)
+                ? state.focusedPageId
+                : pageIds[0] ?? null,
           };
         }),
+      setFocusedPage: (focusedPageId) => set({ focusedPageId }),
+      setPageFrameHeight: (pageId, height) =>
+        set((state) => {
+          const nextHeight = Math.max(1, Math.round(height));
+          if (state.pageFrameHeights[pageId] === nextHeight) {
+            return state;
+          }
+
+          return {
+            pageFrameHeights: {
+              ...state.pageFrameHeights,
+              [pageId]: nextHeight,
+            },
+          };
+        }),
+      focusPage: (pageId) =>
+        set((state) => {
+          const bounds = getPageBoundsById(state, pageId);
+          if (!bounds || !hasUsableViewport(state.viewportSize)) {
+            return {
+              focusedPageId: pageId,
+            };
+          }
+
+          const nextCamera = fitBounds({
+            bounds,
+            viewport: state.viewportSize,
+            minZoom: state.camera.zoom,
+            maxZoom: state.camera.zoom,
+          });
+
+          return {
+            camera: nextCamera,
+            focusedPageId: pageId,
+          };
+        }),
+      fitAllPages: () =>
+        set((state) => {
+          if (!hasUsableViewport(state.viewportSize)) {
+            return state;
+          }
+
+          return {
+            camera: getFittedCamera(state),
+          };
+        }),
+      requestGeneratedPageFocusCheck: (pageId) =>
+        set({ requestedGeneratedPageFocusId: pageId }),
+      clearRequestedGeneratedPageFocusCheck: () =>
+        set({ requestedGeneratedPageFocusId: null }),
       setSelectedSection: (selectedSectionId) => set({ selectedSectionId }),
       setDraggingSection: (draggingSectionId) => set({ draggingSectionId }),
 
@@ -278,27 +487,22 @@ export const useEditorStore = create<EditorState>()(
             sections: [],
           };
 
-          if (!afterPageId) {
-            return {
-              pages: [...state.pages, newPage],
-              pageStackOrder: [...state.pageStackOrder, newPageId],
-            };
+          let pages = [...state.pages, newPage];
+          if (afterPageId) {
+            const targetIndex = state.pages.findIndex((page) => page.id === afterPageId);
+            if (targetIndex !== -1) {
+              pages = [...state.pages];
+              pages.splice(targetIndex + 1, 0, newPage);
+            }
           }
-
-          const targetIndex = state.pages.findIndex((page) => page.id === afterPageId);
-          if (targetIndex === -1) {
-            return {
-              pages: [...state.pages, newPage],
-              pageStackOrder: [...state.pageStackOrder, newPageId],
-            };
-          }
-
-          const nextPages = [...state.pages];
-          nextPages.splice(targetIndex + 1, 0, newPage);
 
           return {
-            pages: nextPages,
-            pageStackOrder: [...state.pageStackOrder, newPageId],
+            pages,
+            pageStackOrder: mergePageStackOrder(
+              pages.map((page) => page.id),
+              [...state.pageStackOrder, newPageId],
+            ),
+            focusedPageId: newPageId,
           };
         });
 
@@ -332,7 +536,9 @@ export const useEditorStore = create<EditorState>()(
             iframeUrl: undefined,
           };
 
-          return { pages: newPages };
+          return {
+            pages: newPages,
+          };
         }),
 
       hydrateProject: (pages) =>
@@ -348,6 +554,14 @@ export const useEditorStore = create<EditorState>()(
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
+            pageFrameHeights: filterPageFrameHeights(
+              state.pageFrameHeights,
+              nextPageIds,
+            ),
+            focusedPageId:
+              state.focusedPageId && nextPageIds.includes(state.focusedPageId)
+                ? state.focusedPageId
+                : nextPageIds[0] ?? null,
           };
         }),
 
@@ -363,43 +577,60 @@ export const useEditorStore = create<EditorState>()(
             delete newSections[sectionId];
           });
 
+          const nextPages = state.pages.filter((p) => p.id !== pageId);
+          const nextPageIds = nextPages.map((page) => page.id);
+          const nextFocusedPageId =
+            state.focusedPageId === pageId
+              ? nextPageIds[0] ?? null
+              : state.focusedPageId;
+          const nextPageFrameHeights = { ...state.pageFrameHeights };
+          delete nextPageFrameHeights[pageId];
+
           return {
-            pages: state.pages.filter((p) => p.id !== pageId),
+            pages: nextPages,
             sections: newSections,
             selectedSectionId: null,
             pagePositions: Object.fromEntries(
               Object.entries(state.pagePositions).filter(([id]) => id !== pageId),
             ),
+            pageFrameHeights: nextPageFrameHeights,
             pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
+            focusedPageId: nextFocusedPageId,
           };
         }),
 
       resetProject: () =>
         set(() => ({
           ...generateEmptyState(),
-          zoom: 20,
-          panOffset: { x: 0, y: 0 },
+          camera: createDefaultCamera(),
           pagePositions: {},
           pageStackOrder: [],
+          pageFrameHeights: {},
+          focusedPageId: "page-home",
+          requestedGeneratedPageFocusId: null,
+          viewportSize: { width: 0, height: 0 },
         })),
     }),
     {
       name: "wirely-editor-storage",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => createSafeLocalStorage("wirely-editor-storage")),
       partialize: (state) => ({
         activeDevice: state.activeDevice,
       }),
-      migrate: (persistedState, version) => {
-        if (version >= 3) return persistedState;
-        const state = persistedState as Partial<CanvasState> | undefined;
-
-        return {
-          ...persistedState,
-          pagePositions: state?.pagePositions ?? {},
-          pageStackOrder: state?.pageStackOrder ?? [],
-        };
-      },
+      migrate: (persistedState) => persistedState,
     },
   ),
 );
+
+export const getViewportSceneBounds = (state: EditorState) =>
+  createBounds(
+    (-getCanvasLeftAnchor(state) - state.camera.x) / scaleFromZoom(state.camera.zoom),
+    (-CANVAS_TOP_OFFSET - state.camera.y) / scaleFromZoom(state.camera.zoom),
+    (state.viewportSize.width - getCanvasLeftAnchor(state) - state.camera.x) /
+      scaleFromZoom(state.camera.zoom),
+    (state.viewportSize.height - CANVAS_TOP_OFFSET - state.camera.y) /
+      scaleFromZoom(state.camera.zoom),
+  );
+
+const getCanvasLeftAnchor = (state: EditorState) => state.viewportSize.width / 2;

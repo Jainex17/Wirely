@@ -29,6 +29,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 import { resolvePromptTargetPageId } from "@/lib/wirePromptTarget";
+import { createDefaultCamera } from "@/lib/canvasScene";
 
 interface WireEditorProps {
   wireId: string;
@@ -68,6 +69,7 @@ export default function WireEditor({
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
+  const setFocusedPage = useEditorStore((state) => state.setFocusedPage);
   const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
   const pages = useEditorStore((state) => state.pages);
 
@@ -90,16 +92,27 @@ export default function WireEditor({
       if (!raw) return;
 
       const parsed = JSON.parse(raw) as {
+        version?: number;
+        camera?: { x?: number; y?: number; zoom?: number };
         pagePositions?: Record<string, { x: number; y: number }>;
         pageStackOrder?: string[];
       };
 
       hydratePageLayout({
+        camera:
+          parsed.camera && typeof parsed.camera === "object"
+            ? {
+                x: parsed.camera.x ?? 0,
+                y: parsed.camera.y ?? 0,
+                zoom: parsed.camera.zoom ?? createDefaultCamera().zoom,
+              }
+            : createDefaultCamera(),
         pagePositions: parsed.pagePositions ?? {},
         pageStackOrder: parsed.pageStackOrder ?? [],
       });
     } catch {
       hydratePageLayout({
+        camera: createDefaultCamera(),
         pagePositions: {},
         pageStackOrder: [],
       });
@@ -144,6 +157,7 @@ export default function WireEditor({
   };
 
   const handleEditPage = (pageId: string) => {
+    setFocusedPage(pageId);
     setSelectedPromptPageId(pageId);
     setPromptFocusRequestKey((currentKey) => currentKey + 1);
   };

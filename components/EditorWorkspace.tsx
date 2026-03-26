@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { toast } from "@/components/ui/sonner";
+import {
+  getDefaultPageX,
+  getPageBounds,
+  getViewportBounds,
+  isBoundsIntersecting,
+  zoomAtViewportPoint,
+} from "@/lib/canvasScene";
+import { logger } from "@/lib/logger";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
-import { toast } from "@/components/ui/sonner";
-import { logger } from "@/lib/logger";
-
-const MIN_ZOOM = 5;
-const MAX_ZOOM = 200;
-const TRACKPAD_ZOOM_SENSITIVITY = 0.007;
-const MOUSE_WHEEL_ZOOM_SENSITIVITY = 0.0025;
-const CANVAS_TOP_OFFSET = 100;
-const PAGE_GAP = 120;
 
 const DEVICE_WIDTHS = {
   desktop: 1440,
@@ -25,11 +26,17 @@ const DEVICE_HEIGHTS = {
   mobile: 812,
 } as const;
 
+const ZOOM_LEVELS = [5, 10, 25, 50, 75, 100, 125, 150, 200];
+
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
   projectId?: string;
   onEditPage?: (pageId: string) => void;
 }
+
+const isEditableTarget = (target: EventTarget | null) =>
+  target instanceof Element &&
+  Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
 
 export default function EditorWorkspace({
   sidebarMode = "default",
@@ -38,47 +45,89 @@ export default function EditorWorkspace({
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const hasInitializedViewportRef = useRef(false);
-  const panDragRef = useRef<{
-    startX: number;
-    startY: number;
-    initialPanX: number;
-    initialPanY: number;
-  } | null>(null);
   const [activeTool, setActiveTool] = useState<"select" | "grab">("select");
-  const [isPanning, setIsPanning] = useState(false);
+  const [isSpacePanning, setIsSpacePanning] = useState(false);
 
   const {
-    zoom,
-    panOffset,
+    camera,
     activeDevice,
+    pagePositions,
+    pageFrameHeights,
+    pages,
+    requestedGeneratedPageFocusId,
     beginSaving,
     endSaving,
-    setZoom,
-    setPanOffset,
+    setCamera,
+    setViewportSize,
+    resetView,
+    focusPage,
+    fitAllPages,
+    clearRequestedGeneratedPageFocusCheck,
     setSelectedSection,
     renamePage,
     deletePage,
     hydrateProject,
-    pagePositions,
-    pages,
-  } = useEditorStore();
-
-  const handleZoomChange = useCallback(
-    (newZoom: number) => {
-      setZoom(Math.min(Math.max(newZoom, MIN_ZOOM), MAX_ZOOM));
-    },
-    [setZoom],
+  } = useEditorStore(
+    useShallow((state) => ({
+      camera: state.camera,
+      activeDevice: state.activeDevice,
+      pagePositions: state.pagePositions,
+      pageFrameHeights: state.pageFrameHeights,
+      pages: state.pages,
+      requestedGeneratedPageFocusId: state.requestedGeneratedPageFocusId,
+      beginSaving: state.beginSaving,
+      endSaving: state.endSaving,
+      setCamera: state.setCamera,
+      setViewportSize: state.setViewportSize,
+      resetView: state.resetView,
+      focusPage: state.focusPage,
+      fitAllPages: state.fitAllPages,
+      clearRequestedGeneratedPageFocusCheck: state.clearRequestedGeneratedPageFocusCheck,
+      setSelectedSection: state.setSelectedSection,
+      renamePage: state.renamePage,
+      deletePage: state.deletePage,
+      hydrateProject: state.hydrateProject,
+    })),
   );
 
-  const handleReset = useCallback(() => {
-    setZoom(64);
-    setPanOffset({ x: 0, y: 0 });
-  }, [setZoom, setPanOffset]);
+  const currentDeviceWidth = DEVICE_WIDTHS[activeDevice];
+  const currentDeviceHeight = DEVICE_HEIGHTS[activeDevice];
+
+  const pageBoundsById = useMemo(() => {
+    const result = new Map<string, ReturnType<typeof getPageBounds>>();
+    for (const [index, page] of pages.entries()) {
+      const position = pagePositions[page.id] ?? {
+        x: getDefaultPageX(index, pages.length, currentDeviceWidth),
+        y: 0,
+      };
+      const height = Math.max(
+        currentDeviceHeight,
+        pageFrameHeights[page.id] ?? currentDeviceHeight,
+      );
+
+      result.set(
+        page.id,
+        getPageBounds({
+          pageId: page.id,
+          position,
+          width: currentDeviceWidth,
+          height,
+        }),
+      );
+    }
+    return result;
+  }, [
+    currentDeviceHeight,
+    currentDeviceWidth,
+    pageFrameHeights,
+    pagePositions,
+    pages,
+  ]);
 
   const handleCanvasClick = useCallback(() => {
-    if (activeTool === "grab") return;
+    if (activeTool === "grab" || isSpacePanning) return;
     setSelectedSection(null);
-  }, [activeTool, setSelectedSection]);
+  }, [activeTool, isSpacePanning, setSelectedSection]);
 
   const handleRenamePage = useCallback(
     async (pageId: string, newTitle: string) => {
@@ -169,126 +218,22 @@ export default function EditorWorkspace({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || typeof ResizeObserver === "undefined") {
+      return;
+    }
 
-    const handleWheel = (e: WheelEvent) => {
-      const target = e.target;
-      if (
-        target instanceof Element &&
-        target.closest('[data-scroll-lock="modal"]')
-      ) {
-        return;
-      }
-      e.preventDefault();
-
-      const state = useEditorStore.getState();
-      const currentZoom = state.zoom;
-      const currentPanOffset = state.panOffset;
-      const setZoom = state.setZoom;
-      const setPanOffset = state.setPanOffset;
-
-      if (e.ctrlKey || e.metaKey) {
-        const delta = -e.deltaY;
-        const isLikelyMouseWheel =
-          e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL ||
-          Math.abs(e.deltaY) >= 40;
-        const sensitivity = isLikelyMouseWheel
-          ? MOUSE_WHEEL_ZOOM_SENSITIVITY
-          : TRACKPAD_ZOOM_SENSITIVITY;
-        const zoomFactor = Math.exp(delta * sensitivity);
-        const newZoom = Math.min(
-          Math.max(currentZoom * zoomFactor, MIN_ZOOM),
-          MAX_ZOOM,
-        );
-
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        const canvasCenterX = rect.width / 2;
-        const canvasTopOffset = 100;
-
-        const contentX =
-          (mouseX - canvasCenterX - currentPanOffset.x) / (currentZoom / 100);
-        const contentY =
-          (mouseY - canvasTopOffset - currentPanOffset.y) / (currentZoom / 100);
-
-        const newPanX = mouseX - canvasCenterX - contentX * (newZoom / 100);
-        const newPanY = mouseY - canvasTopOffset - contentY * (newZoom / 100);
-
-        setZoom(newZoom);
-        setPanOffset({ x: newPanX, y: newPanY });
-      } else {
-        setPanOffset({
-          x: currentPanOffset.x - e.deltaX * 0.6,
-          y: currentPanOffset.y - e.deltaY * 0.6,
-        });
-      }
-    };
-
-    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      setViewportSize({ width, height });
+    });
+    resizeObserver.observe(canvas);
 
     return () => {
-      canvas.removeEventListener("wheel", handleWheel);
+      resizeObserver.disconnect();
     };
-  }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const stopPanning = () => {
-      panDragRef.current = null;
-      setIsPanning(false);
-    };
-
-    const handleMouseDown = (e: MouseEvent) => {
-      if (activeTool !== "grab" || e.button !== 0) return;
-
-      const target = e.target;
-      if (
-        target instanceof Element &&
-        target.closest('[data-scroll-lock="modal"]')
-      ) {
-        return;
-      }
-
-      e.preventDefault();
-      const state = useEditorStore.getState();
-      panDragRef.current = {
-        startX: e.clientX,
-        startY: e.clientY,
-        initialPanX: state.panOffset.x,
-        initialPanY: state.panOffset.y,
-      };
-      setIsPanning(true);
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const dragState = panDragRef.current;
-      if (!dragState) return;
-
-      const deltaX = e.clientX - dragState.startX;
-      const deltaY = e.clientY - dragState.startY;
-      useEditorStore.getState().setPanOffset({
-        x: dragState.initialPanX + deltaX,
-        y: dragState.initialPanY + deltaY,
-      });
-    };
-
-    canvas.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", stopPanning);
-    window.addEventListener("blur", stopPanning);
-
-    return () => {
-      canvas.removeEventListener("mousedown", handleMouseDown);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", stopPanning);
-      window.removeEventListener("blur", stopPanning);
-      stopPanning();
-    };
-  }, [activeTool]);
+  }, [setViewportSize]);
 
   useEffect(() => {
     hasInitializedViewportRef.current = false;
@@ -299,66 +244,142 @@ export default function EditorWorkspace({
     if (!canvas || pages.length === 0) return;
     if (hasInitializedViewportRef.current) return;
 
-    const pageWidth = DEVICE_WIDTHS[activeDevice];
-    const pageHeight = DEVICE_HEIGHTS[activeDevice];
-    const defaultTotalWidth =
-      pages.length * pageWidth + Math.max(0, pages.length - 1) * PAGE_GAP;
-    const scale = zoom / 100;
-    const viewportLeft = -panOffset.x / scale;
-    const viewportTop = -panOffset.y / scale;
-    const viewportRight = viewportLeft + canvas.clientWidth / scale;
-    const viewportBottom = viewportTop + canvas.clientHeight / scale;
-
-    const hasVisiblePage = pages.some((page, index) => {
-      const fallbackX = index * (pageWidth + PAGE_GAP) - defaultTotalWidth / 2;
-      const position = pagePositions[page.id] ?? { x: fallbackX, y: 0 };
-      const pageLeft = position.x;
-      const pageTop = position.y;
-      const pageRight = pageLeft + pageWidth;
-      const pageBottom = pageTop + pageHeight;
-
-      return (
-        pageRight > viewportLeft &&
-        pageLeft < viewportRight &&
-        pageBottom > viewportTop &&
-        pageTop < viewportBottom
-      );
+    const viewportBounds = getViewportBounds(camera, {
+      width: canvas.clientWidth,
+      height: canvas.clientHeight,
+    });
+    const hasVisiblePage = pages.some((page) => {
+      const bounds = pageBoundsById.get(page.id);
+      return bounds ? isBoundsIntersecting(bounds, viewportBounds) : false;
     });
 
     hasInitializedViewportRef.current = true;
-    if (hasVisiblePage) return;
+    if (!hasVisiblePage) {
+      focusPage(pages[0].id);
+    }
+  }, [camera, focusPage, pageBoundsById, pages]);
 
-    const targetPage = pages[0];
-    if (!targetPage) return;
+  useEffect(() => {
+    if (!requestedGeneratedPageFocusId || !canvasRef.current) {
+      return;
+    }
 
-    const fallbackX = -defaultTotalWidth / 2;
-    const targetPosition = pagePositions[targetPage.id] ?? { x: fallbackX, y: 0 };
-    const centeredPanX = canvas.clientWidth / 2 - (targetPosition.x + pageWidth / 2) * scale;
-    const centeredPanY = CANVAS_TOP_OFFSET + 48 - targetPosition.y * scale;
-
-    setPanOffset({
-      x: centeredPanX,
-      y: centeredPanY,
+    const viewportBounds = getViewportBounds(camera, {
+      width: canvasRef.current.clientWidth,
+      height: canvasRef.current.clientHeight,
     });
-  }, [activeDevice, pagePositions, pages, panOffset.x, panOffset.y, projectId, setPanOffset, zoom]);
+    const pageBounds = pageBoundsById.get(requestedGeneratedPageFocusId);
+
+    if (pageBounds && !isBoundsIntersecting(pageBounds, viewportBounds)) {
+      focusPage(requestedGeneratedPageFocusId);
+    }
+
+    clearRequestedGeneratedPageFocusCheck();
+  }, [
+    camera,
+    clearRequestedGeneratedPageFocusCheck,
+    focusPage,
+    pageBoundsById,
+    requestedGeneratedPageFocusId,
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        if (!event.repeat) {
+          setIsSpacePanning(true);
+        }
+        event.preventDefault();
+        return;
+      }
+
+      if (event.key === "0") {
+        resetView();
+        event.preventDefault();
+        return;
+      }
+
+      if (event.shiftKey && event.key === "1") {
+        fitAllPages();
+        event.preventDefault();
+        return;
+      }
+
+      if (event.key === "=" || event.key === "+") {
+        const nextZoom =
+          ZOOM_LEVELS.find((level) => level > camera.zoom) ??
+          ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+        setCamera(
+          zoomAtViewportPoint({
+            camera,
+            viewportPoint: {
+              x: (canvasRef.current?.clientWidth ?? 0) / 2,
+              y: (canvasRef.current?.clientHeight ?? 0) / 2,
+            },
+            viewport: useEditorStore.getState().viewportSize,
+            nextZoom,
+          }),
+        );
+        event.preventDefault();
+        return;
+      }
+
+      if (event.key === "-") {
+        const currentIndex = ZOOM_LEVELS.findIndex((level) => level >= camera.zoom);
+        const nextZoom =
+          currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : ZOOM_LEVELS[0];
+        setCamera(
+          zoomAtViewportPoint({
+            camera,
+            viewportPoint: {
+              x: (canvasRef.current?.clientWidth ?? 0) / 2,
+              y: (canvasRef.current?.clientHeight ?? 0) / 2,
+            },
+            viewport: useEditorStore.getState().viewportSize,
+            nextZoom,
+          }),
+        );
+        event.preventDefault();
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        setIsSpacePanning(false);
+      }
+    };
+
+    const handleBlur = () => {
+      setIsSpacePanning(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [camera, fitAllPages, resetView, setCamera]);
 
   return (
-    <div data-sidebar-mode={sidebarMode} className="relative w-full h-full">
+    <div data-sidebar-mode={sidebarMode} className="relative h-full w-full">
       <Canvas
         canvasRef={canvasRef}
         projectId={projectId}
-        panOffset={panOffset}
-        zoom={zoom}
-        activeDevice={activeDevice}
         activeTool={activeTool}
-        isPanning={isPanning}
+        isSpacePanning={isSpacePanning}
         onCanvasClick={handleCanvasClick}
         onRenamePage={handleRenamePage}
         onDeletePage={handleDeletePage}
         onEditPage={onEditPage}
         onToolChange={setActiveTool}
-        onZoomChange={handleZoomChange}
-        onReset={handleReset}
       />
     </div>
   );

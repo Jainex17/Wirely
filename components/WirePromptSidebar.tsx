@@ -253,6 +253,9 @@ export default function WirePromptSidebar({
   const deletePageLocal = useEditorStore((state) => state.deletePage);
   const beginSaving = useEditorStore((state) => state.beginSaving);
   const endSaving = useEditorStore((state) => state.endSaving);
+  const requestGeneratedPageFocusCheck = useEditorStore(
+    (state) => state.requestGeneratedPageFocusCheck,
+  );
 
   const clearPendingGeneration = useCallback(() => {
     pendingTargetPageIdRef.current = null;
@@ -663,6 +666,7 @@ export default function WirePromptSidebar({
         }
 
         setPageHtml(targetPageId, initialNormalized.html);
+        requestGeneratedPageFocusCheck(targetPageId);
         void persistPageHtml(targetPageId, initialNormalized.html).catch(
           (error) => {
             logger.error("wire_page_persist_failed", {
