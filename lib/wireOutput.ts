@@ -1,4 +1,5 @@
 const DETAILS_MARKER = "DETAILS:";
+const TITLE_MARKER = "TITLE:";
 const HTML_MARKER = "HTML:";
 
 const REQUIRED_VIEWPORT =
@@ -24,11 +25,13 @@ const UNSAFE_INLINE_SCRIPT_PATTERN =
 export interface WireParsedOutput {
   raw: string;
   details: string;
+  title: string;
   html: string;
 }
 
 export interface WireParsedBatchOutput {
   details: string;
+  titleByIndex: string[];
   htmlByIndex: string[];
 }
 
@@ -66,6 +69,8 @@ const extractHtmlFallback = (value: string) => {
 
 const BATCH_HTML_MARKER_PATTERN =
   /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?(?:(?:VARIANT|VARIATION)[_\s-]*(\d+)(?:[_\s-]*HTML)?|HTML[_\s-]*(\d+))(?:\*\*)?\s*:?\s*/gim;
+const BATCH_TITLE_MARKER_PATTERN =
+  /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?TITLE[_\s-]*(\d+)(?:\*\*)?\s*:?\s*/gim;
 
 const extractHtmlDocuments = (value: string) => {
   const doctypeDocuments = Array.from(
@@ -85,25 +90,85 @@ const extractFirstHtmlDocument = (value: string) => {
   return documents[0] ?? value.trim();
 };
 
+const extractMarkerSection = ({
+  source,
+  marker,
+  nextMarkers,
+}: {
+  source: string;
+  marker: string;
+  nextMarkers: string[];
+}) => {
+  const upperSource = source.toUpperCase();
+  const markerIndex = upperSource.indexOf(marker.toUpperCase());
+  if (markerIndex === -1) return "";
+
+  const start = markerIndex + marker.length;
+  const end = nextMarkers
+    .map((candidate) => upperSource.indexOf(candidate.toUpperCase(), start))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right)[0];
+
+  return source.slice(start, end ?? source.length).trim();
+};
+
+const extractIndexedMarkerSections = ({
+  source,
+  baseMarker,
+  expectedCount,
+}: {
+  source: string;
+  baseMarker: "TITLE" | "HTML";
+  expectedCount: number;
+}) => {
+  const values = Array.from({ length: expectedCount }, () => "");
+
+  for (let index = 1; index <= expectedCount; index += 1) {
+    const marker = `${baseMarker}_${index}:`;
+    const section = extractMarkerSection({
+      source,
+      marker,
+      nextMarkers:
+        baseMarker === "TITLE"
+          ? [`HTML_${index}:`]
+          : Array.from({ length: expectedCount - index }, (_, offset) => [
+              `TITLE_${index + offset + 1}:`,
+              `HTML_${index + offset + 1}:`,
+            ]).flat(),
+    });
+    values[index - 1] = section.trim();
+  }
+
+  return values;
+};
+
 export const parseWireOutput = (raw: string): WireParsedOutput => {
   const source = stripCodeFences(raw ?? "");
   const upperSource = source.toUpperCase();
-  const detailsIndex = upperSource.indexOf(DETAILS_MARKER);
-  const htmlIndex = upperSource.indexOf(HTML_MARKER);
-  const nextSectionIndex = (startIndex: number, candidates: number[]) => {
-    const next = candidates
-      .filter((index) => index > startIndex)
-      .sort((a, b) => a - b)[0];
-    return next ?? source.length;
-  };
+  const title = extractMarkerSection({
+    source,
+    marker: TITLE_MARKER,
+    nextMarkers: [HTML_MARKER],
+  });
+  const details = extractMarkerSection({
+    source,
+    marker: DETAILS_MARKER,
+    nextMarkers: [TITLE_MARKER, HTML_MARKER],
+  });
+  const html = extractMarkerSection({
+    source,
+    marker: HTML_MARKER,
+    nextMarkers: [],
+  });
 
-  if (detailsIndex === -1 && htmlIndex === -1) {
+  if (!details && !title && !html) {
     const htmlLikeStart = source.search(/<!doctype html>|<html[\s>]|<body[\s>]/i);
     if (htmlLikeStart === -1) {
       const trimmed = source.trim();
       return {
         raw: source,
         details: trimmed,
+        title: "",
         html: extractHtmlFallback(source),
       };
     }
@@ -111,31 +176,29 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
     return {
       raw: source,
       details: source.slice(0, htmlLikeStart).trim(),
+      title: "",
       html: source.slice(htmlLikeStart).trim() || extractHtmlFallback(source),
     };
   }
 
-  const details = (() => {
-    if (detailsIndex === -1) {
-      if (htmlIndex > 0) {
-        return source.slice(0, htmlIndex).trim();
-      }
-      return "";
-    }
-    const start = detailsIndex + DETAILS_MARKER.length;
-    const end = nextSectionIndex(start, [htmlIndex]);
-    return source.slice(start, end).trim();
-  })();
-
-  const html = (() => {
-    if (htmlIndex === -1) return "";
-    const start = htmlIndex + HTML_MARKER.length;
-    return source.slice(start).trim();
-  })();
+  if (!details && !title && html) {
+    const htmlIndex = upperSource.indexOf(HTML_MARKER);
+    const htmlLikeStart =
+      htmlIndex >= 0
+        ? htmlIndex
+        : source.search(/<!doctype html>|<html[\s>]|<body[\s>]/i);
+    return {
+      raw: source,
+      details: htmlLikeStart > 0 ? source.slice(0, htmlLikeStart).trim() : "",
+      title: "",
+      html: html || extractHtmlFallback(source),
+    };
+  }
 
   return {
     raw: source,
     details,
+    title,
     html: html || extractHtmlFallback(source),
   };
 };
@@ -182,9 +245,20 @@ export const parseBatchWireOutput = (
     if (!firstDocument) return -1;
     return source.indexOf(firstDocument);
   })();
-  const firstHtmlBoundaryIndex =
-    markerMatches[0]?.markerIndex ??
-    (firstHtmlDocumentIndex >= 0 ? firstHtmlDocumentIndex : source.length);
+  const titleMarkerMatches = Array.from(source.matchAll(BATCH_TITLE_MARKER_PATTERN))
+    .map((match) => {
+      const fullMatch = match[0] ?? "";
+      const matchStart = match.index ?? 0;
+      const markerOffset = fullMatch.search(/[^\n]/);
+      return matchStart + (markerOffset >= 0 ? markerOffset : 0);
+    })
+    .filter((markerIndex) => Number.isFinite(markerIndex))
+    .sort((a, b) => a - b);
+  const firstHtmlBoundaryIndex = [
+    markerMatches[0]?.markerIndex ?? source.length,
+    titleMarkerMatches[0] ?? source.length,
+    firstHtmlDocumentIndex >= 0 ? firstHtmlDocumentIndex : source.length,
+  ].reduce((min, current) => Math.min(min, current), source.length);
   const details =
     detailsIndex >= 0
       ? source
@@ -201,6 +275,11 @@ export const parseBatchWireOutput = (
     maxCountFromMarkers,
     htmlDocuments.length,
   );
+  const titleByIndex = extractIndexedMarkerSections({
+    source,
+    baseMarker: "TITLE",
+    expectedCount: totalCount,
+  });
   const htmlByIndex = Array.from({ length: totalCount }, () => "");
 
   for (let i = 0; i < markerMatches.length; i += 1) {
@@ -236,7 +315,7 @@ export const parseBatchWireOutput = (
     documentCursor += 1;
   }
 
-  return { details, htmlByIndex };
+  return { details, titleByIndex, htmlByIndex };
 };
 
 const getScriptSrc = (scriptTag: string) => {

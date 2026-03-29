@@ -1,33 +1,61 @@
-import { streamText } from "ai";
+import { createDataStreamResponse, generateObject, generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
-  composeGenerateSystemPrompt,
-  selectWireStylePreset,
-  type WireStylePreset,
-} from "@/lib/wirePrompt";
+  buildFallbackCritiqueReport,
+  critiqueReportSchema,
+  hasCriticalQualityViolations,
+  isAcceptedGeneratedOutput,
+  normalizeCritiqueReport,
+  shouldRepairGeneratedOutput,
+} from "@/lib/wireCritique";
 import {
-  parseBatchWireOutput,
-  parseWireOutput,
-  userExplicitlyRequestedImages,
-} from "@/lib/wireOutput";
+  createGenerationOutputs,
+  createGenerationRun,
+  updateGenerationOutput,
+  updateGenerationRun,
+} from "@/lib/db/queries/generationRuns";
+import {
+  appendConversationMessage,
+  getProjectForUser,
+  listProjectPagesForUser,
+  updateProjectPageForUser,
+} from "@/lib/db/queries/projects";
+import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
+import {
+  buildAssistantContent,
+  composeCritiquePrompt,
+  composePlannerPrompt,
+  composePlannedGenerateSystemPrompt,
+  composeRepairPrompt,
+  resolveRequestedMode,
+  resolveStylePresetForPlan,
+} from "@/lib/wireGenerationPrompts";
+import { buildFallbackDesignPlan } from "@/lib/wireFallbackPlan";
+import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
+import {
+  designPlanSchema,
+  validateDesignPlan,
+  type GenerationMode,
+} from "@/lib/wireGenerationTypes";
+import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { logger } from "@/lib/logger";
+import {
+  evaluateWireHtmlQuality,
+  type WireQualityReport,
+} from "@/lib/wireQuality";
 import {
   isGoogleWireModel,
   isOpenRouterWireModel,
   isWireModelName,
+  resolveFastWireModelForStage,
   type WireModelName,
 } from "@/lib/wireModels";
+import { normalizeGeneratedHtml, parseWireOutput, userExplicitlyRequestedImages } from "@/lib/wireOutput";
 import { getRequestSessionUser } from "@/lib/auth/session";
-import {
-  appendConversationMessage,
-  getProjectPageForUser,
-  getProjectForUser,
-} from "@/lib/db/queries/projects";
-import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
-import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
-import { logger } from "@/lib/logger";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
+import { selectWireStylePreset } from "@/lib/wirePrompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,11 +75,12 @@ type CompactHistoryMessage = {
 };
 
 type WireRequestBody = {
-  wireId?: string;
+  wireId?: unknown;
   messages?: unknown;
   modelName?: unknown;
   promptText?: unknown;
   targetPageId?: unknown;
+  targetPageIds?: unknown;
   targetPageTitle?: unknown;
   targetPageHtml?: unknown;
   compactHistory?: unknown;
@@ -71,7 +100,9 @@ const MAX_COMPACT_HISTORY_COUNT = 24;
 const MAX_TARGET_PAGE_ID_LENGTH = 128;
 const MAX_TARGET_PAGE_TITLE_LENGTH = 200;
 const MAX_TARGET_PAGE_HTML_LENGTH = 250_000;
+const MAX_TARGET_PAGE_BATCH_COUNT = 3;
 const MAX_VARIATION_THEME_HINT_LENGTH = 2_000;
+const MIN_FALLBACK_ACCEPTANCE_SCORE = 68;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -80,7 +111,8 @@ const isIntegerInRange = (
   value: unknown,
   min: number,
   max: number,
-): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+): value is number =>
+  Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 
 const validateRequestBody = (body: WireRequestBody) => {
   if (body.wireId !== undefined) {
@@ -111,6 +143,23 @@ const validateRequestBody = (body: WireRequestBody) => {
     }
     if (body.targetPageId.length > MAX_TARGET_PAGE_ID_LENGTH) {
       return `targetPageId is too long (max ${MAX_TARGET_PAGE_ID_LENGTH} chars).`;
+    }
+  }
+
+  if (body.targetPageIds !== undefined) {
+    if (!Array.isArray(body.targetPageIds)) {
+      return "targetPageIds must be an array.";
+    }
+    if (body.targetPageIds.length === 0 || body.targetPageIds.length > MAX_TARGET_PAGE_BATCH_COUNT) {
+      return `targetPageIds must have between 1 and ${MAX_TARGET_PAGE_BATCH_COUNT} items.`;
+    }
+    for (const [index, pageId] of body.targetPageIds.entries()) {
+      if (typeof pageId !== "string") {
+        return `targetPageIds[${index}] must be a string.`;
+      }
+      if (pageId.length > MAX_TARGET_PAGE_ID_LENGTH) {
+        return `targetPageIds[${index}] is too long (max ${MAX_TARGET_PAGE_ID_LENGTH} chars).`;
+      }
     }
   }
 
@@ -377,6 +426,23 @@ const parsePromptText = (value: unknown) => {
 const parseOptionalString = (value: unknown, maxLength = MAX_TARGET_PAGE_TITLE_LENGTH) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 
+const parseVariationCount = (value: unknown) => {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return 1;
+  }
+  if (value < 1) return 1;
+  if (value > 3) return 3;
+  return value;
+};
+
+const parseTargetPageIds = (value: unknown) =>
+  Array.isArray(value)
+    ? value
+        .filter((pageId): pageId is string => typeof pageId === "string")
+        .map((pageId) => pageId.trim().slice(0, MAX_TARGET_PAGE_ID_LENGTH))
+        .filter(Boolean)
+    : [];
+
 const buildPageScopedPrompt = ({
   userPrompt,
   targetPageId,
@@ -404,51 +470,10 @@ const buildPageScopedPrompt = ({
   ].join("\n");
 };
 
-const buildModelMessages = ({
-  compactHistory,
-  fallbackMessages,
-  scopedUserPrompt,
-  plainUserPrompt,
-}: {
-  compactHistory: CompactHistoryMessage[];
-  fallbackMessages: WireMessage[];
-  scopedUserPrompt: string;
-  plainUserPrompt: string;
-}): WireMessage[] => {
-  const baseHistory: WireMessage[] =
-    compactHistory.length > 0
-      ? compactHistory.map((message) => ({
-          role: message.role,
-          content: message.content,
-        }))
-      : fallbackMessages.filter(
-          (message) =>
-            (message.role === "user" || message.role === "assistant") &&
-            message.content.trim().length > 0,
-        );
-
-  const normalizedPrompt = plainUserPrompt.trim();
-  if (baseHistory.length > 0) {
-    const last = baseHistory[baseHistory.length - 1];
-    if (last.role === "user" && last.content.trim() === normalizedPrompt) {
-      baseHistory.pop();
-    }
-  }
-
-  return [...baseHistory, { role: "user", content: scopedUserPrompt }];
-};
-
 const extractAssistantSummary = (assistantContent: string) => {
-  const parsedBatch = parseBatchWireOutput(assistantContent);
-  const batchDetails = parsedBatch.details.trim();
-  if (batchDetails) {
-    return batchDetails.slice(0, 1200);
-  }
-
-  const parsedSingle = parseWireOutput(assistantContent);
-  const details = parsedSingle.details.trim();
-  if (details) {
-    return details.slice(0, 1200);
+  const parsed = parseWireOutput(assistantContent);
+  if (parsed.details.trim()) {
+    return parsed.details.trim().slice(0, 1200);
   }
 
   const stripped = assistantContent
@@ -460,96 +485,6 @@ const extractAssistantSummary = (assistantContent: string) => {
   }
 
   return "Generated updated HTML.";
-};
-
-const parseVariationCount = (value: unknown) => {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return 1;
-  }
-  if (value < 1) return 1;
-  if (value > 3) return 3;
-  return value;
-};
-
-const parseVariationIndex = (value: unknown, variationCount: number) => {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return undefined;
-  }
-  if (value < 1) return 1;
-  if (value > variationCount) return variationCount;
-  return value;
-};
-
-const parseVariationThemeHints = (value: string, variationCount: number) => {
-  const hints = value
-    .split("||")
-    .map((hint) => hint.trim())
-    .filter(Boolean);
-
-  const fallback = [
-    "Editorial minimal layout with restrained monochrome palette and precise typography.",
-    "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
-    "Warm handcrafted aesthetic with organic forms, textured surfaces, and soft tones.",
-  ];
-
-  return Array.from({ length: variationCount }, (_, index) => {
-    return hints[index] ?? fallback[index] ?? `Design direction ${index + 1}`;
-  });
-};
-
-const buildVariationPrompt = ({
-  variationIndex,
-  variationCount,
-  variationThemeHint,
-}: {
-  variationIndex: number;
-  variationCount: number;
-  variationThemeHint: string;
-}) => {
-  return [
-    "Variation directive:",
-    `- This output is variation ${variationIndex} of ${variationCount}.`,
-    `- Anchor style direction to this theme hint: ${variationThemeHint}.`,
-    "- Make this variation clearly and substantially different from the others in theme, color system, typography choices, spacing rhythm, layout composition, and interaction style.",
-    "- Do not produce minor tweaks of the same design. Treat this as a distinct art direction.",
-  ].join("\n");
-};
-
-const buildBatchVariationPrompt = ({
-  variationCount,
-  variationThemeHints,
-}: {
-  variationCount: number;
-  variationThemeHints: string[];
-}) => {
-  const themeHintLines = variationThemeHints
-    .map((hint, index) => `- Variation ${index + 1}: ${hint}`)
-    .join("\n");
-
-  return [
-    "Batch variation directive:",
-    "- Ignore prior single-page output formatting rules and follow this batch format strictly.",
-    `- Generate ${variationCount} substantially different design variants in a single response.`,
-    "- Each variant must be unique in theme, color system, typography, layout composition, and interaction style.",
-    "- Do not output minor tweaks of one design.",
-    "- Use these theme anchors:",
-    themeHintLines,
-    "Output format requirements for batch mode:",
-    "- Keep DETAILS as short summary text (2 sentences max).",
-    `- Then provide exactly ${variationCount} HTML sections named HTML_1:, HTML_2:, ... up to HTML_${variationCount}:`,
-    "- Each HTML_n section must contain a complete HTML document starting with <!doctype html>.",
-    "- Do not include a plain HTML: section in batch mode.",
-  ].join("\n");
-};
-
-const logQualityTelemetry = (_: {
-  text: string;
-  stylePreset: WireStylePreset;
-  allowImages: boolean;
-  userPrompt: string;
-  modelName: string;
-}) => {
-  void _;
 };
 
 const persistConversationTurn = async ({
@@ -587,110 +522,214 @@ const persistConversationTurn = async ({
   }
 };
 
-const streamWithGoogleModel = async ({
-  projectId,
+const getLanguageModel = ({
   modelName,
   googleApiKey,
-  messages,
-  systemPrompt,
-  stylePreset,
-  allowImages,
-  userPrompt,
-  targetPageId,
+  openRouterApiKey,
 }: {
-  projectId: string;
   modelName: WireModelName;
-  googleApiKey: string;
-  messages: WireMessage[];
-  systemPrompt: string;
-  stylePreset: WireStylePreset;
-  allowImages: boolean;
-  userPrompt: string;
-  targetPageId?: string;
+  googleApiKey?: string | null;
+  openRouterApiKey?: string | null;
 }) => {
-  const googleProvider = createGoogleGenerativeAI({ apiKey: googleApiKey });
-  return streamText({
-    model: googleProvider(modelName),
-    messages,
-    system: systemPrompt,
-    onError: ({ error }) => {
-      logger.error("wire_gemini_stream_error", {
-        modelName,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-        responseBody: getErrorBody(error),
-        error: serializeError(error),
-      });
-    },
-    onFinish: ({ text }) => {
-      logQualityTelemetry({
-        text,
-        stylePreset,
-        allowImages,
-        userPrompt,
-        modelName,
-      });
-      void persistConversationTurn({
-        projectId,
-        userPrompt,
-        assistantSummary: extractAssistantSummary(text),
-        targetPageId,
-      });
-    },
-  });
+  if (isGoogleWireModel(modelName)) {
+    const provider = createGoogleGenerativeAI({ apiKey: googleApiKey as string });
+    return provider(modelName);
+  }
+
+  const provider = createOpenRouter({ apiKey: openRouterApiKey as string });
+  return provider(modelName);
 };
 
-const streamWithOpenRouterModel = async ({
-  projectId,
-  modelName,
-  openRouterApiKey,
-  messages,
-  systemPrompt,
-  stylePreset,
-  allowImages,
-  userPrompt,
-  targetPageId,
-}: {
-  projectId: string;
-  modelName: WireModelName;
-  openRouterApiKey: string;
-  messages: WireMessage[];
-  systemPrompt: string;
-  stylePreset: WireStylePreset;
-  allowImages: boolean;
-  userPrompt: string;
-  targetPageId?: string;
-}) => {
-  const openRouterProvider = createOpenRouter({ apiKey: openRouterApiKey });
-  return streamText({
-    model: openRouterProvider(modelName),
-    messages,
-    system: systemPrompt,
-    onError: ({ error }) => {
-      logger.error("wire_openrouter_stream_error", {
-        modelName,
-        status: getStatusCode(error),
-        message: getErrorMessage(error),
-        responseBody: getErrorBody(error),
-        error: serializeError(error),
-      });
+const createAssistantResponse = (content: string) =>
+  createDataStreamResponse({
+    headers: {
+      "cache-control": "no-store, no-transform",
     },
-    onFinish: ({ text }) => {
-      logQualityTelemetry({
-        text,
-        stylePreset,
-        allowImages,
-        userPrompt,
-        modelName,
-      });
-      void persistConversationTurn({
-        projectId,
-        userPrompt,
-        assistantSummary: extractAssistantSummary(text),
-        targetPageId,
-      });
+    execute: async (dataStream) => {
+      dataStream.write(`f:${JSON.stringify({ messageId: crypto.randomUUID() })}\n`);
+      dataStream.write(`0:${JSON.stringify(content)}\n`);
+      dataStream.write(`d:${JSON.stringify({ finishReason: "stop" })}\n`);
+      dataStream.write(
+        `e:${JSON.stringify({ finishReason: "stop", isContinued: false })}\n`,
+      );
     },
   });
+
+const shouldApplyPlannedTitle = ({
+  planMode,
+  currentTitle,
+  currentHtml,
+}: {
+  planMode: GenerationMode;
+  currentTitle: string;
+  currentHtml: string;
+}) => {
+  if (planMode !== "single_page") return true;
+  if (!currentHtml.trim()) return true;
+  return /^page\s+\d+$/i.test(currentTitle.trim());
+};
+
+const buildQualitySnapshot = ({
+  html,
+  allowImages,
+  userPrompt,
+  stylePresetId,
+}: {
+  html: string;
+  allowImages: boolean;
+  userPrompt: string;
+  stylePresetId: string;
+}): WireQualityReport =>
+  evaluateWireHtmlQuality({
+    html,
+    allowImages,
+    userPrompt,
+    stylePresetId,
+  });
+
+const generatePlan = async ({
+  modelName,
+  googleApiKey,
+  openRouterApiKey,
+  userPrompt,
+  compactHistory,
+  requestedOutputCount,
+  targetPages,
+  forceSinglePage,
+  projectId,
+}: {
+  modelName: WireModelName;
+  googleApiKey?: string | null;
+  openRouterApiKey?: string | null;
+  userPrompt: string;
+  compactHistory: CompactHistoryMessage[];
+  requestedOutputCount: number;
+  targetPages: Array<{ id: string; title: string; html?: string }>;
+  forceSinglePage: boolean;
+  projectId: string;
+}) => {
+  const suggestedPreset = selectWireStylePreset({
+    wireId: projectId,
+    userPrompt,
+  });
+  try {
+    const result = await generateObject({
+      model: getLanguageModel({ modelName, googleApiKey, openRouterApiKey }),
+      schema: designPlanSchema,
+      prompt: composePlannerPrompt({
+        userPrompt,
+        compactHistory,
+        requestedOutputCount,
+        targetPages,
+        forceSinglePage,
+        suggestedPreset,
+      }),
+    });
+
+    return validateDesignPlan({
+      value: result.object,
+      expectedOutputCount: requestedOutputCount,
+      requestedMode: resolveRequestedMode({
+        requestedOutputCount,
+        hasExplicitTargetPage: forceSinglePage,
+      }),
+    });
+  } catch (error) {
+    logger.warn("wire_planner_fallback_used", {
+      projectId,
+      modelName,
+      reason: "planner_schema_failed",
+      message: getErrorMessage(error),
+    });
+
+    return buildFallbackDesignPlan({
+      userPrompt,
+      requestedOutputCount,
+      targetPages,
+      forceSinglePage,
+      stylePreset: suggestedPreset,
+      malformedSeed:
+        error && typeof error === "object"
+          ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
+            (error as { value?: unknown }).value)
+          : undefined,
+    });
+  }
+};
+
+const generateCritiqueReport = async ({
+  modelName,
+  googleApiKey,
+  openRouterApiKey,
+  prompt,
+  projectId,
+  outputIndex,
+  qualityScore,
+  qualityViolations,
+}: {
+  modelName: WireModelName;
+  googleApiKey?: string | null;
+  openRouterApiKey?: string | null;
+  prompt: string;
+  projectId: string;
+  outputIndex: number;
+  qualityScore: number;
+  qualityViolations: string[];
+}) => {
+  try {
+    const critiqueResult = await generateObject({
+      model: getLanguageModel({
+        modelName,
+        googleApiKey,
+        openRouterApiKey,
+      }),
+      schema: critiqueReportSchema,
+      prompt,
+    });
+
+    const critique = normalizeCritiqueReport(critiqueResult.object);
+    if (critique) {
+      return {
+        critique,
+        usedFallback: false,
+      };
+    }
+  } catch (error) {
+    const malformedSeed =
+      error && typeof error === "object"
+        ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
+          (error as { value?: unknown }).value)
+        : undefined;
+    const recovered = normalizeCritiqueReport(malformedSeed);
+    if (recovered) {
+      logger.warn("wire_critique_schema_recovered", {
+        projectId,
+        outputIndex,
+        modelName,
+        message: getErrorMessage(error),
+      });
+      return {
+        critique: recovered,
+        usedFallback: true,
+      };
+    }
+
+    logger.warn("wire_critique_fallback_used", {
+      projectId,
+      outputIndex,
+      modelName,
+      reason: "critique_schema_failed",
+      message: getErrorMessage(error),
+    });
+  }
+
+  return {
+    critique: buildFallbackCritiqueReport({
+      qualityScore,
+      qualityViolations,
+    }),
+    usedFallback: true,
+  };
 };
 
 export async function POST(request: Request, context: RouteContext) {
@@ -732,11 +771,12 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isRecord(parsedBody.data)) {
     return applyRateHeaders(
       Response.json(
-      { error: "Request body must be a JSON object." },
-      { status: 400 },
+        { error: "Request body must be a JSON object." },
+        { status: 400 },
       ),
     );
   }
+
   const body = parsedBody.data as WireRequestBody;
   const validationError = validateRequestBody(body);
   if (validationError) {
@@ -745,7 +785,7 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const requestedModelRaw = body?.modelName;
+  const requestedModelRaw = body.modelName;
   if (requestedModelRaw !== undefined && !isWireModelName(requestedModelRaw)) {
     return applyRateHeaders(
       Response.json({ error: "Unsupported modelName." }, { status: 400 }),
@@ -755,85 +795,15 @@ export async function POST(request: Request, context: RouteContext) {
   const requestedModelName = isWireModelName(requestedModelRaw)
     ? requestedModelRaw
     : undefined;
-  const variationCount = parseVariationCount(body.variationCount);
-  const variationIndex = parseVariationIndex(body.variationIndex, variationCount);
-  const variationThemeHint = parseOptionalString(
-    body.variationThemeHint,
-    MAX_VARIATION_THEME_HINT_LENGTH,
-  );
-  const isBatchVariationRequest = variationCount > 1 && variationIndex === undefined;
-  const variationThemeHints = parseVariationThemeHints(
-    variationThemeHint,
-    variationCount,
-  );
-
-  const fallbackMessages = parseMessages(body?.messages);
-  const compactHistory = parseCompactHistory(body?.compactHistory);
-  const promptText = parsePromptText(body?.promptText);
+  const fallbackMessages = parseMessages(body.messages);
+  const compactHistory = parseCompactHistory(body.compactHistory);
+  const promptText = parsePromptText(body.promptText);
   const latestUserPrompt = promptText || getLatestUserPrompt(fallbackMessages);
   if (!latestUserPrompt) {
     return applyRateHeaders(
       Response.json({ error: "Missing promptText." }, { status: 400 }),
     );
   }
-
-  const rawTargetPageId = parseOptionalString(
-    body?.targetPageId,
-    MAX_TARGET_PAGE_ID_LENGTH,
-  );
-  const rawTargetPageTitle = parseOptionalString(
-    body?.targetPageTitle,
-    MAX_TARGET_PAGE_TITLE_LENGTH,
-  );
-  const rawTargetPageHtml =
-    typeof body?.targetPageHtml === "string"
-      ? body.targetPageHtml.slice(0, MAX_TARGET_PAGE_HTML_LENGTH)
-      : "";
-
-  let resolvedTargetPageId: string | null = null;
-  let resolvedTargetPageTitle = rawTargetPageTitle;
-  let resolvedTargetPageHtml = rawTargetPageHtml;
-
-  if (rawTargetPageId) {
-    const targetPage = await getProjectPageForUser({
-      projectId: id,
-      pageId: rawTargetPageId,
-      userId: sessionUser.id,
-    });
-    if (!targetPage) {
-      return applyRateHeaders(
-        Response.json({ error: "Target page not found." }, { status: 404 }),
-      );
-    }
-    resolvedTargetPageId = targetPage.id;
-    if (!resolvedTargetPageTitle) {
-      resolvedTargetPageTitle = targetPage.title;
-    }
-    if (!resolvedTargetPageHtml) {
-      resolvedTargetPageHtml = targetPage.htmlContent;
-    }
-  }
-
-  const scopedUserPrompt = buildPageScopedPrompt({
-    userPrompt: latestUserPrompt,
-    targetPageId: isBatchVariationRequest ? undefined : resolvedTargetPageId ?? undefined,
-    targetPageTitle: resolvedTargetPageTitle || undefined,
-    targetPageHtml: resolvedTargetPageHtml || undefined,
-  });
-
-  const messages = buildModelMessages({
-    compactHistory,
-    fallbackMessages,
-    scopedUserPrompt,
-    plainUserPrompt: latestUserPrompt,
-  });
-
-  const wireId = id;
-  const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
-  const stylePreset = selectWireStylePreset({
-    wireId,
-    userPrompt: latestUserPrompt,
-  });
 
   let userAiSettings: Awaited<
     ReturnType<typeof getUserAiSettingsForGeneration>
@@ -862,6 +832,7 @@ export async function POST(request: Request, context: RouteContext) {
       Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),
     );
   }
+
   if (!userAiSettings) {
     return applyRateHeaders(
       Response.json({ error: "Unable to resolve AI settings." }, { status: 500 }),
@@ -876,8 +847,7 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const effectiveModelName =
-    requestedModelName ?? userAiSettings.enabledModelIds[0];
+  const effectiveModelName = requestedModelName ?? userAiSettings.enabledModelIds[0];
   if (!userAiSettings.enabledModelIds.includes(effectiveModelName)) {
     return applyRateHeaders(
       new Response(
@@ -894,10 +864,7 @@ export async function POST(request: Request, context: RouteContext) {
       ),
     );
   }
-  if (
-    isOpenRouterWireModel(effectiveModelName) &&
-    !userAiSettings.openRouterApiKey
-  ) {
+  if (isOpenRouterWireModel(effectiveModelName) && !userAiSettings.openRouterApiKey) {
     return applyRateHeaders(
       new Response(
         "OpenRouter API key is not configured. Add it in Providers to generate output.",
@@ -906,101 +873,432 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const baseSystemPrompt = composeGenerateSystemPrompt({
-    stylePreset,
-    allowImages,
-    userPrompt: latestUserPrompt,
-  });
-  const coreSystemPrompt =
-    variationCount > 1
-      ? `${baseSystemPrompt}\n\n${
-          isBatchVariationRequest
-            ? buildBatchVariationPrompt({
-                variationCount,
-                variationThemeHints,
-              })
-            : buildVariationPrompt({
-                variationIndex: variationIndex ?? 1,
-                variationCount,
-                variationThemeHint:
-                  variationThemeHint || `Design direction ${variationIndex ?? 1}`,
-              })
-        }`
-      : baseSystemPrompt;
-  const pageScopeDirective =
-    resolvedTargetPageId && !isBatchVariationRequest
-      ? [
-          "Page scope directive:",
-          "- Edit only the provided target page context.",
-          "- Do not make cross-page changes.",
-          "- Return one full HTML document for the target page only.",
-        ].join("\n")
+  const rawTargetPageId = parseOptionalString(body.targetPageId, MAX_TARGET_PAGE_ID_LENGTH);
+  const rawTargetPageTitle = parseOptionalString(body.targetPageTitle);
+  const rawTargetPageHtml =
+    typeof body.targetPageHtml === "string"
+      ? body.targetPageHtml.slice(0, MAX_TARGET_PAGE_HTML_LENGTH)
       : "";
-  const systemPrompt = pageScopeDirective
-    ? `${coreSystemPrompt}\n\n${pageScopeDirective}`
-    : coreSystemPrompt;
+  const requestedTargetPageIds = parseTargetPageIds(body.targetPageIds);
+  const requestedVariationCount = parseVariationCount(body.variationCount);
 
-  logger.info("wire_generation_attempt", {
-    stylePresetId: stylePreset.id,
-    requestedModelName,
-    effectiveModelName,
-    targetPageId: resolvedTargetPageId,
-    variationCount,
-    variationIndex: variationIndex ?? null,
-    batchMode: isBatchVariationRequest,
-  });
-
-  try {
-    if (isGoogleWireModel(effectiveModelName)) {
-      const result = await streamWithGoogleModel({
-        projectId: id,
-        modelName: effectiveModelName,
-        googleApiKey: userAiSettings.googleApiKey as string,
-        messages,
-        systemPrompt,
-        stylePreset,
-        allowImages,
-        userPrompt: latestUserPrompt,
-        targetPageId: resolvedTargetPageId ?? undefined,
-      });
-
-      return applyRateHeaders(
-        result.toDataStreamResponse({
-          headers: {
-            "cache-control": "no-store, no-transform",
-          },
-        }),
-      );
-    }
-
-    if (isOpenRouterWireModel(effectiveModelName)) {
-      const result = await streamWithOpenRouterModel({
-        projectId: id,
-        modelName: effectiveModelName,
-        openRouterApiKey: userAiSettings.openRouterApiKey as string,
-        messages,
-        systemPrompt,
-        stylePreset,
-        allowImages,
-        userPrompt: latestUserPrompt,
-        targetPageId: resolvedTargetPageId ?? undefined,
-      });
-
-      return applyRateHeaders(
-        result.toDataStreamResponse({
-          headers: {
-            "cache-control": "no-store, no-transform",
-          },
-        }),
-      );
-    }
-
+  if (requestedVariationCount > 1 && requestedTargetPageIds.length === 0) {
     return applyRateHeaders(
-      new Response(
-        `Model ${effectiveModelName} is not available. Enable a supported model in Models.`,
+      Response.json(
+        { error: "targetPageIds are required when variationCount is greater than 1." },
         { status: 400 },
       ),
     );
+  }
+
+  const allPages = await listProjectPagesForUser({
+    projectId: id,
+    userId: sessionUser.id,
+  });
+  const pageById = new Map(allPages.map((page) => [page.id, page]));
+
+  const resolvedSingleTargetPage = rawTargetPageId ? pageById.get(rawTargetPageId) ?? null : null;
+  if (rawTargetPageId && !resolvedSingleTargetPage) {
+    return applyRateHeaders(
+      Response.json({ error: "Target page not found." }, { status: 404 }),
+    );
+  }
+
+  const resolvedTargetPagesRaw =
+    requestedTargetPageIds.length > 0
+      ? requestedTargetPageIds.map((pageId) => pageById.get(pageId) ?? null)
+      : resolvedSingleTargetPage
+        ? [resolvedSingleTargetPage]
+        : [];
+
+  if (resolvedTargetPagesRaw.some((page) => page === null)) {
+    return applyRateHeaders(
+      Response.json({ error: "Target page not found." }, { status: 404 }),
+    );
+  }
+
+  const resolvedTargetPages = resolvedTargetPagesRaw.filter(
+    (
+      page,
+    ): page is NonNullable<(typeof resolvedTargetPagesRaw)[number]> => page !== null,
+  );
+
+  if (
+    requestedTargetPageIds.length > 0 &&
+    requestedVariationCount > 1 &&
+    requestedTargetPageIds.length !== requestedVariationCount
+  ) {
+    return applyRateHeaders(
+      Response.json(
+        { error: "targetPageIds length must match variationCount." },
+        { status: 400 },
+      ),
+    );
+  }
+
+  const expectedOutputCount =
+    resolvedTargetPages.length > 0
+      ? resolvedTargetPages.length
+      : requestedVariationCount;
+  const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
+  const selectedFastModel = resolveFastWireModelForStage(effectiveModelName);
+
+  const generationRun = await createGenerationRun({
+    projectId: id,
+    prompt: latestUserPrompt,
+    selectedModelName: effectiveModelName,
+    plannerModelName: selectedFastModel,
+    criticModelName: selectedFastModel,
+  });
+
+  try {
+    logger.info("wire_generation_attempt", {
+      projectId: id,
+      selectedModelName: effectiveModelName,
+      plannerModelName: selectedFastModel,
+      criticModelName: selectedFastModel,
+      expectedOutputCount,
+      targetPageCount: resolvedTargetPages.length,
+    });
+
+    const plannerTargetPages =
+      resolvedTargetPages.length > 0
+        ? resolvedTargetPages.map((page) => ({
+            id: page.id,
+            title:
+              page.id === rawTargetPageId
+                ? rawTargetPageTitle || page.title
+                : page.title,
+            html:
+              page.id === rawTargetPageId
+                ? rawTargetPageHtml || page.htmlContent
+                : page.htmlContent,
+          }))
+        : [];
+
+    const plannerPrompt = resolvedSingleTargetPage
+      ? buildPageScopedPrompt({
+          userPrompt: latestUserPrompt,
+          targetPageId: resolvedSingleTargetPage.id,
+          targetPageTitle: rawTargetPageTitle || resolvedSingleTargetPage.title,
+          targetPageHtml: rawTargetPageHtml || resolvedSingleTargetPage.htmlContent,
+        })
+      : latestUserPrompt;
+
+    const plan = await generatePlan({
+      modelName: selectedFastModel,
+      googleApiKey: userAiSettings.googleApiKey,
+      openRouterApiKey: userAiSettings.openRouterApiKey,
+      userPrompt: plannerPrompt,
+      compactHistory,
+      requestedOutputCount: expectedOutputCount,
+      targetPages: plannerTargetPages,
+      forceSinglePage: Boolean(resolvedSingleTargetPage),
+      projectId: id,
+    });
+
+    await updateGenerationRun({
+      generationRunId: generationRun.id,
+      status: "planned",
+      stageStatus: "planned",
+      generationMode: plan.generationMode,
+    });
+
+    const mappedOutputs = mapPlanOutputsToTargets({
+      plan,
+      targetPageIds: plannerTargetPages.map((page) => page.id),
+    });
+
+    const persistedOutputs = await createGenerationOutputs({
+      generationRunId: generationRun.id,
+      outputs: mappedOutputs.map((item) => ({
+        targetPageId: item.targetPageId,
+        outputIndex: item.outputIndex,
+        outputKind: item.output.outputKind,
+        title: item.output.title,
+        planJson: item.output as unknown as Record<string, unknown>,
+      })),
+    });
+
+    await updateGenerationRun({
+      generationRunId: generationRun.id,
+      status: "generating",
+      stageStatus: "generating",
+    });
+
+    const outputsForAssistant = mappedOutputs.map((item, index) => ({
+      outputIndex: item.outputIndex,
+      title: persistedOutputs[index]?.title ?? item.output.title,
+      details: "",
+      html: "",
+    }));
+
+    let successCount = 0;
+
+    await runWithConcurrency(mappedOutputs, 2, async (item, workerIndex) => {
+      const persisted = persistedOutputs[workerIndex];
+      if (!persisted) {
+        return;
+      }
+
+      const currentPage = item.targetPageId ? pageById.get(item.targetPageId) ?? null : null;
+      const stylePreset = resolveStylePresetForPlan(plan, latestUserPrompt);
+
+      try {
+        await updateGenerationOutput({
+          generationOutputId: persisted.id,
+          status: "generating",
+          targetPageId: item.targetPageId,
+          title: item.output.title,
+        });
+
+        const initialGeneration = await generateText({
+          model: getLanguageModel({
+            modelName: effectiveModelName,
+            googleApiKey: userAiSettings.googleApiKey,
+            openRouterApiKey: userAiSettings.openRouterApiKey,
+          }),
+          system: composePlannedGenerateSystemPrompt({
+            plan,
+            output: item.output,
+            outputIndex: item.outputIndex,
+            allOutputs: plan.outputs,
+            stylePreset,
+            allowImages,
+            userPrompt: latestUserPrompt,
+          }),
+          prompt: latestUserPrompt,
+        });
+
+        const initialParsed = parseWireOutput(initialGeneration.text);
+        const normalizedInitial = normalizeGeneratedHtml(initialParsed.html, {
+          allowImages,
+        });
+        const initialQuality = buildQualitySnapshot({
+          html: normalizedInitial.html,
+          allowImages,
+          userPrompt: latestUserPrompt,
+          stylePresetId: stylePreset.id,
+        });
+
+        const critiqueResult = await generateCritiqueReport({
+          modelName: selectedFastModel,
+          googleApiKey: userAiSettings.googleApiKey,
+          openRouterApiKey: userAiSettings.openRouterApiKey,
+          prompt: composeCritiquePrompt({
+            plan,
+            output: item.output,
+            details: initialParsed.details,
+            html: normalizedInitial.html,
+            qualityScore: initialQuality.score,
+            qualityViolations: initialQuality.violations,
+          }),
+          projectId: id,
+          outputIndex: item.outputIndex,
+          qualityScore: initialQuality.score,
+          qualityViolations: initialQuality.violations,
+        });
+        const critique = critiqueResult.critique;
+        const critiqueUsedFallback = critiqueResult.usedFallback;
+        let acceptedTitle = item.output.title;
+        let acceptedDetails = initialParsed.details.trim();
+        let acceptedHtml = normalizedInitial.html;
+        let acceptedQuality = initialQuality;
+        let accepted = isAcceptedGeneratedOutput({
+          qualityScore: initialQuality.score,
+          isRenderable: initialQuality.isRenderable,
+          qualityViolations: initialQuality.violations,
+        });
+
+        if (
+          shouldRepairGeneratedOutput({
+            qualityScore: initialQuality.score,
+            isRenderable: initialQuality.isRenderable,
+            qualityViolations: initialQuality.violations,
+            critique,
+          })
+        ) {
+          await updateGenerationRun({
+            generationRunId: generationRun.id,
+            status: "repairing",
+            stageStatus: "repairing",
+          });
+          await updateGenerationOutput({
+            generationOutputId: persisted.id,
+            status: "repairing",
+          });
+
+          const repairedGeneration = await generateText({
+            model: getLanguageModel({
+              modelName: effectiveModelName,
+              googleApiKey: userAiSettings.googleApiKey,
+              openRouterApiKey: userAiSettings.openRouterApiKey,
+            }),
+            prompt: latestUserPrompt,
+            system: composeRepairPrompt({
+              plan,
+              output: item.output,
+              outputIndex: item.outputIndex,
+              allOutputs: plan.outputs,
+              stylePreset,
+              allowImages,
+              userPrompt: latestUserPrompt,
+              critique,
+              currentHtml: normalizedInitial.html,
+            }),
+          });
+
+          const repairedParsed = parseWireOutput(repairedGeneration.text);
+          const repairedNormalized = normalizeGeneratedHtml(repairedParsed.html, {
+            allowImages,
+          });
+          const repairedQuality = buildQualitySnapshot({
+            html: repairedNormalized.html,
+            allowImages,
+            userPrompt: latestUserPrompt,
+            stylePresetId: stylePreset.id,
+          });
+
+          acceptedTitle = item.output.title;
+          acceptedDetails = repairedParsed.details.trim() || acceptedDetails;
+          acceptedHtml = repairedNormalized.html;
+          acceptedQuality = repairedQuality;
+          accepted = isAcceptedGeneratedOutput({
+            qualityScore: repairedQuality.score,
+            isRenderable: repairedQuality.isRenderable,
+            qualityViolations: repairedQuality.violations,
+          });
+        }
+
+        if (!accepted) {
+          const canAcceptThroughFallback =
+            critiqueUsedFallback &&
+            acceptedQuality.isRenderable &&
+            acceptedQuality.score >= MIN_FALLBACK_ACCEPTANCE_SCORE &&
+            !hasCriticalQualityViolations(acceptedQuality.violations);
+          if (canAcceptThroughFallback) {
+            logger.warn("wire_quality_gate_fallback_acceptance", {
+              projectId: id,
+              generationRunId: generationRun.id,
+              generationOutputId: persisted.id,
+              outputIndex: item.outputIndex,
+              qualityScore: acceptedQuality.score,
+              qualityViolations: acceptedQuality.violations,
+            });
+            accepted = true;
+          }
+        }
+
+        if (!accepted) {
+          await updateGenerationOutput({
+            generationOutputId: persisted.id,
+            title: item.output.title,
+            critiqueJson: critique as unknown as Record<string, unknown>,
+            details: acceptedDetails || null,
+            qualityScore: acceptedQuality.score,
+            status: "failed",
+            htmlSnapshot: acceptedHtml || null,
+          });
+          return;
+        }
+
+        if (item.targetPageId && currentPage) {
+          const nextTitle = shouldApplyPlannedTitle({
+            planMode: plan.generationMode,
+            currentTitle: currentPage.title,
+            currentHtml: currentPage.htmlContent,
+          })
+            ? acceptedTitle
+            : currentPage.title;
+
+          await updateProjectPageForUser({
+            projectId: id,
+            pageId: item.targetPageId,
+            userId: sessionUser.id,
+            title: nextTitle,
+            htmlContent: acceptedHtml,
+          });
+
+          pageById.set(item.targetPageId, {
+            ...currentPage,
+            title: nextTitle,
+            htmlContent: acceptedHtml,
+          });
+          acceptedTitle = nextTitle;
+        }
+
+        outputsForAssistant[item.outputIndex] = {
+          outputIndex: item.outputIndex,
+          title: acceptedTitle,
+          details:
+            acceptedDetails ||
+            `${acceptedTitle} delivers a stronger first draft. It follows the planned direction with better hierarchy and content depth.`,
+          html: acceptedHtml,
+        };
+
+        await updateGenerationOutput({
+            generationOutputId: persisted.id,
+            title: acceptedTitle,
+            critiqueJson: critique as unknown as Record<string, unknown>,
+            details: outputsForAssistant[item.outputIndex].details,
+            qualityScore: acceptedQuality.score,
+            status: "completed",
+          htmlSnapshot: acceptedHtml,
+        });
+
+        successCount += 1;
+      } catch (error) {
+        logger.error("wire_generation_output_failed", {
+          projectId: id,
+          generationRunId: generationRun.id,
+          generationOutputId: persisted.id,
+          outputIndex: item.outputIndex,
+          error: serializeError(error),
+        });
+        await updateGenerationOutput({
+          generationOutputId: persisted.id,
+          title: item.output.title,
+          status: "failed",
+        });
+      }
+    });
+
+    const finalStatus =
+      successCount === 0
+        ? "failed"
+        : successCount === mappedOutputs.length
+          ? "completed"
+          : "partially_completed";
+
+    await updateGenerationRun({
+      generationRunId: generationRun.id,
+      status: finalStatus,
+      stageStatus: "completed",
+      generationMode: plan.generationMode,
+    });
+
+    if (successCount === 0) {
+      return applyRateHeaders(
+        new Response(
+          "Generated output did not meet the quality bar. Try refining the prompt.",
+          { status: 502 },
+        ),
+      );
+    }
+
+    const assistantContent = buildAssistantContent({
+      plan,
+      outputs: outputsForAssistant,
+    });
+
+    await persistConversationTurn({
+      projectId: id,
+      userPrompt: latestUserPrompt,
+      assistantSummary: extractAssistantSummary(assistantContent),
+      targetPageId: resolvedSingleTargetPage?.id ?? undefined,
+    });
+
+    return applyRateHeaders(createAssistantResponse(assistantContent));
   } catch (error) {
     logger.error("wire_selected_model_stream_error", {
       modelName: effectiveModelName,
@@ -1009,6 +1307,18 @@ export async function POST(request: Request, context: RouteContext) {
       responseBody: getErrorBody(error),
       error: serializeError(error),
     });
+
+    await updateGenerationRun({
+      generationRunId: generationRun.id,
+      status: "failed",
+      stageStatus: "failed",
+    }).catch((updateError) => {
+      logger.error("wire_generation_run_update_failed", {
+        generationRunId: generationRun.id,
+        error: serializeError(updateError),
+      });
+    });
+
     return applyRateHeaders(
       selectedModelFailureResponse({
         modelName: effectiveModelName,

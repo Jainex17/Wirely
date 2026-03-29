@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   DEFAULT_ENABLED_WIRE_MODELS,
   normalizeEnabledWireModels,
+  resolveFastWireModelForStage,
   resolveEnabledWireModels,
 } from "@/lib/wireModels";
 
@@ -22,7 +23,6 @@ describe("wireModels settings helpers", () => {
       "gemini-2.5-flash-lite",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
-      "minimax-m2.5-free",
     ]);
   });
 
@@ -38,5 +38,14 @@ describe("wireModels settings helpers", () => {
 
   it("preserves explicit empty array when all models are disabled", () => {
     expect(resolveEnabledWireModels([])).toEqual([]);
+  });
+
+  it("chooses the fastest model in the same provider family for planner and critic stages", () => {
+    expect(resolveFastWireModelForStage("gemini-2.5-pro")).toBe(
+      "gemini-2.5-flash-lite",
+    );
+    expect(resolveFastWireModelForStage("google/gemini-2.5-pro")).toBe(
+      "google/gemini-2.5-flash-lite",
+    );
   });
 });

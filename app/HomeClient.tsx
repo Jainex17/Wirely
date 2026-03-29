@@ -73,13 +73,13 @@ const PAGE_VARIATION_OPTIONS: Array<{
   },
   {
     value: 2,
-    label: "2 variations",
-    hint: "Generate 2 pages with different designs",
+    label: "2 concepts/pages",
+    hint: "Generate 2 adaptive outputs: concepts for option prompts, real pages for site-map prompts",
   },
   {
     value: 3,
-    label: "3 variations",
-    hint: "Generate 3 pages with different designs",
+    label: "3 concepts/pages",
+    hint: "Generate 3 adaptive outputs: concepts for option prompts, real pages for site-map prompts",
   },
 ];
 

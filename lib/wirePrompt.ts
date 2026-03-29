@@ -1,3 +1,5 @@
+import { inferRequestedArtifactType, isDashboardArtifactRequest } from "@/lib/wireIntent";
+
 export interface WireStylePreset {
   id: string;
   name: string;
@@ -43,7 +45,7 @@ export const WIRE_STYLE_PRESETS: WireStylePreset[] = [
   {
     id: "technical-grid",
     name: "Technical Grid",
-    intent: "Product-engineering clarity with dashboard-like precision.",
+    intent: "Product-engineering clarity with system-level precision.",
     typography:
       "Use geometric sans for headings and highly legible sans for body.",
     palette:
@@ -95,18 +97,27 @@ export const getWireStylePresetById = (id: string | undefined | null) =>
 
 const scorePresetFromPrompt = (prompt: string) => {
   const text = prompt.toLowerCase();
+  const artifactType = inferRequestedArtifactType(prompt);
+
   if (/(luxury|premium|elegant|exclusive)/.test(text)) {
     return "premium-dark";
   }
+  if (/(bold|brutalist|experimental|poster|editorial)/.test(text)) {
+    return "brutalist-clean";
+  }
+  if (artifactType === "landing page" || artifactType === "marketing page") {
+    if (/(friendly|warm|simple|minimal|clean|calm)/.test(text)) {
+      return "warm-minimal";
+    }
+    return "warm-minimal";
+  }
   if (
+    artifactType === "dashboard" ||
     /(enterprise|b2b|saas|platform|developer|api|dashboard|analytics)/.test(
       text,
     )
   ) {
     return "technical-grid";
-  }
-  if (/(bold|brutalist|experimental|poster|editorial)/.test(text)) {
-    return "brutalist-clean";
   }
   if (/(friendly|warm|simple|minimal|clean|calm)/.test(text)) {
     return "warm-minimal";
@@ -136,26 +147,33 @@ export const selectWireStylePreset = ({
   return WIRE_STYLE_PRESETS[index];
 };
 
-const buildImageRule = (allowImages: boolean) =>
+export const buildImageRule = (allowImages: boolean) =>
   allowImages
     ? "- Images are allowed because the user explicitly requested them. Inline <svg> UI icons/charts are always allowed."
     : "- Do not use external bitmap image assets (<img>, <picture>, or CSS background-image URLs). Inline <svg> icons/charts are allowed and encouraged.";
 
-const isDashboardPrompt = (prompt: string) => {
-  const text = prompt.toLowerCase();
-  return /(dashboard|admin|analytics|metrics|kpi|reporting|scorecard|table|sidebar|panel|workspace)/.test(
-    text,
-  );
-};
-
-const buildIntentGuardrails = (userPrompt?: string) => {
+export const buildIntentGuardrails = (userPrompt?: string) => {
   const text = (userPrompt ?? "").toLowerCase();
-  const dashboardRequested = isDashboardPrompt(text);
+  const artifactType = inferRequestedArtifactType(text);
+  const dashboardRequested = isDashboardArtifactRequest(text);
+  const landingRequested =
+    artifactType === "landing page" || artifactType === "marketing page";
   const hasUnified = /\bunified\b/.test(text);
   const hasActive = /\bactive\b/.test(text);
   const hasFoundational = /\bfoundational\b/.test(text);
   const hasGeoScore = /(geo score|score)/.test(text);
   const hasTargetQuery = /(target query|query)/.test(text);
+
+  if (landingRequested) {
+    return `
+Intent alignment (landing mode):
+- The requested artifact is a landing/marketing page, not an internal dashboard UI.
+- Do not create a persistent left sidebar app shell, KPI command center, chart-heavy analytics canvas, or dense admin table layout unless explicitly requested.
+- Start with a strong hero, then present product/tool groupings as marketing content blocks.
+- If many tools/products are provided, organize them into clear category sections with scannable cards or lists.
+- Include clear trust/proof and a conversion-focused CTA path.
+`.trim();
+  }
 
   if (!dashboardRequested) {
     return `
@@ -261,7 +279,7 @@ Iframe/runtime constraints:
   - Add one DOMContentLoaded script that instantiates both charts with deterministic sample arrays.
 - Keep JS minimal and optional. No frameworks/build tools/import maps.
 - Do not rely on window.top/window.parent access or popups.
-- Keep output maintainable, around 140-260 lines.
+- Match implementation depth to the planned artifact. Simple pages can stay concise; rich landing pages and dashboards should include enough detail to feel genuinely usable as a first draft.
 
 Final validation before responding:
 - Output contains DETAILS then HTML only, in that order.

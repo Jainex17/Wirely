@@ -8,6 +8,7 @@ import {
   type ConversationRole,
   type ProjectStatus,
 } from "@/lib/db/schema";
+import { getLatestGenerationRunWithOutputsForProject } from "@/lib/db/queries/generationRuns";
 
 export const createProject = async (userId: string, title: string) => {
   const db = getDb();
@@ -70,7 +71,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
   const project = await getProjectForUser(projectId, userId);
   if (!project) return null;
 
-  const [pages, conversationResult] = await Promise.all([
+  const [pages, conversationResult, latestGeneration] = await Promise.all([
     db
       .select()
       .from(projectPages)
@@ -81,6 +82,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
       .from(conversations)
       .where(eq(conversations.projectId, projectId))
       .limit(1),
+    getLatestGenerationRunWithOutputsForProject(projectId),
   ]);
   const [conversation] = conversationResult;
 
@@ -98,6 +100,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
     pages,
     conversation,
     messages: [...messages].reverse(),
+    latestGeneration,
   };
 };
 
@@ -155,6 +158,24 @@ export const getProjectPageForUser = async ({
     .limit(1);
 
   return page ?? null;
+};
+
+export const listProjectPagesForUser = async ({
+  projectId,
+  userId,
+}: {
+  projectId: string;
+  userId: string;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return [];
+
+  return db
+    .select()
+    .from(projectPages)
+    .where(eq(projectPages.projectId, projectId))
+    .orderBy(asc(projectPages.sortOrder));
 };
 
 export const createProjectPageForUser = async ({

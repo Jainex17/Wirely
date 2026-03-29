@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseWireOutput } from "@/lib/wireOutput";
+import { parseBatchWireOutput, parseWireOutput } from "@/lib/wireOutput";
 
 describe("parseWireOutput", () => {
   it("extracts details from content before HTML marker when DETAILS marker is missing", () => {
@@ -22,6 +22,27 @@ HTML:
     const parsed = parseWireOutput(raw);
     expect(parsed.details).toBe("Summary text.");
     expect(parsed.html).toContain("<main>Page</main>");
+  });
+
+  it("extracts title and batch html sections when planner metadata is present", () => {
+    const raw = `DETAILS:
+Two concepts explore the product with distinct visual systems.
+TITLE_1:
+Signal Grid
+HTML_1:
+<!doctype html><html><body><main>First</main></body></html>
+TITLE_2:
+Editorial Analyst
+HTML_2:
+<!doctype html><html><body><main>Second</main></body></html>`;
+
+    const parsed = parseBatchWireOutput(raw, 2);
+    expect(parsed.details).toBe(
+      "Two concepts explore the product with distinct visual systems.",
+    );
+    expect(parsed.titleByIndex).toEqual(["Signal Grid", "Editorial Analyst"]);
+    expect(parsed.htmlByIndex[0]).toContain("<main>First</main>");
+    expect(parsed.htmlByIndex[1]).toContain("<main>Second</main>");
   });
 
   it("treats plain text responses as details when no markers exist", () => {

@@ -1,3 +1,5 @@
+import { inferRequestedArtifactType } from "@/lib/wireIntent";
+
 export interface WireQualityReport {
   score: number;
   violations: string[];
@@ -12,10 +14,6 @@ interface EvaluateWireHtmlQualityOptions {
 }
 
 const clampScore = (value: number) => Math.max(0, Math.min(100, value));
-const isDashboardPrompt = (prompt: string) =>
-  /(dashboard|admin|analytics|metrics|kpi|reporting|scorecard|table|sidebar|panel|workspace)/i.test(
-    prompt,
-  );
 
 const hasClassPattern = (html: string, pattern: RegExp) => pattern.test(html);
 
@@ -29,7 +27,10 @@ export const evaluateWireHtmlQuality = ({
 }: EvaluateWireHtmlQualityOptions): WireQualityReport => {
   let score = 100;
   const violations: string[] = [];
-  const dashboardRequested = isDashboardPrompt(userPrompt);
+  const artifactType = inferRequestedArtifactType(userPrompt);
+  const dashboardRequested = artifactType === "dashboard";
+  const landingRequested =
+    artifactType === "landing page" || artifactType === "marketing page";
 
   const hasHtmlTag = /<html[\s>]/i.test(html) && /<\/html>/i.test(html);
   const hasBodyTag = /<body[\s>]/i.test(html) && /<\/body>/i.test(html);
@@ -174,6 +175,21 @@ export const evaluateWireHtmlQuality = ({
   if (emojiCount >= 4) {
     violations.push("emoji_icon_overuse");
     score -= 8;
+  }
+
+  if (landingRequested) {
+    const hasDashboardShell = /<aside[\s>]/i.test(html) || /\bsidebar\b/i.test(html);
+    const hasDashboardDataElements =
+      /<table[\s>]/i.test(html) ||
+      /<canvas[\s>]/i.test(html) ||
+      /chart\.js|new\s+chart\(/i.test(html);
+    const hasDashboardLexicon =
+      /\b(?:kpi|metrics?|reporting|dashboard|workspace|admin panel)\b/i.test(html);
+
+    if (hasDashboardShell && (hasDashboardDataElements || hasDashboardLexicon)) {
+      violations.push("intent_mismatch_dashboard_in_landing");
+      score -= 35;
+    }
   }
 
   if (dashboardRequested) {

@@ -117,6 +117,16 @@ export const isGoogleWireModel = (modelName: WireModelName) =>
 export const isOpenRouterWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "openrouter";
 
+export const resolveFastWireModelForStage = (
+  modelName: WireModelName,
+): WireModelName => {
+  if (isGoogleWireModel(modelName)) {
+    return GEMINI_FREE_MODELS[0];
+  }
+
+  return OPENROUTER_GEMINI_FREE_MODELS[0];
+};
+
 export const normalizeEnabledWireModels = (
   modelNames: unknown,
 ): WireModelName[] => {

@@ -71,12 +71,6 @@ interface CompactHistoryMessage {
   content: string;
 }
 
-const VARIATION_THEME_HINTS = [
-  "Editorial minimal layout with restrained monochrome palette and precise typography.",
-  "Bold geometric composition with high contrast neon accents and kinetic visual rhythm.",
-  "Warm handcrafted aesthetic with organic forms, textured surfaces, and soft tones.",
-] as const;
-
 const clampPageCount = (value: unknown): 1 | 2 | 3 => {
   if (typeof value !== "number" || !Number.isInteger(value)) return 1;
   if (value <= 1) return 1;
@@ -447,6 +441,9 @@ export default function WirePromptSidebar({
         typeof body.variationCount === "number"
           ? body.variationCount
           : undefined;
+      const targetPageIds = Array.isArray(body.targetPageIds)
+        ? body.targetPageIds.filter((value): value is string => typeof value === "string")
+        : undefined;
       const isBatchRequest =
         typeof variationCount === "number" &&
         variationCount > 1 &&
@@ -487,6 +484,7 @@ export default function WirePromptSidebar({
           outgoingMessages as Message[],
         ),
         variationCount,
+        targetPageIds,
         variationIndex: body.variationIndex,
         variationThemeHint: body.variationThemeHint,
       };
@@ -544,6 +542,7 @@ export default function WirePromptSidebar({
           for (let index = 0; index < batchTargetPageIds.length; index += 1) {
             const targetPageId = batchTargetPageIds[index];
             const htmlCandidate = parsedBatch.htmlByIndex[index] ?? "";
+            const nextTitle = parsedBatch.titleByIndex[index]?.trim() ?? "";
             if (!htmlCandidate.trim()) {
               failedCount += 1;
               if (
@@ -583,8 +582,13 @@ export default function WirePromptSidebar({
               continue;
             }
 
-            setPageHtml(targetPageId, normalized.html);
-            savePromises.push(persistPageHtml(targetPageId, normalized.html));
+            setPageHtml(targetPageId, normalized.html, nextTitle || undefined);
+            savePromises.push(
+              persistPageUpdate(targetPageId, {
+                ...(nextTitle ? { title: nextTitle } : {}),
+                htmlContent: normalized.html,
+              }),
+            );
             successCount += 1;
           }
 
@@ -653,6 +657,7 @@ export default function WirePromptSidebar({
         }
 
         const initialHtml = getPrimaryGeneratedHtml(message.content);
+        const parsedSingle = parseWireOutput(message.content);
         const initialNormalized = normalizeGeneratedHtml(initialHtml, {
           allowImages,
         });
@@ -673,9 +678,18 @@ export default function WirePromptSidebar({
           return;
         }
 
-        setPageHtml(targetPageId, initialNormalized.html);
+        setPageHtml(
+          targetPageId,
+          initialNormalized.html,
+          parsedSingle.title.trim() || undefined,
+        );
         requestGeneratedPageFocusCheck(targetPageId);
-        void persistPageHtml(targetPageId, initialNormalized.html).catch(
+        void persistPageUpdate(targetPageId, {
+          ...(parsedSingle.title.trim()
+            ? { title: parsedSingle.title.trim() }
+            : {}),
+          htmlContent: initialNormalized.html,
+        }).catch(
           (error) => {
             logger.error("wire_page_persist_failed", {
               targetPageId,
@@ -808,10 +822,7 @@ export default function WirePromptSidebar({
       const body = {
         modelName: selectedModel,
         variationCount: targetPageIds.length,
-        variationThemeHint: VARIATION_THEME_HINTS.slice(
-          0,
-          targetPageIds.length,
-        ).join(" || "),
+        targetPageIds,
       };
 
       try {

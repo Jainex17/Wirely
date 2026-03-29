@@ -104,4 +104,24 @@ describe("evaluateWireHtmlQuality", () => {
     expect(withCharts.violations.includes("missing_chart_render_signal")).toBe(false);
     expect(withCharts.violations.includes("missing_svg_icon_signal")).toBe(false);
   });
+
+  it("flags dashboard-shell output when landing intent is explicit", () => {
+    const report = evaluateWireHtmlQuality({
+      html: `<!doctype html><html><body class="bg-slate-950 text-slate-100">
+        <header></header>
+        <main class="flex">
+          <aside>Sidebar navigation</aside>
+          <section><table><tr><td>KPI</td></tr></table><canvas id="trend"></canvas></section>
+        </main>
+        <footer></footer>
+      </body></html>`,
+      allowImages: false,
+      userPrompt:
+        "Design a landing page for SERanking and include product names such as SEO Dashboard.",
+    });
+
+    expect(report.violations.includes("intent_mismatch_dashboard_in_landing")).toBe(
+      true,
+    );
+  });
 });

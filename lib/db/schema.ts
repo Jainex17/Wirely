@@ -16,6 +16,31 @@ export const conversationRoleEnum = pgEnum("conversation_role", [
   "user",
   "assistant",
 ]);
+export const generationModeEnum = pgEnum("generation_mode", [
+  "single_page",
+  "concept_variants",
+  "information_architecture",
+]);
+export const generationRunStatusEnum = pgEnum("generation_run_status", [
+  "planning",
+  "planned",
+  "generating",
+  "repairing",
+  "completed",
+  "partially_completed",
+  "failed",
+]);
+export const generationOutputKindEnum = pgEnum("generation_output_kind", [
+  "page",
+  "concept",
+]);
+export const generationOutputStatusEnum = pgEnum("generation_output_status", [
+  "planned",
+  "generating",
+  "repairing",
+  "completed",
+  "failed",
+]);
 
 export const users = pgTable(
   "users",
@@ -122,5 +147,68 @@ export const conversationMessages = pgTable(
   }),
 );
 
+export const generationRuns = pgTable(
+  "generation_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    prompt: text("prompt").notNull(),
+    selectedModelName: text("selected_model_name").notNull(),
+    plannerModelName: text("planner_model_name").notNull(),
+    criticModelName: text("critic_model_name").notNull(),
+    generationMode: generationModeEnum("generation_mode"),
+    status: generationRunStatusEnum("status").default("planning").notNull(),
+    stageStatus: text("stage_status").default("planning").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdx: index("generation_runs_project_id_idx").on(table.projectId),
+    projectCreatedIdx: index("generation_runs_project_created_at_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const generationOutputs = pgTable(
+  "generation_outputs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    generationRunId: uuid("generation_run_id")
+      .notNull()
+      .references(() => generationRuns.id, { onDelete: "cascade" }),
+    targetPageId: uuid("target_page_id").references(() => projectPages.id, {
+      onDelete: "set null",
+    }),
+    outputIndex: integer("output_index").notNull(),
+    outputKind: generationOutputKindEnum("output_kind").notNull(),
+    title: text("title").notNull(),
+    planJson: jsonb("plan_json").$type<Record<string, unknown>>().notNull(),
+    critiqueJson: jsonb("critique_json").$type<Record<string, unknown>>(),
+    details: text("details"),
+    qualityScore: integer("quality_score"),
+    status: generationOutputStatusEnum("status").default("planned").notNull(),
+    htmlSnapshot: text("html_snapshot"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    runIdx: index("generation_outputs_generation_run_id_idx").on(table.generationRunId),
+    targetPageIdx: index("generation_outputs_target_page_id_idx").on(table.targetPageId),
+    runOutputUnique: uniqueIndex("generation_outputs_run_output_index_idx").on(
+      table.generationRunId,
+      table.outputIndex,
+    ),
+  }),
+);
+
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type ConversationRole = (typeof conversationRoleEnum.enumValues)[number];
+export type GenerationMode = (typeof generationModeEnum.enumValues)[number];
+export type GenerationRunStatus = (typeof generationRunStatusEnum.enumValues)[number];
+export type GenerationOutputKind = (typeof generationOutputKindEnum.enumValues)[number];
+export type GenerationOutputStatus =
+  (typeof generationOutputStatusEnum.enumValues)[number];

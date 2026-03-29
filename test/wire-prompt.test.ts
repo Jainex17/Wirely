@@ -66,4 +66,18 @@ describe("wirePrompt helpers", () => {
       ),
     ).toBe(true);
   });
+
+  it("keeps landing guardrails when tool names include the word dashboard", () => {
+    const prompt = composeGenerateSystemPrompt({
+      stylePreset: WIRE_STYLE_PRESETS[1],
+      allowImages: false,
+      userPrompt:
+        "Design a landing page for SERanking and list tools including SEO Dashboard and AI Overviews Tracker.",
+    });
+
+    expect(prompt.includes("Intent alignment (landing mode):")).toBe(true);
+    expect(
+      prompt.includes("The requested artifact is a dashboard/application UI"),
+    ).toBe(false);
+  });
 });
