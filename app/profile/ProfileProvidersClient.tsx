@@ -27,11 +27,19 @@ const PROVIDER_META = {
     label: "Google AI",
     description: "Use your Google AI Studio key.",
     learnMoreUrl: "https://aistudio.google.com/app/apikey",
+    supportsModelToggle: true,
   },
   openrouter: {
     label: "OpenRouter",
     description: "Use your OpenRouter key.",
     learnMoreUrl: "https://openrouter.ai/keys",
+    supportsModelToggle: true,
+  },
+  unsplash: {
+    label: "Unsplash",
+    description: "Use your Unsplash Access Key for stock photos.",
+    learnMoreUrl: "https://unsplash.com/documentation",
+    supportsModelToggle: false,
   },
 } as const;
 
@@ -43,6 +51,7 @@ export default function ProfileProvidersClient() {
     isSavingModels,
     hasGoogleApiKey,
     hasOpenRouterApiKey,
+    hasUnsplashApiKey,
     models,
     saveApiKey,
     clearApiKey,
@@ -69,14 +78,21 @@ export default function ProfileProvidersClient() {
         ).length,
         totalCount: models.filter((model) => model.provider === "openrouter").length,
       },
+      {
+        id: "unsplash" as const,
+        ...PROVIDER_META.unsplash,
+        hasKey: hasUnsplashApiKey,
+        enabledCount: 0,
+        totalCount: 0,
+      },
     ],
-    [hasGoogleApiKey, hasOpenRouterApiKey, models],
+    [hasGoogleApiKey, hasOpenRouterApiKey, hasUnsplashApiKey, models],
   );
 
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {Array.from({ length: 2 }).map((_, index) => (
+        {Array.from({ length: 3 }).map((_, index) => (
           <Card key={index} className="gap-0 rounded-xl p-4 shadow-none">
             <CardContent className="p-0">
               <div className="flex items-start gap-3">
@@ -141,34 +157,36 @@ export default function ProfileProvidersClient() {
                     </div>
 
                     <div className="space-y-3">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={isProviderEnabled}
-                          aria-label={`${isProviderEnabled ? "Disable" : "Enable"} ${provider.label}`}
-                          onClick={() =>
-                            setProviderEnabled(provider.id, !isProviderEnabled)
-                          }
-                          disabled={isSavingModels}
-                          className={`relative inline-flex h-[1.15rem] w-8 shrink-0 rounded-full border border-transparent shadow-xs transition-all outline-none ${
-                            isProviderEnabled ? "bg-primary" : "bg-input"
-                          } ${isSavingModels ? "cursor-not-allowed opacity-60" : ""}`}
-                        >
-                          <span
-                            className={`block size-4 rounded-full bg-background transition-transform ${
-                              isProviderEnabled
-                                ? "translate-x-[calc(100%-2px)]"
-                                : "translate-x-0"
-                            }`}
-                          />
-                        </button>
-                        <span className="text-sm font-medium text-foreground">
-                          {provider.label}
-                        </span>
-                      </div>
+                      {provider.supportsModelToggle ? (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isProviderEnabled}
+                            aria-label={`${isProviderEnabled ? "Disable" : "Enable"} ${provider.label}`}
+                            onClick={() =>
+                              setProviderEnabled(provider.id, !isProviderEnabled)
+                            }
+                            disabled={isSavingModels}
+                            className={`relative inline-flex h-[1.15rem] w-8 shrink-0 rounded-full border border-transparent shadow-xs transition-all outline-none ${
+                              isProviderEnabled ? "bg-primary" : "bg-input"
+                            } ${isSavingModels ? "cursor-not-allowed opacity-60" : ""}`}
+                          >
+                            <span
+                              className={`block size-4 rounded-full bg-background transition-transform ${
+                                isProviderEnabled
+                                  ? "translate-x-[calc(100%-2px)]"
+                                  : "translate-x-0"
+                              }`}
+                            />
+                          </button>
+                          <span className="text-sm font-medium text-foreground">
+                            {provider.label}
+                          </span>
+                        </div>
+                      ) : null}
 
-                      {isProviderEnabled ? (
+                      {isProviderEnabled || !provider.supportsModelToggle ? (
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
                             type="button"
@@ -211,6 +229,8 @@ export default function ProfileProvidersClient() {
             ? hasGoogleApiKey
             : activeProvider === "openrouter"
               ? hasOpenRouterApiKey
+              : activeProvider === "unsplash"
+                ? hasUnsplashApiKey
               : false
         }
         isSaving={isSavingKey}

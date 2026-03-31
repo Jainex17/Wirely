@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { parseBatchWireOutput, parseWireOutput } from "@/lib/wireOutput";
+import {
+  normalizeGeneratedHtml,
+  parseBatchWireOutput,
+  parseWireOutput,
+} from "@/lib/wireOutput";
 
 describe("parseWireOutput", () => {
   it("extracts details from content before HTML marker when DETAILS marker is missing", () => {
@@ -51,5 +55,27 @@ HTML_2:
 
     const parsed = parseWireOutput(raw);
     expect(parsed.details).toContain("LyricFlow is a sleek, dark-themed");
+  });
+
+  it("keeps stock-slot placeholders while removing disallowed bitmap sources", () => {
+    const raw = `<!doctype html><html><body>
+      <img data-wirely-stock-slot="hero-1" src="wirely-stock://hero-1" />
+      <img src="https://evil.example.com/tracker.png" />
+      <img src="https://images.unsplash.com/photo-1" />
+    </body></html>`;
+
+    const normalized = normalizeGeneratedHtml(raw, { allowImages: true });
+    expect(normalized.html).toContain('src="wirely-stock://hero-1"');
+    expect(normalized.html).toContain("images.unsplash.com/photo-1");
+    expect(normalized.html).not.toContain("evil.example.com/tracker.png");
+  });
+
+  it("wraps body content in a main landmark when the model omits one", () => {
+    const raw = "<!doctype html><html><body><section><h1>Page</h1></section></body></html>";
+
+    const normalized = normalizeGeneratedHtml(raw, { allowImages: true });
+
+    expect(normalized.html).toContain("<main>");
+    expect(normalized.html).toContain("<section><h1>Page</h1></section>");
   });
 });

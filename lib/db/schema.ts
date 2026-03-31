@@ -60,6 +60,11 @@ export const users = pgTable(
     // Legacy column name kept for compatibility; stores AES-GCM auth tag.
     openRouterApiKeyHmac: text("openrouter_api_key_hmac"),
     openRouterApiKeyKeyVersion: integer("openrouter_api_key_key_version"),
+    unsplashApiKeyCiphertext: text("unsplash_api_key_ciphertext"),
+    unsplashApiKeyIv: text("unsplash_api_key_iv"),
+    // Legacy column name kept for compatibility; stores AES-GCM auth tag.
+    unsplashApiKeyHmac: text("unsplash_api_key_hmac"),
+    unsplashApiKeyKeyVersion: integer("unsplash_api_key_key_version"),
     enabledGoogleModels: jsonb("enabled_google_models").$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

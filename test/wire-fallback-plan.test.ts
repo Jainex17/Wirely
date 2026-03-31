@@ -42,4 +42,31 @@ describe("fallback design plan intent inference", () => {
       "Each concept variant must clearly differ in palette mood",
     );
   });
+
+  it("does not force stock images on fallback landing pages unless requested", () => {
+    const plan = buildFallbackDesignPlan({
+      userPrompt: "Design a landing page for an AI marketing automation product.",
+      requestedOutputCount: 1,
+      targetPages: [{ id: "page-1", title: "Page 1" }],
+      forceSinglePage: true,
+      stylePreset: WIRE_STYLE_PRESETS[0],
+    });
+
+    expect(plan.globalDesign.stockImages.enabled).toBe(false);
+    expect(plan.outputs[0]?.imageSlots).toEqual([]);
+  });
+
+  it("enables stock images on fallback plans when the prompt explicitly requests imagery", () => {
+    const plan = buildFallbackDesignPlan({
+      userPrompt:
+        "Design a landing page for an AI marketing automation product with a strong hero image and supporting photos.",
+      requestedOutputCount: 1,
+      targetPages: [{ id: "page-1", title: "Page 1" }],
+      forceSinglePage: true,
+      stylePreset: WIRE_STYLE_PRESETS[0],
+    });
+
+    expect(plan.globalDesign.stockImages.enabled).toBe(true);
+    expect(plan.outputs[0]?.imageSlots.length).toBeGreaterThan(0);
+  });
 });

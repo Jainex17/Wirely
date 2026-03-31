@@ -4,6 +4,7 @@ const ALLOWED_EXTERNAL_SCRIPT_PATTERNS = [
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
 ] as const;
+const ALLOWED_IMAGE_HOSTS = ["images.unsplash.com", "plus.unsplash.com"] as const;
 
 const UNSAFE_INLINE_SCRIPT_PATTERN =
   /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon|websocket|eventsource|broadcastchannel|sharedworker|worker|window\.location|document\.location)\b|window\.(?:top|parent)|\bnew\s+Image\s*\(|(?:^|[^\w$])Image\s*\(|(?:^|[^\w$.])postMessage\s*\(|\.\s*src\s*=/i;
@@ -12,7 +13,7 @@ const IFRAME_CSP = [
   "default-src 'none'",
   "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
   "style-src https://cdn.jsdelivr.net 'unsafe-inline'",
-  "img-src https: data: blob:",
+  `img-src ${ALLOWED_IMAGE_HOSTS.map((host) => `https://${host}`).join(" ")} data: blob:`,
   "font-src https: data:",
   "connect-src 'none'",
   "frame-src 'none'",
@@ -80,6 +81,57 @@ const sanitizeUnsafeNavigation = (value: string) =>
     .replace(/\s(href|src)\s*=\s*("|\')\s*javascript:[^"']*\2/gi, ' $1="#"')
     .replace(/\s(href|src)\s*=\s*javascript:[^\s>]+/gi, ' $1="#"');
 
+const parseAttributeValue = (value: string) =>
+  value.replace(/^['"]|['"]$/g, "").trim();
+
+const isAllowedImageUrl = (value: string) => {
+  if (!value) return false;
+  if (value.startsWith("data:") || value.startsWith("blob:")) return true;
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "https:" &&
+      ALLOWED_IMAGE_HOSTS.includes(parsed.hostname.toLowerCase() as (typeof ALLOWED_IMAGE_HOSTS)[number])
+    );
+  } catch {
+    return false;
+  }
+};
+
+const sanitizeImageSources = (value: string) =>
+  value
+    .replace(/<img\b[\s\S]*?>/gi, (imgTag) => {
+      const srcMatch = imgTag.match(
+        /\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+      );
+      const src = parseAttributeValue(
+        srcMatch?.[2] ?? srcMatch?.[3] ?? srcMatch?.[4] ?? "",
+      );
+      return isAllowedImageUrl(src) ? imgTag : "";
+    })
+    .replace(/<picture\b[\s\S]*?<\/picture>/gi, (pictureTag) => {
+      const sourceMatches = Array.from(
+        pictureTag.matchAll(
+          /<source\b[^>]*\bsrcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+        ),
+      );
+      const hasAllowedSource = sourceMatches.some((match) => {
+        const srcSetValue = parseAttributeValue(
+          match[2] ?? match[3] ?? match[4] ?? "",
+        );
+        const firstCandidate = srcSetValue.split(",")[0]?.trim().split(/\s+/)[0] ?? "";
+        return isAllowedImageUrl(firstCandidate);
+      });
+      const imgMatch = pictureTag.match(/<img\b[\s\S]*?>/i)?.[0] ?? "";
+      const imgSrc = parseAttributeValue(
+        imgMatch.match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i)?.[2] ??
+          imgMatch.match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i)?.[3] ??
+          imgMatch.match(/\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i)?.[4] ??
+          "",
+      );
+      return hasAllowedSource || isAllowedImageUrl(imgSrc) ? pictureTag : "";
+    });
+
 const ensureIframeCspMeta = (value: string) => {
   const withoutExistingCsp = value.replace(
     /<meta\b[^>]*http-equiv\s*=\s*("|\')content-security-policy\1[^>]*>/gi,
@@ -106,7 +158,9 @@ const ensureIframeCspMeta = (value: string) => {
 export const sanitizeIframeHtml = (html: string): string => {
   if (!html) return "";
   const sanitized = sanitizeUnsafeNavigation(
-    removeEventHandlers(removeDisallowedTags(sanitizeScriptTags(html))),
+    sanitizeImageSources(
+      removeEventHandlers(removeDisallowedTags(sanitizeScriptTags(html))),
+    ),
   );
   return ensureIframeCspMeta(sanitized);
 };

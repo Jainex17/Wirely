@@ -20,6 +20,7 @@ const CRITICAL_QUALITY_VIOLATIONS = new Set([
   "inline_style_present",
   "disallowed_script_detected",
   "image_present_without_permission",
+  "missing_planned_stock_image_slot",
   "chart_placeholder_detected",
   "missing_chart_render_signal",
   "intent_mismatch_dashboard_in_landing",

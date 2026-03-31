@@ -80,6 +80,7 @@ You are Wirely's planning engine. Convert the user's request into a deterministi
 
 Rules:
 - Return a design plan only through the structured output schema.
+- Return raw schema data only. Do not add prose, markdown fences, headings, or explanatory text.
 - Decide structure first, not code.
 - The plan must be rich enough that another model can generate distinctive HTML without inventing core architecture.
 - Do not return wrapper keys like "designPlan", "pages", or "outputKind" at the top level.
@@ -88,6 +89,8 @@ Rules:
 - Use preset id "${suggestedPreset.id}" unless the prompt strongly implies a different preset from the allowed set.
 - Prefer memorable concept names for concept variants.
 - For information architecture, outputs must represent different real pages.
+- globalDesign must include stockImages with these keys: enabled, visualIntent, keywords.
+- Every output must include imageSlots (array, empty array allowed).
 ${modeInstruction}
 
 Context:
@@ -104,8 +107,12 @@ Required planning standards:
 - audience must be specific.
 - brandSummary should compress the product/value proposition.
 - globalDesign must commit to palette, typography, density, motion, and one memorable hook.
+- globalDesign.stockImages.enabled must reflect whether stock photography materially helps this artifact.
+- globalDesign.stockImages.keywords must be concrete search terms.
 - Every output needs a distinct layout strategy.
 - Every output needs at least 3 required elements and at least 3 planned sections.
+- If stock images are enabled, at least one output must include one or more concrete imageSlots.
+- If stock images are disabled, keep imageSlots as empty arrays.
 - outputKind must align with the chosen generationMode.
 `.trim();
 };
@@ -123,7 +130,41 @@ const formatPlanOutput = (output: PlannedOutput) =>
         `${index + 1}. ${section.label} | ${section.emphasis} | ${section.purpose} | ${section.layoutHint}`,
     ),
     `Required elements: ${output.requiredElements.join(", ")}`,
+    output.imageSlots.length > 0
+      ? `Image slots: ${output.imageSlots
+          .map(
+            (slot) =>
+              `${slot.id} (${slot.aspectRatio}, ${slot.priority}) => ${slot.query}`,
+          )
+          .join(" | ")}`
+      : "Image slots: none",
   ].join("\n");
+
+const buildStockSlotExecutionRules = (output: PlannedOutput) => {
+  if (output.imageSlots.length === 0) {
+    return `
+- Do not include bitmap image tags (<img>/<picture>) or CSS background-image URL values in this output.
+`.trim();
+  }
+
+  const slotLines = output.imageSlots
+    .map(
+      (slot) =>
+        `  - ${slot.id}: query "${slot.query}", aspect ${slot.aspectRatio}, alt hint "${slot.altHint}"`,
+    )
+    .join("\n");
+
+  return `
+- This output has ${output.imageSlots.length} stock-image slots. Use only these placeholder markers:
+${slotLines}
+- For each planned slot, emit exactly one <img> tag with:
+  - data-wirely-stock-slot="<slot id>"
+  - src="wirely-stock://<slot id>"
+  - alt text aligned to the slot alt hint
+- Do not emit any other external bitmap image URLs.
+- Keep slot IDs exact so backend resolution can replace them deterministically.
+`.trim();
+};
 
 const conceptVariantAxes = [
   {
@@ -246,6 +287,8 @@ Plan-wide context:
 - Density: ${plan.globalDesign.density}
 - Motion: ${plan.globalDesign.motion}
 - Differentiation hook: ${plan.globalDesign.differentiationHook}
+- Stock images enabled: ${plan.globalDesign.stockImages.enabled ? "yes" : "no"}
+- Stock image keywords: ${plan.globalDesign.stockImages.keywords.join(", ")}
 
 This output:
 ${formatPlanOutput(output)}
@@ -266,6 +309,7 @@ ${composeConceptVariantDifferentiationRules({
 })}
 ${buildImageRule(allowImages)}
 ${buildIntentGuardrails(userPrompt)}
+${buildStockSlotExecutionRules(output)}
 `.trim();
 
 export const composeCritiquePrompt = ({
@@ -356,6 +400,8 @@ Plan-wide context:
 - Density: ${plan.globalDesign.density}
 - Motion: ${plan.globalDesign.motion}
 - Differentiation hook: ${plan.globalDesign.differentiationHook}
+- Stock images enabled: ${plan.globalDesign.stockImages.enabled ? "yes" : "no"}
+- Stock image keywords: ${plan.globalDesign.stockImages.keywords.join(", ")}
 
 This output:
 ${formatPlanOutput(output)}
@@ -378,6 +424,7 @@ ${composeConceptVariantDifferentiationRules({
 })}
 ${buildImageRule(allowImages)}
 ${buildIntentGuardrails(userPrompt)}
+${buildStockSlotExecutionRules(output)}
 `.trim();
 
 const composeBatchDetails = (plan: DesignPlan) => {

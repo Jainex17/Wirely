@@ -20,11 +20,12 @@ export interface AiSettingsModel {
 interface AiSettingsResponse {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasUnsplashApiKey: boolean;
   enabledModelIds: WireModelName[];
   models: AiSettingsModel[];
 }
 
-export type ApiKeyProvider = "google" | "openrouter";
+export type ApiKeyProvider = "google" | "openrouter" | "unsplash";
 
 const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -33,6 +34,7 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   if (
     typeof record.hasGoogleApiKey !== "boolean" ||
     typeof record.hasOpenRouterApiKey !== "boolean" ||
+    typeof record.hasUnsplashApiKey !== "boolean" ||
     !Array.isArray(record.enabledModelIds) ||
     !Array.isArray(record.models)
   ) {
@@ -57,6 +59,7 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   return {
     hasGoogleApiKey: record.hasGoogleApiKey,
     hasOpenRouterApiKey: record.hasOpenRouterApiKey,
+    hasUnsplashApiKey: record.hasUnsplashApiKey,
     enabledModelIds: record.enabledModelIds as WireModelName[],
     models,
   };
@@ -68,6 +71,7 @@ export function useProfileAiSettings() {
   const [isSavingModels, setIsSavingModels] = useState(false);
   const [hasGoogleApiKey, setHasGoogleApiKey] = useState(false);
   const [hasOpenRouterApiKey, setHasOpenRouterApiKey] = useState(false);
+  const [hasUnsplashApiKey, setHasUnsplashApiKey] = useState(false);
   const [models, setModels] = useState<AiSettingsModel[]>([]);
 
   const enabledModelIds = useMemo(
@@ -78,6 +82,7 @@ export function useProfileAiSettings() {
   const applySettings = useCallback((payload: AiSettingsResponse) => {
     setHasGoogleApiKey(payload.hasGoogleApiKey);
     setHasOpenRouterApiKey(payload.hasOpenRouterApiKey);
+    setHasUnsplashApiKey(payload.hasUnsplashApiKey);
     setModels(payload.models);
   }, []);
 
@@ -124,7 +129,9 @@ export function useProfileAiSettings() {
           body: JSON.stringify(
             provider === "google"
               ? { googleApiKey: apiKey }
-              : { openRouterApiKey: apiKey },
+              : provider === "openrouter"
+                ? { openRouterApiKey: apiKey }
+                : { unsplashApiKey: apiKey },
           ),
         });
 
@@ -142,7 +149,9 @@ export function useProfileAiSettings() {
         toast.success(
           provider === "google"
             ? "Google API key saved."
-            : "OpenRouter API key saved.",
+            : provider === "openrouter"
+              ? "OpenRouter API key saved."
+              : "Unsplash API key saved.",
         );
 
         return true;
@@ -170,7 +179,9 @@ export function useProfileAiSettings() {
           body: JSON.stringify(
             provider === "google"
               ? { clearGoogleApiKey: true }
-              : { clearOpenRouterApiKey: true },
+              : provider === "openrouter"
+                ? { clearOpenRouterApiKey: true }
+                : { clearUnsplashApiKey: true },
           ),
         });
 
@@ -188,7 +199,9 @@ export function useProfileAiSettings() {
         toast.success(
           provider === "google"
             ? "Google API key removed."
-            : "OpenRouter API key removed.",
+            : provider === "openrouter"
+              ? "OpenRouter API key removed."
+              : "Unsplash API key removed.",
         );
 
         return true;
@@ -278,6 +291,7 @@ export function useProfileAiSettings() {
     isSavingModels,
     hasGoogleApiKey,
     hasOpenRouterApiKey,
+    hasUnsplashApiKey,
     models,
     enabledModelIds,
     loadSettings,

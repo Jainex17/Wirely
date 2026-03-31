@@ -1,3 +1,5 @@
+import { isAllowedStockImageUrl } from "@/lib/stockImages";
+
 const DETAILS_MARKER = "DETAILS:";
 const TITLE_MARKER = "TITLE:";
 const HTML_MARKER = "HTML:";
@@ -374,11 +376,100 @@ const sanitizeUnsafeNavigation = (value: string) =>
     .replace(/\bwindow\.(top|parent)\b/gi, "window");
 
 const removeImagesIfBlocked = (value: string, allowImages: boolean) =>
-  allowImages ? value : value.replace(/<img\b[\s\S]*?>/gi, "");
+  allowImages
+    ? value
+    : value
+        .replace(/<img\b[\s\S]*?>/gi, "")
+        .replace(/<picture\b[\s\S]*?<\/picture>/gi, "");
+
+const parseAttributeValue = (value: string) =>
+  value.replace(/^['"]|['"]$/g, "").trim();
+
+const sanitizeImgTagsForAllowlist = (value: string) =>
+  value.replace(/<img\b[\s\S]*?>/gi, (imgTag) => {
+    const srcMatch = imgTag.match(
+      /\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+    );
+    const src = parseAttributeValue(
+      srcMatch?.[2] ?? srcMatch?.[3] ?? srcMatch?.[4] ?? "",
+    );
+
+    const hasStockSlot = /\bdata-wirely-stock-slot\s*=\s*(".*?"|'.*?'|[^\s>]+)/i.test(
+      imgTag,
+    );
+    const isStockPlaceholder = hasStockSlot && /^wirely-stock:\/\//i.test(src);
+    if (!src || (!isAllowedStockImageUrl(src) && !isStockPlaceholder)) {
+      return "";
+    }
+
+    const srcSetMatch = imgTag.match(
+      /\bsrcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+    );
+    if (!srcSetMatch) {
+      return imgTag;
+    }
+
+    const srcSetRaw = parseAttributeValue(
+      srcSetMatch[2] ?? srcSetMatch[3] ?? srcSetMatch[4] ?? "",
+    );
+    const filteredCandidates = srcSetRaw
+      .split(",")
+      .map((candidate) => candidate.trim())
+      .filter(Boolean)
+      .filter((candidate) => {
+        const [candidateUrl] = candidate.split(/\s+/, 1);
+        return isAllowedStockImageUrl(candidateUrl ?? "");
+      });
+
+    if (filteredCandidates.length === 0) {
+      return imgTag.replace(
+        /\s+srcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+        "",
+      );
+    }
+
+    return imgTag.replace(
+      /\bsrcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+      `srcset="${filteredCandidates.join(", ")}"`,
+    );
+  });
+
+const sanitizeBackgroundImageUrls = (value: string, allowImages: boolean) => {
+  const sanitizeUrl = (rawUrl: string) => {
+    const parsed = parseAttributeValue(rawUrl);
+    if (!allowImages) return "none";
+    return isAllowedStockImageUrl(parsed) ? `url(${rawUrl})` : "none";
+  };
+
+  return value
+    .replace(
+      /background-image\s*:\s*url\(([^)]+)\)/gi,
+      (_match, rawUrl: string) => `background-image:${sanitizeUrl(rawUrl)}`,
+    )
+    .replace(
+      /\[background-image:url\(([^)]+)\)\]/gi,
+      (_match, rawUrl: string) => {
+        if (!allowImages) return "[background-image:none]";
+        return isAllowedStockImageUrl(parseAttributeValue(rawUrl))
+          ? `[background-image:url(${rawUrl})]`
+          : "[background-image:none]";
+      },
+    );
+};
 
 const ensureDocumentSkeleton = (input: string) => {
   const cleaned = input.trim();
   const contentWithoutDoctype = cleaned.replace(/<!doctype[^>]*>/i, "").trim();
+  const ensureMainLandmark = (bodyContent: string) => {
+    const trimmedBody = bodyContent.trim();
+    if (!trimmedBody) {
+      return "<main></main>";
+    }
+    if (/<main[\s>]/i.test(trimmedBody) && /<\/main>/i.test(trimmedBody)) {
+      return trimmedBody;
+    }
+    return `<main>\n${trimmedBody}\n</main>`;
+  };
 
   if (!/<html[\s>]/i.test(contentWithoutDoctype)) {
     return `<!doctype html>
@@ -392,7 +483,7 @@ ${REQUIRED_ELEMENTS}
 ${REQUIRED_BOOTSTRAP_ICONS_LINK}
 </head>
 <body>
-${contentWithoutDoctype}
+${ensureMainLandmark(contentWithoutDoctype)}
 </body>
 </html>`;
   }
@@ -450,7 +541,7 @@ ${REQUIRED_BOOTSTRAP_ICONS_LINK}
 ${safeHeadInner}
 </head>
 ${bodyOpenTag}
-${bodyInner.trim()}
+${ensureMainLandmark(bodyInner)}
 </body>
 </html>`;
 };
@@ -508,6 +599,18 @@ export const normalizeGeneratedHtml = (
   if (!allowImages && imageCount > 0) {
     violations.push("image_removed");
     html = removeImagesIfBlocked(html, allowImages);
+  } else if (allowImages && imageCount > 0) {
+    const sanitizedImages = sanitizeImgTagsForAllowlist(html);
+    if (sanitizedImages !== html) {
+      violations.push("disallowed_image_removed");
+      html = sanitizedImages;
+    }
+  }
+
+  const backgroundImageSanitized = sanitizeBackgroundImageUrls(html, allowImages);
+  if (backgroundImageSanitized !== html) {
+    violations.push("background_image_sanitized");
+    html = backgroundImageSanitized;
   }
 
   if (/javascript:/i.test(html) || /\bwindow\.(top|parent)\b/i.test(html)) {

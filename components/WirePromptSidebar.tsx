@@ -27,7 +27,6 @@ import {
   normalizeGeneratedHtml,
   parseBatchWireOutput,
   parseWireOutput,
-  userExplicitlyRequestedImages,
 } from "@/lib/wireOutput";
 import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
@@ -522,7 +521,7 @@ export default function WirePromptSidebar({
     onFinish: (message) => {
       try {
         const activePrompt = latestPromptRef.current;
-        const allowImages = userExplicitlyRequestedImages(activePrompt);
+        const allowImages = true;
         const stylePreset = selectWireStylePreset({
           wireId,
           userPrompt: activePrompt,

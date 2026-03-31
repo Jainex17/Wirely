@@ -19,6 +19,11 @@ const conceptPlan: DesignPlan = {
     density: "balanced",
     motion: "refined",
     differentiationHook: "Calm conversion-oriented storytelling.",
+    stockImages: {
+      enabled: true,
+      visualIntent: "Use editorial stock photography to support trust and narrative flow.",
+      keywords: ["marketing", "team", "workspace"],
+    },
   },
   outputs: [
     {
@@ -53,6 +58,16 @@ const conceptPlan: DesignPlan = {
         },
       ],
       requiredElements: ["hero value proposition", "proof rail", "primary cta"],
+      imageSlots: [
+        {
+          id: "hero-1",
+          sectionId: "hero-story",
+          query: "startup team collaboration",
+          aspectRatio: "16:9",
+          priority: "hero",
+          altHint: "Team collaborating around campaign dashboard.",
+        },
+      ],
     },
     {
       key: "guided-clarity",
@@ -89,6 +104,16 @@ const conceptPlan: DesignPlan = {
         "editorial manifesto hero",
         "narrative product walkthrough",
         "comparison block",
+      ],
+      imageSlots: [
+        {
+          id: "hero-2",
+          sectionId: "manifesto",
+          query: "editorial workspace portrait",
+          aspectRatio: "4:3",
+          priority: "hero",
+          altHint: "Editorial workspace setting with focused team.",
+        },
       ],
     },
   ],

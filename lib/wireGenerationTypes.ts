@@ -21,6 +21,20 @@ const globalDesignSchema = z.object({
   density: z.enum(["airy", "balanced", "dense"]),
   motion: z.enum(["minimal", "refined", "bold"]),
   differentiationHook: z.string().trim().min(8).max(240),
+  stockImages: z.object({
+    enabled: z.boolean(),
+    visualIntent: z.string().trim().min(4).max(200),
+    keywords: z.array(z.string().trim().min(2).max(40)).min(1).max(8),
+  }),
+});
+
+const stockImageSlotSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  sectionId: z.string().trim().min(1).max(64),
+  query: z.string().trim().min(3).max(200),
+  aspectRatio: z.enum(["21:9", "16:9", "4:3", "1:1", "3:4"]),
+  priority: z.enum(["hero", "supporting"]),
+  altHint: z.string().trim().min(3).max(160),
 });
 
 const sectionBlueprintSchema = z.object({
@@ -40,6 +54,7 @@ export const plannedOutputSchema = z.object({
   layoutStrategy: z.string().trim().min(8).max(240),
   sectionBlueprint: z.array(sectionBlueprintSchema).min(3).max(12),
   requiredElements: z.array(z.string().trim().min(2).max(120)).min(3).max(16),
+  imageSlots: z.array(stockImageSlotSchema).max(6),
 });
 
 export const designPlanSchema = z.object({
@@ -56,6 +71,70 @@ export type GenerationMode = z.infer<typeof generationModeSchema>;
 export type GenerationOutputKind = z.infer<typeof generationOutputKindSchema>;
 export type PlannedOutput = z.infer<typeof plannedOutputSchema>;
 export type DesignPlan = z.infer<typeof designPlanSchema>;
+
+const DESIGN_PLAN_TOP_LEVEL_KEYS = [
+  "generationMode",
+  "artifactType",
+  "audience",
+  "brandSummary",
+  "tone",
+  "globalDesign",
+  "outputs",
+] as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const looksLikeDesignPlanRecord = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) &&
+  DESIGN_PLAN_TOP_LEVEL_KEYS.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+
+const unwrapDesignPlanCandidate = (value: unknown): unknown => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return value;
+    try {
+      return unwrapDesignPlanCandidate(JSON.parse(trimmed));
+    } catch {
+      return value;
+    }
+  }
+
+  if (looksLikeDesignPlanRecord(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 1) {
+      return unwrapDesignPlanCandidate(value[0]);
+    }
+    return value;
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const nestedCandidates = [
+    value.designPlan,
+    value.plan,
+    value.response,
+    value.result,
+    value.output,
+    value.object,
+    value.data,
+  ];
+
+  for (const candidate of nestedCandidates) {
+    if (candidate === undefined) continue;
+    const unwrapped = unwrapDesignPlanCandidate(candidate);
+    if (looksLikeDesignPlanRecord(unwrapped)) {
+      return unwrapped;
+    }
+  }
+
+  return value;
+};
 
 const normalizeOutput = (
   output: PlannedOutput,
@@ -90,6 +169,11 @@ const normalizeOutput = (
       generationMode === "concept_variants"
         ? output.conceptName?.trim() || normalizedTitle
         : undefined,
+    imageSlots: output.imageSlots.map((slot) => ({
+      ...slot,
+      id: slot.id.trim().toLowerCase(),
+      sectionId: slot.sectionId.trim().toLowerCase(),
+    })),
   };
 };
 
@@ -102,7 +186,7 @@ export const validateDesignPlan = ({
   expectedOutputCount: number;
   requestedMode?: GenerationMode;
 }) => {
-  const parsed = designPlanSchema.parse(value);
+  const parsed = designPlanSchema.parse(unwrapDesignPlanCandidate(value));
 
   if (parsed.outputs.length !== expectedOutputCount) {
     throw new Error(
@@ -129,6 +213,15 @@ export const validateDesignPlan = ({
     const distinctRoles = new Set(outputs.map((output) => output.pageRole.toLowerCase()));
     if (distinctRoles.size !== outputs.length) {
       throw new Error("Information architecture outputs must have unique page roles.");
+    }
+  }
+
+  if (parsed.globalDesign.stockImages.enabled) {
+    const hasAnyImageSlots = outputs.some((output) => output.imageSlots.length > 0);
+    if (!hasAnyImageSlots) {
+      throw new Error(
+        "Planner enabled stock images but did not provide any output image slots.",
+      );
     }
   }
 

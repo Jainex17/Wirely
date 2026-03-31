@@ -5,6 +5,7 @@
 - can seelct model and how many pages they want to generate on start
 - select any pages that is generated and continue edit them
 - figure out icons and images and charts
+- planner-driven stock image slots with Unsplash BYOK and CDN-optimized image URLs
 - generated HTML supports Bootstrap Icons class names (bi bi-...)
 - export to figma
 - 

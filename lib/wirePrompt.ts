@@ -149,7 +149,7 @@ export const selectWireStylePreset = ({
 
 export const buildImageRule = (allowImages: boolean) =>
   allowImages
-    ? "- Images are allowed because the user explicitly requested them. Inline <svg> UI icons/charts are always allowed."
+    ? "- Stock bitmap images are allowed for this output. Inline <svg> UI icons/charts are always allowed."
     : "- Do not use external bitmap image assets (<img>, <picture>, or CSS background-image URLs). Inline <svg> icons/charts are allowed and encouraged.";
 
 export const buildIntentGuardrails = (userPrompt?: string) => {

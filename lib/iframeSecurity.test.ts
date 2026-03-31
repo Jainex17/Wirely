@@ -26,6 +26,7 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).toContain("new Chart(");
     expect(sanitized).toContain("Content-Security-Policy");
     expect(sanitized).toContain("connect-src 'none'");
+    expect(sanitized).toContain("img-src https://images.unsplash.com https://plus.unsplash.com data: blob:");
   });
 
   it("removes disallowed and unsafe scripts", () => {
@@ -63,5 +64,16 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).not.toContain("<input");
     expect(sanitized).not.toContain("onclick=");
     expect(sanitized).toContain('href="#"');
+  });
+
+  it("removes image tags from disallowed hosts", () => {
+    const html = `
+      <img src="https://images.unsplash.com/photo-1" alt="ok" />
+      <img src="https://evil.example.com/tracker.png" alt="bad" />
+    `;
+
+    const sanitized = sanitizeIframeHtml(html);
+    expect(sanitized).toContain("images.unsplash.com");
+    expect(sanitized).not.toContain("evil.example.com");
   });
 });

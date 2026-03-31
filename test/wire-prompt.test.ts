@@ -62,7 +62,7 @@ describe("wirePrompt helpers", () => {
 
     expect(
       prompt.includes(
-        "Images are allowed because the user explicitly requested them",
+        "Stock bitmap images are allowed for this output",
       ),
     ).toBe(true);
   });

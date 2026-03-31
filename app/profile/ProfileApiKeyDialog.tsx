@@ -25,17 +25,25 @@ interface ProfileApiKeyDialogProps {
 }
 
 const getProviderLabel = (provider: ApiKeyProvider) =>
-  provider === "google" ? "Google" : "OpenRouter";
+  provider === "google"
+    ? "Google"
+    : provider === "openrouter"
+      ? "OpenRouter"
+      : "Unsplash";
 
 const getProviderPlaceholder = (provider: ApiKeyProvider) =>
   provider === "google"
     ? "Paste your Google API key (e.g., AIza...)"
-    : "Paste your OpenRouter API key (e.g., sk-or-v1-...)";
+    : provider === "openrouter"
+      ? "Paste your OpenRouter API key (e.g., sk-or-v1-...)"
+      : "Paste your Unsplash Access Key";
 
 const getProviderLearnMoreUrl = (provider: ApiKeyProvider) =>
   provider === "google"
     ? "https://aistudio.google.com/app/apikey"
-    : "https://openrouter.ai/keys";
+    : provider === "openrouter"
+      ? "https://openrouter.ai/keys"
+      : "https://unsplash.com/documentation";
 
 export default function ProfileApiKeyDialog({
   provider,
@@ -83,7 +91,9 @@ function ProfileApiKeyDialogBody({
       toast.error(
         provider === "google"
           ? "Enter a Google API key."
-          : "Enter an OpenRouter API key.",
+          : provider === "openrouter"
+            ? "Enter an OpenRouter API key."
+            : "Enter an Unsplash API key.",
       );
       return;
     }

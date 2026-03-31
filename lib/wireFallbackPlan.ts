@@ -219,6 +219,58 @@ const defaultSectionLabels = (artifactType: string) => {
   return ["Hero", "Featured Tools", "Proof", "Closing CTA"];
 };
 
+const inferStockImageEnabled = (prompt: string) => {
+  return /\b(hero|gallery|showcase|visual|photo|photos|image|images)\b/i.test(prompt);
+};
+
+const defaultStockKeywords = (artifactType: string) => {
+  if (artifactType === "dashboard") {
+    return ["workspace", "data", "technology"];
+  }
+  if (artifactType === "landing page" || artifactType === "marketing page") {
+    return ["product", "team", "workspace"];
+  }
+  return ["product", "interface", "design"];
+};
+
+const buildImageSlotsForOutput = ({
+  enabled,
+  artifactType,
+  outputIndex,
+}: {
+  enabled: boolean;
+  artifactType: string;
+  outputIndex: number;
+}): PlannedOutput["imageSlots"] => {
+  if (!enabled) return [];
+  if (artifactType === "dashboard") return [];
+
+  return [
+    {
+      id: `hero-${outputIndex + 1}`,
+      sectionId: "hero",
+      query:
+        artifactType === "landing page" || artifactType === "marketing page"
+          ? "modern product team collaborating"
+          : "modern digital workspace",
+      aspectRatio: "16:9",
+      priority: "hero",
+      altHint: "Editorial hero image supporting the product narrative.",
+    },
+    {
+      id: `support-${outputIndex + 1}`,
+      sectionId: "proof",
+      query:
+        artifactType === "landing page" || artifactType === "marketing page"
+          ? "customer success team in office"
+          : "creative team workshop",
+      aspectRatio: "4:3",
+      priority: "supporting",
+      altHint: "Supporting image reinforcing trust and momentum.",
+    },
+  ];
+};
+
 const buildOutput = ({
   title,
   outputKind,
@@ -227,6 +279,7 @@ const buildOutput = ({
   layoutStrategy,
   requiredElements,
   sectionLabels,
+  imageSlots,
 }: {
   title: string;
   outputKind: "page" | "concept";
@@ -235,6 +288,7 @@ const buildOutput = ({
   layoutStrategy: string;
   requiredElements: string[];
   sectionLabels: string[];
+  imageSlots: PlannedOutput["imageSlots"];
 }): PlannedOutput => ({
   key: slugify(title) || slugify(pageRole) || "output",
   title,
@@ -247,6 +301,7 @@ const buildOutput = ({
     labels: sectionLabels.length >= 3 ? sectionLabels : defaultSectionLabels(artifactType),
     outputTitle: title,
   }),
+  imageSlots,
 });
 
 const buildOutputs = ({
@@ -256,6 +311,7 @@ const buildOutputs = ({
   targetPages,
   stylePreset,
   malformedSeed,
+  stockImagesEnabled,
 }: {
   generationMode: GenerationMode;
   artifactType: string;
@@ -263,6 +319,7 @@ const buildOutputs = ({
   targetPages: Array<{ id: string; title: string; html?: string }>;
   stylePreset: WireStylePreset;
   malformedSeed?: unknown;
+  stockImagesEnabled: boolean;
 }) => {
   const seedRecord =
     malformedSeed && typeof malformedSeed === "object" && !Array.isArray(malformedSeed)
@@ -304,6 +361,11 @@ const buildOutputs = ({
               ? ["sidebar navigation", "kpi cards", "charts"]
               : ["hero section", "feature group", "cta"],
         sectionLabels: sectionSeed,
+        imageSlots: buildImageSlotsForOutput({
+          enabled: stockImagesEnabled,
+          artifactType,
+          outputIndex: 0,
+        }),
       }),
     ];
   }
@@ -343,6 +405,11 @@ const buildOutputs = ({
             : title === "Pricing"
               ? ["Plan Intro", "Pricing Grid", "Comparison", "CTA"]
               : ["Hero", "Core Content", "Supporting Detail", "CTA"],
+        imageSlots: buildImageSlotsForOutput({
+          enabled: stockImagesEnabled,
+          artifactType,
+          outputIndex: index,
+        }),
       });
     });
   }
@@ -366,6 +433,11 @@ const buildOutputs = ({
         layoutStrategy: profile.layoutStrategy,
         requiredElements: profile.requiredElements,
         sectionLabels: profile.sectionLabels,
+        imageSlots: buildImageSlotsForOutput({
+          enabled: stockImagesEnabled,
+          artifactType,
+          outputIndex: index,
+        }),
       });
     })(),
   );
@@ -420,6 +492,7 @@ export const buildFallbackDesignPlan = ({
     generationMode === "concept_variants" && requestedOutputCount > 1
       ? "Each concept variant must clearly differ in palette mood, typography tone, and composition rhythm."
       : null;
+  const stockImagesEnabled = inferStockImageEnabled(userPrompt);
 
   return {
     generationMode,
@@ -447,6 +520,14 @@ export const buildFallbackDesignPlan = ({
       differentiationHook: variantDifferentiationNote
         ? `${stylePreset.intent} Keep variants visually non-overlapping in first-screen impression.`
         : stylePreset.intent,
+      stockImages: {
+        enabled: stockImagesEnabled,
+        visualIntent:
+          artifactType === "dashboard"
+            ? "Keep imagery restrained and contextual."
+            : "Use editorial photography to support narrative sections.",
+        keywords: defaultStockKeywords(artifactType),
+      },
     },
     outputs: buildOutputs({
       generationMode,
@@ -455,6 +536,7 @@ export const buildFallbackDesignPlan = ({
       targetPages,
       stylePreset,
       malformedSeed,
+      stockImagesEnabled,
     }),
   };
 };

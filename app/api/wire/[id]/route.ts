@@ -51,11 +51,17 @@ import {
   resolveFastWireModelForStage,
   type WireModelName,
 } from "@/lib/wireModels";
-import { normalizeGeneratedHtml, parseWireOutput, userExplicitlyRequestedImages } from "@/lib/wireOutput";
+import { normalizeGeneratedHtml, parseWireOutput } from "@/lib/wireOutput";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
+import {
+  findMissingStockImageSlotIds,
+  injectStockImageMetadata,
+  removeStockSlotAttributes,
+  resolveStockImagesInHtml,
+} from "@/lib/stockImages";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -574,18 +580,48 @@ const buildQualitySnapshot = ({
   allowImages,
   userPrompt,
   stylePresetId,
+  plannedImageSlots,
+  enforcePlannedImageSlots = true,
 }: {
   html: string;
   allowImages: boolean;
   userPrompt: string;
   stylePresetId: string;
-}): WireQualityReport =>
-  evaluateWireHtmlQuality({
+  plannedImageSlots?: Array<{ id: string }>;
+  enforcePlannedImageSlots?: boolean;
+}): WireQualityReport => {
+  const baseReport = evaluateWireHtmlQuality({
     html,
     allowImages,
     userPrompt,
     stylePresetId,
   });
+
+  if (
+    !enforcePlannedImageSlots ||
+    !allowImages ||
+    !plannedImageSlots ||
+    plannedImageSlots.length === 0
+  ) {
+    return baseReport;
+  }
+
+  const missingSlotIds = findMissingStockImageSlotIds({
+    html,
+    slots: plannedImageSlots,
+  });
+  if (missingSlotIds.length === 0) {
+    return baseReport;
+  }
+
+  return {
+    ...baseReport,
+    score: Math.max(0, baseReport.score - Math.min(36, missingSlotIds.length * 18)),
+    violations: Array.from(
+      new Set([...baseReport.violations, "missing_planned_stock_image_slot"]),
+    ),
+  };
+};
 
 const generatePlan = async ({
   modelName,
@@ -635,6 +671,33 @@ const generatePlan = async ({
       }),
     });
   } catch (error) {
+    const malformedSeed =
+      error && typeof error === "object"
+        ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
+          (error as { value?: unknown }).value)
+        : undefined;
+
+    try {
+      const recoveredPlan = validateDesignPlan({
+        value: malformedSeed,
+        expectedOutputCount: requestedOutputCount,
+        requestedMode: resolveRequestedMode({
+          requestedOutputCount,
+          hasExplicitTargetPage: forceSinglePage,
+        }),
+      });
+
+      logger.warn("wire_planner_schema_recovered", {
+        projectId,
+        modelName,
+        message: getErrorMessage(error),
+      });
+
+      return recoveredPlan;
+    } catch {
+      // Fall through to deterministic fallback plan.
+    }
+
     logger.warn("wire_planner_fallback_used", {
       projectId,
       modelName,
@@ -648,11 +711,7 @@ const generatePlan = async ({
       targetPages,
       forceSinglePage,
       stylePreset: suggestedPreset,
-      malformedSeed:
-        error && typeof error === "object"
-          ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
-            (error as { value?: unknown }).value)
-          : undefined,
+      malformedSeed,
     });
   }
 };
@@ -940,7 +999,6 @@ export async function POST(request: Request, context: RouteContext) {
     resolvedTargetPages.length > 0
       ? resolvedTargetPages.length
       : requestedVariationCount;
-  const allowImages = userExplicitlyRequestedImages(latestUserPrompt);
   const selectedFastModel = resolveFastWireModelForStage(effectiveModelName);
 
   const generationRun = await createGenerationRun({
@@ -1032,6 +1090,13 @@ export async function POST(request: Request, context: RouteContext) {
       details: "",
       html: "",
     }));
+    const rejectionReasons: Array<{
+      outputIndex: number;
+      title: string;
+      stage: "initial" | "final";
+      qualityScore: number;
+      qualityViolations: string[];
+    }> = [];
 
     let successCount = 0;
 
@@ -1043,6 +1108,8 @@ export async function POST(request: Request, context: RouteContext) {
 
       const currentPage = item.targetPageId ? pageById.get(item.targetPageId) ?? null : null;
       const stylePreset = resolveStylePresetForPlan(plan, latestUserPrompt);
+      const outputAllowsImages =
+        plan.globalDesign.stockImages.enabled && item.output.imageSlots.length > 0;
 
       try {
         await updateGenerationOutput({
@@ -1064,7 +1131,7 @@ export async function POST(request: Request, context: RouteContext) {
             outputIndex: item.outputIndex,
             allOutputs: plan.outputs,
             stylePreset,
-            allowImages,
+            allowImages: outputAllowsImages,
             userPrompt: latestUserPrompt,
           }),
           prompt: latestUserPrompt,
@@ -1072,13 +1139,14 @@ export async function POST(request: Request, context: RouteContext) {
 
         const initialParsed = parseWireOutput(initialGeneration.text);
         const normalizedInitial = normalizeGeneratedHtml(initialParsed.html, {
-          allowImages,
+          allowImages: outputAllowsImages,
         });
         const initialQuality = buildQualitySnapshot({
           html: normalizedInitial.html,
-          allowImages,
+          allowImages: outputAllowsImages,
           userPrompt: latestUserPrompt,
           stylePresetId: stylePreset.id,
+          plannedImageSlots: item.output.imageSlots,
         });
 
         const critiqueResult = await generateCritiqueReport({
@@ -1141,7 +1209,7 @@ export async function POST(request: Request, context: RouteContext) {
               outputIndex: item.outputIndex,
               allOutputs: plan.outputs,
               stylePreset,
-              allowImages,
+              allowImages: outputAllowsImages,
               userPrompt: latestUserPrompt,
               critique,
               currentHtml: normalizedInitial.html,
@@ -1150,13 +1218,14 @@ export async function POST(request: Request, context: RouteContext) {
 
           const repairedParsed = parseWireOutput(repairedGeneration.text);
           const repairedNormalized = normalizeGeneratedHtml(repairedParsed.html, {
-            allowImages,
+            allowImages: outputAllowsImages,
           });
           const repairedQuality = buildQualitySnapshot({
             html: repairedNormalized.html,
-            allowImages,
+            allowImages: outputAllowsImages,
             userPrompt: latestUserPrompt,
             stylePresetId: stylePreset.id,
+            plannedImageSlots: item.output.imageSlots,
           });
 
           acceptedTitle = item.output.title;
@@ -1190,6 +1259,85 @@ export async function POST(request: Request, context: RouteContext) {
         }
 
         if (!accepted) {
+          rejectionReasons.push({
+            outputIndex: item.outputIndex,
+            title: item.output.title,
+            stage: "initial",
+            qualityScore: acceptedQuality.score,
+            qualityViolations: acceptedQuality.violations,
+          });
+          logger.warn("wire_generation_output_rejected", {
+            projectId: id,
+            generationRunId: generationRun.id,
+            generationOutputId: persisted.id,
+            outputIndex: item.outputIndex,
+            title: item.output.title,
+            stage: "initial",
+            qualityScore: acceptedQuality.score,
+            qualityViolations: acceptedQuality.violations,
+          });
+          await updateGenerationOutput({
+            generationOutputId: persisted.id,
+            title: item.output.title,
+            critiqueJson: critique as unknown as Record<string, unknown>,
+            details: acceptedDetails || null,
+            qualityScore: acceptedQuality.score,
+            status: "failed",
+            htmlSnapshot: acceptedHtml || null,
+          });
+          return;
+        }
+
+        let finalizedHtml = removeStockSlotAttributes(acceptedHtml);
+        if (outputAllowsImages && item.output.imageSlots.length > 0) {
+          const resolvedStockImages = await resolveStockImagesInHtml({
+            html: acceptedHtml,
+            slots: item.output.imageSlots,
+            unsplashAccessKey: userAiSettings.unsplashApiKey,
+            seed: `${id}:${generationRun.id}:${item.outputIndex}`,
+          });
+          finalizedHtml = injectStockImageMetadata(
+            removeStockSlotAttributes(resolvedStockImages.html),
+            resolvedStockImages.metadata,
+          );
+        }
+
+        const finalizedNormalized = normalizeGeneratedHtml(finalizedHtml, {
+          allowImages: outputAllowsImages,
+        });
+        acceptedHtml = finalizedNormalized.html;
+        acceptedQuality = buildQualitySnapshot({
+          html: acceptedHtml,
+          allowImages: outputAllowsImages,
+          userPrompt: latestUserPrompt,
+          stylePresetId: stylePreset.id,
+          plannedImageSlots: item.output.imageSlots,
+          enforcePlannedImageSlots: false,
+        });
+        accepted = isAcceptedGeneratedOutput({
+          qualityScore: acceptedQuality.score,
+          isRenderable: acceptedQuality.isRenderable,
+          qualityViolations: acceptedQuality.violations,
+        });
+
+        if (!accepted) {
+          rejectionReasons.push({
+            outputIndex: item.outputIndex,
+            title: item.output.title,
+            stage: "final",
+            qualityScore: acceptedQuality.score,
+            qualityViolations: acceptedQuality.violations,
+          });
+          logger.warn("wire_generation_output_rejected", {
+            projectId: id,
+            generationRunId: generationRun.id,
+            generationOutputId: persisted.id,
+            outputIndex: item.outputIndex,
+            title: item.output.title,
+            stage: "final",
+            qualityScore: acceptedQuality.score,
+            qualityViolations: acceptedQuality.violations,
+          });
           await updateGenerationOutput({
             generationOutputId: persisted.id,
             title: item.output.title,
@@ -1278,11 +1426,20 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     if (successCount === 0) {
+      const firstRejection = rejectionReasons[0];
+      const failureMessage = firstRejection
+        ? `Generated output did not meet the quality bar. Score ${firstRejection.qualityScore}. Issues: ${firstRejection.qualityViolations
+            .slice(0, 4)
+            .join(", ")}.`
+        : "Generated output did not meet the quality bar. Try refining the prompt.";
+      logger.warn("wire_generation_run_rejected", {
+        projectId: id,
+        generationRunId: generationRun.id,
+        modelName: effectiveModelName,
+        rejectionReasons,
+      });
       return applyRateHeaders(
-        new Response(
-          "Generated output did not meet the quality bar. Try refining the prompt.",
-          { status: 502 },
-        ),
+        new Response(failureMessage, { status: 502 }),
       );
     }
 

@@ -12,12 +12,17 @@ describe("toPublicUserAiSettings", () => {
       openRouterApiKeyIv: "or_iv",
       openRouterApiKeyHmac: "or_hmac",
       openRouterApiKeyKeyVersion: 1,
+      unsplashApiKeyCiphertext: "uns_ciphertext",
+      unsplashApiKeyIv: "uns_iv",
+      unsplashApiKeyHmac: "uns_hmac",
+      unsplashApiKeyKeyVersion: 1,
       enabledGoogleModels: ["gemini-2.5-pro", "gemini-2.5-flash-lite"],
     });
 
     expect(publicSettings).toEqual({
       hasGoogleApiKey: true,
       hasOpenRouterApiKey: true,
+      hasUnsplashApiKey: true,
       enabledModelIds: ["gemini-2.5-flash-lite", "gemini-2.5-pro"],
     });
     expect(
@@ -41,12 +46,17 @@ describe("toPublicUserAiSettings", () => {
       openRouterApiKeyIv: null,
       openRouterApiKeyHmac: "or_hmac",
       openRouterApiKeyKeyVersion: 1,
+      unsplashApiKeyCiphertext: "uns_ciphertext",
+      unsplashApiKeyIv: null,
+      unsplashApiKeyHmac: "uns_hmac",
+      unsplashApiKeyKeyVersion: 1,
       enabledGoogleModels: ["gemini-2.5-flash"],
     });
 
     expect(publicSettings).toEqual({
       hasGoogleApiKey: false,
       hasOpenRouterApiKey: false,
+      hasUnsplashApiKey: false,
       enabledModelIds: ["gemini-2.5-flash"],
     });
   });
