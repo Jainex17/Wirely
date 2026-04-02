@@ -19,6 +19,8 @@ type UpdateAiSettingsRequestBody = {
   clearGoogleApiKey?: unknown;
   openRouterApiKey?: unknown;
   clearOpenRouterApiKey?: unknown;
+  zaiApiKey?: unknown;
+  clearZaiApiKey?: unknown;
   unsplashApiKey?: unknown;
   clearUnsplashApiKey?: unknown;
   enabledModelIds?: unknown;
@@ -26,6 +28,7 @@ type UpdateAiSettingsRequestBody = {
 
 const MAX_GOOGLE_API_KEY_LENGTH = 512;
 const MAX_OPENROUTER_API_KEY_LENGTH = 512;
+const MAX_ZAI_API_KEY_LENGTH = 512;
 const MAX_UNSPLASH_API_KEY_LENGTH = 512;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -34,6 +37,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const toAiSettingsResponse = (settings: UserAiSettings) => ({
   hasGoogleApiKey: settings.hasGoogleApiKey,
   hasOpenRouterApiKey: settings.hasOpenRouterApiKey,
+  hasZaiApiKey: settings.hasZaiApiKey,
   hasUnsplashApiKey: settings.hasUnsplashApiKey,
   enabledModelIds: settings.enabledModelIds,
   models: WIRE_MODEL_OPTIONS.map((model) => ({
@@ -94,6 +98,8 @@ export async function PATCH(request: Request) {
     body.clearOpenRouterApiKey === undefined
       ? false
       : body.clearOpenRouterApiKey === true;
+  const clearZaiApiKey =
+    body.clearZaiApiKey === undefined ? false : body.clearZaiApiKey === true;
   const clearUnsplashApiKey =
     body.clearUnsplashApiKey === undefined
       ? false
@@ -114,6 +120,12 @@ export async function PATCH(request: Request) {
   ) {
     return NextResponse.json(
       { error: "clearOpenRouterApiKey must be a boolean." },
+      { status: 400 },
+    );
+  }
+  if (body.clearZaiApiKey !== undefined && typeof body.clearZaiApiKey !== "boolean") {
+    return NextResponse.json(
+      { error: "clearZaiApiKey must be a boolean." },
       { status: 400 },
     );
   }
@@ -198,6 +210,40 @@ export async function PATCH(request: Request) {
     );
   }
 
+  let zaiApiKey: string | undefined;
+  if (body.zaiApiKey !== undefined) {
+    if (typeof body.zaiApiKey !== "string") {
+      return NextResponse.json(
+        { error: "zaiApiKey must be a string." },
+        { status: 400 },
+      );
+    }
+
+    const trimmedKey = body.zaiApiKey.trim();
+    if (!trimmedKey) {
+      return NextResponse.json(
+        { error: "zaiApiKey cannot be empty." },
+        { status: 400 },
+      );
+    }
+    if (trimmedKey.length > MAX_ZAI_API_KEY_LENGTH) {
+      return NextResponse.json(
+        {
+          error: `zaiApiKey is too long (max ${MAX_ZAI_API_KEY_LENGTH} chars).`,
+        },
+        { status: 400 },
+      );
+    }
+    zaiApiKey = trimmedKey;
+  }
+
+  if (zaiApiKey && clearZaiApiKey) {
+    return NextResponse.json(
+      { error: "Provide either zaiApiKey or clearZaiApiKey, not both." },
+      { status: 400 },
+    );
+  }
+
   let unsplashApiKey: string | undefined;
   if (body.unsplashApiKey !== undefined) {
     if (typeof body.unsplashApiKey !== "string") {
@@ -262,6 +308,8 @@ export async function PATCH(request: Request) {
     !clearGoogleApiKey &&
     openRouterApiKey === undefined &&
     !clearOpenRouterApiKey &&
+    zaiApiKey === undefined &&
+    !clearZaiApiKey &&
     unsplashApiKey === undefined &&
     !clearUnsplashApiKey &&
     enabledModelIds === undefined
@@ -280,6 +328,8 @@ export async function PATCH(request: Request) {
       ...(clearGoogleApiKey ? { clearGoogleApiKey } : {}),
       ...(openRouterApiKey !== undefined ? { openRouterApiKey } : {}),
       ...(clearOpenRouterApiKey ? { clearOpenRouterApiKey } : {}),
+      ...(zaiApiKey !== undefined ? { zaiApiKey } : {}),
+      ...(clearZaiApiKey ? { clearZaiApiKey } : {}),
       ...(unsplashApiKey !== undefined ? { unsplashApiKey } : {}),
       ...(clearUnsplashApiKey ? { clearUnsplashApiKey } : {}),
       ...(enabledModelIds !== undefined

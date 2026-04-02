@@ -34,6 +34,7 @@ export const getUserByAuthSub = async (authSub: string) => {
 export interface UserAiSettings {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasZaiApiKey: boolean;
   hasUnsplashApiKey: boolean;
   enabledModelIds: WireModelName[];
 }
@@ -41,6 +42,7 @@ export interface UserAiSettings {
 export interface UserAiSettingsForGeneration {
   googleApiKey: string | null;
   openRouterApiKey: string | null;
+  zaiApiKey: string | null;
   unsplashApiKey: string | null;
   enabledModelIds: WireModelName[];
 }
@@ -51,6 +53,8 @@ export interface UpdateUserAiSettingsInput {
   clearGoogleApiKey?: boolean;
   openRouterApiKey?: string;
   clearOpenRouterApiKey?: boolean;
+  zaiApiKey?: string;
+  clearZaiApiKey?: boolean;
   unsplashApiKey?: string;
   clearUnsplashApiKey?: boolean;
   enabledGoogleModels?: WireModelName[];
@@ -70,6 +74,10 @@ export const toPublicUserAiSettings = ({
   openRouterApiKeyIv,
   openRouterApiKeyHmac,
   openRouterApiKeyKeyVersion,
+  zaiApiKeyCiphertext,
+  zaiApiKeyIv,
+  zaiApiKeyHmac,
+  zaiApiKeyKeyVersion,
   unsplashApiKeyCiphertext,
   unsplashApiKeyIv,
   unsplashApiKeyHmac,
@@ -84,6 +92,10 @@ export const toPublicUserAiSettings = ({
   openRouterApiKeyIv: string | null | undefined;
   openRouterApiKeyHmac: string | null | undefined;
   openRouterApiKeyKeyVersion: number | null | undefined;
+  zaiApiKeyCiphertext: string | null | undefined;
+  zaiApiKeyIv: string | null | undefined;
+  zaiApiKeyHmac: string | null | undefined;
+  zaiApiKeyKeyVersion: number | null | undefined;
   unsplashApiKeyCiphertext: string | null | undefined;
   unsplashApiKeyIv: string | null | undefined;
   unsplashApiKeyHmac: string | null | undefined;
@@ -101,6 +113,12 @@ export const toPublicUserAiSettings = ({
     iv: openRouterApiKeyIv,
     hmac: openRouterApiKeyHmac,
     keyVersion: openRouterApiKeyKeyVersion,
+  }),
+  hasZaiApiKey: hasEncryptedApiKeyMaterial({
+    ciphertext: zaiApiKeyCiphertext,
+    iv: zaiApiKeyIv,
+    hmac: zaiApiKeyHmac,
+    keyVersion: zaiApiKeyKeyVersion,
   }),
   hasUnsplashApiKey: hasEncryptedApiKeyMaterial({
     ciphertext: unsplashApiKeyCiphertext,
@@ -156,6 +174,10 @@ export const getUserAiSettings = async (
       openRouterApiKeyIv: users.openRouterApiKeyIv,
       openRouterApiKeyHmac: users.openRouterApiKeyHmac,
       openRouterApiKeyKeyVersion: users.openRouterApiKeyKeyVersion,
+      zaiApiKeyCiphertext: users.zaiApiKeyCiphertext,
+      zaiApiKeyIv: users.zaiApiKeyIv,
+      zaiApiKeyHmac: users.zaiApiKeyHmac,
+      zaiApiKeyKeyVersion: users.zaiApiKeyKeyVersion,
       unsplashApiKeyCiphertext: users.unsplashApiKeyCiphertext,
       unsplashApiKeyIv: users.unsplashApiKeyIv,
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
@@ -177,6 +199,10 @@ export const getUserAiSettings = async (
     openRouterApiKeyIv: user.openRouterApiKeyIv,
     openRouterApiKeyHmac: user.openRouterApiKeyHmac,
     openRouterApiKeyKeyVersion: user.openRouterApiKeyKeyVersion,
+    zaiApiKeyCiphertext: user.zaiApiKeyCiphertext,
+    zaiApiKeyIv: user.zaiApiKeyIv,
+    zaiApiKeyHmac: user.zaiApiKeyHmac,
+    zaiApiKeyKeyVersion: user.zaiApiKeyKeyVersion,
     unsplashApiKeyCiphertext: user.unsplashApiKeyCiphertext,
     unsplashApiKeyIv: user.unsplashApiKeyIv,
     unsplashApiKeyHmac: user.unsplashApiKeyHmac,
@@ -200,6 +226,10 @@ export const getUserAiSettingsForGeneration = async (
       openRouterApiKeyIv: users.openRouterApiKeyIv,
       openRouterApiKeyHmac: users.openRouterApiKeyHmac,
       openRouterApiKeyKeyVersion: users.openRouterApiKeyKeyVersion,
+      zaiApiKeyCiphertext: users.zaiApiKeyCiphertext,
+      zaiApiKeyIv: users.zaiApiKeyIv,
+      zaiApiKeyHmac: users.zaiApiKeyHmac,
+      zaiApiKeyKeyVersion: users.zaiApiKeyKeyVersion,
       unsplashApiKeyCiphertext: users.unsplashApiKeyCiphertext,
       unsplashApiKeyIv: users.unsplashApiKeyIv,
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
@@ -248,6 +278,24 @@ export const getUserAiSettingsForGeneration = async (
     });
   }
 
+  let decryptedZaiApiKey: string | null = null;
+  if (
+    hasEncryptedApiKeyMaterial({
+      ciphertext: user.zaiApiKeyCiphertext,
+      iv: user.zaiApiKeyIv,
+      hmac: user.zaiApiKeyHmac,
+      keyVersion: user.zaiApiKeyKeyVersion,
+    })
+  ) {
+    decryptedZaiApiKey = decryptUserApiKey({
+      userId,
+      ciphertext: user.zaiApiKeyCiphertext as string,
+      iv: user.zaiApiKeyIv as string,
+      hmac: user.zaiApiKeyHmac as string,
+      keyVersion: user.zaiApiKeyKeyVersion as number,
+    });
+  }
+
   let decryptedUnsplashApiKey: string | null = null;
   if (
     hasEncryptedApiKeyMaterial({
@@ -269,6 +317,7 @@ export const getUserAiSettingsForGeneration = async (
   return {
     googleApiKey: decryptedApiKey,
     openRouterApiKey: decryptedOpenRouterApiKey,
+    zaiApiKey: decryptedZaiApiKey,
     unsplashApiKey: decryptedUnsplashApiKey,
     enabledModelIds: resolveEnabledWireModels(user.enabledGoogleModels),
   };
@@ -280,6 +329,8 @@ export const updateUserAiSettings = async ({
   clearGoogleApiKey,
   openRouterApiKey,
   clearOpenRouterApiKey,
+  zaiApiKey,
+  clearZaiApiKey,
   unsplashApiKey,
   clearUnsplashApiKey,
   enabledGoogleModels,
@@ -324,6 +375,24 @@ export const updateUserAiSettings = async ({
     setPayload.openRouterApiKeyIv = null;
     setPayload.openRouterApiKeyHmac = null;
     setPayload.openRouterApiKeyKeyVersion = null;
+  }
+
+  if (zaiApiKey !== undefined) {
+    const encrypted = encryptUserApiKey({
+      userId,
+      plaintextKey: zaiApiKey,
+    });
+    setPayload.zaiApiKeyCiphertext = encrypted.ciphertext;
+    setPayload.zaiApiKeyIv = encrypted.iv;
+    setPayload.zaiApiKeyHmac = encrypted.hmac;
+    setPayload.zaiApiKeyKeyVersion = encrypted.keyVersion;
+  }
+
+  if (clearZaiApiKey) {
+    setPayload.zaiApiKeyCiphertext = null;
+    setPayload.zaiApiKeyIv = null;
+    setPayload.zaiApiKeyHmac = null;
+    setPayload.zaiApiKeyKeyVersion = null;
   }
 
   if (unsplashApiKey !== undefined) {

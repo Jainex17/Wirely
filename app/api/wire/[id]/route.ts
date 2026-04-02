@@ -1,5 +1,6 @@
 import { createDataStreamResponse, generateObject, generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   buildFallbackCritiqueReport,
@@ -47,16 +48,22 @@ import {
 import {
   isGoogleWireModel,
   isOpenRouterWireModel,
+  isZaiWireModel,
   isWireModelName,
   resolveFastWireModelForStage,
   type WireModelName,
 } from "@/lib/wireModels";
-import { normalizeGeneratedHtml, parseWireOutput } from "@/lib/wireOutput";
+import {
+  normalizeGeneratedHtml,
+  parseWireOutput,
+  summarizeAssistantDetails,
+} from "@/lib/wireOutput";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
+  ensurePlannedStockImageSlots,
   findMissingStockImageSlotIds,
   injectStockImageMetadata,
   removeStockSlotAttributes,
@@ -69,6 +76,7 @@ export const maxDuration = 60;
 
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
+const ZAI_BASE_URL = "https://api.z.ai/api/paas/v4/";
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -477,20 +485,7 @@ const buildPageScopedPrompt = ({
 };
 
 const extractAssistantSummary = (assistantContent: string) => {
-  const parsed = parseWireOutput(assistantContent);
-  if (parsed.details.trim()) {
-    return parsed.details.trim().slice(0, 1200);
-  }
-
-  const stripped = assistantContent
-    .replace(/<!doctype html>[\s\S]*$/i, "")
-    .replace(/<html[\s\S]*$/i, "")
-    .trim();
-  if (stripped) {
-    return stripped.slice(0, 1200);
-  }
-
-  return "Generated updated HTML.";
+  return summarizeAssistantDetails({ content: assistantContent }).slice(0, 1200);
 };
 
 const persistConversationTurn = async ({
@@ -532,14 +527,24 @@ const getLanguageModel = ({
   modelName,
   googleApiKey,
   openRouterApiKey,
+  zaiApiKey,
 }: {
   modelName: WireModelName;
   googleApiKey?: string | null;
   openRouterApiKey?: string | null;
+  zaiApiKey?: string | null;
 }) => {
   if (isGoogleWireModel(modelName)) {
     const provider = createGoogleGenerativeAI({ apiKey: googleApiKey as string });
     return provider(modelName);
+  }
+
+  if (isZaiWireModel(modelName)) {
+    const provider = createOpenAI({
+      apiKey: zaiApiKey as string,
+      baseURL: ZAI_BASE_URL,
+    });
+    return provider.chat(modelName);
   }
 
   const provider = createOpenRouter({ apiKey: openRouterApiKey as string });
@@ -627,6 +632,7 @@ const generatePlan = async ({
   modelName,
   googleApiKey,
   openRouterApiKey,
+  zaiApiKey,
   userPrompt,
   compactHistory,
   requestedOutputCount,
@@ -637,6 +643,7 @@ const generatePlan = async ({
   modelName: WireModelName;
   googleApiKey?: string | null;
   openRouterApiKey?: string | null;
+  zaiApiKey?: string | null;
   userPrompt: string;
   compactHistory: CompactHistoryMessage[];
   requestedOutputCount: number;
@@ -650,7 +657,12 @@ const generatePlan = async ({
   });
   try {
     const result = await generateObject({
-      model: getLanguageModel({ modelName, googleApiKey, openRouterApiKey }),
+      model: getLanguageModel({
+        modelName,
+        googleApiKey,
+        openRouterApiKey,
+        zaiApiKey,
+      }),
       schema: designPlanSchema,
       prompt: composePlannerPrompt({
         userPrompt,
@@ -720,6 +732,7 @@ const generateCritiqueReport = async ({
   modelName,
   googleApiKey,
   openRouterApiKey,
+  zaiApiKey,
   prompt,
   projectId,
   outputIndex,
@@ -729,6 +742,7 @@ const generateCritiqueReport = async ({
   modelName: WireModelName;
   googleApiKey?: string | null;
   openRouterApiKey?: string | null;
+  zaiApiKey?: string | null;
   prompt: string;
   projectId: string;
   outputIndex: number;
@@ -741,6 +755,7 @@ const generateCritiqueReport = async ({
         modelName,
         googleApiKey,
         openRouterApiKey,
+        zaiApiKey,
       }),
       schema: critiqueReportSchema,
       prompt,
@@ -931,6 +946,14 @@ export async function POST(request: Request, context: RouteContext) {
       ),
     );
   }
+  if (isZaiWireModel(effectiveModelName) && !userAiSettings.zaiApiKey) {
+    return applyRateHeaders(
+      new Response(
+        "Z.ai API key is not configured. Add it in Providers to generate output.",
+        { status: 400 },
+      ),
+    );
+  }
 
   const rawTargetPageId = parseOptionalString(body.targetPageId, MAX_TARGET_PAGE_ID_LENGTH);
   const rawTargetPageTitle = parseOptionalString(body.targetPageTitle);
@@ -1047,6 +1070,7 @@ export async function POST(request: Request, context: RouteContext) {
       modelName: selectedFastModel,
       googleApiKey: userAiSettings.googleApiKey,
       openRouterApiKey: userAiSettings.openRouterApiKey,
+      zaiApiKey: userAiSettings.zaiApiKey,
       userPrompt: plannerPrompt,
       compactHistory,
       requestedOutputCount: expectedOutputCount,
@@ -1124,6 +1148,7 @@ export async function POST(request: Request, context: RouteContext) {
             modelName: effectiveModelName,
             googleApiKey: userAiSettings.googleApiKey,
             openRouterApiKey: userAiSettings.openRouterApiKey,
+            zaiApiKey: userAiSettings.zaiApiKey,
           }),
           system: composePlannedGenerateSystemPrompt({
             plan,
@@ -1153,6 +1178,7 @@ export async function POST(request: Request, context: RouteContext) {
           modelName: selectedFastModel,
           googleApiKey: userAiSettings.googleApiKey,
           openRouterApiKey: userAiSettings.openRouterApiKey,
+          zaiApiKey: userAiSettings.zaiApiKey,
           prompt: composeCritiquePrompt({
             plan,
             output: item.output,
@@ -1201,6 +1227,7 @@ export async function POST(request: Request, context: RouteContext) {
               modelName: effectiveModelName,
               googleApiKey: userAiSettings.googleApiKey,
               openRouterApiKey: userAiSettings.openRouterApiKey,
+              zaiApiKey: userAiSettings.zaiApiKey,
             }),
             prompt: latestUserPrompt,
             system: composeRepairPrompt({
@@ -1288,10 +1315,18 @@ export async function POST(request: Request, context: RouteContext) {
           return;
         }
 
-        let finalizedHtml = removeStockSlotAttributes(acceptedHtml);
+        const htmlWithRequiredSlots = outputAllowsImages
+          ? ensurePlannedStockImageSlots({
+              html: acceptedHtml,
+              slots: item.output.imageSlots,
+              unsplashAccessKey: userAiSettings.unsplashApiKey,
+              seed: `${id}:${generationRun.id}:${item.outputIndex}`,
+            })
+          : acceptedHtml;
+        let finalizedHtml = removeStockSlotAttributes(htmlWithRequiredSlots);
         if (outputAllowsImages && item.output.imageSlots.length > 0) {
           const resolvedStockImages = await resolveStockImagesInHtml({
-            html: acceptedHtml,
+            html: htmlWithRequiredSlots,
             slots: item.output.imageSlots,
             unsplashAccessKey: userAiSettings.unsplashApiKey,
             seed: `${id}:${generationRun.id}:${item.outputIndex}`,
@@ -1378,9 +1413,10 @@ export async function POST(request: Request, context: RouteContext) {
         outputsForAssistant[item.outputIndex] = {
           outputIndex: item.outputIndex,
           title: acceptedTitle,
-          details:
-            acceptedDetails ||
-            `${acceptedTitle} delivers a stronger first draft. It follows the planned direction with better hierarchy and content depth.`,
+          details: summarizeAssistantDetails({
+            content: `DETAILS:\n${acceptedDetails}`,
+            fallbackTitle: acceptedTitle,
+          }),
           html: acceptedHtml,
         };
 

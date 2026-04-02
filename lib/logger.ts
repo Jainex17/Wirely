@@ -22,6 +22,9 @@ const REDACTED_KEY_MARKERS = [
   "openrouter_api_key",
   "openrouterkey",
   "open_router_key",
+  "zaiapikey",
+  "zai_api_key",
+  "zaikey",
   "stack",
 ];
 

@@ -50,6 +50,25 @@ export interface ResolveStockImagesInHtmlResult {
   metadata: ResolvedStockImageMetadata[];
 }
 
+const buildMissingSlotMarkup = (slot: ImageSlot) => {
+  const imageTag = applySlotToTag({
+    tag: `<img data-wirely-stock-slot="${slot.id}" src="wirely-stock://${slot.id}" alt="${slot.altHint}" class="h-full w-full object-cover" />`,
+    slot,
+    imageUrl: `wirely-stock://${slot.id}`,
+    source: "placeholder",
+  });
+
+  return `
+<section data-wirely-generated-stock-slot="${slot.id}" class="mx-auto w-full max-w-6xl px-6 py-8 sm:px-8">
+  <figure class="overflow-hidden rounded-3xl border border-black/10 bg-black/5 shadow-sm">
+    <div class="${slot.priority === "hero" ? "aspect-[16/9] sm:aspect-[21/9]" : "aspect-[4/3]"} w-full">
+      ${imageTag}
+    </div>
+    <figcaption class="px-4 py-3 text-sm text-black/60">${slot.altHint}</figcaption>
+  </figure>
+</section>`.trim();
+};
+
 const hashString = (value: string) => {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -367,6 +386,49 @@ export const resolveStockImagesInHtml = async ({
     html: nextHtml,
     metadata: Array.from(metadataBySlot.values()),
   };
+};
+
+export const ensurePlannedStockImageSlots = ({
+  html,
+  slots,
+}: ResolveStockImagesInHtmlOptions) => {
+  if (!html.trim() || slots.length === 0) {
+    return html;
+  }
+
+  const missingSlotIds = new Set(
+    findMissingStockImageSlotIds({
+      html,
+      slots,
+    }),
+  );
+  if (missingSlotIds.size === 0) {
+    return html;
+  }
+
+  const missingSlots = slots.filter((slot) => missingSlotIds.has(slot.id.toLowerCase()));
+  if (missingSlots.length === 0) {
+    return html;
+  }
+
+  const markup = missingSlots
+    .slice()
+    .sort((left, right) => {
+      if (left.priority === right.priority) return 0;
+      return left.priority === "hero" ? -1 : 1;
+    })
+    .map((slot) => buildMissingSlotMarkup(slot))
+    .join("\n");
+
+  if (/<main[^>]*>/i.test(html)) {
+    return html.replace(/<main([^>]*)>/i, `<main$1>\n${markup}\n`);
+  }
+
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/<body([^>]*)>/i, `<body$1>\n<main>\n${markup}\n`);
+  }
+
+  return `<!doctype html><html><body><main>${markup}${html}</main></body></html>`;
 };
 
 export const findMissingStockImageSlotIds = ({

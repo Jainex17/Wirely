@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
+  ensurePlannedStockImageSlots,
   findMissingStockImageSlotIds,
   injectStockImageMetadata,
   resolveStockImagesInHtml,
@@ -118,5 +119,21 @@ describe("stock image helpers", () => {
     });
 
     expect(missing).toEqual(["hero-1"]);
+  });
+
+  it("inserts missing planned stock-image tags into the main content", () => {
+    const html =
+      "<!doctype html><html><body><main><section><h1>Page</h1></section></main></body></html>";
+
+    const next = ensurePlannedStockImageSlots({
+      html,
+      slots: [...slots],
+      seed: "wire-3",
+      unsplashAccessKey: null,
+    });
+
+    expect(next).toContain('data-wirely-stock-slot="hero-1"');
+    expect(next).toContain("wirely-stock://hero-1");
+    expect(next).toContain("Team collaborating around product metrics.");
   });
 });

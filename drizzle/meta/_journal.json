@@ -71,6 +71,13 @@
       "when": 1774782979002,
       "tag": "0009_volatile_agent_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775135424248,
+      "tag": "0010_cynical_bloodstorm",
+      "breakpoints": true
     }
   ]
 }

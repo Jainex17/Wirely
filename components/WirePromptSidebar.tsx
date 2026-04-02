@@ -27,6 +27,7 @@ import {
   normalizeGeneratedHtml,
   parseBatchWireOutput,
   parseWireOutput,
+  summarizeAssistantDetails,
 } from "@/lib/wireOutput";
 import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
@@ -88,6 +89,7 @@ const CHART_ICON_QUALITY_FAILURE_MESSAGE =
 const MODEL_PROVIDER_LABEL = {
   google: "Google",
   openrouter: "OpenRouter",
+  zai: "Z.ai",
 } as const;
 
 const GENERATION_FAILURE_PREVIEW_HTML = [
@@ -132,6 +134,8 @@ const normalizeGenerationErrorMessage = ({
       ? "OpenRouter"
       : provider === "google"
         ? "Google"
+        : provider === "zai"
+          ? "Z.ai"
         : "Provider";
   const raw =
     error instanceof Error
@@ -173,20 +177,11 @@ const getAssistantDetails = (content: string) => {
     (candidate) => candidate.trim().length > 0,
   );
   if (hasBatchHtmlSections && parsedBatch.details) {
-    return parsedBatch.details;
+    return summarizeAssistantDetails({
+      content: `DETAILS:\n${parsedBatch.details}`,
+    });
   }
-  const singleDetails = parseWireOutput(content).details;
-  const detailsWithoutHtmlMarker = singleDetails
-    .replace(/\n?\s*HTML\s*:[\s\S]*$/i, "")
-    .trim();
-  if (detailsWithoutHtmlMarker) {
-    return detailsWithoutHtmlMarker;
-  }
-  const htmlStart = singleDetails.search(/<!doctype html>|<html[\s>]/i);
-  if (htmlStart >= 0) {
-    return singleDetails.slice(0, htmlStart).trim();
-  }
-  return singleDetails;
+  return summarizeAssistantDetails({ content });
 };
 
 const MAX_COMPACT_HISTORY_MESSAGES = 12;
@@ -1198,6 +1193,7 @@ export default function WirePromptSidebar({
     const grouped = {
       google: [] as typeof WIRE_MODEL_OPTIONS,
       openrouter: [] as typeof WIRE_MODEL_OPTIONS,
+      zai: [] as typeof WIRE_MODEL_OPTIONS,
     };
 
     enabledModelIds.forEach((modelId) => {
@@ -1336,7 +1332,7 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
-                  {(["google", "openrouter"] as const).map((provider, index) => {
+                  {(["google", "openrouter", "zai"] as const).map((provider, index) => {
                     const providerModels = groupedEnabledModels[provider];
                     if (providerModels.length === 0) return null;
 

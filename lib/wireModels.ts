@@ -11,14 +11,16 @@ export const OPENROUTER_GEMINI_FREE_MODELS = [
   "google/gemini-2.5-flash",
 ] as const;
 export const OPENROUTER_GEMINI_PAID_MODELS = ["google/gemini-2.5-pro"] as const;
+export const ZAI_FREE_MODELS = ["glm-4.7-flash", "glm-4.5-flash"] as const;
 
 export type WireModelTier = "free" | "paid";
-export type WireModelProvider = "google" | "openrouter";
+export type WireModelProvider = "google" | "openrouter" | "zai";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
   | (typeof GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
-  | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number];
+  | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
+  | (typeof ZAI_FREE_MODELS)[number];
 
 export type WireModelOption = {
   id: WireModelName;
@@ -74,6 +76,22 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     tier: "paid",
     provider: "openrouter",
   },
+  {
+    id: "glm-4.7-flash",
+    label: "GLM-4.7 Flash",
+    description:
+      "Fast Z.ai model with strong coding performance and free-tier access.",
+    tier: "free",
+    provider: "zai",
+  },
+  {
+    id: "glm-4.5-flash",
+    label: "GLM-4.5 Flash",
+    description:
+      "Free Z.ai reasoning and coding model with strong agent capabilities.",
+    tier: "free",
+    provider: "zai",
+  },
 ];
 
 export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
@@ -117,6 +135,9 @@ export const isGoogleWireModel = (modelName: WireModelName) =>
 export const isOpenRouterWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "openrouter";
 
+export const isZaiWireModel = (modelName: WireModelName) =>
+  getWireModelProvider(modelName) === "zai";
+
 export const resolveFastWireModelForStage = (
   modelName: WireModelName,
 ): WireModelName => {
@@ -124,7 +145,11 @@ export const resolveFastWireModelForStage = (
     return GEMINI_FREE_MODELS[0];
   }
 
-  return OPENROUTER_GEMINI_FREE_MODELS[0];
+  if (isOpenRouterWireModel(modelName)) {
+    return OPENROUTER_GEMINI_FREE_MODELS[0];
+  }
+
+  return ZAI_FREE_MODELS[0];
 };
 
 export const normalizeEnabledWireModels = (

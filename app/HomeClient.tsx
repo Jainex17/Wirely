@@ -59,6 +59,7 @@ export interface HomeClientInitialData {
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasZaiApiKey: boolean;
 }
 
 const PAGE_VARIATION_OPTIONS: Array<{
@@ -83,10 +84,11 @@ const PAGE_VARIATION_OPTIONS: Array<{
   },
 ];
 
-const MODEL_PROVIDER_LABEL: Record<"google" | "openrouter", string> = {
+const MODEL_PROVIDER_LABEL = {
   google: "Google",
   openrouter: "OpenRouter",
-};
+  zai: "Z.ai",
+} as const;
 
 interface HomeState {
   prompt: string;
@@ -98,6 +100,7 @@ interface HomeState {
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasZaiApiKey: boolean;
   selectedPageCount: 1 | 2 | 3;
   isLoggingOut: boolean;
   projectToDelete: string | null;
@@ -135,6 +138,7 @@ const createHomeInitialState = (
   enabledModelIds: initialData.enabledModelIds,
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
+  hasZaiApiKey: initialData.hasZaiApiKey,
   selectedPageCount: 1,
   isLoggingOut: false,
   projectToDelete: null,
@@ -155,6 +159,7 @@ const homeReducer = (state: HomeState, action: HomeAction): HomeState => {
         enabledModelIds: [...DEFAULT_ENABLED_WIRE_MODELS],
         hasGoogleApiKey: true,
         hasOpenRouterApiKey: true,
+        hasZaiApiKey: true,
         selectedModel: DEFAULT_WIRE_MODEL,
         isLoggingOut: false,
         errorMessage: null,
@@ -214,14 +219,17 @@ const modelRequiresMissingKey = ({
   modelName,
   hasGoogleApiKey,
   hasOpenRouterApiKey,
+  hasZaiApiKey,
 }: {
   modelName: WireModelName;
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasZaiApiKey: boolean;
 }) => {
   const provider = getWireModelProvider(modelName);
   if (provider === "google") return !hasGoogleApiKey;
   if (provider === "openrouter") return !hasOpenRouterApiKey;
+  if (provider === "zai") return !hasZaiApiKey;
   return false;
 };
 
@@ -243,6 +251,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     modelName: activeSelectedModel,
     hasGoogleApiKey: state.hasGoogleApiKey,
     hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+    hasZaiApiKey: state.hasZaiApiKey,
   });
   const hasAtLeastOneRunnableModel = enabledModelOptions.some(
     (model) =>
@@ -250,6 +259,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         modelName: model.id,
         hasGoogleApiKey: state.hasGoogleApiKey,
         hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+        hasZaiApiKey: state.hasZaiApiKey,
       }),
   );
   const hasNoRunnableModels = Boolean(state.user) && !hasAtLeastOneRunnableModel;
@@ -263,6 +273,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         modelName: model.id,
         hasGoogleApiKey: state.hasGoogleApiKey,
         hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+        hasZaiApiKey: state.hasZaiApiKey,
       }),
     );
   const selectedModelLabel =
@@ -288,7 +299,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
     if (selectedModelRequiresMissingKey) {
       const selectedModelProviderLabel =
-        activeSelectedModelProvider === "openrouter" ? "OpenRouter" : "Google";
+        MODEL_PROVIDER_LABEL[activeSelectedModelProvider];
       dispatch({
         type: "patch",
         payload: {
@@ -453,7 +464,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                             <DropdownMenuSeparator />
                           </>
                         ) : null}
-                        {(["google", "openrouter"] as const).map((provider, index) => {
+                        {(["google", "openrouter", "zai"] as const).map((provider, index) => {
                           const providerModels = enabledModelOptions.filter(
                             (model) => model.provider === provider,
                           );

@@ -11,7 +11,9 @@ describe("wireModels settings helpers", () => {
     const normalized = normalizeEnabledWireModels([
       "minimax-m2.5-free",
       "gemini-2.5-pro",
+      "glm-4.5-flash",
       "gemini-2.5-flash-lite",
+      "glm-4.7-flash",
       "gemini-2.5-flash-lite",
       "gpt-5-nano",
       "trinity-large-preview-free",
@@ -23,6 +25,8 @@ describe("wireModels settings helpers", () => {
       "gemini-2.5-flash-lite",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
+      "glm-4.7-flash",
+      "glm-4.5-flash",
     ]);
   });
 
@@ -47,5 +51,6 @@ describe("wireModels settings helpers", () => {
     expect(resolveFastWireModelForStage("google/gemini-2.5-pro")).toBe(
       "google/gemini-2.5-flash-lite",
     );
+    expect(resolveFastWireModelForStage("glm-4.5-flash")).toBe("glm-4.7-flash");
   });
 });

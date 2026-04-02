@@ -12,6 +12,10 @@ describe("toPublicUserAiSettings", () => {
       openRouterApiKeyIv: "or_iv",
       openRouterApiKeyHmac: "or_hmac",
       openRouterApiKeyKeyVersion: 1,
+      zaiApiKeyCiphertext: "zai_ciphertext",
+      zaiApiKeyIv: "zai_iv",
+      zaiApiKeyHmac: "zai_hmac",
+      zaiApiKeyKeyVersion: 1,
       unsplashApiKeyCiphertext: "uns_ciphertext",
       unsplashApiKeyIv: "uns_iv",
       unsplashApiKeyHmac: "uns_hmac",
@@ -22,6 +26,7 @@ describe("toPublicUserAiSettings", () => {
     expect(publicSettings).toEqual({
       hasGoogleApiKey: true,
       hasOpenRouterApiKey: true,
+      hasZaiApiKey: true,
       hasUnsplashApiKey: true,
       enabledModelIds: ["gemini-2.5-flash-lite", "gemini-2.5-pro"],
     });
@@ -46,6 +51,10 @@ describe("toPublicUserAiSettings", () => {
       openRouterApiKeyIv: null,
       openRouterApiKeyHmac: "or_hmac",
       openRouterApiKeyKeyVersion: 1,
+      zaiApiKeyCiphertext: "zai_ciphertext",
+      zaiApiKeyIv: null,
+      zaiApiKeyHmac: "zai_hmac",
+      zaiApiKeyKeyVersion: 1,
       unsplashApiKeyCiphertext: "uns_ciphertext",
       unsplashApiKeyIv: null,
       unsplashApiKeyHmac: "uns_hmac",
@@ -56,6 +65,7 @@ describe("toPublicUserAiSettings", () => {
     expect(publicSettings).toEqual({
       hasGoogleApiKey: false,
       hasOpenRouterApiKey: false,
+      hasZaiApiKey: false,
       hasUnsplashApiKey: false,
       enabledModelIds: ["gemini-2.5-flash"],
     });

@@ -20,6 +20,7 @@ const getHomeInitialData = async (): Promise<HomeClientInitialData> => {
       enabledModelIds: [...DEFAULT_ENABLED_WIRE_MODELS],
       hasGoogleApiKey: true,
       hasOpenRouterApiKey: true,
+      hasZaiApiKey: true,
     };
   }
 
@@ -39,6 +40,7 @@ const getHomeInitialData = async (): Promise<HomeClientInitialData> => {
     enabledModelIds: aiSettings?.enabledModelIds ?? [...DEFAULT_ENABLED_WIRE_MODELS],
     hasGoogleApiKey: aiSettings?.hasGoogleApiKey ?? true,
     hasOpenRouterApiKey: aiSettings?.hasOpenRouterApiKey ?? true,
+    hasZaiApiKey: aiSettings?.hasZaiApiKey ?? true,
   };
 };
 

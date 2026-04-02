@@ -20,12 +20,13 @@ export interface AiSettingsModel {
 interface AiSettingsResponse {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
+  hasZaiApiKey: boolean;
   hasUnsplashApiKey: boolean;
   enabledModelIds: WireModelName[];
   models: AiSettingsModel[];
 }
 
-export type ApiKeyProvider = "google" | "openrouter" | "unsplash";
+export type ApiKeyProvider = "google" | "openrouter" | "zai" | "unsplash";
 
 const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -34,6 +35,7 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
   if (
     typeof record.hasGoogleApiKey !== "boolean" ||
     typeof record.hasOpenRouterApiKey !== "boolean" ||
+    typeof record.hasZaiApiKey !== "boolean" ||
     typeof record.hasUnsplashApiKey !== "boolean" ||
     !Array.isArray(record.enabledModelIds) ||
     !Array.isArray(record.models)
@@ -52,13 +54,15 @@ const parseSettingsResponse = (value: unknown): AiSettingsResponse | null => {
       ((model as AiSettingsModel).tier === "free" ||
         (model as AiSettingsModel).tier === "paid") &&
       ((model as AiSettingsModel).provider === "google" ||
-        (model as AiSettingsModel).provider === "openrouter") &&
+        (model as AiSettingsModel).provider === "openrouter" ||
+        (model as AiSettingsModel).provider === "zai") &&
       typeof (model as AiSettingsModel).enabled === "boolean",
   );
 
   return {
     hasGoogleApiKey: record.hasGoogleApiKey,
     hasOpenRouterApiKey: record.hasOpenRouterApiKey,
+    hasZaiApiKey: record.hasZaiApiKey,
     hasUnsplashApiKey: record.hasUnsplashApiKey,
     enabledModelIds: record.enabledModelIds as WireModelName[],
     models,
@@ -71,6 +75,7 @@ export function useProfileAiSettings() {
   const [isSavingModels, setIsSavingModels] = useState(false);
   const [hasGoogleApiKey, setHasGoogleApiKey] = useState(false);
   const [hasOpenRouterApiKey, setHasOpenRouterApiKey] = useState(false);
+  const [hasZaiApiKey, setHasZaiApiKey] = useState(false);
   const [hasUnsplashApiKey, setHasUnsplashApiKey] = useState(false);
   const [models, setModels] = useState<AiSettingsModel[]>([]);
 
@@ -82,6 +87,7 @@ export function useProfileAiSettings() {
   const applySettings = useCallback((payload: AiSettingsResponse) => {
     setHasGoogleApiKey(payload.hasGoogleApiKey);
     setHasOpenRouterApiKey(payload.hasOpenRouterApiKey);
+    setHasZaiApiKey(payload.hasZaiApiKey);
     setHasUnsplashApiKey(payload.hasUnsplashApiKey);
     setModels(payload.models);
   }, []);
@@ -131,6 +137,8 @@ export function useProfileAiSettings() {
               ? { googleApiKey: apiKey }
               : provider === "openrouter"
                 ? { openRouterApiKey: apiKey }
+                : provider === "zai"
+                  ? { zaiApiKey: apiKey }
                 : { unsplashApiKey: apiKey },
           ),
         });
@@ -151,6 +159,8 @@ export function useProfileAiSettings() {
             ? "Google API key saved."
             : provider === "openrouter"
               ? "OpenRouter API key saved."
+              : provider === "zai"
+                ? "Z.ai API key saved."
               : "Unsplash API key saved.",
         );
 
@@ -181,6 +191,8 @@ export function useProfileAiSettings() {
               ? { clearGoogleApiKey: true }
               : provider === "openrouter"
                 ? { clearOpenRouterApiKey: true }
+                : provider === "zai"
+                  ? { clearZaiApiKey: true }
                 : { clearUnsplashApiKey: true },
           ),
         });
@@ -201,6 +213,8 @@ export function useProfileAiSettings() {
             ? "Google API key removed."
             : provider === "openrouter"
               ? "OpenRouter API key removed."
+              : provider === "zai"
+                ? "Z.ai API key removed."
               : "Unsplash API key removed.",
         );
 
@@ -291,6 +305,7 @@ export function useProfileAiSettings() {
     isSavingModels,
     hasGoogleApiKey,
     hasOpenRouterApiKey,
+    hasZaiApiKey,
     hasUnsplashApiKey,
     models,
     enabledModelIds,

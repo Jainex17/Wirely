@@ -29,13 +29,20 @@ const getProviderLabel = (provider: ApiKeyProvider) =>
     ? "Google"
     : provider === "openrouter"
       ? "OpenRouter"
+      : provider === "zai"
+        ? "Z.ai"
       : "Unsplash";
+
+const getProviderKeyLabel = (provider: ApiKeyProvider) =>
+  provider === "unsplash" ? "Access Key" : "API key";
 
 const getProviderPlaceholder = (provider: ApiKeyProvider) =>
   provider === "google"
     ? "Paste your Google API key (e.g., AIza...)"
     : provider === "openrouter"
       ? "Paste your OpenRouter API key (e.g., sk-or-v1-...)"
+      : provider === "zai"
+        ? "Paste your Z.ai API key"
       : "Paste your Unsplash Access Key";
 
 const getProviderLearnMoreUrl = (provider: ApiKeyProvider) =>
@@ -43,6 +50,8 @@ const getProviderLearnMoreUrl = (provider: ApiKeyProvider) =>
     ? "https://aistudio.google.com/app/apikey"
     : provider === "openrouter"
       ? "https://openrouter.ai/keys"
+      : provider === "zai"
+        ? "https://docs.z.ai/guides/overview/quick-start"
       : "https://unsplash.com/documentation";
 
 export default function ProfileApiKeyDialog({
@@ -82,6 +91,7 @@ function ProfileApiKeyDialogBody({
   const [showApiKeyValue, setShowApiKeyValue] = useState(false);
 
   const providerLabel = getProviderLabel(provider);
+  const providerKeyLabel = getProviderKeyLabel(provider);
   const providerPlaceholder = getProviderPlaceholder(provider);
   const providerLearnMoreUrl = getProviderLearnMoreUrl(provider);
 
@@ -93,7 +103,9 @@ function ProfileApiKeyDialogBody({
           ? "Enter a Google API key."
           : provider === "openrouter"
             ? "Enter an OpenRouter API key."
-            : "Enter an Unsplash API key.",
+            : provider === "zai"
+              ? "Enter a Z.ai API key."
+            : "Enter an Unsplash Access Key.",
       );
       return;
     }
@@ -122,9 +134,11 @@ function ProfileApiKeyDialogBody({
     >
       <DialogContent className="shadow-xl" showCloseButton={!isSaving}>
         <DialogHeader>
-          <DialogTitle>{providerLabel} API key</DialogTitle>
+          <DialogTitle>
+            {providerLabel} {providerKeyLabel}
+          </DialogTitle>
           <DialogDescription>
-            Add or update your {providerLabel} API key here.
+            Add or update your {providerLabel} {providerKeyLabel.toLowerCase()} here.
           </DialogDescription>
         </DialogHeader>
 
@@ -158,7 +172,7 @@ function ProfileApiKeyDialogBody({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">Press Enter to save quickly.</p>
             <p className="text-xs text-muted-foreground">
-              Don&apos;t have an API key?{" "}
+              Don&apos;t have a {providerKeyLabel.toLowerCase()}?{" "}
               <a
                 href={providerLearnMoreUrl}
                 target="_blank"

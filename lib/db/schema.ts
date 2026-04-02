@@ -60,6 +60,11 @@ export const users = pgTable(
     // Legacy column name kept for compatibility; stores AES-GCM auth tag.
     openRouterApiKeyHmac: text("openrouter_api_key_hmac"),
     openRouterApiKeyKeyVersion: integer("openrouter_api_key_key_version"),
+    zaiApiKeyCiphertext: text("zai_api_key_ciphertext"),
+    zaiApiKeyIv: text("zai_api_key_iv"),
+    // Legacy column name kept for compatibility; stores AES-GCM auth tag.
+    zaiApiKeyHmac: text("zai_api_key_hmac"),
+    zaiApiKeyKeyVersion: integer("zai_api_key_key_version"),
     unsplashApiKeyCiphertext: text("unsplash_api_key_ciphertext"),
     unsplashApiKeyIv: text("unsplash_api_key_iv"),
     // Legacy column name kept for compatibility; stores AES-GCM auth tag.

@@ -35,9 +35,15 @@ const PROVIDER_META = {
     learnMoreUrl: "https://openrouter.ai/keys",
     supportsModelToggle: true,
   },
+  zai: {
+    label: "Z.ai",
+    description: "Use your Z.ai key for GLM models.",
+    learnMoreUrl: "https://docs.z.ai/guides/overview/quick-start",
+    supportsModelToggle: true,
+  },
   unsplash: {
     label: "Unsplash",
-    description: "Use your Unsplash Access Key for stock photos.",
+    description: "Enter your Unsplash Access Key to enable stock photos.",
     learnMoreUrl: "https://unsplash.com/documentation",
     supportsModelToggle: false,
   },
@@ -51,6 +57,7 @@ export default function ProfileProvidersClient() {
     isSavingModels,
     hasGoogleApiKey,
     hasOpenRouterApiKey,
+    hasZaiApiKey,
     hasUnsplashApiKey,
     models,
     saveApiKey,
@@ -79,6 +86,14 @@ export default function ProfileProvidersClient() {
         totalCount: models.filter((model) => model.provider === "openrouter").length,
       },
       {
+        id: "zai" as const,
+        ...PROVIDER_META.zai,
+        hasKey: hasZaiApiKey,
+        enabledCount: models.filter((model) => model.provider === "zai" && model.enabled)
+          .length,
+        totalCount: models.filter((model) => model.provider === "zai").length,
+      },
+      {
         id: "unsplash" as const,
         ...PROVIDER_META.unsplash,
         hasKey: hasUnsplashApiKey,
@@ -86,7 +101,7 @@ export default function ProfileProvidersClient() {
         totalCount: 0,
       },
     ],
-    [hasGoogleApiKey, hasOpenRouterApiKey, hasUnsplashApiKey, models],
+    [hasGoogleApiKey, hasOpenRouterApiKey, hasZaiApiKey, hasUnsplashApiKey, models],
   );
 
   if (isLoading) {
@@ -196,7 +211,13 @@ export default function ProfileProvidersClient() {
                             disabled={isSavingModels}
                           >
                             <Settings2 className="size-4" />
-                            {provider.hasKey ? "Manage BYOK" : "Setup BYOK"}
+                            {provider.id === "unsplash"
+                              ? provider.hasKey
+                                ? "Manage access key"
+                                : "Enter access key"
+                              : provider.hasKey
+                                ? "Manage BYOK"
+                                : "Setup BYOK"}
                           </Button>
                         </div>
                       ) : null}
@@ -229,9 +250,11 @@ export default function ProfileProvidersClient() {
             ? hasGoogleApiKey
             : activeProvider === "openrouter"
               ? hasOpenRouterApiKey
+              : activeProvider === "zai"
+                ? hasZaiApiKey
               : activeProvider === "unsplash"
                 ? hasUnsplashApiKey
-              : false
+                : false
         }
         isSaving={isSavingKey}
         onClose={() => setActiveProvider(null)}

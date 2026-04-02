@@ -47,6 +47,9 @@ export interface NormalizeGeneratedHtmlResult {
   changed: boolean;
 }
 
+const FALLBACK_ASSISTANT_SUMMARY =
+  "The page now presents a clearer, more polished direction with stronger hierarchy and completeness.";
+
 const countMatches = (value: string, pattern: RegExp) =>
   (value.match(pattern) ?? []).length;
 
@@ -68,6 +71,20 @@ const extractHtmlFallback = (value: string) => {
   if (bodyIndex >= 0) return value.slice(bodyIndex).trim();
   return value.trim();
 };
+
+const cleanAssistantSentence = (value: string) =>
+  value
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-*•]+/, "")
+    .replace(/^\d+\.\s*/, "")
+    .trim();
+
+const looksLikeRepairRecap = (value: string) =>
+  /(?:repaired?|repair|critique points?|address(?:ed|es|ing) the critique|missing header landmark|missing footer landmark|generic typography setup|an? <(?:header|footer)> element has been added|has been added at the top|has been added at the bottom)/i.test(
+    value,
+  );
 
 const BATCH_HTML_MARKER_PATTERN =
   /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?(?:(?:VARIANT|VARIATION)[_\s-]*(\d+)(?:[_\s-]*HTML)?|HTML[_\s-]*(\d+))(?:\*\*)?\s*:?\s*/gim;
@@ -318,6 +335,51 @@ export const parseBatchWireOutput = (
   }
 
   return { details, titleByIndex, htmlByIndex };
+};
+
+export const summarizeAssistantDetails = ({
+  content,
+  fallbackTitle,
+}: {
+  content: string;
+  fallbackTitle?: string;
+}) => {
+  const parsed = parseWireOutput(content);
+  const title = fallbackTitle?.trim() || parsed.title.trim() || "This page";
+  const rawDetails = parsed.details.trim();
+  const detailsSource = rawDetails
+    ? rawDetails
+    : content
+        .replace(/\n?\s*HTML\s*:[\s\S]*$/i, "")
+        .replace(/<!doctype html>[\s\S]*$/i, "")
+        .replace(/<html[\s\S]*$/i, "")
+        .trim();
+
+  const flattened = cleanAssistantSentence(detailsSource);
+  const sentenceMatches =
+    flattened.match(/[^.!?]+(?:[.!?]+|$)/g)?.map(cleanAssistantSentence).filter(Boolean) ??
+    [];
+  const meaningfulSentences = sentenceMatches.filter(
+    (sentence) => !looksLikeRepairRecap(sentence),
+  );
+  const hasListLikeStructure =
+    /(?:^|\s)(?:\d+\.|[-*•])\s/.test(detailsSource) || /\n\s*(?:\d+\.|[-*•])\s/.test(detailsSource);
+
+  if (
+    meaningfulSentences.length > 0 &&
+    !looksLikeRepairRecap(flattened) &&
+    !hasListLikeStructure
+  ) {
+    const summary = meaningfulSentences.slice(0, 2).join(" ").trim();
+    if (summary.length <= 280) {
+      return summary;
+    }
+    return `${summary.slice(0, 277).trimEnd()}...`;
+  }
+
+  return title === "This page"
+    ? FALLBACK_ASSISTANT_SUMMARY
+    : `${title} now feels clearer and more complete, with stronger hierarchy and a more polished page structure.`;
 };
 
 const getScriptSrc = (scriptTag: string) => {

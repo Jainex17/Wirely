@@ -8,6 +8,7 @@ import { useProfileAiSettings } from "./useProfileAiSettings";
 const PROVIDER_LABEL: Record<WireModelProvider, string> = {
   google: "Google BYOK",
   openrouter: "OpenRouter BYOK",
+  zai: "Z.ai BYOK",
 };
 
 export default function ProfileModelsClient() {
@@ -72,6 +73,8 @@ export default function ProfileModelsClient() {
                     <span className="inline-flex items-center rounded-md bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                       {model.provider === "openrouter"
                         ? "Multi-model access"
+                        : model.provider === "zai"
+                          ? "GLM access"
                         : "Gemini access"}
                     </span>
                   </div>

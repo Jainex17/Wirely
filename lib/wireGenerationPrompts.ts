@@ -263,6 +263,8 @@ DETAILS:
 Write exactly 2 sentences maximum.
 - Sentence 1: name + aesthetic direction.
 - Sentence 2: key structural or experiential strengths.
+- Do not mention critique, repair steps, missing landmarks, or what was added/fixed.
+- Do not use numbered lists, bullets, markdown emphasis, or quote HTML/CSS/code.
 
 HTML:
 - A full HTML document starting with <!doctype html>.
@@ -417,6 +419,7 @@ Repair rules:
 - Preserve valid structure and the core concept.
 - Increase specificity, hierarchy, and visual intentionality.
 - Keep the result self-contained and deterministic for iframe rendering.
+- DETAILS must describe the final page in 1-2 short sentences only, never the repair process.
 ${composeConceptVariantDifferentiationRules({
   plan,
   outputIndex,

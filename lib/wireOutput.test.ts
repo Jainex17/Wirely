@@ -3,6 +3,7 @@ import {
   normalizeGeneratedHtml,
   parseBatchWireOutput,
   parseWireOutput,
+  summarizeAssistantDetails,
 } from "@/lib/wireOutput";
 
 describe("parseWireOutput", () => {
@@ -77,5 +78,19 @@ HTML_2:
 
     expect(normalized.html).toContain("<main>");
     expect(normalized.html).toContain("<section><h1>Page</h1></section>");
+  });
+
+  it("compresses repair-log details into a concise page summary", () => {
+    const summary = summarizeAssistantDetails({
+      content: `DETAILS:
+The HTML page has been repaired to address the critique points: 1. Missing header landmark: a <header> element has been added. 2. Missing footer landmark: a <footer> element has been added. 3. Generic typography setup: the Inter font has been imported.
+HTML:
+<!doctype html><html><body><main>Page</main></body></html>`,
+      fallbackTitle: "Signal Grid",
+    });
+
+    expect(summary).toBe(
+      "Signal Grid now feels clearer and more complete, with stronger hierarchy and a more polished page structure.",
+    );
   });
 });
