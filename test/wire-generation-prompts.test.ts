@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildAssistantContent,
+  composeDesignBriefPrompt,
+  composePageEditSystemPrompt,
   composePlannedGenerateSystemPrompt,
 } from "@/lib/wireGenerationPrompts";
 import type { DesignPlan } from "@/lib/wireGenerationTypes";
@@ -120,6 +122,32 @@ const conceptPlan: DesignPlan = {
 };
 
 describe("planned generation prompt", () => {
+  it("builds a prose design brief prompt instead of schema instructions", () => {
+    const prompt = composeDesignBriefPrompt({
+      userPrompt: "Design two distinct landing page concepts for an AI marketing SaaS.",
+      compactHistory: [
+        {
+          role: "user",
+          content: "We want the first concept warm and the second more editorial.",
+        },
+      ],
+      targetPages: [
+        { id: "page-1", title: "Home" },
+        { id: "page-2", title: "Home Alt" },
+      ],
+      plan: conceptPlan,
+      suggestedPreset: WIRE_STYLE_PRESETS.find((preset) => preset.id === "warm-minimal")!,
+    });
+
+    expect(prompt).toContain("Write one detailed production brief");
+    expect(prompt).toContain("Creative Direction:");
+    expect(prompt).toContain("Output Directions:");
+    expect(prompt).toContain("hero composition");
+    expect(prompt).toContain("section progression");
+    expect(prompt).toContain("The brief must be detailed enough");
+    expect(prompt).not.toContain("structured output schema");
+  });
+
   it("adds concept variant uniqueness constraints for multi-output plans", () => {
     const prompt = composePlannedGenerateSystemPrompt({
       plan: conceptPlan,
@@ -129,12 +157,33 @@ describe("planned generation prompt", () => {
       stylePreset: WIRE_STYLE_PRESETS.find((preset) => preset.id === "warm-minimal")!,
       allowImages: false,
       userPrompt: "Design two distinct landing page concepts for an AI marketing SaaS.",
+      designBrief:
+        "Creative Direction: Make the first concept warm and conversion-focused while preserving strong hierarchy.",
     });
 
     expect(prompt).toContain("Variant uniqueness constraints (critical)");
     expect(prompt).toContain("concept variant 1 of 2");
     expect(prompt).toContain("Guided Clarity");
     expect(prompt).toContain("Do not mirror sibling hero composition");
+    expect(prompt).toContain("Detailed brief:");
+  });
+
+  it("uses an in-place editing prompt for existing pages", () => {
+    const prompt = composePageEditSystemPrompt({
+      plan: conceptPlan,
+      output: conceptPlan.outputs[0],
+      stylePreset: WIRE_STYLE_PRESETS.find((preset) => preset.id === "warm-minimal")!,
+      allowImages: false,
+      userPrompt: "Move the CTA higher and tighten the hero copy.",
+      designBrief: "Keep the structure warm and conversion focused.",
+      currentHtml:
+        "<!doctype html><html><head></head><body><main><section>Existing hero</section></main></body></html>",
+    });
+
+    expect(prompt).toContain("Revise the current page instead of generating a new concept from scratch.");
+    expect(prompt).toContain("Start from the current HTML and apply the user instruction directly.");
+    expect(prompt).toContain("Current HTML:");
+    expect(prompt).toContain("Existing hero");
   });
 
   it("keeps assistant content focused on summary details without exposing plan lines", () => {

@@ -485,7 +485,7 @@ export default function WirePromptSidebar({
     },
     onResponse: async (response) => {
       if (!response.ok) {
-        const text = await response.text();
+        const text = await response.clone().text();
         const failureMessage =
           text?.trim() ||
           `Generation failed with ${pendingModelNameRef.current}. Try another model.`;

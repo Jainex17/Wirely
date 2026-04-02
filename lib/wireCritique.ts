@@ -77,6 +77,27 @@ export const normalizeCritiqueReport = (value: unknown): CritiqueReport | null =
     return direct.data;
   }
 
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return normalizeCritiqueReport(JSON.parse(trimmed));
+    } catch {
+      const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+      if (objectMatch) {
+        try {
+          return normalizeCritiqueReport(JSON.parse(objectMatch[0]));
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+  }
+
   if (!isRecord(value)) {
     return null;
   }

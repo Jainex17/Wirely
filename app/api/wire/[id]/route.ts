@@ -1,10 +1,9 @@
-import { createDataStreamResponse, generateObject, generateText } from "ai";
+import { createDataStreamResponse, generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   buildFallbackCritiqueReport,
-  critiqueReportSchema,
   hasCriticalQualityViolations,
   isAcceptedGeneratedOutput,
   normalizeCritiqueReport,
@@ -26,19 +25,16 @@ import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import {
   buildAssistantContent,
   composeCritiquePrompt,
-  composePlannerPrompt,
+  composeDesignBriefPrompt,
+  composePageEditSystemPrompt,
   composePlannedGenerateSystemPrompt,
   composeRepairPrompt,
-  resolveRequestedMode,
   resolveStylePresetForPlan,
+  buildFallbackDesignBrief,
 } from "@/lib/wireGenerationPrompts";
 import { buildFallbackDesignPlan } from "@/lib/wireFallbackPlan";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
-import {
-  designPlanSchema,
-  validateDesignPlan,
-  type GenerationMode,
-} from "@/lib/wireGenerationTypes";
+import { type GenerationMode } from "@/lib/wireGenerationTypes";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import {
@@ -50,7 +46,6 @@ import {
   isOpenRouterWireModel,
   isZaiWireModel,
   isWireModelName,
-  resolveFastWireModelForStage,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -628,7 +623,7 @@ const buildQualitySnapshot = ({
   };
 };
 
-const generatePlan = async ({
+const generateDesignBrief = async ({
   modelName,
   googleApiKey,
   openRouterApiKey,
@@ -655,76 +650,51 @@ const generatePlan = async ({
     wireId: projectId,
     userPrompt,
   });
+  const plan = buildFallbackDesignPlan({
+    userPrompt,
+    requestedOutputCount,
+    targetPages,
+    forceSinglePage,
+    stylePreset: suggestedPreset,
+  });
+  const fallbackBrief = buildFallbackDesignBrief({ plan });
+
   try {
-    const result = await generateObject({
+    const result = await generateText({
       model: getLanguageModel({
         modelName,
         googleApiKey,
         openRouterApiKey,
         zaiApiKey,
       }),
-      schema: designPlanSchema,
-      prompt: composePlannerPrompt({
+      prompt: composeDesignBriefPrompt({
         userPrompt,
         compactHistory,
-        requestedOutputCount,
         targetPages,
-        forceSinglePage,
+        plan,
         suggestedPreset,
       }),
     });
 
-    return validateDesignPlan({
-      value: result.object,
-      expectedOutputCount: requestedOutputCount,
-      requestedMode: resolveRequestedMode({
-        requestedOutputCount,
-        hasExplicitTargetPage: forceSinglePage,
-      }),
-    });
+    const designBrief = result.text.trim();
+    return {
+      plan,
+      designBrief: designBrief || fallbackBrief,
+      usedFallback: designBrief.length === 0,
+    };
   } catch (error) {
-    const malformedSeed =
-      error && typeof error === "object"
-        ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
-          (error as { value?: unknown }).value)
-        : undefined;
-
-    try {
-      const recoveredPlan = validateDesignPlan({
-        value: malformedSeed,
-        expectedOutputCount: requestedOutputCount,
-        requestedMode: resolveRequestedMode({
-          requestedOutputCount,
-          hasExplicitTargetPage: forceSinglePage,
-        }),
-      });
-
-      logger.warn("wire_planner_schema_recovered", {
-        projectId,
-        modelName,
-        message: getErrorMessage(error),
-      });
-
-      return recoveredPlan;
-    } catch {
-      // Fall through to deterministic fallback plan.
-    }
-
-    logger.warn("wire_planner_fallback_used", {
+    logger.warn("wire_design_brief_fallback_used", {
       projectId,
       modelName,
-      reason: "planner_schema_failed",
+      reason: "design_brief_generation_failed",
       message: getErrorMessage(error),
     });
 
-    return buildFallbackDesignPlan({
-      userPrompt,
-      requestedOutputCount,
-      targetPages,
-      forceSinglePage,
-      stylePreset: suggestedPreset,
-      malformedSeed,
-    });
+    return {
+      plan,
+      designBrief: fallbackBrief,
+      usedFallback: true,
+    };
   }
 };
 
@@ -750,18 +720,17 @@ const generateCritiqueReport = async ({
   qualityViolations: string[];
 }) => {
   try {
-    const critiqueResult = await generateObject({
+    const critiqueResult = await generateText({
       model: getLanguageModel({
         modelName,
         googleApiKey,
         openRouterApiKey,
         zaiApiKey,
       }),
-      schema: critiqueReportSchema,
       prompt,
     });
 
-    const critique = normalizeCritiqueReport(critiqueResult.object);
+    const critique = normalizeCritiqueReport(critiqueResult.text);
     if (critique) {
       return {
         critique,
@@ -769,30 +738,11 @@ const generateCritiqueReport = async ({
       };
     }
   } catch (error) {
-    const malformedSeed =
-      error && typeof error === "object"
-        ? ((error as { cause?: { value?: unknown }; value?: unknown }).cause?.value ??
-          (error as { value?: unknown }).value)
-        : undefined;
-    const recovered = normalizeCritiqueReport(malformedSeed);
-    if (recovered) {
-      logger.warn("wire_critique_schema_recovered", {
-        projectId,
-        outputIndex,
-        modelName,
-        message: getErrorMessage(error),
-      });
-      return {
-        critique: recovered,
-        usedFallback: true,
-      };
-    }
-
     logger.warn("wire_critique_fallback_used", {
       projectId,
       outputIndex,
       modelName,
-      reason: "critique_schema_failed",
+      reason: "critique_generation_failed",
       message: getErrorMessage(error),
     });
   }
@@ -1022,22 +972,20 @@ export async function POST(request: Request, context: RouteContext) {
     resolvedTargetPages.length > 0
       ? resolvedTargetPages.length
       : requestedVariationCount;
-  const selectedFastModel = resolveFastWireModelForStage(effectiveModelName);
-
   const generationRun = await createGenerationRun({
     projectId: id,
     prompt: latestUserPrompt,
     selectedModelName: effectiveModelName,
-    plannerModelName: selectedFastModel,
-    criticModelName: selectedFastModel,
+    plannerModelName: effectiveModelName,
+    criticModelName: effectiveModelName,
   });
 
   try {
     logger.info("wire_generation_attempt", {
       projectId: id,
       selectedModelName: effectiveModelName,
-      plannerModelName: selectedFastModel,
-      criticModelName: selectedFastModel,
+      plannerModelName: effectiveModelName,
+      criticModelName: effectiveModelName,
       expectedOutputCount,
       targetPageCount: resolvedTargetPages.length,
     });
@@ -1066,8 +1014,8 @@ export async function POST(request: Request, context: RouteContext) {
         })
       : latestUserPrompt;
 
-    const plan = await generatePlan({
-      modelName: selectedFastModel,
+    const { plan, designBrief } = await generateDesignBrief({
+      modelName: effectiveModelName,
       googleApiKey: userAiSettings.googleApiKey,
       openRouterApiKey: userAiSettings.openRouterApiKey,
       zaiApiKey: userAiSettings.zaiApiKey,
@@ -1134,6 +1082,8 @@ export async function POST(request: Request, context: RouteContext) {
       const stylePreset = resolveStylePresetForPlan(plan, latestUserPrompt);
       const outputAllowsImages =
         plan.globalDesign.stockImages.enabled && item.output.imageSlots.length > 0;
+      const isDirectEditRequest =
+        Boolean(item.targetPageId) && Boolean(currentPage?.htmlContent.trim());
 
       try {
         await updateGenerationOutput({
@@ -1150,15 +1100,26 @@ export async function POST(request: Request, context: RouteContext) {
             openRouterApiKey: userAiSettings.openRouterApiKey,
             zaiApiKey: userAiSettings.zaiApiKey,
           }),
-          system: composePlannedGenerateSystemPrompt({
-            plan,
-            output: item.output,
-            outputIndex: item.outputIndex,
-            allOutputs: plan.outputs,
-            stylePreset,
-            allowImages: outputAllowsImages,
-            userPrompt: latestUserPrompt,
-          }),
+          system: isDirectEditRequest
+            ? composePageEditSystemPrompt({
+                plan,
+                output: item.output,
+                stylePreset,
+                allowImages: outputAllowsImages,
+                userPrompt: latestUserPrompt,
+                designBrief,
+                currentHtml: currentPage?.htmlContent ?? "",
+              })
+            : composePlannedGenerateSystemPrompt({
+                plan,
+                output: item.output,
+                outputIndex: item.outputIndex,
+                allOutputs: plan.outputs,
+                stylePreset,
+                allowImages: outputAllowsImages,
+                userPrompt: latestUserPrompt,
+                designBrief,
+              }),
           prompt: latestUserPrompt,
         });
 
@@ -1174,26 +1135,33 @@ export async function POST(request: Request, context: RouteContext) {
           plannedImageSlots: item.output.imageSlots,
         });
 
-        const critiqueResult = await generateCritiqueReport({
-          modelName: selectedFastModel,
-          googleApiKey: userAiSettings.googleApiKey,
-          openRouterApiKey: userAiSettings.openRouterApiKey,
-          zaiApiKey: userAiSettings.zaiApiKey,
-          prompt: composeCritiquePrompt({
-            plan,
-            output: item.output,
-            details: initialParsed.details,
-            html: normalizedInitial.html,
+        const critiqueResult = isDirectEditRequest
+          ? null
+          : await generateCritiqueReport({
+              modelName: effectiveModelName,
+              googleApiKey: userAiSettings.googleApiKey,
+              openRouterApiKey: userAiSettings.openRouterApiKey,
+              zaiApiKey: userAiSettings.zaiApiKey,
+              prompt: composeCritiquePrompt({
+                plan,
+                output: item.output,
+                details: initialParsed.details,
+                html: normalizedInitial.html,
+                qualityScore: initialQuality.score,
+                qualityViolations: initialQuality.violations,
+              }),
+              projectId: id,
+              outputIndex: item.outputIndex,
+              qualityScore: initialQuality.score,
+              qualityViolations: initialQuality.violations,
+            });
+        const critique =
+          critiqueResult?.critique ??
+          buildFallbackCritiqueReport({
             qualityScore: initialQuality.score,
             qualityViolations: initialQuality.violations,
-          }),
-          projectId: id,
-          outputIndex: item.outputIndex,
-          qualityScore: initialQuality.score,
-          qualityViolations: initialQuality.violations,
-        });
-        const critique = critiqueResult.critique;
-        const critiqueUsedFallback = critiqueResult.usedFallback;
+          });
+        const critiqueUsedFallback = critiqueResult?.usedFallback ?? true;
         let acceptedTitle = item.output.title;
         let acceptedDetails = initialParsed.details.trim();
         let acceptedHtml = normalizedInitial.html;
@@ -1205,6 +1173,7 @@ export async function POST(request: Request, context: RouteContext) {
         });
 
         if (
+          !isDirectEditRequest &&
           shouldRepairGeneratedOutput({
             qualityScore: initialQuality.score,
             isRenderable: initialQuality.isRenderable,
@@ -1240,6 +1209,7 @@ export async function POST(request: Request, context: RouteContext) {
               userPrompt: latestUserPrompt,
               critique,
               currentHtml: normalizedInitial.html,
+              designBrief,
             }),
           });
 
@@ -1264,6 +1234,12 @@ export async function POST(request: Request, context: RouteContext) {
             isRenderable: repairedQuality.isRenderable,
             qualityViolations: repairedQuality.violations,
           });
+        }
+
+        if (isDirectEditRequest) {
+          accepted =
+            acceptedQuality.isRenderable &&
+            !hasCriticalQualityViolations(acceptedQuality.violations);
         }
 
         if (!accepted) {

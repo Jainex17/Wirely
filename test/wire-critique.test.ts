@@ -86,6 +86,28 @@ describe("wire critique helpers", () => {
     expect(normalized?.shouldRepair).toBe(true);
   });
 
+  it("normalizes critique objects embedded in raw text responses", () => {
+    const normalized = normalizeCritiqueReport(`
+Here is the evaluation:
+{
+  "summary": "Strong direction, but the CTA hierarchy is still weak.",
+  "fidelityScore": 84,
+  "depthScore": 79,
+  "distinctnessScore": 88,
+  "keepabilityScore": 80,
+  "missingRequiredElements": [],
+  "majorIssues": ["CTA hierarchy needs more emphasis."],
+  "recommendedFixes": ["Strengthen button contrast and CTA placement."],
+  "shouldRepair": true
+}
+    `);
+
+    expect(normalized).not.toBeNull();
+    expect(normalized?.summary).toContain("Strong direction");
+    expect(normalized?.distinctnessScore).toBe(88);
+    expect(normalized?.shouldRepair).toBe(true);
+  });
+
   it("builds deterministic fallback critique from quality metrics", () => {
     const fallback = buildFallbackCritiqueReport({
       qualityScore: 76,

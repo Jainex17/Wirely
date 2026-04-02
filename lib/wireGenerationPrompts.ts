@@ -117,6 +117,121 @@ Required planning standards:
 `.trim();
 };
 
+const formatDesignBriefOutputs = (outputs: PlannedOutput[]) =>
+  outputs
+    .map((output, index) =>
+      [
+        `Output ${index + 1}: ${output.title}`,
+        `- Role: ${output.pageRole}`,
+        `- Layout strategy: ${output.layoutStrategy}`,
+        `- Sections: ${output.sectionBlueprint.map((section) => section.label).join(", ")}`,
+        `- Required elements: ${output.requiredElements.join(", ")}`,
+        output.imageSlots.length > 0
+          ? `- Image slots: ${output.imageSlots
+              .map((slot) => `${slot.id} => ${slot.query}`)
+              .join(" | ")}`
+          : "- Image slots: none",
+      ].join("\n"),
+    )
+    .join("\n\n");
+
+export const composeDesignBriefPrompt = ({
+  userPrompt,
+  compactHistory,
+  targetPages,
+  plan,
+  suggestedPreset,
+}: {
+  userPrompt: string;
+  compactHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  targetPages: Array<{ id: string; title: string; html?: string }>;
+  plan: DesignPlan;
+  suggestedPreset: WireStylePreset;
+}) => `
+You are Wirely's design strategist.
+Write one detailed production brief for a downstream HTML generation model.
+
+Rules:
+- Return plain text only.
+- Do not return JSON, markdown fences, XML, or bullet nesting.
+- Be concrete and directional, not vague or inspirational.
+- Describe the intended visual system, content hierarchy, section-by-section behavior, and interaction feel.
+- Preserve the plan exactly for output count, page roles, required elements, and stock-image intent.
+- When multiple outputs exist, explicitly distinguish each output so the generator can make them feel materially different.
+- The brief must be detailed enough that a designer or frontend engineer could build the page without inventing the core direction.
+- Avoid filler phrases like "clean modern layout", "engaging experience", or "sleek UI" unless they are immediately followed by specifics.
+- For every output, explain the hero composition, section progression, component patterns, copy posture, and where visual contrast should intensify or soften.
+- Name specific layout behaviors such as split hero, staggered cards, anchored sidebar, stacked proof rail, editorial banding, comparison table, or dense control bar when appropriate.
+- Call out how typography, spacing, color blocking, and imagery should behave in the first screen and later sections.
+- Keep the brief practical for implementation, not brand-strategy fluff.
+
+Context:
+- User prompt: ${userPrompt}
+- Suggested preset: ${suggestedPreset.id} (${suggestedPreset.name})
+- Conversation summary:
+${formatHistory(compactHistory)}
+
+- Target pages:
+${formatTargetPages(targetPages)}
+
+Deterministic plan:
+- Artifact type: ${plan.artifactType}
+- Audience: ${plan.audience}
+- Brand summary: ${plan.brandSummary}
+- Tone: ${plan.tone}
+- Generation mode: ${plan.generationMode}
+- Palette intent: ${plan.globalDesign.paletteIntent}
+- Typography direction: ${plan.globalDesign.typographyDirection}
+- Density: ${plan.globalDesign.density}
+- Motion: ${plan.globalDesign.motion}
+- Differentiation hook: ${plan.globalDesign.differentiationHook}
+- Stock images enabled: ${plan.globalDesign.stockImages.enabled ? "yes" : "no"}
+- Stock image keywords: ${plan.globalDesign.stockImages.keywords.join(", ")}
+
+Outputs:
+${formatDesignBriefOutputs(plan.outputs)}
+
+Write the brief using these headings in order:
+Creative Direction:
+- Write 1 strong paragraph describing the overall art direction, emotional tone, and visual tension.
+Experience Goals:
+- Write 3-5 lines describing what the user should feel and understand as they move through the page.
+Global System:
+- Describe palette behavior, typography hierarchy, spacing rhythm, component edge treatment, interaction/motion cues, and image usage rules.
+Output Directions:
+- Write one substantial paragraph per output.
+- For each output, cover hero layout, section order, content emphasis, component patterns, copy tone, and what makes it distinct.
+- Reference the required elements and planned sections explicitly so none are omitted downstream.
+Content Guidance:
+- Describe how specific the copy should feel, what kinds of labels/headlines/metrics/testimonials should appear, and what should be avoided.
+`.trim();
+
+export const buildFallbackDesignBrief = ({
+  plan,
+}: {
+  plan: DesignPlan;
+}) =>
+  [
+    `Design a ${plan.artifactType} for ${plan.audience}.`,
+    `The brand summary is "${plan.brandSummary}" and the tone should feel ${plan.tone}.`,
+    `Use the ${plan.globalDesign.paletteIntent.toLowerCase()} palette direction with ${plan.globalDesign.typographyDirection.toLowerCase()}.`,
+    `The interface density should stay ${plan.globalDesign.density} with ${plan.globalDesign.motion} motion cues.`,
+    `Anchor the direction around this hook: ${plan.globalDesign.differentiationHook}.`,
+    plan.globalDesign.stockImages.enabled
+      ? `Stock imagery is allowed. Use it only where planned, with keywords ${plan.globalDesign.stockImages.keywords.join(", ")}.`
+      : "Do not introduce bitmap imagery unless the planned output explicitly requires it.",
+    ...plan.outputs.map((output, index) =>
+      [
+        `Output ${index + 1}, titled ${output.title}, is a ${output.pageRole}.`,
+        `Follow this layout strategy: ${output.layoutStrategy}`,
+        `Build these sections in a clear hierarchy: ${output.sectionBlueprint
+          .map((section) => section.label)
+          .join(", ")}.`,
+        `The page must include these required elements: ${output.requiredElements.join(", ")}.`,
+      ].join(" "),
+    ),
+  ].join("\n");
+
 const formatPlanOutput = (output: PlannedOutput) =>
   [
     `Title: ${output.title}`,
@@ -243,6 +358,7 @@ export const composePlannedGenerateSystemPrompt = ({
   stylePreset,
   allowImages,
   userPrompt,
+  designBrief,
 }: {
   plan: DesignPlan;
   output: PlannedOutput;
@@ -251,6 +367,7 @@ export const composePlannedGenerateSystemPrompt = ({
   stylePreset: WireStylePreset;
   allowImages: boolean;
   userPrompt: string;
+  designBrief?: string;
 }) =>
   `
 You are an expert product designer and frontend engineer.
@@ -292,6 +409,9 @@ Plan-wide context:
 - Stock images enabled: ${plan.globalDesign.stockImages.enabled ? "yes" : "no"}
 - Stock image keywords: ${plan.globalDesign.stockImages.keywords.join(", ")}
 
+Detailed brief:
+${designBrief?.trim() || "No additional brief provided."}
+
 This output:
 ${formatPlanOutput(output)}
 
@@ -309,6 +429,86 @@ ${composeConceptVariantDifferentiationRules({
   outputIndex,
   allOutputs,
 })}
+${buildImageRule(allowImages)}
+${buildIntentGuardrails(userPrompt)}
+${buildStockSlotExecutionRules(output)}
+`.trim();
+
+export const composePageEditSystemPrompt = ({
+  plan,
+  output,
+  stylePreset,
+  allowImages,
+  userPrompt,
+  designBrief,
+  currentHtml,
+}: {
+  plan: DesignPlan;
+  output: PlannedOutput;
+  stylePreset: WireStylePreset;
+  allowImages: boolean;
+  userPrompt: string;
+  designBrief?: string;
+  currentHtml: string;
+}) =>
+  `
+You are an expert frontend engineer editing an existing HTML page.
+Revise the current page instead of generating a new concept from scratch.
+
+Return plain text only with these sections in order:
+
+DETAILS:
+Write exactly 2 sentences maximum.
+- Sentence 1: summarize the revised direction.
+- Sentence 2: summarize the most important structural or interaction improvement.
+- Do not mention repair steps or narrate what changed line-by-line.
+
+HTML:
+- A full HTML document starting with <!doctype html>.
+- Preserve the existing working structure where possible.
+- Modify only what is needed to satisfy the request and improve the page.
+- Keep unaffected sections, useful copy, and valid component structure when they still fit.
+- Use semantic HTML5 and Tailwind utility classes only.
+- Include ${TAILWIND_CDN} in <head>.
+- Include ${ELEMENTS_CDN} in <head>.
+- Include ${BOOTSTRAP_ICONS_CDN} in <head>.
+- Include ${CHARTJS_CDN} only when the page genuinely needs charts.
+- Include viewport meta and explicit background/text classes on <body>.
+- Do not use <style> tags or inline style attributes.
+- No markdown or code fences.
+
+Editing intent:
+- This is a page edit request, not a blank-page generation request.
+- Start from the current HTML and apply the user instruction directly.
+- Preserve the existing page title unless the user instruction clearly implies renaming it.
+- Keep the page role intact: ${output.pageRole}.
+
+Plan-wide context:
+- Artifact type: ${plan.artifactType}
+- Audience: ${plan.audience}
+- Brand summary: ${plan.brandSummary}
+- Tone: ${plan.tone}
+- Preset: ${stylePreset.name} (${stylePreset.id})
+- Palette intent: ${plan.globalDesign.paletteIntent}
+- Typography direction: ${plan.globalDesign.typographyDirection}
+- Density: ${plan.globalDesign.density}
+- Motion: ${plan.globalDesign.motion}
+- Differentiation hook: ${plan.globalDesign.differentiationHook}
+
+Detailed brief:
+${designBrief?.trim() || "No additional brief provided."}
+
+Target output:
+${formatPlanOutput(output)}
+
+Current HTML:
+${currentHtml}
+
+Editing rules:
+- Apply the user's instruction to the current codebase directly.
+- Preserve existing sections and components unless the instruction conflicts with them.
+- Strengthen hierarchy, CTA clarity, and interaction states only where needed.
+- Avoid unnecessary rewrites or reordering that would make the page feel replaced instead of edited.
 ${buildImageRule(allowImages)}
 ${buildIntentGuardrails(userPrompt)}
 ${buildStockSlotExecutionRules(output)}
@@ -374,6 +574,7 @@ export const composeRepairPrompt = ({
   userPrompt,
   critique,
   currentHtml,
+  designBrief,
 }: {
   plan: DesignPlan;
   output: PlannedOutput;
@@ -384,6 +585,7 @@ export const composeRepairPrompt = ({
   userPrompt: string;
   critique: Record<string, unknown>;
   currentHtml: string;
+  designBrief?: string;
 }) =>
   `
 You are revising a generated HTML page that was too weak on the first pass.
@@ -404,6 +606,9 @@ Plan-wide context:
 - Differentiation hook: ${plan.globalDesign.differentiationHook}
 - Stock images enabled: ${plan.globalDesign.stockImages.enabled ? "yes" : "no"}
 - Stock image keywords: ${plan.globalDesign.stockImages.keywords.join(", ")}
+
+Detailed brief:
+${designBrief?.trim() || "No additional brief provided."}
 
 This output:
 ${formatPlanOutput(output)}
