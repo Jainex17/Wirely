@@ -455,21 +455,16 @@ const parseTargetPageIds = (value: unknown) =>
 
 const buildPageScopedPrompt = ({
   userPrompt,
-  targetPageId,
   targetPageTitle,
   targetPageHtml,
 }: {
   userPrompt: string;
-  targetPageId?: string;
   targetPageTitle?: string;
   targetPageHtml?: string;
 }) => {
-  if (!targetPageId) return userPrompt;
-
   const html = targetPageHtml?.trim() ?? "";
   return [
     "Page editing context:",
-    `- Target page ID: ${targetPageId}`,
     `- Target page title: ${targetPageTitle || "Untitled Page"}`,
     "- Edit only this target page and return one full HTML document for this page.",
     html ? "Current target page HTML:" : "Current target page HTML is empty.",
