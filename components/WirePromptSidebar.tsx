@@ -620,6 +620,7 @@ export default function WirePromptSidebar({
           let successCount = 0;
           let failedCount = 0;
           let chartIconFailureCount = 0;
+          const successfulPageIds: string[] = [];
 
           for (let index = 0; index < batchTargetPageIds.length; index += 1) {
             const targetPageId = batchTargetPageIds[index];
@@ -672,6 +673,7 @@ export default function WirePromptSidebar({
               }),
             );
             successCount += 1;
+            successfulPageIds.push(targetPageId);
           }
 
           if (successCount === 0) {
@@ -692,6 +694,7 @@ export default function WirePromptSidebar({
                 persistPageHtml(batchTargetPageIds[0], fallbackNormalized.html),
               );
               successCount = 1;
+              successfulPageIds.push(batchTargetPageIds[0]);
             } else if (
               /<html[\s>]/i.test(fallbackNormalized.html) &&
               /<body[\s>]/i.test(fallbackNormalized.html)
@@ -702,6 +705,7 @@ export default function WirePromptSidebar({
               );
               failedCount = Math.max(0, failedCount - 1);
               successCount = 1;
+              successfulPageIds.push(batchTargetPageIds[0]);
             }
           }
 
@@ -712,6 +716,11 @@ export default function WirePromptSidebar({
           }
 
           if (successCount > 0) {
+            requestGeneratedPageFocusCheck(
+              successfulPageIds.length > 0
+                ? successfulPageIds
+                : [batchTargetPageIds[0]],
+            );
             setQualityNotice(null);
           }
 
@@ -765,7 +774,7 @@ export default function WirePromptSidebar({
           initialNormalized.html,
           parsedSingle.title.trim() || undefined,
         );
-        requestGeneratedPageFocusCheck(targetPageId);
+        requestGeneratedPageFocusCheck([targetPageId]);
         void persistPageUpdate(targetPageId, {
           ...(parsedSingle.title.trim()
             ? { title: parsedSingle.title.trim() }

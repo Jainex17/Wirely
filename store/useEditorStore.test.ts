@@ -65,4 +65,26 @@ describe("useEditorStore canvas state", () => {
 
     expect(useEditorStore.getState().camera.zoom).toBeLessThan(64);
   });
+
+  it("assigns a non-overlapping position when creating a page", () => {
+    useEditorStore.getState().setPagePosition("page-1", { x: -1560, y: 0 });
+    useEditorStore.getState().setPagePosition("page-2", { x: 0, y: 0 });
+
+    const createdPageId = useEditorStore.getState().createPage("Page 3");
+    const state = useEditorStore.getState();
+
+    expect(state.pagePositions[createdPageId]).toEqual({ x: 1560, y: 0 });
+  });
+
+  it("focuses a generated batch as a group", () => {
+    useEditorStore.getState().setPagePosition("page-1", { x: -1000, y: 0 });
+    useEditorStore.getState().setPagePosition("page-2", { x: 1400, y: 0 });
+    useEditorStore.getState().setCamera({ x: 0, y: 0, zoom: 100 });
+
+    useEditorStore.getState().focusPages(["page-1", "page-2"]);
+
+    const state = useEditorStore.getState();
+    expect(state.focusedPageId).toBe("page-2");
+    expect(state.camera.zoom).toBeLessThan(100);
+  });
 });

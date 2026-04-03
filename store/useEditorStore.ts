@@ -7,6 +7,7 @@ import {
   type PageBounds,
   type ViewportSize,
   CANVAS_TOP_OFFSET,
+  PAGE_GAP,
   clampZoom,
   createBounds,
   createDefaultCamera,
@@ -14,6 +15,7 @@ import {
   getDefaultPageX,
   getPageBounds,
   scaleFromZoom,
+  unionBounds,
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 
@@ -39,7 +41,7 @@ export interface CanvasState {
   pageStackOrder: string[];
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
-  requestedGeneratedPageFocusId: string | null;
+  requestedGeneratedPageFocusIds: string[] | null;
   viewportSize: ViewportSize;
 }
 
@@ -93,8 +95,9 @@ export interface EditorState extends CanvasState, ProjectState {
   setFocusedPage: (pageId: string | null) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
+  focusPages: (pageIds: string[]) => void;
   fitAllPages: () => void;
-  requestGeneratedPageFocusCheck: (pageId: string | null) => void;
+  requestGeneratedPageFocusCheck: (pageIds: string[] | null) => void;
   clearRequestedGeneratedPageFocusCheck: () => void;
   setSelectedSection: (id: string | null) => void;
   setDraggingSection: (id: string | null) => void;
@@ -130,7 +133,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageStackOrder: [],
   pageFrameHeights: {},
   focusedPageId: "page-home",
-  requestedGeneratedPageFocusId: null,
+  requestedGeneratedPageFocusIds: null,
   viewportSize: { width: 0, height: 0 },
 };
 
@@ -210,32 +213,50 @@ const hasUsableViewport = (viewportSize: ViewportSize) =>
   viewportSize.width > 0 && viewportSize.height > 0;
 
 const getFittedCamera = (state: EditorState) => {
-  const boundsList = getPageBoundsCollection(state);
+  return getFittedCameraForPageIds(
+    state,
+    state.pages.map((page) => page.id),
+  );
+};
+
+const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
+  const boundsList = getPageBoundsCollection(state).filter((bounds) =>
+    pageIds.includes(bounds.pageId),
+  );
   if (boundsList.length === 0 || !hasUsableViewport(state.viewportSize)) {
     return state.camera;
   }
 
-  let union = createBounds(
-    boundsList[0].left,
-    boundsList[0].top,
-    boundsList[0].right,
-    boundsList[0].bottom,
-  );
-
-  for (let index = 1; index < boundsList.length; index += 1) {
-    const bounds = boundsList[index];
-    union = createBounds(
-      Math.min(union.left, bounds.left),
-      Math.min(union.top, bounds.top),
-      Math.max(union.right, bounds.right),
-      Math.max(union.bottom, bounds.bottom),
-    );
+  const union = unionBounds(boundsList);
+  if (!union) {
+    return state.camera;
   }
 
   return fitBounds({
     bounds: union,
     viewport: state.viewportSize,
   });
+};
+
+const getNextCreatedPagePosition = (state: EditorState) => {
+  const { width: deviceWidth } = getDeviceDimensions(state.activeDevice);
+  const existingBounds = getPageBoundsCollection(state);
+
+  if (existingBounds.length === 0) {
+    return {
+      x: getDefaultPageX(0, 1, deviceWidth),
+      y: 0,
+    };
+  }
+
+  const rightmostBounds = existingBounds.reduce((currentRightmost, candidate) =>
+    candidate.right > currentRightmost.right ? candidate : currentRightmost,
+  );
+
+  return {
+    x: rightmostBounds.right + PAGE_GAP,
+    y: rightmostBounds.top,
+  };
 };
 
 export const useEditorStore = create<EditorState>()(
@@ -357,6 +378,38 @@ export const useEditorStore = create<EditorState>()(
             focusedPageId: pageId,
           };
         }),
+      focusPages: (pageIds) =>
+        set((state) => {
+          const uniquePageIds = [...new Set(pageIds)].filter((pageId) =>
+            state.pages.some((page) => page.id === pageId),
+          );
+          if (uniquePageIds.length === 0) {
+            return state;
+          }
+          if (uniquePageIds.length === 1) {
+            const bounds = getPageBoundsById(state, uniquePageIds[0]);
+            if (!bounds || !hasUsableViewport(state.viewportSize)) {
+              return {
+                focusedPageId: uniquePageIds[0],
+              };
+            }
+
+            return {
+              camera: fitBounds({
+                bounds,
+                viewport: state.viewportSize,
+                minZoom: state.camera.zoom,
+                maxZoom: state.camera.zoom,
+              }),
+              focusedPageId: uniquePageIds[0],
+            };
+          }
+
+          return {
+            camera: getFittedCameraForPageIds(state, uniquePageIds),
+            focusedPageId: uniquePageIds[uniquePageIds.length - 1] ?? null,
+          };
+        }),
       fitAllPages: () =>
         set((state) => {
           if (!hasUsableViewport(state.viewportSize)) {
@@ -367,10 +420,13 @@ export const useEditorStore = create<EditorState>()(
             camera: getFittedCamera(state),
           };
         }),
-      requestGeneratedPageFocusCheck: (pageId) =>
-        set({ requestedGeneratedPageFocusId: pageId }),
+      requestGeneratedPageFocusCheck: (pageIds) =>
+        set({
+          requestedGeneratedPageFocusIds:
+            pageIds && pageIds.length > 0 ? [...new Set(pageIds)] : null,
+        }),
       clearRequestedGeneratedPageFocusCheck: () =>
-        set({ requestedGeneratedPageFocusId: null }),
+        set({ requestedGeneratedPageFocusIds: null }),
       setSelectedSection: (selectedSectionId) => set({ selectedSectionId }),
       setDraggingSection: (draggingSectionId) => set({ draggingSectionId }),
 
@@ -480,6 +536,7 @@ export const useEditorStore = create<EditorState>()(
         const newPageId = pageId ?? createPageId();
 
         set((state) => {
+          const nextPosition = getNextCreatedPagePosition(state);
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
           const newPage: PageData = {
             id: newPageId,
@@ -498,6 +555,10 @@ export const useEditorStore = create<EditorState>()(
 
           return {
             pages,
+            pagePositions: {
+              ...state.pagePositions,
+              [newPageId]: nextPosition,
+            },
             pageStackOrder: mergePageStackOrder(
               pages.map((page) => page.id),
               [...state.pageStackOrder, newPageId],
@@ -607,7 +668,7 @@ export const useEditorStore = create<EditorState>()(
           pageStackOrder: [],
           pageFrameHeights: {},
           focusedPageId: "page-home",
-          requestedGeneratedPageFocusId: null,
+          requestedGeneratedPageFocusIds: null,
           viewportSize: { width: 0, height: 0 },
         })),
     }),

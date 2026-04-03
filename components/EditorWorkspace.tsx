@@ -54,13 +54,14 @@ export default function EditorWorkspace({
     pagePositions,
     pageFrameHeights,
     pages,
-    requestedGeneratedPageFocusId,
+    requestedGeneratedPageFocusIds,
     beginSaving,
     endSaving,
     setCamera,
     setViewportSize,
     resetView,
     focusPage,
+    focusPages,
     fitAllPages,
     clearRequestedGeneratedPageFocusCheck,
     setSelectedSection,
@@ -74,13 +75,14 @@ export default function EditorWorkspace({
       pagePositions: state.pagePositions,
       pageFrameHeights: state.pageFrameHeights,
       pages: state.pages,
-      requestedGeneratedPageFocusId: state.requestedGeneratedPageFocusId,
+      requestedGeneratedPageFocusIds: state.requestedGeneratedPageFocusIds,
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
       setCamera: state.setCamera,
       setViewportSize: state.setViewportSize,
       resetView: state.resetView,
       focusPage: state.focusPage,
+      focusPages: state.focusPages,
       fitAllPages: state.fitAllPages,
       clearRequestedGeneratedPageFocusCheck: state.clearRequestedGeneratedPageFocusCheck,
       setSelectedSection: state.setSelectedSection,
@@ -260,7 +262,10 @@ export default function EditorWorkspace({
   }, [camera, focusPage, pageBoundsById, pages]);
 
   useEffect(() => {
-    if (!requestedGeneratedPageFocusId || !canvasRef.current) {
+    if (!requestedGeneratedPageFocusIds || requestedGeneratedPageFocusIds.length === 0) {
+      return;
+    }
+    if (!canvasRef.current) {
       return;
     }
 
@@ -268,19 +273,24 @@ export default function EditorWorkspace({
       width: canvasRef.current.clientWidth,
       height: canvasRef.current.clientHeight,
     });
-    const pageBounds = pageBoundsById.get(requestedGeneratedPageFocusId);
+    const generatedBounds = requestedGeneratedPageFocusIds
+      .map((pageId) => pageBoundsById.get(pageId))
+      .filter((bounds): bounds is NonNullable<typeof bounds> => Boolean(bounds));
+    const hasVisibleGeneratedPage = generatedBounds.some((bounds) =>
+      isBoundsIntersecting(bounds, viewportBounds),
+    );
 
-    if (pageBounds && !isBoundsIntersecting(pageBounds, viewportBounds)) {
-      focusPage(requestedGeneratedPageFocusId);
+    if (!hasVisibleGeneratedPage) {
+      focusPages(requestedGeneratedPageFocusIds);
     }
 
     clearRequestedGeneratedPageFocusCheck();
   }, [
     camera,
     clearRequestedGeneratedPageFocusCheck,
-    focusPage,
+    focusPages,
     pageBoundsById,
-    requestedGeneratedPageFocusId,
+    requestedGeneratedPageFocusIds,
   ]);
 
   useEffect(() => {
