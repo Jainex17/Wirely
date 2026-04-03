@@ -51,12 +51,16 @@ import {
   resolvePromptTargetPageId,
   resolvePromptTargetPageTitle,
 } from "@/lib/wirePromptTarget";
+import {
+  getWireConversationModelUsage,
+  type WireConversationModelUsage,
+} from "@/lib/wireConversationModels";
 
 interface WirePromptSidebarProps {
   wireId: string;
   variant?: "floating" | "panel";
   initialModelName?: WireModelName;
-  initialMessages?: Message[];
+  initialMessages?: Array<Message & WireConversationModelUsage>;
   selectedPageId: string | null;
   onSelectedPageIdChange: (pageId: string | null) => void;
   focusRequestKey?: number;
@@ -70,6 +74,8 @@ interface CompactHistoryMessage {
   role: "user" | "assistant";
   content: string;
 }
+
+interface SidebarMessage extends Message, WireConversationModelUsage {}
 
 const clampPageCount = (value: unknown): 1 | 2 | 3 => {
   if (typeof value !== "number" || !Number.isInteger(value)) return 1;
@@ -229,6 +235,22 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
+  const [messageModelUsageById, setMessageModelUsageById] = useState<
+    Record<string, WireConversationModelUsage>
+  >(() =>
+    Object.fromEntries(
+      initialMessages
+        .filter((message) => typeof message.id === "string")
+        .map((message) => [
+          message.id as string,
+          {
+            selectedModelName: message.selectedModelName,
+            plannerModelName: message.plannerModelName,
+            criticModelName: message.criticModelName,
+          },
+        ]),
+    ),
+  );
 
   const autoRunRef = useRef(false);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -515,6 +537,18 @@ export default function WirePromptSidebar({
     },
     onFinish: (message) => {
       try {
+        setMessageModelUsageById((current) => ({
+          ...current,
+          ...(message.id
+            ? {
+                [message.id]: {
+                  selectedModelName: pendingModelNameRef.current,
+                  plannerModelName: pendingModelNameRef.current,
+                  criticModelName: pendingModelNameRef.current,
+                },
+              }
+            : {}),
+        }));
         const activePrompt = latestPromptRef.current;
         const allowImages = true;
         const stylePreset = selectWireStylePreset({
@@ -746,9 +780,27 @@ export default function WirePromptSidebar({
       const body: Record<string, unknown> = {
         modelName: selectedModel,
       };
+      const userMessageId = crypto.randomUUID();
+      const modelUsage = {
+        selectedModelName: selectedModel,
+        plannerModelName: selectedModel,
+        criticModelName: selectedModel,
+      } satisfies WireConversationModelUsage;
+      setMessageModelUsageById((current) => ({
+        ...current,
+        [userMessageId]: modelUsage,
+      }));
 
       try {
-        await append({ role: "user", content: trimmedPrompt }, { body });
+        await append(
+          {
+            id: userMessageId,
+            role: "user",
+            content: trimmedPrompt,
+            ...modelUsage,
+          } as SidebarMessage,
+          { body },
+        );
 
         if (pendingGenerationFailedRef.current) {
           const failureMessage =
@@ -1144,6 +1196,36 @@ export default function WirePromptSidebar({
   const renderedMessages = useMemo(() => {
     return messages.map((message, index) => {
       const key = message.id ?? `${message.role}-${index}`;
+      const modelUsage = getWireConversationModelUsage({
+        selectedModelName:
+          messageModelUsageById[key]?.selectedModelName ??
+          (message as SidebarMessage).selectedModelName,
+        plannerModelName:
+          messageModelUsageById[key]?.plannerModelName ??
+          (message as SidebarMessage).plannerModelName,
+        criticModelName:
+          messageModelUsageById[key]?.criticModelName ??
+          (message as SidebarMessage).criticModelName,
+      });
+      const modelUsageUi = modelUsage ? (
+        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] leading-4 opacity-70">
+          {modelUsage.selectedModelName ? (
+            <span>
+              {modelUsage.selectedModelName}
+            </span>
+          ) : null}
+          {modelUsage.hasSpecializedStages && modelUsage.plannerModelName ? (
+            <span>
+              Plan: {modelUsage.plannerModelName}
+            </span>
+          ) : null}
+          {modelUsage.hasSpecializedStages && modelUsage.criticModelName ? (
+            <span>
+              Critic: {modelUsage.criticModelName}
+            </span>
+          ) : null}
+        </div>
+      ) : null;
       if (message.role === "user") {
         return (
           <div
@@ -1154,7 +1236,7 @@ export default function WirePromptSidebar({
                 : "bg-sidebar-accent text-sidebar-accent-foreground"
             }`}
           >
-            {message.content}
+            <div>{message.content}</div>
           </div>
         );
       }
@@ -1173,14 +1255,15 @@ export default function WirePromptSidebar({
                 : "bg-sidebar/60 text-sidebar-foreground"
             }`}
           >
-            {details}
+            <div>{details}</div>
+            {modelUsageUi}
           </div>
         );
       }
 
       return null;
     });
-  }, [messages, variant]);
+  }, [messageModelUsageById, messages, variant]);
 
   const effectiveSelectedPageId = resolvePromptTargetPageId(pages, selectedPageId);
   const selectedPageTitle = resolvePromptTargetPageTitle(

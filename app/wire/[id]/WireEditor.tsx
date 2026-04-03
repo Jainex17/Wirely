@@ -30,6 +30,7 @@ import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 import { resolvePromptTargetPageId } from "@/lib/wirePromptTarget";
 import { createDefaultCamera } from "@/lib/canvasScene";
+import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
 interface WireEditorProps {
   wireId: string;
@@ -47,7 +48,7 @@ interface WireEditorProps {
     }>;
   };
   initialModelName: WireModelName;
-  initialMessages: Message[];
+  initialMessages: Array<Message & WireConversationModelUsage>;
 }
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;

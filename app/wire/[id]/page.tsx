@@ -65,6 +65,9 @@ export default async function WirePage({ params }: WirePageProps) {
         id: message.id,
         role: message.role,
         content: message.content,
+        selectedModelName: message.selectedModelName,
+        plannerModelName: message.plannerModelName,
+        criticModelName: message.criticModelName,
       }))}
     />
   );

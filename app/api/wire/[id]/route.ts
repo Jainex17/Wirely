@@ -488,11 +488,17 @@ const persistConversationTurn = async ({
   userPrompt,
   assistantSummary,
   targetPageId,
+  selectedModelName,
+  plannerModelName,
+  criticModelName,
 }: {
   projectId: string;
   userPrompt: string;
   assistantSummary: string;
   targetPageId?: string;
+  selectedModelName: string;
+  plannerModelName: string;
+  criticModelName: string;
 }) => {
   try {
     const trimmedPrompt = userPrompt.trim();
@@ -502,6 +508,9 @@ const persistConversationTurn = async ({
         role: "user",
         content: trimmedPrompt,
         targetPageId,
+        selectedModelName,
+        plannerModelName,
+        criticModelName,
       });
     }
 
@@ -511,6 +520,9 @@ const persistConversationTurn = async ({
         role: "assistant",
         content: assistantSummary,
         targetPageId,
+        selectedModelName,
+        plannerModelName,
+        criticModelName,
       });
     }
   } catch (error) {
@@ -1465,6 +1477,9 @@ export async function POST(request: Request, context: RouteContext) {
       userPrompt: latestUserPrompt,
       assistantSummary: extractAssistantSummary(assistantContent),
       targetPageId: resolvedSingleTargetPage?.id ?? undefined,
+      selectedModelName: effectiveModelName,
+      plannerModelName: effectiveModelName,
+      criticModelName: effectiveModelName,
     });
 
     return applyRateHeaders(createAssistantResponse(assistantContent));

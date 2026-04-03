@@ -323,11 +323,17 @@ export const appendConversationMessage = async ({
   role,
   content,
   targetPageId,
+  selectedModelName,
+  plannerModelName,
+  criticModelName,
 }: {
   projectId: string;
   role: ConversationRole;
   content: string;
   targetPageId?: string;
+  selectedModelName?: string;
+  plannerModelName?: string;
+  criticModelName?: string;
 }) => {
   const db = getDb();
 
@@ -354,6 +360,9 @@ export const appendConversationMessage = async ({
       conversationId: conversation.id,
       role,
       content,
+      ...(selectedModelName ? { selectedModelName } : {}),
+      ...(plannerModelName ? { plannerModelName } : {}),
+      ...(criticModelName ? { criticModelName } : {}),
       ...(targetPageId ? { targetPageId } : {}),
     })
     .returning();
