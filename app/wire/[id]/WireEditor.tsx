@@ -48,7 +48,12 @@ interface WireEditorProps {
     }>;
   };
   initialModelName: WireModelName;
-  initialMessages: Array<Message & WireConversationModelUsage>;
+  initialMessages: Array<
+    Message &
+      WireConversationModelUsage & {
+        planningSummary?: string | null;
+      }
+  >;
 }
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;

@@ -65,6 +65,7 @@ export default async function WirePage({ params }: WirePageProps) {
         id: message.id,
         role: message.role,
         content: message.content,
+        planningSummary: message.planningSummary,
         selectedModelName: message.selectedModelName,
         plannerModelName: message.plannerModelName,
         criticModelName: message.criticModelName,

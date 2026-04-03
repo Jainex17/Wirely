@@ -323,6 +323,7 @@ export const appendConversationMessage = async ({
   role,
   content,
   targetPageId,
+  planningSummary,
   selectedModelName,
   plannerModelName,
   criticModelName,
@@ -331,6 +332,7 @@ export const appendConversationMessage = async ({
   role: ConversationRole;
   content: string;
   targetPageId?: string;
+  planningSummary?: string;
   selectedModelName?: string;
   plannerModelName?: string;
   criticModelName?: string;
@@ -360,6 +362,7 @@ export const appendConversationMessage = async ({
       conversationId: conversation.id,
       role,
       content,
+      ...(planningSummary ? { planningSummary } : {}),
       ...(selectedModelName ? { selectedModelName } : {}),
       ...(plannerModelName ? { plannerModelName } : {}),
       ...(criticModelName ? { criticModelName } : {}),

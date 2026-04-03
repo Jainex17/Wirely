@@ -60,7 +60,12 @@ interface WirePromptSidebarProps {
   wireId: string;
   variant?: "floating" | "panel";
   initialModelName?: WireModelName;
-  initialMessages?: Array<Message & WireConversationModelUsage>;
+  initialMessages?: Array<
+    Message &
+      WireConversationModelUsage & {
+        planningSummary?: string | null;
+      }
+  >;
   selectedPageId: string | null;
   onSelectedPageIdChange: (pageId: string | null) => void;
   focusRequestKey?: number;
@@ -75,7 +80,9 @@ interface CompactHistoryMessage {
   content: string;
 }
 
-interface SidebarMessage extends Message, WireConversationModelUsage {}
+interface SidebarMessage extends Message, WireConversationModelUsage {
+  planningSummary?: string | null;
+}
 
 const clampPageCount = (value: unknown): 1 | 2 | 3 => {
   if (typeof value !== "number" || !Number.isInteger(value)) return 1;
@@ -251,6 +258,20 @@ export default function WirePromptSidebar({
         ]),
     ),
   );
+  const [messagePlanningById, setMessagePlanningById] = useState<
+    Record<string, string>
+  >(() =>
+    Object.fromEntries(
+      initialMessages
+        .filter(
+          (message) =>
+            typeof message.id === "string" &&
+            typeof message.planningSummary === "string" &&
+            message.planningSummary.trim().length > 0,
+        )
+        .map((message) => [message.id as string, message.planningSummary as string]),
+    ),
+  );
 
   const autoRunRef = useRef(false);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -261,6 +282,7 @@ export default function WirePromptSidebar({
   const pendingBatchCreatedPageIdsRef = useRef<string[]>([]);
   const pendingPageHtmlBackupRef = useRef<Map<string, string>>(new Map());
   const pendingModelNameRef = useRef<WireModelName>(initialModelName);
+  const pendingUserMessageIdRef = useRef<string | null>(null);
   const pendingGenerationFailedRef = useRef(false);
   const pendingGenerationErrorRef = useRef<string | null>(null);
   const hasShownErrorToastRef = useRef(false);
@@ -281,6 +303,7 @@ export default function WirePromptSidebar({
     pendingBatchTargetPageIdsRef.current = null;
     pendingBatchCreatedPageIdsRef.current = [];
     pendingPageHtmlBackupRef.current.clear();
+    pendingUserMessageIdRef.current = null;
   }, []);
 
   const reportError = useCallback((message: string) => {
@@ -507,6 +530,14 @@ export default function WirePromptSidebar({
     },
     onResponse: async (response) => {
       if (!response.ok) {
+        const pendingUserMessageId = pendingUserMessageIdRef.current;
+        if (pendingUserMessageId) {
+          setMessagePlanningById((current) => {
+            const next = { ...current };
+            delete next[pendingUserMessageId];
+            return next;
+          });
+        }
         const text = await response.clone().text();
         const failureMessage =
           text?.trim() ||
@@ -518,9 +549,32 @@ export default function WirePromptSidebar({
         stop();
         return;
       }
+      const planningSummaryHeader = response.headers.get("x-wire-planning-summary");
+      const pendingUserMessageId = pendingUserMessageIdRef.current;
+      if (planningSummaryHeader && pendingUserMessageId) {
+        try {
+          const planningSummary = JSON.parse(planningSummaryHeader) as string;
+          if (planningSummary.trim()) {
+            setMessagePlanningById((current) => ({
+              ...current,
+              [pendingUserMessageId]: planningSummary,
+            }));
+          }
+        } catch (error) {
+          logger.warn("wire_sidebar_plan_header_parse_failed", { error });
+        }
+      }
       setErrorMessage(null);
     },
     onError: (error) => {
+      const pendingUserMessageId = pendingUserMessageIdRef.current;
+      if (pendingUserMessageId) {
+        setMessagePlanningById((current) => {
+          const next = { ...current };
+          delete next[pendingUserMessageId];
+          return next;
+        });
+      }
       logger.error("wire_use_chat_stream_error", {
         modelName: pendingModelNameRef.current,
         error,
@@ -790,6 +844,11 @@ export default function WirePromptSidebar({
         ...current,
         [userMessageId]: modelUsage,
       }));
+      setMessagePlanningById((current) => ({
+        ...current,
+        [userMessageId]: "Generating plan...",
+      }));
+      pendingUserMessageIdRef.current = userMessageId;
 
       try {
         await append(
@@ -870,9 +929,32 @@ export default function WirePromptSidebar({
         variationCount: targetPageIds.length,
         targetPageIds,
       };
+      const userMessageId = crypto.randomUUID();
+      const modelUsage = {
+        selectedModelName: selectedModel,
+        plannerModelName: selectedModel,
+        criticModelName: selectedModel,
+      } satisfies WireConversationModelUsage;
+      setMessageModelUsageById((current) => ({
+        ...current,
+        [userMessageId]: modelUsage,
+      }));
+      setMessagePlanningById((current) => ({
+        ...current,
+        [userMessageId]: "Generating plan...",
+      }));
+      pendingUserMessageIdRef.current = userMessageId;
 
       try {
-        await append({ role: "user", content: trimmedPrompt }, { body });
+        await append(
+          {
+            id: userMessageId,
+            role: "user",
+            content: trimmedPrompt,
+            ...modelUsage,
+          } as SidebarMessage,
+          { body },
+        );
 
         if (pendingGenerationFailedRef.current) {
           const failureMessage =
@@ -1194,7 +1276,12 @@ export default function WirePromptSidebar({
       : "fixed right-5 top-5 bottom-5 w-80 p-4 flex flex-col gap-4 bg-transparent text-sidebar-foreground";
 
   const renderedMessages = useMemo(() => {
-    return messages.map((message, index) => {
+    const lastUserMessageIndex = [...messages]
+      .map((message, index) => ({ message, index }))
+      .reverse()
+      .find(({ message }) => message.role === "user")?.index;
+
+    const items = messages.flatMap((message, index) => {
       const key = message.id ?? `${message.role}-${index}`;
       const modelUsage = getWireConversationModelUsage({
         selectedModelName:
@@ -1227,7 +1314,10 @@ export default function WirePromptSidebar({
         </div>
       ) : null;
       if (message.role === "user") {
-        return (
+        const planningSummary =
+          messagePlanningById[key] ??
+          ((message as SidebarMessage).planningSummary?.trim() || "");
+        const userBubble = (
           <div
             key={key}
             className={`ml-auto max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
@@ -1239,14 +1329,66 @@ export default function WirePromptSidebar({
             <div>{message.content}</div>
           </div>
         );
+
+        const planningBubble =
+          planningSummary || (isLoading && index === lastUserMessageIndex) ? (
+            <details
+              key={`${key}-planning`}
+              className="group mx-auto w-full max-w-[92%] py-1 text-center"
+            >
+              <summary
+                className={`flex cursor-pointer list-none items-center gap-4 text-[11px] font-medium transition-opacity hover:opacity-100 select-none marker:hidden ${
+                  variant === "panel"
+                    ? "text-muted-foreground opacity-80"
+                    : "text-sidebar-foreground/70 opacity-80"
+                }`}
+              >
+                <span
+                  className={`h-px flex-1 ${
+                    variant === "panel" ? "bg-border" : "bg-border/60"
+                  }`}
+                />
+                <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                  {planningSummary ? "Worked plan" : "Working on plan"}
+                  {isLoading && index === lastUserMessageIndex ? "..." : null}
+                  <span
+                    aria-hidden="true"
+                    className="text-sm leading-none transition-transform duration-300 ease-out group-open:rotate-90"
+                  >
+                    ›
+                  </span>
+                </span>
+                <span
+                  className={`h-px flex-1 ${
+                    variant === "panel" ? "bg-border" : "bg-border/60"
+                  }`}
+                />
+              </summary>
+              <div className="grid grid-rows-[0fr] transition-[grid-template-rows,opacity,margin] duration-300 ease-out group-open:mt-2 group-open:grid-rows-[1fr]">
+                <div className="overflow-hidden">
+                  <div
+                    className={`whitespace-pre-wrap text-left text-[11px] leading-4 transition-transform duration-300 ease-out group-open:translate-y-0 translate-y-1 ${
+                      variant === "panel"
+                        ? "text-muted-foreground"
+                        : "text-sidebar-foreground/80"
+                    }`}
+                  >
+                    {planningSummary || "Generating plan..."}
+                  </div>
+                </div>
+              </div>
+            </details>
+          ) : null;
+
+        return planningBubble ? [userBubble, planningBubble] : [userBubble];
       }
 
       if (message.role === "assistant") {
         const details = getAssistantDetails(message.content);
         if (!details) {
-          return null;
+          return [];
         }
-        return (
+        return [
           <div
             key={key}
             className={`max-w-[90%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
@@ -1257,13 +1399,15 @@ export default function WirePromptSidebar({
           >
             <div>{details}</div>
             {modelUsageUi}
-          </div>
-        );
+          </div>,
+        ];
       }
 
-      return null;
+      return [];
     });
-  }, [messageModelUsageById, messages, variant]);
+
+    return items;
+  }, [isLoading, messageModelUsageById, messagePlanningById, messages, variant]);
 
   const effectiveSelectedPageId = resolvePromptTargetPageId(pages, selectedPageId);
   const selectedPageTitle = resolvePromptTargetPageTitle(
@@ -1324,17 +1468,6 @@ export default function WirePromptSidebar({
             }`}
           >
             {qualityNotice}
-          </div>
-        ) : null}
-        {isLoading ? (
-          <div
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-muted text-muted-foreground"
-                : "bg-sidebar/40 text-sidebar-foreground"
-            }`}
-          >
-            Thinking...
           </div>
         ) : null}
         {noModelsEnabled ? (

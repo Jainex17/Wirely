@@ -142,6 +142,7 @@ export const conversationMessages = pgTable(
       .references(() => conversations.id, { onDelete: "cascade" }),
     role: conversationRoleEnum("role").notNull(),
     content: text("content").notNull(),
+    planningSummary: text("planning_summary"),
     selectedModelName: text("selected_model_name"),
     plannerModelName: text("planner_model_name"),
     criticModelName: text("critic_model_name"),

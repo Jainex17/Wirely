@@ -34,6 +34,7 @@ import {
 } from "@/lib/wireGenerationPrompts";
 import { buildFallbackDesignPlan } from "@/lib/wireFallbackPlan";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
+import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
@@ -488,6 +489,7 @@ const persistConversationTurn = async ({
   userPrompt,
   assistantSummary,
   targetPageId,
+  planningSummary,
   selectedModelName,
   plannerModelName,
   criticModelName,
@@ -496,6 +498,7 @@ const persistConversationTurn = async ({
   userPrompt: string;
   assistantSummary: string;
   targetPageId?: string;
+  planningSummary?: string;
   selectedModelName: string;
   plannerModelName: string;
   criticModelName: string;
@@ -508,6 +511,7 @@ const persistConversationTurn = async ({
         role: "user",
         content: trimmedPrompt,
         targetPageId,
+        planningSummary,
         selectedModelName,
         plannerModelName,
         criticModelName,
@@ -558,10 +562,19 @@ const getLanguageModel = ({
   return provider(modelName);
 };
 
-const createAssistantResponse = (content: string) =>
+const createAssistantResponse = ({
+  content,
+  planningSummary,
+}: {
+  content: string;
+  planningSummary?: string;
+}) =>
   createDataStreamResponse({
     headers: {
       "cache-control": "no-store, no-transform",
+      ...(planningSummary
+        ? { "x-wire-planning-summary": JSON.stringify(planningSummary) }
+        : {}),
     },
     execute: async (dataStream) => {
       dataStream.write(`f:${JSON.stringify({ messageId: crypto.randomUUID() })}\n`);
@@ -1045,6 +1058,10 @@ export async function POST(request: Request, context: RouteContext) {
       stageStatus: "planned",
       generationMode: plan.generationMode,
     });
+    const planningSummary = buildWirePlanningSummary({
+      plan,
+      designBrief,
+    });
 
     const mappedOutputs = mapPlanOutputsToTargets({
       plan,
@@ -1477,12 +1494,18 @@ export async function POST(request: Request, context: RouteContext) {
       userPrompt: latestUserPrompt,
       assistantSummary: extractAssistantSummary(assistantContent),
       targetPageId: resolvedSingleTargetPage?.id ?? undefined,
+      planningSummary,
       selectedModelName: effectiveModelName,
       plannerModelName: effectiveModelName,
       criticModelName: effectiveModelName,
     });
 
-    return applyRateHeaders(createAssistantResponse(assistantContent));
+    return applyRateHeaders(
+      createAssistantResponse({
+        content: assistantContent,
+        planningSummary,
+      }),
+    );
   } catch (error) {
     logger.error("wire_selected_model_stream_error", {
       modelName: effectiveModelName,
