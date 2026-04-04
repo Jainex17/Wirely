@@ -88,6 +88,7 @@ type WireRequestBody = {
   wireId?: unknown;
   messages?: unknown;
   modelName?: unknown;
+  generationMode?: unknown;
   promptText?: unknown;
   targetPageId?: unknown;
   targetPageIds?: unknown;
@@ -136,6 +137,19 @@ const validateRequestBody = (body: WireRequestBody) => {
 
   if (body.modelName !== undefined && typeof body.modelName !== "string") {
     return "modelName must be a string.";
+  }
+
+  if (body.generationMode !== undefined) {
+    if (typeof body.generationMode !== "string") {
+      return "generationMode must be a string.";
+    }
+    if (
+      body.generationMode !== "single_page" &&
+      body.generationMode !== "concept_variants" &&
+      body.generationMode !== "information_architecture"
+    ) {
+      return "generationMode is invalid.";
+    }
   }
 
   if (body.promptText !== undefined) {
@@ -445,6 +459,17 @@ const parseVariationCount = (value: unknown) => {
   return value;
 };
 
+const parseRequestedGenerationMode = (value: unknown): GenerationMode | null => {
+  if (
+    value === "single_page" ||
+    value === "concept_variants" ||
+    value === "information_architecture"
+  ) {
+    return value;
+  }
+  return null;
+};
+
 const parseTargetPageIds = (value: unknown) =>
   Array.isArray(value)
     ? value
@@ -653,6 +678,7 @@ const generateDesignBrief = async ({
   requestedOutputCount,
   targetPages,
   forceSinglePage,
+  requestedGenerationMode,
   projectId,
 }: {
   modelName: WireModelName;
@@ -664,6 +690,7 @@ const generateDesignBrief = async ({
   requestedOutputCount: number;
   targetPages: Array<{ id: string; title: string; html?: string }>;
   forceSinglePage: boolean;
+  requestedGenerationMode?: GenerationMode;
   projectId: string;
 }) => {
   const suggestedPreset = selectWireStylePreset({
@@ -675,6 +702,7 @@ const generateDesignBrief = async ({
     requestedOutputCount,
     targetPages,
     forceSinglePage,
+    requestedMode: requestedGenerationMode,
     stylePreset: suggestedPreset,
   });
   const fallbackBrief = buildFallbackDesignBrief({ plan });
@@ -933,6 +961,16 @@ export async function POST(request: Request, context: RouteContext) {
       : "";
   const requestedTargetPageIds = parseTargetPageIds(body.targetPageIds);
   const requestedVariationCount = parseVariationCount(body.variationCount);
+  const requestedGenerationMode = parseRequestedGenerationMode(body.generationMode);
+
+  if (requestedGenerationMode === "single_page" && requestedVariationCount > 1) {
+    return applyRateHeaders(
+      Response.json(
+        { error: "generationMode single_page cannot be used with multiple outputs." },
+        { status: 400 },
+      ),
+    );
+  }
 
   if (requestedVariationCount > 1 && requestedTargetPageIds.length === 0) {
     return applyRateHeaders(
@@ -1044,6 +1082,7 @@ export async function POST(request: Request, context: RouteContext) {
       requestedOutputCount: expectedOutputCount,
       targetPages: plannerTargetPages,
       forceSinglePage: Boolean(resolvedSingleTargetPage),
+      requestedGenerationMode,
       projectId: id,
     });
 

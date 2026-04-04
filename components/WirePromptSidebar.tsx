@@ -84,6 +84,11 @@ interface SidebarMessage extends Message, WireConversationModelUsage {
   planningSummary?: string | null;
 }
 
+type RequestedGenerationMode =
+  | "single_page"
+  | "concept_variants"
+  | "information_architecture";
+
 const clampPageCount = (value: unknown): 1 | 2 | 3 => {
   if (typeof value !== "number" || !Number.isInteger(value)) return 1;
   if (value <= 1) return 1;
@@ -94,6 +99,19 @@ const clampPageCount = (value: unknown): 1 | 2 | 3 => {
 const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
   if (!raw) return 1;
   return clampPageCount(Number.parseInt(raw, 10));
+};
+
+const parseStoredGenerationMode = (
+  raw: string | null,
+): RequestedGenerationMode | null => {
+  if (
+    raw === "single_page" ||
+    raw === "concept_variants" ||
+    raw === "information_architecture"
+  ) {
+    return raw;
+  }
+  return null;
 };
 
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
@@ -902,11 +920,13 @@ export default function WirePromptSidebar({
       targetPageIds,
       createdPageIds,
       modelName,
+      generationMode,
     }: {
       promptText: string;
       targetPageIds: string[];
       createdPageIds: string[];
       modelName: WireModelName;
+      generationMode?: RequestedGenerationMode;
     }) => {
       if (isLoading) return false;
       if (enabledModelIds.length === 0) {
@@ -937,6 +957,7 @@ export default function WirePromptSidebar({
         modelName: selectedModel,
         variationCount: targetPageIds.length,
         targetPageIds,
+        ...(generationMode ? { generationMode } : {}),
       };
       const userMessageId = crypto.randomUUID();
       const modelUsage = {
@@ -1016,6 +1037,7 @@ export default function WirePromptSidebar({
           targetPageIds,
           createdPageIds: [],
           modelName: activeModelName,
+          generationMode: "information_architecture",
         });
 
         if (generated) {
@@ -1190,11 +1212,15 @@ export default function WirePromptSidebar({
       const storedPageCount = parseStoredPageCount(
         sessionStorage.getItem(`wirePageCount:${wireId}`),
       );
+      const storedGenerationMode = parseStoredGenerationMode(
+        sessionStorage.getItem(`wireGenerationMode:${wireId}`),
+      );
 
       autoRunRef.current = true;
       sessionStorage.removeItem(`wireModel:${wireId}`);
       sessionStorage.removeItem(`wirePrompt:${wireId}`);
       sessionStorage.removeItem(`wirePageCount:${wireId}`);
+      sessionStorage.removeItem(`wireGenerationMode:${wireId}`);
 
       if (!storedPrompt) return;
 
@@ -1249,6 +1275,7 @@ export default function WirePromptSidebar({
             targetPageIds,
             createdPageIds,
             modelName: resolvedModel,
+            generationMode: storedGenerationMode ?? undefined,
           });
         } catch {
           reportError(

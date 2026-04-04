@@ -121,6 +121,99 @@ const conceptPlan: DesignPlan = {
   ],
 };
 
+const informationArchitecturePlan: DesignPlan = {
+  generationMode: "information_architecture",
+  artifactType: "marketing page",
+  audience: "Prospects evaluating the product quickly and visually.",
+  brandSummary: "AI assistant for campaign planning and execution.",
+  tone: "confident",
+  globalDesign: {
+    presetId: "warm-minimal",
+    paletteIntent: "Warm neutrals with one saturated accent and quiet secondary tones.",
+    typographyDirection: "Humanist sans pairing with strong heading contrast.",
+    density: "balanced",
+    motion: "refined",
+    differentiationHook: "Calm conversion-oriented storytelling.",
+    stockImages: {
+      enabled: false,
+      visualIntent: "Keep imagery restrained.",
+      keywords: ["product", "team", "workspace"],
+    },
+  },
+  outputs: [
+    {
+      key: "home",
+      title: "Home",
+      outputKind: "page",
+      pageRole: "homepage",
+      layoutStrategy:
+        "Lead with the core category story, strongest value proposition, and a clear navigation spine into the rest of the site.",
+      sectionBlueprint: [
+        {
+          id: "hero",
+          label: "Hero",
+          purpose: "Introduce the product and route deeper into the site.",
+          emphasis: "primary",
+          layoutHint: "Clear hero with navigation and primary CTA.",
+        },
+        {
+          id: "overview",
+          label: "Platform Overview",
+          purpose: "Summarize the product value.",
+          emphasis: "primary",
+          layoutHint: "Layered overview modules.",
+        },
+        {
+          id: "proof",
+          label: "Proof",
+          purpose: "Add trust and evidence.",
+          emphasis: "secondary",
+          layoutHint: "Proof rail with supporting signals.",
+        },
+      ],
+      requiredElements: [
+        "hero section",
+        "product overview",
+        "navigation to key site pages",
+      ],
+      imageSlots: [],
+    },
+    {
+      key: "about",
+      title: "About",
+      outputKind: "page",
+      pageRole: "about page",
+      layoutStrategy:
+        "Design a trust-building about page that foregrounds the company story, team credibility, and values instead of a conversion-heavy homepage hero.",
+      sectionBlueprint: [
+        {
+          id: "intro",
+          label: "Intro",
+          purpose: "Orient the user to the team or company.",
+          emphasis: "primary",
+          layoutHint: "Tighter intro without homepage-style hero marketing.",
+        },
+        {
+          id: "story",
+          label: "Story",
+          purpose: "Explain the company narrative.",
+          emphasis: "primary",
+          layoutHint: "Narrative content band.",
+        },
+        {
+          id: "team",
+          label: "Team",
+          purpose: "Show team credibility.",
+          emphasis: "secondary",
+          layoutHint: "Profile grid or founder section.",
+        },
+      ],
+      requiredElements: ["brand story", "team or founder section", "values or principles"],
+      imageSlots: [],
+    },
+  ],
+};
+
 describe("planned generation prompt", () => {
   it("builds a prose design brief prompt instead of schema instructions", () => {
     const prompt = composeDesignBriefPrompt({
@@ -184,6 +277,23 @@ describe("planned generation prompt", () => {
     expect(prompt).toContain("Start from the current HTML and apply the user instruction directly.");
     expect(prompt).toContain("Current HTML:");
     expect(prompt).toContain("Existing hero");
+  });
+
+  it("adds non-home page constraints for information architecture outputs", () => {
+    const prompt = composePlannedGenerateSystemPrompt({
+      plan: informationArchitecturePlan,
+      output: informationArchitecturePlan.outputs[1],
+      outputIndex: 1,
+      allOutputs: informationArchitecturePlan.outputs,
+      stylePreset: WIRE_STYLE_PRESETS.find((preset) => preset.id === "warm-minimal")!,
+      allowImages: false,
+      userPrompt: "Design a small website for an AI marketing SaaS.",
+      designBrief: "Keep the about page trust-building and team-led.",
+    });
+
+    expect(prompt).toContain("Information architecture constraints (critical)");
+    expect(prompt).toContain("The page must read unmistakably as a about page");
+    expect(prompt).toContain("do not turn it into another landing page or generic homepage hero");
   });
 
   it("keeps assistant content focused on summary details without exposing plan lines", () => {

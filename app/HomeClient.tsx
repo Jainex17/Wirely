@@ -63,24 +63,46 @@ export interface HomeClientInitialData {
 }
 
 const PAGE_VARIATION_OPTIONS: Array<{
-  value: 1 | 2 | 3;
+  value: 2 | 3;
   label: string;
   hint: string;
 }> = [
   {
-    value: 1,
-    label: "1 design",
-    hint: "Generate a single page design",
-  },
-  {
     value: 2,
-    label: "2 concepts/pages",
-    hint: "Generate 2 adaptive outputs: concepts for option prompts, real pages for site-map prompts",
+    label: "2 outputs",
+    hint: "Generate 2 coordinated results for the selected mode",
   },
   {
     value: 3,
-    label: "3 concepts/pages",
-    hint: "Generate 3 adaptive outputs: concepts for option prompts, real pages for site-map prompts",
+    label: "3 outputs",
+    hint: "Generate 3 coordinated results for the selected mode",
+  },
+];
+
+type HomeGenerationMode =
+  | "single_page"
+  | "concept_variants"
+  | "information_architecture";
+
+const GENERATION_MODE_OPTIONS: Array<{
+  value: HomeGenerationMode;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "single_page",
+    label: "Single page",
+    hint: "Generate one polished page",
+  },
+  {
+    value: "concept_variants",
+    label: "Concepts",
+    hint: "Generate different design directions for the same brief",
+  },
+  {
+    value: "information_architecture",
+    label: "Website pages",
+    hint: "Generate real site pages like Home, About, or Contact",
   },
 ];
 
@@ -101,6 +123,7 @@ interface HomeState {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
+  selectedGenerationMode: HomeGenerationMode;
   selectedPageCount: 1 | 2 | 3;
   isLoggingOut: boolean;
   projectToDelete: string | null;
@@ -139,6 +162,7 @@ const createHomeInitialState = (
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
   hasZaiApiKey: initialData.hasZaiApiKey,
+  selectedGenerationMode: "single_page",
   selectedPageCount: 1,
   isLoggingOut: false,
   projectToDelete: null,
@@ -279,6 +303,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
+  const activeGenerationModeOption =
+    GENERATION_MODE_OPTIONS.find(
+      (option) => option.value === state.selectedGenerationMode,
+    ) ?? GENERATION_MODE_OPTIONS[0];
+  const effectiveGenerationCount =
+    state.selectedGenerationMode === "single_page" ? 1 : state.selectedPageCount;
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.isSubmitting) return;
@@ -353,8 +383,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       }
       sessionStorage.setItem(`wireModel:${projectId}`, activeSelectedModel);
       sessionStorage.setItem(
+        `wireGenerationMode:${projectId}`,
+        state.selectedGenerationMode,
+      );
+      sessionStorage.setItem(
         `wirePageCount:${projectId}`,
-        String(state.selectedPageCount),
+        String(effectiveGenerationCount),
       );
 
       router.push(`/wire/${projectId}`);
@@ -510,18 +544,26 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                           size="sm"
                           className="bg-transparent border-border hover:bg-muted"
                         >
-                          Variations: {state.selectedPageCount}
+                          {activeGenerationModeOption.label}
                           <ChevronDown size={16} className="ml-2" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-card border-border">
-                        {PAGE_VARIATION_OPTIONS.map((option) => (
+                        {GENERATION_MODE_OPTIONS.map((option) => (
                           <DropdownMenuItem
                             key={option.value}
                             onClick={() =>
                               dispatch({
                                 type: "patch",
-                                payload: { selectedPageCount: option.value },
+                                payload: {
+                                  selectedGenerationMode: option.value,
+                                  selectedPageCount:
+                                    option.value === "single_page"
+                                      ? 1
+                                      : state.selectedPageCount === 1
+                                        ? 2
+                                        : state.selectedPageCount,
+                                },
                               })
                             }
                             className="flex flex-col items-start"
@@ -534,6 +576,39 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {state.selectedGenerationMode !== "single_page" ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="bg-transparent border-border hover:bg-muted"
+                          >
+                            Count: {effectiveGenerationCount}
+                            <ChevronDown size={16} className="ml-2" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-card border-border">
+                          {PAGE_VARIATION_OPTIONS.map((option) => (
+                            <DropdownMenuItem
+                              key={option.value}
+                              onClick={() =>
+                                dispatch({
+                                  type: "patch",
+                                  payload: { selectedPageCount: option.value },
+                                })
+                              }
+                              className="flex flex-col items-start"
+                            >
+                              <span>{option.label}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {option.hint}
+                              </span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </div>
                   <Button
                     type="submit"

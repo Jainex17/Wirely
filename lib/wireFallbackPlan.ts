@@ -28,14 +28,20 @@ const inferArtifactType = (prompt: string) => inferRequestedArtifactType(prompt)
 const inferGenerationMode = ({
   requestedOutputCount,
   forceSinglePage,
+  requestedMode,
   prompt,
 }: {
   requestedOutputCount: number;
   forceSinglePage: boolean;
+  requestedMode?: GenerationMode;
   prompt: string;
 }): GenerationMode => {
   if (forceSinglePage || requestedOutputCount <= 1) {
     return "single_page";
+  }
+
+  if (requestedMode) {
+    return requestedMode;
   }
 
   const text = prompt.toLowerCase();
@@ -304,6 +310,71 @@ const buildOutput = ({
   imageSlots,
 });
 
+const resolveInformationArchitectureProfile = (title: string) => {
+  const normalizedTitle = title.trim().toLowerCase();
+
+  if (normalizedTitle === "home") {
+    return {
+      pageRole: "homepage",
+      layoutStrategy:
+        "Lead with the core category story, strongest value proposition, and a clear navigation spine into the rest of the site.",
+      requiredElements: [
+        "hero section",
+        "product overview",
+        "navigation to key site pages",
+      ],
+      sectionLabels: ["Hero", "Platform Overview", "Proof", "Primary CTA"],
+    };
+  }
+
+  if (normalizedTitle === "about") {
+    return {
+      pageRole: "about page",
+      layoutStrategy:
+        "Design a trust-building about page that foregrounds the company story, team credibility, and values instead of a conversion-heavy homepage hero.",
+      requiredElements: ["brand story", "team or founder section", "values or principles"],
+      sectionLabels: ["Intro", "Story", "Team", "Values"],
+    };
+  }
+
+  if (normalizedTitle === "contact") {
+    return {
+      pageRole: "contact page",
+      layoutStrategy:
+        "Design a utility-first contact page with clear contact paths, support details, and a prominent form instead of a narrative homepage layout.",
+      requiredElements: ["contact form", "contact methods", "support or office details"],
+      sectionLabels: ["Contact Intro", "Contact Form", "Reach Us", "Support Details"],
+    };
+  }
+
+  if (normalizedTitle === "pricing") {
+    return {
+      pageRole: "pricing page",
+      layoutStrategy:
+        "Design a decision-oriented pricing page with transparent tiers, comparison detail, and strong purchase confidence cues.",
+      requiredElements: ["pricing tiers", "feature comparison", "decision cta"],
+      sectionLabels: ["Plan Intro", "Pricing Grid", "Comparison", "Decision CTA"],
+    };
+  }
+
+  if (normalizedTitle === "features") {
+    return {
+      pageRole: "features page",
+      layoutStrategy:
+        "Design a product-depth features page with grouped capabilities, use-case framing, and supporting proof rather than a broad homepage overview.",
+      requiredElements: ["feature groups", "use-case detail", "supporting proof"],
+      sectionLabels: ["Feature Hero", "Capability Groups", "Use Cases", "Proof"],
+    };
+  }
+
+  return {
+    pageRole: `${normalizedTitle} page`,
+    layoutStrategy: `Design a dedicated ${normalizedTitle} page with purpose-built hierarchy and content grouping for that page's job, not a generic homepage layout.`,
+    requiredElements: ["section headline", "content groups", "page-specific cta"],
+    sectionLabels: ["Intro", "Core Content", "Supporting Detail", "CTA"],
+  };
+};
+
 const buildOutputs = ({
   generationMode,
   artifactType,
@@ -371,40 +442,23 @@ const buildOutputs = ({
   }
 
   if (generationMode === "information_architecture") {
-    const defaultTitles = ["Home", "Features", "Pricing"];
+    const defaultTitles =
+      requestedOutputCount === 2 ? ["Home", "About"] : ["Home", "About", "Contact"];
     return Array.from({ length: requestedOutputCount }, (_, index) => {
       const title =
         targetPages[index]?.title && !/^page\s+\d+$/i.test(targetPages[index].title)
           ? targetPages[index].title
           : defaultTitles[index] ?? `Page ${index + 1}`;
-      const pageRole =
-        title === "Home"
-          ? "homepage"
-          : title.toLowerCase() === "pricing"
-            ? "pricing page"
-            : `${title.toLowerCase()} page`;
+      const profile = resolveInformationArchitectureProfile(title);
 
       return buildOutput({
         title,
         outputKind: "page",
-        pageRole,
+        pageRole: profile.pageRole,
         artifactType,
-        layoutStrategy:
-          index === 0
-            ? "Lead with the core category story and strongest product narrative."
-            : `Design a dedicated ${pageRole} with purpose-built hierarchy and content grouping.`,
-        requiredElements:
-          index === 0
-            ? ["hero section", "product family overview", "primary cta"]
-            : title === "Pricing"
-              ? ["pricing tiers", "feature comparison", "decision cta"]
-              : ["section headline", "content groups", "cta"],
-        sectionLabels:
-          index === 0
-            ? ["Hero", "Platform Overview", "Proof", "CTA"]
-            : title === "Pricing"
-              ? ["Plan Intro", "Pricing Grid", "Comparison", "CTA"]
-              : ["Hero", "Core Content", "Supporting Detail", "CTA"],
+        layoutStrategy: profile.layoutStrategy,
+        requiredElements: profile.requiredElements,
+        sectionLabels: profile.sectionLabels,
         imageSlots: buildImageSlotsForOutput({
           enabled: stockImagesEnabled,
           artifactType,
@@ -448,6 +502,7 @@ export const buildFallbackDesignPlan = ({
   requestedOutputCount,
   targetPages,
   forceSinglePage,
+  requestedMode,
   stylePreset,
   malformedSeed,
 }: {
@@ -455,6 +510,7 @@ export const buildFallbackDesignPlan = ({
   requestedOutputCount: number;
   targetPages: Array<{ id: string; title: string; html?: string }>;
   forceSinglePage: boolean;
+  requestedMode?: GenerationMode;
   stylePreset: WireStylePreset;
   malformedSeed?: unknown;
 }): DesignPlan => {
@@ -478,6 +534,7 @@ export const buildFallbackDesignPlan = ({
     inferGenerationMode({
       requestedOutputCount,
       forceSinglePage,
+      requestedMode,
       prompt: userPrompt,
     });
   const audience =

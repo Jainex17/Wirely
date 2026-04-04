@@ -344,6 +344,31 @@ ${siblingSummary}
 `.trim();
 };
 
+const composeInformationArchitectureRules = ({
+  plan,
+  output,
+}: {
+  plan: DesignPlan;
+  output: PlannedOutput;
+}) => {
+  if (plan.generationMode !== "information_architecture") {
+    return "";
+  }
+
+  const normalizedRole = output.pageRole.toLowerCase();
+  const isHomepage = normalizedRole === "homepage";
+
+  return `
+Information architecture constraints (critical):
+- This output is one real site page within a multi-page website, not one option in a concept set.
+- The page must read unmistakably as a ${output.pageRole}.
+- Preserve shared brand language with sibling pages, but give this page its own purpose-built structure.
+${isHomepage ? "- Because this is the homepage, it should introduce the product/site clearly and route users deeper into the site." : `- Because this is not the homepage, do not turn it into another landing page or generic homepage hero. Prioritize ${output.pageRole}-specific information first.`}
+- Navigation can reference sibling pages, but the body content must stay dedicated to this page role.
+- The required elements and section blueprint are mandatory and should dominate the page structure.
+`.trim();
+};
+
 export const resolveStylePresetForPlan = (plan: DesignPlan, userPrompt: string) =>
   getWireStylePresetById(plan.globalDesign.presetId) ??
   selectWireStylePreset({
@@ -424,6 +449,10 @@ Execution rules:
 - If outputKind is "page", make the page role obvious in the information hierarchy.
 - Keep copy concise but specific.
 - Use meaningful hover/focus states.
+${composeInformationArchitectureRules({
+  plan,
+  output,
+})}
 ${composeConceptVariantDifferentiationRules({
   plan,
   outputIndex,
