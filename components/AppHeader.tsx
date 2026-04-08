@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { authClient } from "@/lib/auth/client";
 
 const passthroughImageLoader = ({ src }: { src: string }) => src;
 
@@ -45,6 +45,7 @@ export default function AppHeader({
   onLogout,
   isLoggingOut = false,
 }: AppHeaderProps) {
+  const { signOut } = useClerk();
   const router = useRouter();
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
@@ -64,7 +65,7 @@ export default function AppHeader({
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLogoutConfirmOpen(false);
-    await authClient.signOut();
+    await signOut();
     if (onLogout) {
       onLogout();
       return;

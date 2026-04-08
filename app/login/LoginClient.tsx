@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { authClient } from "@/lib/auth/client";
+import { useClerk } from "@clerk/nextjs";
 import { toast } from "@/components/ui/sonner";
 
 interface LoginClientProps {
@@ -10,6 +10,7 @@ interface LoginClientProps {
 }
 
 export default function LoginClient({ nextPath }: LoginClientProps) {
+  const clerk = useClerk();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -21,17 +22,30 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setErrorMessage(null);
-    try {
-      const result = await authClient.signIn.social({
-        provider: "google",
-        callbackURL: nextPath || "/",
-      });
 
-      if (result.error) {
-        setLoginError(result.error.message || "Unable to sign in with Google.");
-      }
-    } catch {
-      setLoginError("Unable to sign in with Google.");
+    if (!clerk.loaded) {
+      setLoginError("Authentication is still loading. Please try again.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      await clerk.client.signIn.authenticateWithRedirect({
+        strategy: "oauth_google",
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: nextPath || "/",
+      });
+    } catch (error) {
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "errors" in error &&
+        Array.isArray((error as { errors?: unknown }).errors) &&
+        typeof (error as { errors: Array<{ message?: unknown }> }).errors[0]?.message ===
+          "string"
+          ? (error as { errors: Array<{ message: string }> }).errors[0].message
+          : "Unable to sign in with Google.";
+      setLoginError(message);
     } finally {
       setIsLoading(false);
     }
@@ -58,6 +72,9 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
           >
             {isLoading ? "Redirecting..." : "Continue with Google"}
           </button>
+
+          {/* Required for Clerk smart CAPTCHA in custom auth flows. */}
+          <div id="clerk-captcha" className="min-h-0" />
 
           {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 

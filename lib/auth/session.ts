@@ -1,5 +1,5 @@
 import { getUserByAuthSub, upsertUserByAuthSub } from "@/lib/db/queries/users";
-import { auth } from "@/lib/auth/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 export interface SessionUser {
   id: string;
@@ -9,19 +9,20 @@ export interface SessionUser {
   avatarUrl: string | null;
 }
 
-const authUserToSessionUser = async (authUser: {
-  id?: string;
-  email?: string | null;
-  name?: string | null;
-  image?: string | null;
+const toStringOrNull = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
+const authUserToSessionUser = async ({
+  authSub,
+  email,
+  name,
+  avatarUrl,
+}: {
+  authSub: string;
+  email: string | null;
+  name: string | null;
+  avatarUrl: string | null;
 }): Promise<SessionUser | null> => {
-  const authSub = typeof authUser.id === "string" ? authUser.id : null;
-  if (!authSub) return null;
-
-  const email = typeof authUser.email === "string" ? authUser.email : null;
-  const name = typeof authUser.name === "string" ? authUser.name : null;
-  const avatarUrl = typeof authUser.image === "string" ? authUser.image : null;
-
   const existingUser = await getUserByAuthSub(authSub);
   const nameToPersist = existingUser?.name ?? name;
   const shouldUpsert =
@@ -50,21 +51,41 @@ const authUserToSessionUser = async (authUser: {
   };
 };
 
-export const getRequestSessionUser = async (): Promise<SessionUser | null> => {
-  const { data } = await auth.getSession();
-  if (!data?.user) return null;
-  return authUserToSessionUser(data.user);
+const getSessionUserFromClerk = async (): Promise<SessionUser | null> => {
+  const { userId, sessionClaims } = await auth();
+  if (!userId) return null;
+
+  const claims =
+    sessionClaims && typeof sessionClaims === "object"
+      ? (sessionClaims as Record<string, unknown>)
+      : null;
+
+  let email = toStringOrNull(claims?.email);
+  let name = toStringOrNull(claims?.name);
+  let avatarUrl = toStringOrNull(claims?.image_url ?? claims?.picture);
+
+  if (!email || !name || !avatarUrl) {
+    const user = await currentUser();
+    if (user) {
+      const derivedFullName =
+        user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ");
+
+      email = email ?? user.primaryEmailAddress?.emailAddress ?? null;
+      name = name ?? (derivedFullName || user.username || null);
+      avatarUrl = avatarUrl ?? user.imageUrl ?? null;
+    }
+  }
+
+  return authUserToSessionUser({
+    authSub: userId,
+    email,
+    name,
+    avatarUrl,
+  });
 };
 
-export const getServerSessionUser = async (): Promise<SessionUser | null> => {
-  // Server Components cannot mutate cookies during render. Read session in
-  // no-mutation mode and let middleware/route handlers handle refresh writes.
-  const { data } = await auth.getSession({
-    query: {
-      disableCookieCache: true,
-      disableRefresh: true,
-    },
-  });
-  if (!data?.user) return null;
-  return authUserToSessionUser(data.user);
-};
+export const getRequestSessionUser = async (): Promise<SessionUser | null> =>
+  getSessionUserFromClerk();
+
+export const getServerSessionUser = async (): Promise<SessionUser | null> =>
+  getSessionUserFromClerk();

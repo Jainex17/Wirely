@@ -3,12 +3,12 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import type { Message } from "ai";
 import { ArrowLeft, Cloud } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,6 +66,7 @@ export default function WireEditor({
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
+  const { signOut } = useClerk();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
@@ -154,7 +155,7 @@ export default function WireEditor({
     setIsLoggingOut(true);
 
     try {
-      await authClient.signOut();
+      await signOut();
     } finally {
       router.push("/login");
       router.refresh();

@@ -30,3 +30,11 @@
 - Client stability:
   - Editor persistence uses safe localStorage writes with quota retry and non-crashing fallback.
   - Global and editor-level React error boundaries prevent full workspace crashes.
+
+## Auth Setup (Clerk)
+
+- Required env vars:
+  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+  - `CLERK_SECRET_KEY`
+  - `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login`
+- Google OAuth callback route is handled at `/sso-callback`.
