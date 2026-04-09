@@ -15,6 +15,7 @@ import {
   CardDescription,
   CardTitle,
 } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import GeminiIcon from "@/components/icons/GeminiIcon";
 import ProfileApiKeyDialog from "./ProfileApiKeyDialog";
 import {
@@ -174,27 +175,14 @@ export default function ProfileProvidersClient() {
                     <div className="space-y-3">
                       {provider.supportsModelToggle ? (
                         <div className="flex items-center space-x-2">
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={isProviderEnabled}
+                          <Switch
+                            checked={isProviderEnabled}
                             aria-label={`${isProviderEnabled ? "Disable" : "Enable"} ${provider.label}`}
-                            onClick={() =>
-                              setProviderEnabled(provider.id, !isProviderEnabled)
+                            onCheckedChange={(checked) =>
+                              setProviderEnabled(provider.id, checked)
                             }
                             disabled={isSavingModels}
-                            className={`relative inline-flex h-[1.15rem] w-8 shrink-0 rounded-full border border-transparent shadow-xs transition-all outline-none ${
-                              isProviderEnabled ? "bg-primary" : "bg-input"
-                            } ${isSavingModels ? "cursor-not-allowed opacity-60" : ""}`}
-                          >
-                            <span
-                              className={`block size-4 rounded-full bg-background transition-transform ${
-                                isProviderEnabled
-                                  ? "translate-x-[calc(100%-2px)]"
-                                  : "translate-x-0"
-                              }`}
-                            />
-                          </button>
+                          />
                           <span className="text-sm font-medium text-foreground">
                             {provider.label}
                           </span>
