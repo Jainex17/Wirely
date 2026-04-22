@@ -8,6 +8,11 @@ import { logger } from "@/lib/logger";
 
 const TITLE_MODEL_NAME = "gemini-2.5-flash-lite";
 
+type CreateProjectRequestBody = {
+  title?: string | null;
+  prompt?: string | null;
+};
+
 const cleanTitle = (value: string) => {
   const normalized = value
     .replace(/["'`]/g, "")
@@ -81,10 +86,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const parsed = await readJsonBodyWithLimit<{
-      title?: unknown;
-      prompt?: unknown;
-    }>(request);
+    const parsed = await readJsonBodyWithLimit<CreateProjectRequestBody>(request);
     if (!parsed.ok) {
       return parsed.response;
     }

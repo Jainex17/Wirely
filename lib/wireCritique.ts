@@ -111,8 +111,7 @@ export const normalizeCritiqueReport = (value: unknown): CritiqueReport | null =
   const majorIssuesSource = normalizeStringArray(
     value.majorIssues ??
       value.major_issues ??
-      value.violations ??
-      value.qualityViolations,
+      value.violations,
   );
   const missingRequiredElementsSource = normalizeStringArray(
     value.missingRequiredElements ?? value.missing_required_elements,
@@ -139,7 +138,6 @@ export const normalizeCritiqueReport = (value: unknown): CritiqueReport | null =
   const averageScore = normalizeScore(
     value.keepabilityScore ??
       value.keepability_score ??
-      value.keepableScore ??
       value.keepable_score ??
       value.fidelityScore ??
       value.fidelity_score ??
@@ -174,7 +172,6 @@ export const normalizeCritiqueReport = (value: unknown): CritiqueReport | null =
     keepabilityScore: normalizeScore(
       value.keepabilityScore ??
         value.keepability_score ??
-        value.keepableScore ??
         value.keepable_score,
       averageScore,
     ),
@@ -188,7 +185,6 @@ export const normalizeCritiqueReport = (value: unknown): CritiqueReport | null =
       readBoolean(
         value.shouldRepair ??
           value.should_repair ??
-          value.repairNeeded ??
           value.repair_needed,
       ) ??
       averageScore < 80,

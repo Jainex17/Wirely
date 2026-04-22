@@ -340,7 +340,7 @@ export default React.memo(function PageRenderer({
     const canvases = Array.from(doc.querySelectorAll("canvas"));
     for (const canvas of canvases) {
       const element = canvas as HTMLCanvasElement;
-      // Prevent responsive chart libraries from entering parent-child resize loops.
+      // Keep responsive chart libraries from entering resize loops.
       if (!element.style.height) {
         element.style.height = `${CHART_CANVAS_HEIGHT}px`;
       }

@@ -6,16 +6,6 @@ import type {
   PlannedOutput,
 } from "@/lib/wireGenerationTypes";
 
-const parseList = (value: string | undefined) => {
-  if (!value) return [];
-  return value
-    .replace(/^[^\[]*\[/, "")
-    .replace(/\][^\]]*$/, "")
-    .split(",")
-    .map((item) => item.replace(/["']/g, "").trim())
-    .filter(Boolean);
-};
-
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -381,7 +371,6 @@ const buildOutputs = ({
   requestedOutputCount,
   targetPages,
   stylePreset,
-  malformedSeed,
   stockImagesEnabled,
 }: {
   generationMode: GenerationMode;
@@ -389,32 +378,17 @@ const buildOutputs = ({
   requestedOutputCount: number;
   targetPages: Array<{ id: string; title: string; html?: string }>;
   stylePreset: WireStylePreset;
-  malformedSeed?: unknown;
   stockImagesEnabled: boolean;
 }) => {
-  const seedRecord =
-    malformedSeed && typeof malformedSeed === "object" && !Array.isArray(malformedSeed)
-      ? (malformedSeed as Record<string, unknown>)
-      : null;
-  const designPlanArray = Array.isArray(seedRecord?.designPlan)
-    ? (seedRecord?.designPlan as unknown[])
-    : [];
-  const layoutStrategySeed =
-    typeof designPlanArray[7] === "string"
-      ? designPlanArray[7]
-      : artifactType === "dashboard"
-        ? "Use a dense analytical layout with a strong metrics hierarchy."
-        : "Lead with a memorable hero, then move through grouped proof and product depth.";
-  const requiredElementsSeed = parseList(
-    typeof designPlanArray[8] === "string"
-      ? designPlanArray[8]
-      : undefined,
-  );
-  const sectionSeed = parseList(
-    typeof designPlanArray[9] === "string"
-      ? designPlanArray[9]
-      : undefined,
-  );
+  const layoutStrategy =
+    artifactType === "dashboard"
+      ? "Use a dense analytical layout with a strong metrics hierarchy."
+      : "Lead with a memorable hero, then move through grouped proof and product depth.";
+  const requiredElements =
+    artifactType === "dashboard"
+      ? ["sidebar navigation", "kpi cards", "charts"]
+      : ["hero section", "feature group", "cta"];
+  const sectionLabels = defaultSectionLabels(artifactType);
 
   if (generationMode === "single_page") {
     const targetTitle = targetPages[0]?.title || "Page 1";
@@ -424,14 +398,9 @@ const buildOutputs = ({
         outputKind: "page",
         pageRole: artifactType,
         artifactType,
-        layoutStrategy: layoutStrategySeed,
-        requiredElements:
-          requiredElementsSeed.length >= 3
-            ? requiredElementsSeed
-            : artifactType === "dashboard"
-              ? ["sidebar navigation", "kpi cards", "charts"]
-              : ["hero section", "feature group", "cta"],
-        sectionLabels: sectionSeed,
+        layoutStrategy,
+        requiredElements,
+        sectionLabels,
         imageSlots: buildImageSlotsForOutput({
           enabled: stockImagesEnabled,
           artifactType,
@@ -504,7 +473,6 @@ export const buildFallbackDesignPlan = ({
   forceSinglePage,
   requestedMode,
   stylePreset,
-  malformedSeed,
 }: {
   userPrompt: string;
   requestedOutputCount: number;
@@ -512,39 +480,19 @@ export const buildFallbackDesignPlan = ({
   forceSinglePage: boolean;
   requestedMode?: GenerationMode;
   stylePreset: WireStylePreset;
-  malformedSeed?: unknown;
 }): DesignPlan => {
-  const seedRecord =
-    malformedSeed && typeof malformedSeed === "object" && !Array.isArray(malformedSeed)
-      ? (malformedSeed as Record<string, unknown>)
-      : null;
-  const designPlanArray = Array.isArray(seedRecord?.designPlan)
-    ? (seedRecord?.designPlan as unknown[])
-    : [];
-
-  const artifactType =
-    (typeof designPlanArray[3] === "string" && designPlanArray[3]) ||
-    inferArtifactType(userPrompt);
-  const generationMode =
-    (seedRecord?.outputKind === "single_page" ||
-    seedRecord?.outputKind === "concept_variants" ||
-    seedRecord?.outputKind === "information_architecture"
-      ? (seedRecord.outputKind as GenerationMode)
-      : null) ??
-    inferGenerationMode({
-      requestedOutputCount,
-      forceSinglePage,
-      requestedMode,
-      prompt: userPrompt,
-    });
+  const artifactType = inferArtifactType(userPrompt);
+  const generationMode = inferGenerationMode({
+    requestedOutputCount,
+    forceSinglePage,
+    requestedMode,
+    prompt: userPrompt,
+  });
   const audience =
-    (typeof designPlanArray[4] === "string" && designPlanArray[4]) ||
-    (artifactType === "dashboard"
+    artifactType === "dashboard"
       ? "Operators who need data-dense decision support."
-      : "Prospects evaluating the product quickly and visually.");
-  const brandSummary =
-    (typeof designPlanArray[5] === "string" && designPlanArray[5]) ||
-    userPrompt.slice(0, 220);
+      : "Prospects evaluating the product quickly and visually.";
+  const brandSummary = userPrompt.slice(0, 220);
   const variantDifferentiationNote =
     generationMode === "concept_variants" && requestedOutputCount > 1
       ? "Each concept variant must clearly differ in palette mood, typography tone, and composition rhythm."
@@ -592,7 +540,6 @@ export const buildFallbackDesignPlan = ({
       requestedOutputCount,
       targetPages,
       stylePreset,
-      malformedSeed,
       stockImagesEnabled,
     }),
   };

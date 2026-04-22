@@ -265,7 +265,6 @@ export default function Canvas({
             }),
           );
         } catch (error) {
-          // Layout persistence is non-critical. Never crash the canvas for storage issues.
           logger.error("wire_layout_persist_failed", { error });
         }
       } finally {

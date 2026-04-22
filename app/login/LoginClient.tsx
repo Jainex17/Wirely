@@ -73,7 +73,6 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
             {isLoading ? "Redirecting..." : "Continue with Google"}
           </button>
 
-          {/* Required for Clerk smart CAPTCHA in custom auth flows. */}
           <div id="clerk-captcha" className="min-h-0" />
 
           {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}

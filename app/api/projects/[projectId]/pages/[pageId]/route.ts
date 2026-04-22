@@ -11,6 +11,11 @@ interface RouteContext {
   params: Promise<{ projectId: string; pageId: string }>;
 }
 
+type UpdateProjectPageRequestBody = {
+  title?: string | null;
+  htmlContent?: string | null;
+};
+
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const sessionUser = await getRequestSessionUser();
@@ -19,10 +24,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const { projectId, pageId } = await context.params;
-    const parsed = await readJsonBodyWithLimit<{
-      title?: unknown;
-      htmlContent?: unknown;
-    }>(request);
+    const parsed = await readJsonBodyWithLimit<UpdateProjectPageRequestBody>(request);
     if (!parsed.ok) {
       return parsed.response;
     }

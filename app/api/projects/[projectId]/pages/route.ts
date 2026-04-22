@@ -8,6 +8,10 @@ interface RouteContext {
   params: Promise<{ projectId: string }>;
 }
 
+type CreateProjectPageRequestBody = {
+  title?: string | null;
+};
+
 export async function POST(request: Request, context: RouteContext) {
   try {
     const sessionUser = await getRequestSessionUser();
@@ -16,7 +20,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const parsed = await readJsonBodyWithLimit<{ title?: unknown }>(request);
+    const parsed = await readJsonBodyWithLimit<CreateProjectPageRequestBody>(request);
     if (!parsed.ok) {
       return parsed.response;
     }

@@ -1,37 +1,15 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-const passthroughImageLoader = ({ src }: { src: string }) => src;
+import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 
 interface AppHeaderProps {
-  user: {
-    name: string | null;
-    email: string | null;
-    avatarUrl: string | null;
-  } | null;
+  user: UserAccountMenuUser | null;
   title?: string;
   showBackButton?: boolean;
   onLogout?: () => void;
@@ -47,24 +25,12 @@ export default function AppHeader({
 }: AppHeaderProps) {
   const { signOut } = useClerk();
   const router = useRouter();
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   useEffect(() => {
     router.prefetch("/");
-    router.prefetch("/setting/profile");
   }, [router]);
 
-  const name = user?.name ?? user?.email ?? "Guest";
-  const initials = name
-    .split(" ")
-    .map((part) => part[0] ?? "")
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   const handleLogout = async () => {
-    if (isLoggingOut) return;
-    setIsLogoutConfirmOpen(false);
     await signOut();
     if (onLogout) {
       onLogout();
@@ -99,50 +65,12 @@ export default function AppHeader({
       </div>
       <div className="flex items-center gap-2">
         {user ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
-              >
-                <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
-                  {name}
-                </span>
-                {user?.avatarUrl ? (
-                  <Image
-                    loader={passthroughImageLoader}
-                    unoptimized
-                    src={user.avatarUrl}
-                    alt={`${name} avatar`}
-                    width={28}
-                    height={28}
-                    sizes="28px"
-                    className="h-7 w-7 rounded-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
-                    {initials || "U"}
-                  </div>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-44 border-0 shadow-none"
-            >
-              <DropdownMenuItem onClick={() => router.push("/setting/profile")}>
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setIsLogoutConfirmOpen(true)}
-                disabled={isLoggingOut}
-                variant="destructive"
-              >
-                {isLoggingOut ? "Logging out..." : "Logout"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <UserAccountMenu
+            user={user}
+            isLoggingOut={isLoggingOut}
+            onLogout={handleLogout}
+            logoutDescription="You will need to sign in again to continue working on your projects."
+          />
         ) : (
           <Button
             variant="outline"
@@ -153,31 +81,6 @@ export default function AppHeader({
           </Button>
         )}
       </div>
-      <AlertDialog
-        open={isLogoutConfirmOpen}
-        onOpenChange={(open) => {
-          if (!isLoggingOut) setIsLogoutConfirmOpen(open);
-        }}
-      >
-        <AlertDialogContent className="logout-dialog sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Log out of Wirely?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You will need to sign in again to continue working on your projects.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isLoggingOut}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="logout-dialog-action"
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-            >
-              {isLoggingOut ? "Logging out..." : "Log out"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </header>
   );
 }

@@ -55,10 +55,7 @@ const getSessionUserFromClerk = async (): Promise<SessionUser | null> => {
   const { userId, sessionClaims } = await auth();
   if (!userId) return null;
 
-  const claims =
-    sessionClaims && typeof sessionClaims === "object"
-      ? (sessionClaims as Record<string, unknown>)
-      : null;
+  const claims = sessionClaims;
 
   let email = toStringOrNull(claims?.email);
   let name = toStringOrNull(claims?.name);

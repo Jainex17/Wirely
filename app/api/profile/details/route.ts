@@ -4,7 +4,7 @@ import { updateUserProfileDetails } from "@/lib/db/queries/users";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 
 type UpdateProfileDetailsRequestBody = {
-  name?: unknown;
+  name?: string | null;
 };
 
 const MAX_NAME_LENGTH = 120;
@@ -18,7 +18,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   }
 
-  const parsed = await readJsonBodyWithLimit<unknown>(request);
+  const parsed = await readJsonBodyWithLimit<UpdateProfileDetailsRequestBody>(request);
   if (!parsed.ok) {
     return parsed.response;
   }
@@ -30,7 +30,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const body = parsed.data as UpdateProfileDetailsRequestBody;
+  const body = parsed.data;
   if (typeof body.name !== "string") {
     return NextResponse.json(
       { error: "name must be a string." },

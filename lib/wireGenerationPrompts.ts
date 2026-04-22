@@ -5,9 +5,9 @@ import {
   selectWireStylePreset,
   type WireStylePreset,
 } from "@/lib/wirePrompt";
+import type { CritiqueReport } from "@/lib/wireCritique";
 import type {
   DesignPlan,
-  GenerationMode,
   PlannedOutput,
 } from "@/lib/wireGenerationTypes";
 
@@ -612,7 +612,7 @@ export const composeRepairPrompt = ({
   stylePreset: WireStylePreset;
   allowImages: boolean;
   userPrompt: string;
-  critique: Record<string, unknown>;
+  critique: CritiqueReport;
   currentHtml: string;
   designBrief?: string;
 }) =>
@@ -711,18 +711,4 @@ export const buildAssistantContent = ({
       output.html,
     ]),
   ].join("\n");
-};
-
-export const resolveRequestedMode = ({
-  requestedOutputCount,
-  hasExplicitTargetPage,
-}: {
-  requestedOutputCount: number;
-  hasExplicitTargetPage: boolean;
-}): GenerationMode | undefined => {
-  if (hasExplicitTargetPage || requestedOutputCount <= 1) {
-    return "single_page";
-  }
-
-  return undefined;
 };

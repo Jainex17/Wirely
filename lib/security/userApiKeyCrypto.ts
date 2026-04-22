@@ -32,18 +32,7 @@ export const isUserApiKeyCryptoError = (
 ): value is UserApiKeyCryptoError =>
   value instanceof UserApiKeyCryptoError;
 
-const decodeBase64 = (value: string, envName: string): Buffer => {
-  let decoded: Buffer;
-  try {
-    decoded = Buffer.from(value, "base64");
-  } catch {
-    throw new UserApiKeyCryptoError(
-      "CRYPTO_CONFIG_ERROR",
-      `${envName} must be valid base64.`,
-    );
-  }
-  return decoded;
-};
+const decodeBase64 = (value: string): Buffer => Buffer.from(value, "base64");
 
 const readMasterSecret = (envName: string): Buffer => {
   const raw = process.env[envName];
@@ -54,7 +43,7 @@ const readMasterSecret = (envName: string): Buffer => {
     );
   }
 
-  const decoded = decodeBase64(raw, envName);
+  const decoded = decodeBase64(raw);
   if (decoded.length !== ENCRYPTION_KEY_LENGTH_BYTES) {
     throw new UserApiKeyCryptoError(
       "CRYPTO_CONFIG_ERROR",
@@ -69,7 +58,7 @@ const readOptionalMasterSecret = (envName: string): Buffer | undefined => {
   const raw = process.env[envName];
   if (!raw) return undefined;
 
-  const decoded = decodeBase64(raw, envName);
+  const decoded = decodeBase64(raw);
   if (decoded.length !== ENCRYPTION_KEY_LENGTH_BYTES) {
     throw new UserApiKeyCryptoError(
       "CRYPTO_CONFIG_ERROR",
@@ -207,6 +196,19 @@ const tryDecryptWithSecret = ({
   return plaintext.trim();
 };
 
+const isExpectedDecryptionFailure = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code = (error as { code?: string }).code;
+  return (
+    code === "ERR_OSSL_EVP_BAD_DECRYPT" ||
+    error.message.includes("unable to authenticate data") ||
+    error.message.includes("bad decrypt")
+  );
+};
+
 export const decryptUserApiKey = ({
   userId,
   ciphertext,
@@ -246,6 +248,8 @@ export const decryptUserApiKey = ({
     getLegacyAad(keyVersion),
   ];
 
+  // Try both current and previous secrets, plus the legacy AAD shape, but only
+  // suppress authentication failures. Input validation errors still surface.
   for (const masterSecret of candidateMasterSecrets) {
     for (const aad of aadCandidates) {
       try {
@@ -263,8 +267,14 @@ export const decryptUserApiKey = ({
           );
         }
         return decrypted;
-      } catch {
-        continue;
+      } catch (error) {
+        if (error instanceof UserApiKeyCryptoError) {
+          throw error;
+        }
+
+        if (!isExpectedDecryptionFailure(error)) {
+          throw error;
+        }
       }
     }
   }

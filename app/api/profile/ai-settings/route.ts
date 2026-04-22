@@ -15,15 +15,15 @@ import {
 } from "@/lib/wireModels";
 
 type UpdateAiSettingsRequestBody = {
-  googleApiKey?: unknown;
-  clearGoogleApiKey?: unknown;
-  openRouterApiKey?: unknown;
-  clearOpenRouterApiKey?: unknown;
-  zaiApiKey?: unknown;
-  clearZaiApiKey?: unknown;
-  unsplashApiKey?: unknown;
-  clearUnsplashApiKey?: unknown;
-  enabledModelIds?: unknown;
+  googleApiKey?: string;
+  clearGoogleApiKey?: boolean;
+  openRouterApiKey?: string;
+  clearOpenRouterApiKey?: boolean;
+  zaiApiKey?: string;
+  clearZaiApiKey?: boolean;
+  unsplashApiKey?: string;
+  clearUnsplashApiKey?: boolean;
+  enabledModelIds?: WireModelName[];
 };
 
 const MAX_GOOGLE_API_KEY_LENGTH = 512;
@@ -77,7 +77,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   }
 
-  const parsed = await readJsonBodyWithLimit<unknown>(request);
+  const parsed = await readJsonBodyWithLimit<UpdateAiSettingsRequestBody>(request);
   if (!parsed.ok) {
     return parsed.response;
   }
@@ -89,7 +89,7 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const body = parsed.data as UpdateAiSettingsRequestBody;
+  const body = parsed.data;
   const clearGoogleApiKey =
     body.clearGoogleApiKey === undefined
       ? false

@@ -2,13 +2,12 @@
 
 ## v1
 
-- can seelct model and how many pages they want to generate on start
-- select any pages that is generated and continue edit them
-- figure out icons and images and charts
-- planner-driven stock image slots with Unsplash BYOK and CDN-optimized image URLs
-- generated HTML supports Bootstrap Icons class names (bi bi-...)
-- export to figma
-- 
+- Select a model and page count before generation.
+- Continue editing any generated page.
+- Figure out icons, images, and charts.
+- Planner-driven stock image slots with Unsplash BYOK and CDN-optimized image URLs.
+- Generated HTML supports Bootstrap Icons class names (`bi bi-...`).
+- Export to Figma.
 
 ## Production Guards
 

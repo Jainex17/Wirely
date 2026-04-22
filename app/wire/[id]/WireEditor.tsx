@@ -1,44 +1,24 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import type { Message } from "ai";
 import { ArrowLeft, Cloud } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
+import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
+import type { PersistedWireLayout } from "@/lib/types";
 import { resolvePromptTargetPageId } from "@/lib/wirePromptTarget";
-import { createDefaultCamera } from "@/lib/canvasScene";
 import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
 interface WireEditorProps {
   wireId: string;
-  sessionUser: {
-    name: string | null;
-    email: string | null;
-    avatarUrl: string | null;
-  };
+  sessionUser: UserAccountMenuUser;
   initialProject: {
     projectTitle: string;
     pages: Array<{
@@ -57,7 +37,6 @@ interface WireEditorProps {
 }
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
-const passthroughImageLoader = ({ src }: { src: string }) => src;
 
 export default function WireEditor({
   wireId,
@@ -69,7 +48,6 @@ export default function WireEditor({
   const { signOut } = useClerk();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [selectedPromptPageId, setSelectedPromptPageId] = useState<string | null>(
     null,
   );
@@ -98,37 +76,16 @@ export default function WireEditor({
       const raw = window.localStorage.getItem(getWireLayoutStorageKey(wireId));
       if (!raw) return;
 
-      const parsed = JSON.parse(raw) as {
-        version?: number;
-        camera?: { x?: number; y?: number; zoom?: number };
-        pagePositions?: Record<string, { x: number; y: number }>;
-        pageStackOrder?: string[];
-      };
+      const parsed = JSON.parse(raw) as PersistedWireLayout;
 
-      hydratePageLayout({
-        camera:
-          parsed.camera && typeof parsed.camera === "object"
-            ? {
-                x: parsed.camera.x ?? 0,
-                y: parsed.camera.y ?? 0,
-                zoom: parsed.camera.zoom ?? createDefaultCamera().zoom,
-              }
-            : createDefaultCamera(),
-        pagePositions: parsed.pagePositions ?? {},
-        pageStackOrder: parsed.pageStackOrder ?? [],
-      });
+      hydratePageLayout(parsed);
     } catch {
-      hydratePageLayout({
-        camera: createDefaultCamera(),
-        pagePositions: {},
-        pageStackOrder: [],
-      });
+      hydratePageLayout({});
     }
   }, [hydratePageLayout, wireId]);
 
   useEffect(() => {
     router.prefetch("/");
-    router.prefetch("/setting/profile");
   }, [router]);
 
   useEffect(() => {
@@ -137,21 +94,8 @@ export default function WireEditor({
     );
   }, [pages]);
 
-  const name = sessionUser.name ?? sessionUser.email ?? "User";
-  const initials = useMemo(
-    () =>
-      name
-        .split(" ")
-        .map((part) => part[0] ?? "")
-        .join("")
-        .slice(0, 2)
-        .toUpperCase(),
-    [name],
-  );
-
   const handleLogout = async () => {
     if (isLoggingOut) return;
-    setIsLogoutConfirmOpen(false);
     setIsLoggingOut(true);
 
     try {
@@ -218,78 +162,14 @@ export default function WireEditor({
                 <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
               </div>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  suppressHydrationWarning
-                  className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
-                >
-                  <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
-                    {name}
-                  </span>
-                  {sessionUser.avatarUrl ? (
-                    <Image
-                      loader={passthroughImageLoader}
-                      unoptimized
-                      src={sessionUser.avatarUrl}
-                      alt={`${name} avatar`}
-                      width={28}
-                      height={28}
-                      sizes="28px"
-                      className="h-7 w-7 rounded-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="h-7 w-7 rounded-full bg-foreground text-background flex items-center justify-center text-sm font-semibold">
-                      {initials || "U"}
-                    </div>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-44 border-0 shadow-none"
-              >
-                <DropdownMenuItem onClick={() => router.push("/setting/profile")}>
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setIsLogoutConfirmOpen(true)}
-                  disabled={isLoggingOut}
-                  variant="destructive"
-                >
-                  {isLoggingOut ? "Logging out..." : "Logout"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <UserAccountMenu
+              user={sessionUser}
+              isLoggingOut={isLoggingOut}
+              onLogout={handleLogout}
+              logoutDescription="You will need to sign in again to continue editing this wireframe."
+            />
           </div>
         </header>
-        <AlertDialog
-          open={isLogoutConfirmOpen}
-          onOpenChange={(open) => {
-            if (!isLoggingOut) setIsLogoutConfirmOpen(open);
-          }}
-        >
-          <AlertDialogContent className="logout-dialog sm:max-w-md">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Log out of Wirely?</AlertDialogTitle>
-              <AlertDialogDescription>
-                You will need to sign in again to continue editing this wireframe.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isLoggingOut}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="logout-dialog-action"
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-              >
-                {isLoggingOut ? "Logging out..." : "Log out"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
         <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
           <EditorErrorBoundary title="Workspace canvas crashed">
             <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">

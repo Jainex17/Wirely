@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { type SectionType } from "@/lib/sectionLayouts";
 import { createSafeLocalStorage } from "@/lib/storage/safeLocalStorage";
+import {
+  type DeviceType,
+  type PagePositionMap,
+  type PageRecord,
+  type PersistedWireLayout,
+  type Point2D,
+  type SectionRecord,
+} from "@/lib/types";
 import {
   type CameraState,
   type PageBounds,
@@ -19,8 +26,6 @@ import {
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 
-export type DeviceType = "desktop" | "tablet" | "mobile";
-
 const DEVICE_WIDTHS = {
   desktop: 1440,
   tablet: 768,
@@ -37,7 +42,7 @@ export interface CanvasState {
   camera: CameraState;
   activeDevice: DeviceType;
   pendingSaveCount: number;
-  pagePositions: Record<string, { x: number; y: number }>;
+  pagePositions: PagePositionMap;
   pageStackOrder: string[];
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
@@ -45,53 +50,25 @@ export interface CanvasState {
   viewportSize: ViewportSize;
 }
 
-export interface SectionData {
-  id: string;
-  type: SectionType;
-  layoutId: string;
-  name?: string;
-  backgroundColor?: string;
-  content: Record<string, unknown>;
-}
-
-export interface PageData {
-  id: string;
-  title: string;
-  iframeUrl?: string;
-  iframeHtml?: string;
-  sections: string[];
-}
-
 export interface ProjectState {
-  pages: PageData[];
-  sections: Record<string, SectionData>;
+  pages: PageRecord[];
+  sections: Record<string, SectionRecord>;
   selectedSectionId: string | null;
   draggingSectionId: string | null;
 }
 
-export interface PersistedWireLayout {
-  version?: number;
-  camera?: CameraState;
-  pagePositions?: Record<string, { x: number; y: number }>;
-  pageStackOrder?: string[];
-}
-
 export interface EditorState extends CanvasState, ProjectState {
   setCamera: (camera: CameraState) => void;
-  panBy: (delta: { x: number; y: number }) => void;
-  zoomAtViewportPoint: (viewportPoint: { x: number; y: number }, zoom: number) => void;
+  panBy: (delta: Point2D) => void;
+  zoomAtViewportPoint: (viewportPoint: Point2D, zoom: number) => void;
   resetView: () => void;
   setViewportSize: (viewportSize: ViewportSize) => void;
   setActiveDevice: (device: DeviceType) => void;
   beginSaving: () => void;
   endSaving: () => void;
-  setPagePosition: (pageId: string, position: { x: number; y: number }) => void;
+  setPagePosition: (pageId: string, position: Point2D) => void;
   bringPageToFront: (pageId: string) => void;
-  hydratePageLayout: (layout: {
-    camera?: CameraState;
-    pagePositions: Record<string, { x: number; y: number }>;
-    pageStackOrder: string[];
-  }) => void;
+  hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
@@ -102,15 +79,15 @@ export interface EditorState extends CanvasState, ProjectState {
   setSelectedSection: (id: string | null) => void;
   setDraggingSection: (id: string | null) => void;
   updateSectionLayout: (sectionId: string, layoutId: string) => void;
-  updateSectionData: (sectionId: string, data: Partial<SectionData>) => void;
-  addSection: (pageId: string, section: SectionData, index?: number) => void;
+  updateSectionData: (sectionId: string, data: Partial<SectionRecord>) => void;
+  addSection: (pageId: string, section: SectionRecord, index?: number) => void;
   removeSection: (pageId: string, sectionId: string) => void;
   moveSection: (pageId: string, sectionId: string, direction: "up" | "down") => void;
   reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
   createPage: (title?: string, afterPageId?: string, pageId?: string) => string;
   renamePage: (pageId: string, newTitle: string) => void;
   setPageHtml: (pageId: string, html: string, title?: string) => void;
-  hydrateProject: (pages: PageData[]) => void;
+  hydrateProject: (pages: PageRecord[]) => void;
   deletePage: (pageId: string) => void;
   resetProject: () => void;
 }
@@ -150,7 +127,7 @@ const createPageId = () => {
 };
 
 const filterPagePositions = (
-  pagePositions: Record<string, { x: number; y: number }>,
+  pagePositions: PagePositionMap,
   pageIds: string[],
 ) =>
   Object.fromEntries(
@@ -322,8 +299,9 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: nextStackOrder,
           };
         }),
-      hydratePageLayout: ({ camera, pagePositions, pageStackOrder }) =>
+      hydratePageLayout: (layout) =>
         set((state) => {
+          const { camera, pagePositions = {}, pageStackOrder = [] } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
 
           return {
@@ -538,7 +516,7 @@ export const useEditorStore = create<EditorState>()(
         set((state) => {
           const nextPosition = getNextCreatedPagePosition(state);
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
-          const newPage: PageData = {
+          const newPage: PageRecord = {
             id: newPageId,
             title: resolvedTitle,
             sections: [],
@@ -695,3 +673,12 @@ export const getViewportSceneBounds = (state: EditorState) =>
   );
 
 const getCanvasLeftAnchor = (state: EditorState) => state.viewportSize.width / 2;
+
+export type {
+  DeviceType,
+  PagePositionMap,
+  PageRecord as PageData,
+  PersistedWireLayout,
+  Point2D,
+  SectionRecord as SectionData,
+};

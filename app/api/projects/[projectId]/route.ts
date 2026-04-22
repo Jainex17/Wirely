@@ -4,6 +4,7 @@ import {
   updateProjectForUser,
   deleteProjectForUser,
 } from "@/lib/db/queries/projects";
+import { type ProjectStatus } from "@/lib/db/schema";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
@@ -11,6 +12,11 @@ import { logger } from "@/lib/logger";
 interface RouteContext {
   params: Promise<{ projectId: string }>;
 }
+
+type UpdateProjectRequestBody = {
+  title?: string | null;
+  status?: ProjectStatus | null;
+};
 
 export async function GET(request: Request, context: RouteContext) {
   try {
@@ -41,10 +47,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const parsed = await readJsonBodyWithLimit<{
-      title?: unknown;
-      status?: unknown;
-    }>(request);
+    const parsed = await readJsonBodyWithLimit<UpdateProjectRequestBody>(request);
     if (!parsed.ok) {
       return parsed.response;
     }

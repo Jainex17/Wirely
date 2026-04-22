@@ -459,7 +459,9 @@ const parseVariationCount = (value: unknown) => {
   return value;
 };
 
-const parseRequestedGenerationMode = (value: unknown): GenerationMode | null => {
+const parseRequestedGenerationMode = (
+  value: unknown,
+): GenerationMode | undefined => {
   if (
     value === "single_page" ||
     value === "concept_variants" ||
@@ -467,7 +469,7 @@ const parseRequestedGenerationMode = (value: unknown): GenerationMode | null => 
   ) {
     return value;
   }
-  return null;
+  return undefined;
 };
 
 const parseTargetPageIds = (value: unknown) =>
@@ -1066,7 +1068,6 @@ export async function POST(request: Request, context: RouteContext) {
     const plannerPrompt = resolvedSingleTargetPage
       ? buildPageScopedPrompt({
           userPrompt: latestUserPrompt,
-          targetPageId: resolvedSingleTargetPage.id,
           targetPageTitle: rawTargetPageTitle || resolvedSingleTargetPage.title,
           targetPageHtml: rawTargetPageHtml || resolvedSingleTargetPage.htmlContent,
         })

@@ -12,6 +12,8 @@ import {
   type WireModelName,
 } from "@/lib/wireModels";
 
+type UserEnabledGoogleModels = typeof users.$inferSelect["enabledGoogleModels"];
+
 export interface UpsertUserInput {
   authSub: string;
   email?: string | null;
@@ -100,7 +102,7 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyIv: string | null | undefined;
   unsplashApiKeyHmac: string | null | undefined;
   unsplashApiKeyKeyVersion: number | null | undefined;
-  enabledGoogleModels: unknown;
+  enabledGoogleModels: UserEnabledGoogleModels;
 }): UserAiSettings => ({
   hasGoogleApiKey: hasEncryptedApiKeyMaterial({
     ciphertext: googleApiKeyCiphertext,

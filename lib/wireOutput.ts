@@ -87,7 +87,7 @@ const looksLikeRepairRecap = (value: string) =>
   );
 
 const BATCH_HTML_MARKER_PATTERN =
-  /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?(?:(?:VARIANT|VARIATION)[_\s-]*(\d+)(?:[_\s-]*HTML)?|HTML[_\s-]*(\d+))(?:\*\*)?\s*:?\s*/gim;
+  /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?HTML[_\s-]*(\d+)(?:\*\*)?\s*:?\s*/gim;
 const BATCH_TITLE_MARKER_PATTERN =
   /(?:^|\n)\s*(?:#{1,6}\s*)?(?:[-*+]\s*)?(?:\*\*)?TITLE[_\s-]*(\d+)(?:\*\*)?\s*:?\s*/gim;
 
@@ -229,12 +229,11 @@ export const parseBatchWireOutput = (
   const source = stripCodeFences(raw ?? "");
   const upperSource = source.toUpperCase();
   const detailsIndex = upperSource.indexOf(DETAILS_MARKER);
-  const htmlDocuments = extractHtmlDocuments(source);
   const markerMatches = Array.from(
     source.matchAll(BATCH_HTML_MARKER_PATTERN),
   )
     .map((match) => {
-      const indexRaw = match[1] ?? match[2];
+      const indexRaw = match[1] ?? "";
       const index = Number.parseInt(indexRaw, 10);
       const fullMatch = match[0] ?? "";
       const matchStart = match.index ?? 0;
@@ -259,11 +258,6 @@ export const parseBatchWireOutput = (
     )
     .sort((a, b) => a.markerIndex - b.markerIndex);
 
-  const firstHtmlDocumentIndex = (() => {
-    const firstDocument = htmlDocuments[0];
-    if (!firstDocument) return -1;
-    return source.indexOf(firstDocument);
-  })();
   const titleMarkerMatches = Array.from(source.matchAll(BATCH_TITLE_MARKER_PATTERN))
     .map((match) => {
       const fullMatch = match[0] ?? "";
@@ -276,7 +270,6 @@ export const parseBatchWireOutput = (
   const firstHtmlBoundaryIndex = [
     markerMatches[0]?.markerIndex ?? source.length,
     titleMarkerMatches[0] ?? source.length,
-    firstHtmlDocumentIndex >= 0 ? firstHtmlDocumentIndex : source.length,
   ].reduce((min, current) => Math.min(min, current), source.length);
   const details =
     detailsIndex >= 0
@@ -289,11 +282,7 @@ export const parseBatchWireOutput = (
     (max, marker) => Math.max(max, marker.index),
     0,
   );
-  const totalCount = Math.max(
-    expectedCount ?? 0,
-    maxCountFromMarkers,
-    htmlDocuments.length,
-  );
+  const totalCount = Math.max(expectedCount ?? 0, maxCountFromMarkers);
   const titleByIndex = extractIndexedMarkerSections({
     source,
     baseMarker: "TITLE",
@@ -309,29 +298,6 @@ export const parseBatchWireOutput = (
     htmlByIndex[current.index - 1] = extractFirstHtmlDocument(
       source.slice(contentStart, contentEnd).trim(),
     );
-  }
-
-  let documentCursor = 0;
-  const usedDocuments = new Set(
-    htmlByIndex
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0),
-  );
-  for (let index = 0; index < htmlByIndex.length; index += 1) {
-    if (htmlByIndex[index].trim().length > 0) continue;
-
-    while (
-      documentCursor < htmlDocuments.length &&
-      usedDocuments.has(htmlDocuments[documentCursor].trim())
-    ) {
-      documentCursor += 1;
-    }
-
-    const fallbackDocument = htmlDocuments[documentCursor];
-    if (!fallbackDocument) continue;
-    htmlByIndex[index] = fallbackDocument;
-    usedDocuments.add(fallbackDocument.trim());
-    documentCursor += 1;
   }
 
   return { details, titleByIndex, htmlByIndex };
