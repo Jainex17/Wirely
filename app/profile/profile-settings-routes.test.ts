@@ -16,4 +16,15 @@ describe("profile settings routes", () => {
     expect(providersSource.includes("ProfileProvidersClient")).toBe(true);
     expect(modelsSource.includes("ProfileModelsClient")).toBe(true);
   });
+
+  it("renders loading fallbacks without duplicating layout chrome", () => {
+    for (const path of ["app/setting/loading.tsx", "app/profile/loading.tsx"]) {
+      const source = readFileSync(path, "utf8");
+
+      expect(source.includes("<main")).toBe(false);
+      expect(source.includes("Signed in as")).toBe(false);
+      expect(source.includes("ProfileSettingsNav")).toBe(false);
+      expect(source.includes('href="/"')).toBe(false);
+    }
+  });
 });
