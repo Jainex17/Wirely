@@ -11,6 +11,15 @@ export const OPENROUTER_GEMINI_FREE_MODELS = [
   "google/gemini-2.5-flash",
 ] as const;
 export const OPENROUTER_GEMINI_PAID_MODELS = ["google/gemini-2.5-pro"] as const;
+export const OPENROUTER_FREE_MODELS = [
+  "z-ai/glm-5.2:free",
+  "openrouter/free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "thinkingmachines/inkling:free",
+  "inclusionai/ling-3.0-flash-vl:free",
+  ...OPENROUTER_GEMINI_FREE_MODELS,
+] as const;
 export const ZAI_FREE_MODELS = ["glm-4.7-flash", "glm-4.5-flash"] as const;
 
 export type WireModelTier = "free" | "paid";
@@ -20,6 +29,7 @@ export type WireModelName =
   | (typeof GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
+  | (typeof OPENROUTER_FREE_MODELS)[number]
   | (typeof ZAI_FREE_MODELS)[number];
 
 export type WireModelOption = {
@@ -53,19 +63,67 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     provider: "google",
   },
   {
+    id: "z-ai/glm-5.2:free",
+    label: "GLM 5.2 (Free)",
+    description:
+      "Z.ai GLM model served free via OpenRouter — no credits required.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "openrouter/free",
+    label: "Free Models Router (OpenRouter)",
+    description:
+      "OpenRouter router that automatically picks from available free models — no credits required.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    label: "Nemotron 3 Ultra (Free)",
+    description:
+      "NVIDIA frontier reasoning model with a 1M-token context, served free via OpenRouter.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "nvidia/nemotron-3.5-lightning:free",
+    label: "Nemotron 3.5 Lightning (Free)",
+    description:
+      "High-throughput NVIDIA model for fast agentic workloads, free via OpenRouter.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "thinkingmachines/inkling:free",
+    label: "Inkling (Free)",
+    description:
+      "Thinking Machines general-purpose MoE model with a 1M-token context, free via OpenRouter.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
+    id: "inclusionai/ling-3.0-flash-vl:free",
+    label: "Ling 3.0 Flash VL (Free)",
+    description:
+      "Vision-language model that understands screenshots and images, free via OpenRouter.",
+    tier: "free",
+    provider: "openrouter",
+  },
+  {
     id: "google/gemini-2.5-flash-lite",
     label: "Gemini 2.5 Flash Lite (OpenRouter)",
     description:
-      "Fast Gemini model via OpenRouter using your OpenRouter account.",
-    tier: "free",
+      "Fast Gemini model via OpenRouter, billed to your OpenRouter credits.",
+    tier: "paid",
     provider: "openrouter",
   },
   {
     id: "google/gemini-2.5-flash",
     label: "Gemini 2.5 Flash (OpenRouter)",
     description:
-      "Balanced Gemini model via OpenRouter using your OpenRouter account.",
-    tier: "free",
+      "Balanced Gemini model via OpenRouter, billed to your OpenRouter credits.",
+    tier: "paid",
     provider: "openrouter",
   },
   {
@@ -177,4 +235,27 @@ export const resolveEnabledWireModels = (modelNames: unknown): WireModelName[] =
   }
 
   return normalizeEnabledWireModels(modelNames);
+};
+
+export interface WireProviderKeyPresence {
+  google: boolean;
+  openrouter: boolean;
+  zai: boolean;
+}
+
+/**
+ * Picks the first enabled model (free tiers first) whose provider has a key,
+ * so users land on a runnable model instead of one that will fail with a
+ * "missing API key" error.
+ */
+export const resolveRunnableWireModel = (
+  enabledModelIds: WireModelName[],
+  providerKeyPresence: WireProviderKeyPresence,
+): WireModelName | null => {
+  for (const modelName of sortWireModelsFreeFirst(enabledModelIds)) {
+    if (providerKeyPresence[getWireModelProvider(modelName)]) {
+      return modelName;
+    }
+  }
+  return enabledModelIds[0] ?? null;
 };
