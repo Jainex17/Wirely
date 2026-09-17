@@ -1,4 +1,4 @@
-import { createDataStreamResponse, generateText } from "ai";
+import { createDataStreamResponse, generateText, type DataStreamWriter } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -32,9 +32,11 @@ import {
   resolveStylePresetForPlan,
   buildFallbackDesignBrief,
 } from "@/lib/wireGenerationPrompts";
-import { buildFallbackDesignPlan } from "@/lib/wireFallbackPlan";
+import { buildFallbackDesignPlan, resolveDeviceIntent } from "@/lib/wireFallbackPlan";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
 import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
+import { buildWireSuggestions } from "@/lib/wireSuggestions";
+import { type WireProgressEvent } from "@/lib/wireProgressEvents";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
@@ -47,6 +49,7 @@ import {
   isOpenRouterWireModel,
   isZaiWireModel,
   isWireModelName,
+  resolveRunnableWireModel,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -117,6 +120,17 @@ const MIN_FALLBACK_ACCEPTANCE_SCORE = 68;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
+
+const isRetryableProviderError = (error: unknown) => {
+  const status = getStatusCode(error);
+  if (status !== undefined && status >= 500) return true;
+  const message = getErrorMessage(error);
+  return /\b(429|too many requests|rate limit|rate-limited|overloaded|temporarily rate)\b/i.test(
+    message,
+  );
+};
+
+class WireQualityBarError extends Error {}
 
 const isIntegerInRange = (
   value: unknown,
@@ -295,28 +309,6 @@ const withRateLimitHeaders = (response: Response, headers: Record<string, string
     response.headers.set(name, value);
   }
   return response;
-};
-
-const insufficientFundsResponse = () =>
-  new Response("Can't process request due to insufficient funds.", {
-    status: 402,
-  });
-
-const selectedModelFailureResponse = ({
-  modelName,
-  error,
-}: {
-  modelName: string;
-  error: unknown;
-}) => {
-  if (isInsufficientFunds(error)) {
-    return insufficientFundsResponse();
-  }
-
-  return new Response(
-    `Generation failed with ${modelName}. Try another model.`,
-    { status: 502 },
-  );
 };
 
 const getErrorMessage = (error: unknown) => {
@@ -584,29 +576,14 @@ const getLanguageModel = ({
   return provider(modelName);
 };
 
-const createAssistantResponse = ({
-  content,
-  planningSummary,
-}: {
-  content: string;
-  planningSummary?: string;
-}) =>
-  createDataStreamResponse({
-    headers: {
-      "cache-control": "no-store, no-transform",
-      ...(planningSummary
-        ? { "x-wire-planning-summary": JSON.stringify(planningSummary) }
-        : {}),
-    },
-    execute: async (dataStream) => {
-      dataStream.write(`f:${JSON.stringify({ messageId: crypto.randomUUID() })}\n`);
-      dataStream.write(`0:${JSON.stringify(content)}\n`);
-      dataStream.write(`d:${JSON.stringify({ finishReason: "stop" })}\n`);
-      dataStream.write(
-        `e:${JSON.stringify({ finishReason: "stop", isContinued: false })}\n`,
-      );
-    },
-  });
+const writeAssistantStreamFinish = (dataStream: DataStreamWriter, content: string) => {
+  dataStream.write(`f:${JSON.stringify({ messageId: crypto.randomUUID() })}\n`);
+  dataStream.write(`0:${JSON.stringify(content)}\n`);
+  dataStream.write(`d:${JSON.stringify({ finishReason: "stop" })}\n`);
+  dataStream.write(
+    `e:${JSON.stringify({ finishReason: "stop", isContinued: false })}\n`,
+  );
+};
 
 const shouldApplyPlannedTitle = ({
   planMode,
@@ -921,7 +898,14 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const effectiveModelName = requestedModelName ?? userAiSettings.enabledModelIds[0];
+  const effectiveModelName =
+    requestedModelName ??
+    resolveRunnableWireModel(userAiSettings.enabledModelIds, {
+      google: Boolean(userAiSettings.googleApiKey),
+      openrouter: Boolean(userAiSettings.openRouterApiKey),
+      zai: Boolean(userAiSettings.zaiApiKey),
+    }) ??
+    userAiSettings.enabledModelIds[0];
   if (!userAiSettings.enabledModelIds.includes(effectiveModelName)) {
     return applyRateHeaders(
       new Response(
@@ -1032,15 +1016,40 @@ export async function POST(request: Request, context: RouteContext) {
     resolvedTargetPages.length > 0
       ? resolvedTargetPages.length
       : requestedVariationCount;
-  const generationRun = await createGenerationRun({
-    projectId: id,
-    prompt: latestUserPrompt,
-    selectedModelName: effectiveModelName,
-    plannerModelName: effectiveModelName,
-    criticModelName: effectiveModelName,
-  });
 
-  try {
+  return createDataStreamResponse({
+    headers: {
+      "cache-control": "no-store, no-transform",
+      ...rateLimitResult.headers,
+    },
+    onError: (error) => {
+      if (error instanceof WireQualityBarError) {
+        return error.message;
+      }
+      if (isInsufficientFunds(error)) {
+        return "Can't process request due to insufficient funds.";
+      }
+      return (
+        getErrorMessage(error) ||
+        `Generation failed with ${effectiveModelName}. Try another model.`
+      );
+    },
+    execute: async (dataStream) => {
+      const emitProgress = (event: WireProgressEvent) => {
+        dataStream.writeData(event);
+      };
+
+      emitProgress({ type: "stage", stage: "processing" });
+
+      const generationRun = await createGenerationRun({
+        projectId: id,
+        prompt: latestUserPrompt,
+        selectedModelName: effectiveModelName,
+        plannerModelName: effectiveModelName,
+        criticModelName: effectiveModelName,
+      });
+
+      try {
     logger.info("wire_generation_attempt", {
       projectId: id,
       selectedModelName: effectiveModelName,
@@ -1049,6 +1058,8 @@ export async function POST(request: Request, context: RouteContext) {
       expectedOutputCount,
       targetPageCount: resolvedTargetPages.length,
     });
+
+    emitProgress({ type: "stage", stage: "thinking" });
 
     const plannerTargetPages =
       resolvedTargetPages.length > 0
@@ -1087,6 +1098,8 @@ export async function POST(request: Request, context: RouteContext) {
       projectId: id,
     });
 
+    emitProgress({ type: "stage", stage: "planning" });
+
     await updateGenerationRun({
       generationRunId: generationRun.id,
       status: "planned",
@@ -1097,10 +1110,50 @@ export async function POST(request: Request, context: RouteContext) {
       plan,
       designBrief,
     });
+    emitProgress({ type: "planning-summary", summary: planningSummary });
+
+    const deviceIntent = resolveDeviceIntent(latestUserPrompt);
 
     const mappedOutputs = mapPlanOutputsToTargets({
       plan,
       targetPageIds: plannerTargetPages.map((page) => page.id),
+    });
+
+    for (const item of mappedOutputs) {
+      if (!item.targetPageId) continue;
+      const currentPage = pageById.get(item.targetPageId) ?? null;
+      if (currentPage && currentPage.deviceType !== deviceIntent) {
+        await updateProjectPageForUser({
+          projectId: id,
+          pageId: item.targetPageId,
+          userId: sessionUser.id,
+          deviceType: deviceIntent,
+        });
+        pageById.set(item.targetPageId, {
+          ...currentPage,
+          deviceType: deviceIntent,
+        });
+      }
+      emitProgress({
+        type: "page",
+        pageId: item.targetPageId,
+        title: item.output.title,
+        deviceType: deviceIntent,
+      });
+      emitProgress({
+        type: "page-status",
+        pageId: item.targetPageId,
+        status: "queued",
+      });
+    }
+
+    emitProgress({
+      type: "plan",
+      items: mappedOutputs.map((item) => ({
+        id: `output-${item.outputIndex}`,
+        label: item.output.title,
+        pageId: item.targetPageId ?? undefined,
+      })),
     });
 
     const persistedOutputs = await createGenerationOutputs({
@@ -1120,6 +1173,8 @@ export async function POST(request: Request, context: RouteContext) {
       stageStatus: "generating",
     });
 
+    emitProgress({ type: "stage", stage: "generating" });
+
     const outputsForAssistant = mappedOutputs.map((item, index) => ({
       outputIndex: item.outputIndex,
       title: persistedOutputs[index]?.title ?? item.output.title,
@@ -1136,7 +1191,11 @@ export async function POST(request: Request, context: RouteContext) {
 
     let successCount = 0;
 
-    await runWithConcurrency(mappedOutputs, 2, async (item, workerIndex) => {
+    const processOutput = async (
+      item: (typeof mappedOutputs)[number],
+      workerIndex: number,
+      attempt: number,
+    ) => {
       const persisted = persistedOutputs[workerIndex];
       if (!persisted) {
         return;
@@ -1150,6 +1209,14 @@ export async function POST(request: Request, context: RouteContext) {
         Boolean(item.targetPageId) && Boolean(currentPage?.htmlContent.trim());
 
       try {
+        if (item.targetPageId) {
+          emitProgress({
+            type: "page-status",
+            pageId: item.targetPageId,
+            status: "generating",
+          });
+        }
+
         await updateGenerationOutput({
           generationOutputId: persisted.id,
           status: "generating",
@@ -1245,6 +1312,13 @@ export async function POST(request: Request, context: RouteContext) {
             critique,
           })
         ) {
+          if (item.targetPageId) {
+            emitProgress({
+              type: "page-status",
+              pageId: item.targetPageId,
+              status: "repairing",
+            });
+          }
           await updateGenerationRun({
             generationRunId: generationRun.id,
             status: "repairing",
@@ -1343,6 +1417,14 @@ export async function POST(request: Request, context: RouteContext) {
             qualityScore: acceptedQuality.score,
             qualityViolations: acceptedQuality.violations,
           });
+          if (item.targetPageId) {
+            emitProgress({
+              type: "page-status",
+              pageId: item.targetPageId,
+              status: "failed",
+              detail: "Did not pass the quality gate.",
+            });
+          }
           await updateGenerationOutput({
             generationOutputId: persisted.id,
             title: item.output.title,
@@ -1413,6 +1495,14 @@ export async function POST(request: Request, context: RouteContext) {
             qualityScore: acceptedQuality.score,
             qualityViolations: acceptedQuality.violations,
           });
+          if (item.targetPageId) {
+            emitProgress({
+              type: "page-status",
+              pageId: item.targetPageId,
+              status: "failed",
+              detail: "Did not pass the quality gate.",
+            });
+          }
           await updateGenerationOutput({
             generationOutputId: persisted.id,
             title: item.output.title,
@@ -1470,8 +1560,35 @@ export async function POST(request: Request, context: RouteContext) {
           htmlSnapshot: acceptedHtml,
         });
 
+        if (item.targetPageId) {
+          emitProgress({
+            type: "page-status",
+            pageId: item.targetPageId,
+            status: "completed",
+          });
+        }
+
         successCount += 1;
       } catch (error) {
+        if (attempt === 0 && isRetryableProviderError(error)) {
+          logger.warn("wire_generation_output_retry", {
+            projectId: id,
+            generationRunId: generationRun.id,
+            generationOutputId: persisted.id,
+            outputIndex: item.outputIndex,
+            error: serializeError(error),
+          });
+          if (item.targetPageId) {
+            emitProgress({
+              type: "page-status",
+              pageId: item.targetPageId,
+              status: "generating",
+              detail: "Model busy — retrying…",
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+          return processOutput(item, workerIndex, 1);
+        }
         logger.error("wire_generation_output_failed", {
           projectId: id,
           generationRunId: generationRun.id,
@@ -1479,13 +1596,25 @@ export async function POST(request: Request, context: RouteContext) {
           outputIndex: item.outputIndex,
           error: serializeError(error),
         });
+        if (item.targetPageId) {
+          emitProgress({
+            type: "page-status",
+            pageId: item.targetPageId,
+            status: "failed",
+            detail: "Generation failed for this screen.",
+          });
+        }
         await updateGenerationOutput({
           generationOutputId: persisted.id,
           title: item.output.title,
           status: "failed",
         });
       }
-    });
+    };
+
+    await runWithConcurrency(mappedOutputs, 2, (item, workerIndex) =>
+      processOutput(item, workerIndex, 0),
+    );
 
     const finalStatus =
       successCount === 0
@@ -1504,20 +1633,18 @@ export async function POST(request: Request, context: RouteContext) {
     if (successCount === 0) {
       const firstRejection = rejectionReasons[0];
       const failureMessage = firstRejection
-        ? `Generated output did not meet the quality bar. Score ${firstRejection.qualityScore}. Issues: ${firstRejection.qualityViolations
-            .slice(0, 4)
-            .join(", ")}.`
-        : "Generated output did not meet the quality bar. Try refining the prompt.";
+        ? `The generated output didn't pass Wirely's quality checks (score ${firstRejection.qualityScore}/100). This can happen with smaller models — try again, refine the prompt, or switch to a stronger model.`
+        : "The generated output didn't pass Wirely's quality checks. Try refining the prompt or switching to a stronger model.";
       logger.warn("wire_generation_run_rejected", {
         projectId: id,
         generationRunId: generationRun.id,
         modelName: effectiveModelName,
         rejectionReasons,
       });
-      return applyRateHeaders(
-        new Response(failureMessage, { status: 502 }),
-      );
+      throw new WireQualityBarError(failureMessage);
     }
+
+    emitProgress({ type: "stage", stage: "finalizing" });
 
     const assistantContent = buildAssistantContent({
       plan,
@@ -1535,12 +1662,16 @@ export async function POST(request: Request, context: RouteContext) {
       criticModelName: effectiveModelName,
     });
 
-    return applyRateHeaders(
-      createAssistantResponse({
-        content: assistantContent,
-        planningSummary,
+    emitProgress({
+      type: "suggestions",
+      chips: buildWireSuggestions({
+        generationMode: plan.generationMode,
+        deviceIntent,
+        prompt: latestUserPrompt,
       }),
-    );
+    });
+
+    writeAssistantStreamFinish(dataStream, assistantContent);
   } catch (error) {
     logger.error("wire_selected_model_stream_error", {
       modelName: effectiveModelName,
@@ -1561,11 +1692,8 @@ export async function POST(request: Request, context: RouteContext) {
       });
     });
 
-    return applyRateHeaders(
-      selectedModelFailureResponse({
-        modelName: effectiveModelName,
-        error,
-      }),
-    );
+    throw error;
   }
+  },
+});
 }
