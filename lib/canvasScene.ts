@@ -49,6 +49,36 @@ export interface SnapResult {
 
 export type PageRenderMode = "live" | "shell";
 
+export type PageFrameDevice = "desktop" | "tablet" | "mobile";
+
+export const PAGE_DEVICE_WIDTHS: Record<PageFrameDevice, number> = {
+  desktop: 1440,
+  tablet: 768,
+  mobile: 375,
+};
+
+export const PAGE_DEVICE_HEIGHTS: Record<PageFrameDevice, number> = {
+  desktop: 900,
+  tablet: 1024,
+  mobile: 812,
+};
+
+export const resolvePageFrameDevice = (
+  pageDeviceType: string | null | undefined,
+  fallbackDevice: PageFrameDevice,
+): PageFrameDevice => {
+  if (pageDeviceType === "mobile" || pageDeviceType === "desktop") {
+    return pageDeviceType;
+  }
+  return fallbackDevice;
+};
+
+export const getPageFrameWidth = (device: PageFrameDevice) =>
+  PAGE_DEVICE_WIDTHS[device];
+
+export const getPageFrameHeight = (device: PageFrameDevice) =>
+  PAGE_DEVICE_HEIGHTS[device];
+
 export const MIN_CANVAS_ZOOM = 5;
 export const MAX_CANVAS_ZOOM = 200;
 export const DEFAULT_CANVAS_ZOOM = 64;

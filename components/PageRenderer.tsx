@@ -1,6 +1,19 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { Copy, FileCode2, FileIcon, PencilLine, Trash2 } from "lucide-react";
+import {
+  Check,
+  Code2,
+  Copy,
+  Download,
+  Eye,
+  FileCode2,
+  FileIcon,
+  Loader2,
+  MoreHorizontal,
+  PencilLine,
+  Trash2,
+  X,
+} from "lucide-react";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
@@ -26,6 +39,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import type { PageRenderMode } from "@/lib/canvasScene";
+import type { PageStatusRecord } from "@/store/useEditorStore";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -74,6 +88,7 @@ interface PageRendererProps {
     title: string;
     iframeUrl?: string;
     iframeHtml?: string;
+    deviceType?: "desktop" | "mobile";
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
@@ -85,6 +100,7 @@ interface PageRendererProps {
     height: number;
     label: string;
   };
+  status?: PageStatusRecord | null;
   isOnlyPage: boolean;
   isFocused: boolean;
   frameHeight: number;
@@ -108,6 +124,7 @@ export default React.memo(function PageRenderer({
   onFocusPage,
   onMeasuredHeightChange,
   currentDevice,
+  status,
   isOnlyPage,
   isFocused,
   frameHeight,
@@ -131,6 +148,8 @@ export default React.memo(function PageRenderer({
   } | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
   const [iframeHeight, setIframeHeight] = React.useState(
     Math.max(currentDevice.height, frameHeight),
@@ -257,6 +276,184 @@ export default React.memo(function PageRenderer({
     onRenamePage(page.id, trimmedTitle);
     setIsRenameDialogOpen(false);
   }, [nextPageTitle, onRenamePage, page.id]);
+
+  const slugifiedTitle = React.useMemo(
+    () =>
+      page.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "page",
+    [page.title],
+  );
+
+  const exportPageHtml = React.useCallback(() => {
+    const html = page.iframeHtml ?? "";
+    if (!html.trim()) {
+      toast.error("Nothing to export yet for this page.");
+      return;
+    }
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugifiedTitle}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success("Page HTML exported.");
+  }, [page.iframeHtml, slugifiedTitle]);
+
+  const previewSrcDoc = React.useMemo(
+    () =>
+      hasRawHtml
+        ? stabilizeViewportHeightClasses(
+            sanitizeIframeHtml(page.iframeHtml ?? ""),
+            currentDevice.height,
+          )
+        : "",
+    [currentDevice.height, hasRawHtml, page.iframeHtml],
+  );
+
+  const openToolbarContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onFocusPage?.(page.id);
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      setContextMenuPosition({
+        x: Math.min(
+          event.clientX,
+          Math.max(CONTEXT_MENU_MARGIN, viewportWidth - CONTEXT_MENU_WIDTH),
+        ),
+        y: Math.min(event.clientY, Math.max(CONTEXT_MENU_MARGIN, viewportHeight - 260)),
+      });
+    },
+    [onFocusPage, page.id],
+  );
+
+  const hasPageContent = Boolean(page.iframeHtml?.trim());
+  const toolbarScale = Math.max(0.4, Math.min(1.6, 100 / Math.max(20, zoom)));
+  const iconButtonClass =
+    "flex h-7 w-7 items-center justify-center rounded-md bg-popover text-popover-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground";
+
+  const hoverToolbar = (
+    <div
+      className={cn(
+        "pointer-events-auto ml-auto flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 p-1 opacity-0 shadow-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100",
+        isFocused && "opacity-100",
+      )}
+      style={{
+        transform: `scale(${toolbarScale})`,
+        transformOrigin: "right center",
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`Edit ${page.title}`}
+        title="Edit"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onFocusPage?.(page.id);
+          onEditPage?.(page.id);
+        }}
+      >
+        <PencilLine className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`Preview ${page.title}`}
+        title="Preview"
+        disabled={!hasPageContent}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsPreviewOpen(true);
+        }}
+      >
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`View code for ${page.title}`}
+        title="Code"
+        disabled={!hasPageContent}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsCodeDialogOpen(true);
+        }}
+      >
+        <Code2 className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`Export ${page.title}`}
+        title="Export HTML"
+        disabled={!hasPageContent}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          exportPageHtml();
+        }}
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`More actions for ${page.title}`}
+        title="More"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={openToolbarContextMenu}
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+
+  const statusBadge = (() => {
+    if (!status) return null;
+    if (status.status === "completed") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+          <Check className="h-3 w-3" />
+          Done
+        </span>
+      );
+    }
+    if (status.status === "failed") {
+      return (
+        <span
+          title={status.detail}
+          className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive"
+        >
+          <X className="h-3 w-3" />
+          Failed
+        </span>
+      );
+    }
+    const label =
+      status.status === "queued"
+        ? "Queued"
+        : status.status === "repairing"
+          ? "Repairing"
+          : "Generating";
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {label}
+      </span>
+    );
+  })();
 
   const contextMenuActions = React.useMemo<ContextMenuAction[]>(
     () => [
@@ -562,6 +759,8 @@ export default React.memo(function PageRenderer({
             />
             {page.title}
           </p>
+          {statusBadge}
+          {isLive ? hoverToolbar : null}
         </div>
         <div
           className={cn(
@@ -690,6 +889,69 @@ export default React.memo(function PageRenderer({
               Cancel
             </Button>
             <Button onClick={submitRename}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isPreviewOpen}
+        onOpenChange={(open) => {
+          setIsPreviewOpen(open);
+        }}
+      >
+        <DialogContent
+          className="max-w-[calc(100vw-4rem)] p-0"
+          style={{ maxWidth: `${Math.min(currentDevice.width + 32, 960)}px` }}
+        >
+          <DialogHeader className="px-6 pb-2 pt-4">
+            <DialogTitle>{page.title}</DialogTitle>
+            <DialogDescription>
+              Live preview at {currentDevice.label.toLowerCase()} width (
+              {currentDevice.width}px). Interactions are enabled inside the
+              preview.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[calc(100vh-12rem)] overflow-auto px-6 pb-6">
+            <iframe
+              title={`${page.title} preview`}
+              srcDoc={previewSrcDoc}
+              className="w-full rounded-md border border-border bg-background"
+              style={{ height: `${Math.max(currentDevice.height, 480)}px` }}
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isCodeDialogOpen}
+        onOpenChange={(open) => {
+          setIsCodeDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{page.title} — HTML</DialogTitle>
+            <DialogDescription>
+              The sanitized HTML currently rendered for this page.
+            </DialogDescription>
+          </DialogHeader>
+          <pre className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted/40 p-3 text-[11px] leading-4 text-foreground/90">
+            <code>{page.iframeHtml ?? ""}</code>
+          </pre>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCodeDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                void copyToClipboard("Page HTML", page.iframeHtml ?? "");
+              }}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copy HTML
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

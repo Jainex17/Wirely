@@ -10,7 +10,11 @@ interface RouteContext {
 
 type CreateProjectPageRequestBody = {
   title?: string | null;
+  deviceType?: string | null;
 };
+
+const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
+  value === "desktop" || value === "mobile";
 
 export async function POST(request: Request, context: RouteContext) {
   try {
@@ -29,11 +33,15 @@ export async function POST(request: Request, context: RouteContext) {
       typeof body.title === "string" && body.title.trim().length > 0
         ? body.title.trim()
         : "Untitled Page";
+    const deviceType = isPageDeviceType(body.deviceType)
+      ? body.deviceType
+      : undefined;
 
     const page = await createProjectPageForUser({
       projectId,
       userId: sessionUser.id,
       title,
+      deviceType,
     });
 
     if (!page) {

@@ -6,25 +6,16 @@ import { toast } from "@/components/ui/sonner";
 import {
   getDefaultPageX,
   getPageBounds,
+  getPageFrameHeight,
+  getPageFrameWidth,
   getViewportBounds,
   isBoundsIntersecting,
+  resolvePageFrameDevice,
   zoomAtViewportPoint,
 } from "@/lib/canvasScene";
 import { logger } from "@/lib/logger";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
-
-const DEVICE_WIDTHS = {
-  desktop: 1440,
-  tablet: 768,
-  mobile: 375,
-} as const;
-
-const DEVICE_HEIGHTS = {
-  desktop: 900,
-  tablet: 1024,
-  mobile: 812,
-} as const;
 
 const ZOOM_LEVELS = [5, 10, 25, 50, 75, 100, 125, 150, 200];
 
@@ -92,19 +83,19 @@ export default function EditorWorkspace({
     })),
   );
 
-  const currentDeviceWidth = DEVICE_WIDTHS[activeDevice];
-  const currentDeviceHeight = DEVICE_HEIGHTS[activeDevice];
-
   const pageBoundsById = useMemo(() => {
     const result = new Map<string, ReturnType<typeof getPageBounds>>();
     for (const [index, page] of pages.entries()) {
+      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
+      const deviceWidth = getPageFrameWidth(device);
+      const deviceHeight = getPageFrameHeight(device);
       const position = pagePositions[page.id] ?? {
-        x: getDefaultPageX(index, pages.length, currentDeviceWidth),
+        x: getDefaultPageX(index, pages.length, deviceWidth),
         y: 0,
       };
       const height = Math.max(
-        currentDeviceHeight,
-        pageFrameHeights[page.id] ?? currentDeviceHeight,
+        deviceHeight,
+        pageFrameHeights[page.id] ?? deviceHeight,
       );
 
       result.set(
@@ -112,15 +103,14 @@ export default function EditorWorkspace({
         getPageBounds({
           pageId: page.id,
           position,
-          width: currentDeviceWidth,
+          width: deviceWidth,
           height,
         }),
       );
     }
     return result;
   }, [
-    currentDeviceHeight,
-    currentDeviceWidth,
+    activeDevice,
     pageFrameHeights,
     pagePositions,
     pages,

@@ -466,6 +466,14 @@ const buildOutputs = ({
   );
 };
 
+const MOBILE_INTENT_PATTERN =
+  /\b(mobile|phone|smartphone|smart phone|iphone|android|tablet|responsive)\b/i;
+
+export type WireDeviceIntent = "desktop" | "mobile";
+
+export const resolveDeviceIntent = (prompt: string): WireDeviceIntent =>
+  MOBILE_INTENT_PATTERN.test(prompt) ? "mobile" : "desktop";
+
 export const buildFallbackDesignPlan = ({
   userPrompt,
   requestedOutputCount,

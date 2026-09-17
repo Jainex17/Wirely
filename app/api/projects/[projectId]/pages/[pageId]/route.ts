@@ -14,7 +14,11 @@ interface RouteContext {
 type UpdateProjectPageRequestBody = {
   title?: string | null;
   htmlContent?: string | null;
+  deviceType?: string | null;
 };
+
+const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
+  value === "desktop" || value === "mobile";
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
@@ -35,8 +39,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         ? body.title.trim()
         : undefined;
     const htmlContent = typeof body.htmlContent === "string" ? body.htmlContent : undefined;
+    const deviceType = isPageDeviceType(body.deviceType) ? body.deviceType : undefined;
 
-    if (title === undefined && htmlContent === undefined) {
+    if (title === undefined && htmlContent === undefined && deviceType === undefined) {
       return NextResponse.json({ error: "No updates provided." }, { status: 400 });
     }
 
@@ -46,6 +51,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       userId: sessionUser.id,
       title,
       htmlContent,
+      deviceType,
     });
 
     if (!page) {

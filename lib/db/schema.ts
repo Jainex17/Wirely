@@ -107,6 +107,7 @@ export const projectPages = pgTable(
     title: text("title").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     htmlContent: text("html_content").default("").notNull(),
+    deviceType: text("device_type").default("desktop").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
