@@ -8,6 +8,7 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   getWireModelProvider,
+  resolveRunnableWireModel,
   type WireModelName,
 } from "@/lib/wireModels";
 import {
@@ -112,6 +113,13 @@ const MODEL_PROVIDER_LABEL = {
   zai: "Z.ai",
 } as const;
 
+const EXAMPLE_PROMPT_CHIPS = [
+  "A landing page for a plant care subscription",
+  "A crypto portfolio dashboard with live charts",
+  "A mobile app for tracking hiking trails",
+  "A multi-page site for a design studio",
+] as const;
+
 interface HomeState {
   prompt: string;
   isSubmitting: boolean;
@@ -157,7 +165,12 @@ const createHomeInitialState = (
   user: initialData.user,
   errorMessage: null,
   historyItems: initialData.historyItems,
-  selectedModel: initialData.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL,
+  selectedModel:
+    resolveRunnableWireModel(initialData.enabledModelIds, {
+      google: initialData.hasGoogleApiKey,
+      openrouter: initialData.hasOpenRouterApiKey,
+      zai: initialData.hasZaiApiKey,
+    }) ?? DEFAULT_WIRE_MODEL,
   enabledModelIds: initialData.enabledModelIds,
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
@@ -267,7 +280,11 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
   const activeSelectedModel = state.enabledModelIds.includes(state.selectedModel)
     ? state.selectedModel
-    : state.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
+    : resolveRunnableWireModel(state.enabledModelIds, {
+        google: state.hasGoogleApiKey,
+        openrouter: state.hasOpenRouterApiKey,
+        zai: state.hasZaiApiKey,
+      }) ?? DEFAULT_WIRE_MODEL;
 
   const hasNoEnabledModels = Boolean(state.user) && state.enabledModelIds.length === 0;
   const activeSelectedModelProvider = getWireModelProvider(activeSelectedModel);
@@ -290,16 +307,8 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const showApiKeyWarning =
     Boolean(state.user) &&
     selectedModelRequiresMissingKey;
-  const showConfigureApiKeysCta =
-    Boolean(state.user) &&
-    enabledModelOptions.some((model) =>
-      modelRequiresMissingKey({
-        modelName: model.id,
-        hasGoogleApiKey: state.hasGoogleApiKey,
-        hasOpenRouterApiKey: state.hasOpenRouterApiKey,
-        hasZaiApiKey: state.hasZaiApiKey,
-      }),
-    );
+  // Only push users toward key setup when nothing they enabled can run.
+  const showConfigureApiKeysCta = hasNoRunnableModels;
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
@@ -525,6 +534,15 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                                 >
                                   <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
                                   <span>{model.label}</span>
+                                  <span
+                                    className={`ml-auto mt-0.5 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                                      model.tier === "paid"
+                                        ? "bg-amber-500/15 text-amber-600"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {model.tier}
+                                  </span>
                                 </DropdownMenuItem>
                               ))}
                             </DropdownMenuGroup>
@@ -635,6 +653,22 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 </div>
               </div>
             </form>
+            {state.prompt.trim().length === 0 ? (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {EXAMPLE_PROMPT_CHIPS.map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() =>
+                      dispatch({ type: "patch", payload: { prompt: chip } })
+                    }
+                    className="rounded-full border border-border bg-card px-3.5 py-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="text-center text-sm text-muted-foreground mt-2">
               {hasNoEnabledModels ? (
                 <>
