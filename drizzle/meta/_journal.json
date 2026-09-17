@@ -92,6 +92,13 @@
       "when": 1775239576871,
       "tag": "0012_luxuriant_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789573523753,
+      "tag": "0013_mighty_juggernaut",
+      "breakpoints": true
     }
   ]
 }

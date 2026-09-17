@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import type { Message } from "ai";
-import { ArrowLeft, Cloud } from "lucide-react";
+import { ArrowLeft, Cloud, Workflow } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
+import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ interface WireEditorProps {
       id: string;
       title: string;
       pageHtml: string;
+      deviceType: "desktop" | "mobile";
     }>;
   };
   initialModelName: WireModelName;
@@ -52,6 +54,7 @@ export default function WireEditor({
     null,
   );
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
+  const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
   const setFocusedPage = useEditorStore((state) => state.setFocusedPage);
@@ -64,6 +67,7 @@ export default function WireEditor({
         id: page.id,
         title: page.title,
         iframeHtml: page.pageHtml,
+        deviceType: page.deviceType,
         sections: [],
       })),
     );
@@ -162,6 +166,16 @@ export default function WireEditor({
                 <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
               </div>
             ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setIsPrototypeDialogOpen(true)}
+            >
+              <Workflow className="mr-1.5 h-4 w-4" />
+              Prototype
+            </Button>
             <UserAccountMenu
               user={sessionUser}
               isLoggingOut={isLoggingOut}
@@ -195,6 +209,13 @@ export default function WireEditor({
           </EditorErrorBoundary>
         </div>
       </div>
+
+      <PrototypeFlowDialog
+        wireId={wireId}
+        projectTitle={initialProject.projectTitle}
+        open={isPrototypeDialogOpen}
+        onOpenChange={setIsPrototypeDialogOpen}
+      />
     </>
   );
 }
