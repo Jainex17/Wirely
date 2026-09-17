@@ -81,6 +81,10 @@ Use the generated value for `USER_API_KEY_MASTER_SECRET_BASE64`.
 bun run db:migrate
 ```
 
+> Migration `0013_mighty_juggernaut` (or later) is required for the live
+> generation progress, per-screen device frames, and prototype flow features:
+> it adds `project_pages.device_type` and the `project_prototype_flows` table.
+
 ### 5. Start development server
 
 ```bash
