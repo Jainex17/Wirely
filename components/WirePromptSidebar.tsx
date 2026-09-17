@@ -11,7 +11,7 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import Link from "next/link";
-import { Send, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Loader2, Send, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -55,6 +55,14 @@ import {
   getWireConversationModelUsage,
   type WireConversationModelUsage,
 } from "@/lib/wireConversationModels";
+import { isWireProgressEvent } from "@/lib/wireProgressEvents";
+import { useWireProgress } from "@/hooks/useWireProgress";
+import { resolveDeviceIntent } from "@/lib/wireFallbackPlan";
+import type { PageDeviceType } from "@/lib/types";
+import type {
+  WireProgressPageStatus,
+  WireProgressStage,
+} from "@/lib/wireProgressEvents";
 
 interface WirePromptSidebarProps {
   wireId: string;
@@ -122,6 +130,22 @@ const MODEL_PROVIDER_LABEL = {
   openrouter: "OpenRouter",
   zai: "Z.ai",
 } as const;
+
+const STAGE_LABELS: Record<WireProgressStage, string> = {
+  processing: "Processing your request…",
+  thinking: "Thinking about your request…",
+  planning: "Planning the design…",
+  generating: "Generating screens…",
+  finalizing: "Finalizing…",
+};
+
+const PAGE_STATUS_LABELS: Record<WireProgressPageStatus, string> = {
+  queued: "Queued",
+  generating: "Writing…",
+  repairing: "Repairing…",
+  completed: "Done",
+  failed: "Failed",
+};
 
 const GENERATION_FAILURE_PREVIEW_HTML = [
   "<!doctype html>",
@@ -231,10 +255,15 @@ const compactHistoryFromMessages = (
       continue;
     }
 
-    const content =
-      message.role === "assistant"
-        ? getAssistantDetails(message.content) || "Generated an updated page."
-        : message.content.trim();
+    if (message.role === "assistant") {
+      const details = getAssistantDetails(message.content);
+      // Skip assistant messages without meaningful details (in-flight or
+      // failed runs) so empty history entries don't reach the model.
+      if (!details) continue;
+      compact.push({ role: message.role, content: details });
+      continue;
+    }
+    const content = message.content.trim();
     if (!content) continue;
 
     compact.push({ role: message.role, content });
@@ -260,6 +289,7 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
+  const [isAiSettingsLoaded, setIsAiSettingsLoaded] = useState(false);
   const [messageModelUsageById, setMessageModelUsageById] = useState<
     Record<string, WireConversationModelUsage>
   >(() =>
@@ -309,6 +339,10 @@ export default function WirePromptSidebar({
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
   const createPageLocal = useEditorStore((state) => state.createPage);
   const deletePageLocal = useEditorStore((state) => state.deletePage);
+  const renamePageLocal = useEditorStore((state) => state.renamePage);
+  const setPageDeviceType = useEditorStore((state) => state.setPageDeviceType);
+  const setPageStatus = useEditorStore((state) => state.setPageStatus);
+  const clearPageStatuses = useEditorStore((state) => state.clearPageStatuses);
   const beginSaving = useEditorStore((state) => state.beginSaving);
   const endSaving = useEditorStore((state) => state.endSaving);
   const requestGeneratedPageFocusCheck = useEditorStore(
@@ -322,7 +356,8 @@ export default function WirePromptSidebar({
     pendingBatchCreatedPageIdsRef.current = [];
     pendingPageHtmlBackupRef.current.clear();
     pendingUserMessageIdRef.current = null;
-  }, []);
+    clearPageStatuses();
+  }, [clearPageStatuses]);
 
   const reportError = useCallback((message: string) => {
     setErrorMessage(message);
@@ -365,13 +400,13 @@ export default function WirePromptSidebar({
   );
 
   const createPageOnServer = useCallback(
-    async (title: string) => {
+    async (title: string, deviceType?: PageDeviceType) => {
       beginSaving();
       try {
         const response = await fetch(`/api/projects/${wireId}/pages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title }),
+          body: JSON.stringify({ title, ...(deviceType ? { deviceType } : {}) }),
         });
         if (!response.ok) {
           throw new Error(`Page creation failed with status ${response.status}`);
@@ -478,7 +513,14 @@ export default function WirePromptSidebar({
     [setPageHtml],
   );
 
-  const { messages, append, isLoading, stop } = useChat({
+  const {
+    messages,
+    append,
+    isLoading,
+    stop,
+    data,
+    setData,
+  } = useChat({
     api: `/api/wire/${wireId}`,
     body: { wireId },
     initialMessages,
@@ -566,21 +608,6 @@ export default function WirePromptSidebar({
         reportError(failureMessage);
         stop();
         return;
-      }
-      const planningSummaryHeader = response.headers.get("x-wire-planning-summary");
-      const pendingUserMessageId = pendingUserMessageIdRef.current;
-      if (planningSummaryHeader && pendingUserMessageId) {
-        try {
-          const planningSummary = JSON.parse(planningSummaryHeader) as string;
-          if (planningSummary.trim()) {
-            setMessagePlanningById((current) => ({
-              ...current,
-              [pendingUserMessageId]: planningSummary,
-            }));
-          }
-        } catch (error) {
-          logger.warn("wire_sidebar_plan_header_parse_failed", { error });
-        }
       }
       setErrorMessage(null);
     },
@@ -812,8 +839,57 @@ export default function WirePromptSidebar({
         pendingGenerationErrorRef.current = null;
         clearPendingGeneration();
       }
-    },
+      },
   });
+
+  const progress = useWireProgress(data as unknown[] | undefined);
+
+  useEffect(() => {
+    if (!data || data.length === 0) return;
+    for (const entry of data as unknown[]) {
+      if (!isWireProgressEvent(entry)) continue;
+      if (entry.type === "page") {
+        setPageDeviceType(entry.pageId, entry.deviceType);
+        renamePageLocal(entry.pageId, entry.title);
+      } else if (entry.type === "page-status") {
+        setPageStatus(entry.pageId, entry.status, entry.detail);
+      }
+    }
+  }, [data, renamePageLocal, setPageDeviceType, setPageStatus]);
+
+  useEffect(() => {
+    const pendingUserMessageId = pendingUserMessageIdRef.current;
+    const summary = progress.planningSummary;
+    if (!summary || !pendingUserMessageId) return;
+    setMessagePlanningById((current) => {
+      if (current[pendingUserMessageId] === summary) {
+        return current;
+      }
+      return {
+        ...current,
+        [pendingUserMessageId]: summary,
+      };
+    });
+  }, [progress.planningSummary]);
+
+  const handleStopGeneration = useCallback(() => {
+    stop();
+    rollbackPendingCreatedPages();
+  }, [rollbackPendingCreatedPages, stop]);
+
+  const handleSuggestionClick = useCallback(
+    (chip: string) => {
+      setPrompt(chip);
+      window.requestAnimationFrame(() => {
+        const textarea = promptTextareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        const cursorPosition = textarea.value.length;
+        textarea.setSelectionRange(cursorPosition, cursorPosition);
+      });
+    },
+    [],
+  );
 
   const startGenerationForPage = useCallback(
     async ({
@@ -857,6 +933,7 @@ export default function WirePromptSidebar({
       snapshotCurrentPageHtml([targetPageId]);
       setQualityNotice(null);
       setErrorMessage(null);
+      setData([]);
 
       const body: Record<string, unknown> = {
         modelName: selectedModel,
@@ -911,6 +988,7 @@ export default function WirePromptSidebar({
       reportError,
       rollbackPendingCreatedPages,
       snapshotCurrentPageHtml,
+      setData,
     ],
   );
 
@@ -952,6 +1030,7 @@ export default function WirePromptSidebar({
       setQualityNotice(null);
       setErrorMessage(null);
       markPagesAsLoading(targetPageIds);
+      setData([]);
 
       const body = {
         modelName: selectedModel,
@@ -1009,6 +1088,7 @@ export default function WirePromptSidebar({
       reportError,
       rollbackPendingCreatedPages,
       snapshotCurrentPageHtml,
+      setData,
     ],
   );
 
@@ -1050,7 +1130,12 @@ export default function WirePromptSidebar({
         try {
           const nextPageNumber = useEditorStore.getState().pages.length + 1;
           const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
-          createPageLocal(createdPage.title, undefined, createdPage.id);
+          createPageLocal(
+            createdPage.title,
+            undefined,
+            createdPage.id,
+            resolveDeviceIntent(prompt),
+          );
           onSelectedPageIdChange(createdPage.id);
 
           const generated = await startGenerationForPage({
@@ -1155,6 +1240,7 @@ export default function WirePromptSidebar({
         if (!response.ok) {
           if (!isCancelled) {
             setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+            setIsAiSettingsLoaded(true);
           }
           return;
         }
@@ -1162,10 +1248,12 @@ export default function WirePromptSidebar({
         const payload = (await response.json()) as AiSettingsResponse;
         if (!isCancelled) {
           setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
+          setIsAiSettingsLoaded(true);
         }
       } catch {
         if (!isCancelled) {
           setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
+          setIsAiSettingsLoaded(true);
         }
       }
     };
@@ -1184,8 +1272,10 @@ export default function WirePromptSidebar({
   }, [activeModelName, enabledModelIds]);
 
   useEffect(() => {
+    if (!isAiSettingsLoaded) return;
     if (autoRunRef.current) return;
     const autoRunTimerId = window.setTimeout(() => {
+      if (!isAiSettingsLoaded) return;
       if (autoRunRef.current) return;
 
       if (enabledModelIds.length === 0) {
@@ -1251,7 +1341,12 @@ export default function WirePromptSidebar({
             const createdPage = await createPageOnServer(
               `Page ${nextPageNumber}`,
             );
-            createPageLocal(createdPage.title, undefined, createdPage.id);
+            createPageLocal(
+              createdPage.title,
+              undefined,
+              createdPage.id,
+              resolveDeviceIntent(storedPrompt),
+            );
             targets.push({ pageId: createdPage.id, isCreated: true });
           }
 
@@ -1277,10 +1372,12 @@ export default function WirePromptSidebar({
             modelName: resolvedModel,
             generationMode: storedGenerationMode ?? undefined,
           });
-        } catch {
-          reportError(
-            `Could not generate ${storedPageCount} pages in one request. Please try again.`,
-          );
+        } catch (error) {
+          const message =
+            error instanceof Error && error.message.trim().length > 0
+              ? error.message
+              : `Could not generate ${storedPageCount} pages in one request. Please try again.`;
+          reportError(message);
         }
       };
 
@@ -1295,6 +1392,7 @@ export default function WirePromptSidebar({
     createPageLocal,
     createPageOnServer,
     enabledModelIds,
+    isAiSettingsLoaded,
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
@@ -1366,8 +1464,75 @@ export default function WirePromptSidebar({
           </div>
         );
 
+        const isPendingLastUser = isLoading && index === lastUserMessageIndex;
+
+        const progressPanel = isPendingLastUser ? (
+          <div
+            key={`${key}-progress`}
+            className={`mx-auto w-full max-w-[92%] rounded-xl border px-3 py-2.5 ${
+              variant === "panel"
+                ? "border-border bg-muted/30"
+                : "border-border/60 bg-sidebar/50"
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2 text-[11px] font-medium ${
+                variant === "panel"
+                  ? "text-muted-foreground"
+                  : "text-sidebar-foreground/70"
+              }`}
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {progress.stage ? STAGE_LABELS[progress.stage] : "Processing your request…"}
+            </div>
+            {progress.planItems.length > 0 ? (
+              <ul className="mt-2 space-y-1.5">
+                {progress.planItems.map((item) => {
+                  const pageStatus = item.pageId
+                    ? progress.pageStatusById[item.pageId]
+                    : undefined;
+                  return (
+                    <li
+                      key={item.id}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      {pageStatus === "completed" ? (
+                        <Check className="h-3 w-3 shrink-0 text-primary" />
+                      ) : pageStatus === "failed" ? (
+                        <X className="h-3 w-3 shrink-0 text-destructive" />
+                      ) : (
+                        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground/70" />
+                      )}
+                      <span
+                        className={
+                          variant === "panel"
+                            ? "truncate text-foreground/85"
+                            : "truncate text-sidebar-foreground/85"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                      {pageStatus ? (
+                        <span
+                          className={`ml-auto shrink-0 text-[10px] uppercase tracking-wide ${
+                            variant === "panel"
+                              ? "text-muted-foreground/70"
+                              : "text-sidebar-foreground/60"
+                          }`}
+                        >
+                          {PAGE_STATUS_LABELS[pageStatus]}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
+        ) : null;
+
         const planningBubble =
-          planningSummary || (isLoading && index === lastUserMessageIndex) ? (
+          !isPendingLastUser && planningSummary ? (
             <details
               key={`${key}-planning`}
               className="group mx-auto w-full max-w-[92%] py-1 text-center"
@@ -1385,8 +1550,7 @@ export default function WirePromptSidebar({
                   }`}
                 />
                 <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                  {planningSummary ? "Worked plan" : "Working on plan"}
-                  {isLoading && index === lastUserMessageIndex ? "..." : null}
+                  Worked plan
                   <span
                     aria-hidden="true"
                     className="text-sm leading-none transition-transform duration-300 ease-out group-open:rotate-90"
@@ -1409,14 +1573,15 @@ export default function WirePromptSidebar({
                         : "text-sidebar-foreground/80"
                     }`}
                   >
-                    {planningSummary || "Generating plan..."}
+                    {planningSummary}
                   </div>
                 </div>
               </div>
             </details>
           ) : null;
 
-        return planningBubble ? [userBubble, planningBubble] : [userBubble];
+        const followUp = progressPanel ?? planningBubble;
+        return followUp ? [userBubble, followUp] : [userBubble];
       }
 
       if (message.role === "assistant") {
@@ -1443,7 +1608,7 @@ export default function WirePromptSidebar({
     });
 
     return items;
-  }, [isLoading, messageModelUsageById, messagePlanningById, messages, variant]);
+  }, [isLoading, messageModelUsageById, messagePlanningById, messages, progress, variant]);
 
   const effectiveSelectedPageId = resolvePromptTargetPageId(pages, selectedPageId);
   const selectedPageTitle = resolvePromptTargetPageTitle(
@@ -1519,6 +1684,24 @@ export default function WirePromptSidebar({
               Models
             </Link>{" "}
             to enable at least one model.
+          </div>
+        ) : null}
+        {!isLoading && !noModelsEnabled && progress.suggestions.length > 0 ? (
+          <div className="flex flex-wrap gap-2 pr-1">
+            {progress.suggestions.map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => handleSuggestionClick(chip)}
+                className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                  variant === "panel"
+                    ? "border-border bg-muted/40 text-foreground/80 hover:bg-accent hover:text-accent-foreground"
+                    : "border-border/60 bg-sidebar/50 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                {chip}
+              </button>
+            ))}
           </div>
         ) : null}
       </div>
@@ -1600,9 +1783,18 @@ export default function WirePromptSidebar({
                             onClick={() => handleModelSelection(model.id)}
                             className={dropdownItemClassName}
                           >
-                            <div className="flex items-start gap-2">
+                            <div className="flex w-full items-start gap-2">
                               <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
                               <span>{model.label}</span>
+                              <span
+                                className={`ml-auto mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                                  model.tier === "paid"
+                                    ? "bg-amber-500/15 text-amber-600"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {model.tier}
+                              </span>
                             </div>
                           </DropdownMenuItem>
                         ))}
@@ -1659,24 +1851,43 @@ export default function WirePromptSidebar({
               </DropdownMenu>
             </div>
 
-            <Button
-              type="submit"
-              disabled={
-                isLoading ||
-                !prompt.trim() ||
-                !effectiveSelectedPageId ||
-                noModelsEnabled
-              }
-              size="icon"
-              className={`h-8 w-8 shrink-0 ${
-                variant === "panel"
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
-                  : "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/80 disabled:opacity-20"
-              }`}
-              aria-label="Send message"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {isLoading ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={`h-8 w-8 shrink-0 ${
+                    variant === "panel"
+                      ? "text-muted-foreground hover:bg-accent"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
+                  }`}
+                  onClick={handleStopGeneration}
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
+              <Button
+                type="submit"
+                disabled={
+                  isLoading ||
+                  !prompt.trim() ||
+                  !effectiveSelectedPageId ||
+                  noModelsEnabled
+                }
+                size="icon"
+                className={`h-8 w-8 shrink-0 ${
+                  variant === "panel"
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
+                    : "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/80 disabled:opacity-20"
+                }`}
+                aria-label="Send message"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </form>

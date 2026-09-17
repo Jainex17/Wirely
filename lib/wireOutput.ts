@@ -331,6 +331,12 @@ export const summarizeAssistantDetails = ({
   const hasListLikeStructure =
     /(?:^|\s)(?:\d+\.|[-*•])\s/.test(detailsSource) || /\n\s*(?:\d+\.|[-*•])\s/.test(detailsSource);
 
+  // No details and no prose content (e.g. an in-flight or failed assistant
+  // message) — there is nothing to summarize, so return an empty summary.
+  if (!detailsSource && meaningfulSentences.length === 0) {
+    return "";
+  }
+
   if (
     meaningfulSentences.length > 0 &&
     !looksLikeRepairRecap(flattened) &&
