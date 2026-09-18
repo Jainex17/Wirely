@@ -21,22 +21,21 @@ import {
   fitBounds,
   getDefaultPageX,
   getPageBounds,
+  getPageFrameHeight,
+  getPageFrameWidth,
+  resolvePageFrameDevice,
   scaleFromZoom,
   unionBounds,
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
+import type { PageDeviceType } from "@/lib/types";
 
-const DEVICE_WIDTHS = {
-  desktop: 1440,
-  tablet: 768,
-  mobile: 375,
-} as const;
+export type PageGenerationStatus = "queued" | "generating" | "repairing" | "completed" | "failed";
 
-const DEVICE_HEIGHTS = {
-  desktop: 900,
-  tablet: 1024,
-  mobile: 812,
-} as const;
+export interface PageStatusRecord {
+  status: PageGenerationStatus;
+  detail?: string;
+}
 
 export interface CanvasState {
   camera: CameraState;
@@ -55,6 +54,7 @@ export interface ProjectState {
   sections: Record<string, SectionRecord>;
   selectedSectionId: string | null;
   draggingSectionId: string | null;
+  pageStatuses: Record<string, PageStatusRecord>;
 }
 
 export interface EditorState extends CanvasState, ProjectState {
@@ -84,9 +84,17 @@ export interface EditorState extends CanvasState, ProjectState {
   removeSection: (pageId: string, sectionId: string) => void;
   moveSection: (pageId: string, sectionId: string, direction: "up" | "down") => void;
   reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
-  createPage: (title?: string, afterPageId?: string, pageId?: string) => string;
+  createPage: (
+    title?: string,
+    afterPageId?: string,
+    pageId?: string,
+    deviceType?: PageDeviceType,
+  ) => string;
   renamePage: (pageId: string, newTitle: string) => void;
   setPageHtml: (pageId: string, html: string, title?: string) => void;
+  setPageDeviceType: (pageId: string, deviceType: PageDeviceType) => void;
+  setPageStatus: (pageId: string, status: PageGenerationStatus, detail?: string) => void;
+  clearPageStatuses: () => void;
   hydrateProject: (pages: PageRecord[]) => void;
   deletePage: (pageId: string) => void;
   resetProject: () => void;
@@ -94,12 +102,13 @@ export interface EditorState extends CanvasState, ProjectState {
 
 const generateEmptyState = (): Pick<
   ProjectState,
-  "pages" | "sections" | "selectedSectionId" | "draggingSectionId"
+  "pages" | "sections" | "selectedSectionId" | "draggingSectionId" | "pageStatuses"
 > => ({
   pages: [{ id: "page-home", title: "Page 1", sections: [] }],
   sections: {},
   selectedSectionId: null,
   draggingSectionId: null,
+  pageStatuses: {},
 });
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
@@ -154,17 +163,17 @@ const mergePageStackOrder = (pageIds: string[], persistedStackOrder: string[]) =
 };
 
 const getDeviceDimensions = (device: DeviceType) => ({
-  width: DEVICE_WIDTHS[device],
-  height: DEVICE_HEIGHTS[device],
+  width: getPageFrameWidth(device),
+  height: getPageFrameHeight(device),
 });
 
 const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
-  const { width: deviceWidth, height: deviceHeight } = getDeviceDimensions(
-    state.activeDevice,
-  );
   const totalPages = state.pages.length;
 
   return state.pages.map((page, index) => {
+    const device = resolvePageFrameDevice(page.deviceType, state.activeDevice);
+    const deviceWidth = getPageFrameWidth(device);
+    const deviceHeight = getPageFrameHeight(device);
     const position = state.pagePositions[page.id] ?? {
       x: getDefaultPageX(index, totalPages, deviceWidth),
       y: 0,
@@ -215,8 +224,12 @@ const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
   });
 };
 
-const getNextCreatedPagePosition = (state: EditorState) => {
-  const { width: deviceWidth } = getDeviceDimensions(state.activeDevice);
+const getNextCreatedPagePosition = (
+  state: EditorState,
+  deviceType?: PageDeviceType,
+) => {
+  const device = resolvePageFrameDevice(deviceType, state.activeDevice);
+  const { width: deviceWidth } = getDeviceDimensions(device);
   const existingBounds = getPageBoundsCollection(state);
 
   if (existingBounds.length === 0) {
@@ -510,16 +523,17 @@ export const useEditorStore = create<EditorState>()(
           return { pages: newPages };
         }),
 
-      createPage: (title, afterPageId, pageId) => {
+      createPage: (title, afterPageId, pageId, deviceType) => {
         const newPageId = pageId ?? createPageId();
 
         set((state) => {
-          const nextPosition = getNextCreatedPagePosition(state);
+          const nextPosition = getNextCreatedPagePosition(state, deviceType);
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
           const newPage: PageRecord = {
             id: newPageId,
             title: resolvedTitle,
             sections: [],
+            ...(deviceType ? { deviceType } : {}),
           };
 
           let pages = [...state.pages, newPage];
@@ -580,6 +594,35 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
 
+      setPageDeviceType: (pageId, deviceType) =>
+        set((state) => {
+          const pageIndex = state.pages.findIndex((p) => p.id === pageId);
+          if (pageIndex === -1) return state;
+
+          const newPages = [...state.pages];
+          newPages[pageIndex] = {
+            ...newPages[pageIndex],
+            deviceType,
+          };
+
+          return { pages: newPages };
+        }),
+
+      setPageStatus: (pageId, status, detail) =>
+        set((state) => {
+          if (!state.pages.some((page) => page.id === pageId)) {
+            return state;
+          }
+          return {
+            pageStatuses: {
+              ...state.pageStatuses,
+              [pageId]: { status, ...(detail !== undefined ? { detail } : {}) },
+            },
+          };
+        }),
+
+      clearPageStatuses: () => set({ pageStatuses: {} }),
+
       hydrateProject: (pages) =>
         set((state) => {
           const nextPages =
@@ -624,6 +667,8 @@ export const useEditorStore = create<EditorState>()(
               : state.focusedPageId;
           const nextPageFrameHeights = { ...state.pageFrameHeights };
           delete nextPageFrameHeights[pageId];
+          const nextPageStatuses = { ...state.pageStatuses };
+          delete nextPageStatuses[pageId];
 
           return {
             pages: nextPages,
@@ -633,6 +678,7 @@ export const useEditorStore = create<EditorState>()(
               Object.entries(state.pagePositions).filter(([id]) => id !== pageId),
             ),
             pageFrameHeights: nextPageFrameHeights,
+            pageStatuses: nextPageStatuses,
             pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
             focusedPageId: nextFocusedPageId,
           };

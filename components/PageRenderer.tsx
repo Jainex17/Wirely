@@ -1,6 +1,18 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { Copy, FileCode2, FileIcon, PencilLine, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  Eye,
+  FileCode2,
+  FileIcon,
+  Loader2,
+  MoreHorizontal,
+  PencilLine,
+  Trash2,
+  X,
+} from "lucide-react";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
@@ -26,6 +38,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import type { PageRenderMode } from "@/lib/canvasScene";
+import type { PageStatusRecord } from "@/store/useEditorStore";
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -74,6 +87,7 @@ interface PageRendererProps {
     title: string;
     iframeUrl?: string;
     iframeHtml?: string;
+    deviceType?: "desktop" | "mobile";
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
@@ -85,6 +99,7 @@ interface PageRendererProps {
     height: number;
     label: string;
   };
+  status?: PageStatusRecord | null;
   isOnlyPage: boolean;
   isFocused: boolean;
   frameHeight: number;
@@ -100,6 +115,13 @@ interface ContextMenuAction {
   disabled?: boolean;
 }
 
+const MOBILE_PREVIEW_SIZES = [
+  { label: "S · 320", name: "Small (iPhone SE)", width: 320 },
+  { label: "M · 375", name: "Standard (iPhone 15)", width: 375 },
+  { label: "L · 414", name: "Large (Plus)", width: 414 },
+  { label: "XL · 430", name: "XL (Pro Max)", width: 430 },
+] as const;
+
 export default React.memo(function PageRenderer({
   page,
   onRenamePage,
@@ -108,6 +130,7 @@ export default React.memo(function PageRenderer({
   onFocusPage,
   onMeasuredHeightChange,
   currentDevice,
+  status,
   isOnlyPage,
   isFocused,
   frameHeight,
@@ -131,6 +154,13 @@ export default React.memo(function PageRenderer({
   } | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [previewMobileWidth, setPreviewMobileWidth] = React.useState<
+    number | null
+  >(null);
+  const previewWidth = previewMobileWidth ?? currentDevice.width;
+  // Code dialog removed from the page toolbar for now.
+  // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
   const [iframeHeight, setIframeHeight] = React.useState(
     Math.max(currentDevice.height, frameHeight),
@@ -257,6 +287,157 @@ export default React.memo(function PageRenderer({
     onRenamePage(page.id, trimmedTitle);
     setIsRenameDialogOpen(false);
   }, [nextPageTitle, onRenamePage, page.id]);
+
+  const slugifiedTitle = React.useMemo(
+    () =>
+      page.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "page",
+    [page.title],
+  );
+
+  const exportPageHtml = React.useCallback(() => {
+    const html = page.iframeHtml ?? "";
+    if (!html.trim()) {
+      toast.error("Nothing to export yet for this page.");
+      return;
+    }
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugifiedTitle}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success("Page HTML exported.");
+  }, [page.iframeHtml, slugifiedTitle]);
+
+  const previewSrcDoc = React.useMemo(
+    () =>
+      hasRawHtml
+        ? stabilizeViewportHeightClasses(
+            sanitizeIframeHtml(page.iframeHtml ?? ""),
+            currentDevice.height,
+          )
+        : "",
+    [currentDevice.height, hasRawHtml, page.iframeHtml],
+  );
+
+  const openToolbarContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      onFocusPage?.(page.id);
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      setContextMenuPosition({
+        x: Math.min(
+          event.clientX,
+          Math.max(CONTEXT_MENU_MARGIN, viewportWidth - CONTEXT_MENU_WIDTH),
+        ),
+        y: Math.min(event.clientY, Math.max(CONTEXT_MENU_MARGIN, viewportHeight - 260)),
+      });
+    },
+    [onFocusPage, page.id],
+  );
+
+  const hasPageContent = Boolean(page.iframeHtml?.trim());
+  const toolbarScale = Math.max(0.4, Math.min(1.6, 100 / Math.max(20, zoom)));
+  const iconButtonClass =
+    "flex h-7 w-7 items-center justify-center rounded-md bg-popover text-popover-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground";
+
+  const hoverToolbar = (
+    <div
+      className={cn(
+        "pointer-events-auto ml-auto flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 p-1 opacity-0 shadow-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100",
+        isFocused && "opacity-100",
+      )}
+      style={{
+        transform: `scale(${toolbarScale})`,
+        transformOrigin: "right center",
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {/* Edit and Code actions hidden for now */}
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`Preview ${page.title}`}
+        title="Preview"
+        disabled={!hasPageContent}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsPreviewOpen(true);
+        }}
+      >
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`Export ${page.title}`}
+        title="Export HTML"
+        disabled={!hasPageContent}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          exportPageHtml();
+        }}
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={iconButtonClass}
+        aria-label={`More actions for ${page.title}`}
+        title="More"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={openToolbarContextMenu}
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+
+  const statusBadge = (() => {
+    if (!status) return null;
+    if (status.status === "completed") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+          <Check className="h-3 w-3" />
+          Done
+        </span>
+      );
+    }
+    if (status.status === "failed") {
+      return (
+        <span
+          title={status.detail}
+          className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive"
+        >
+          <X className="h-3 w-3" />
+          Failed
+        </span>
+      );
+    }
+    const label =
+      status.status === "queued"
+        ? "Queued"
+        : status.status === "repairing"
+          ? "Repairing"
+          : "Generating";
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {label}
+      </span>
+    );
+  })();
 
   const contextMenuActions = React.useMemo<ContextMenuAction[]>(
     () => [
@@ -562,6 +743,8 @@ export default React.memo(function PageRenderer({
             />
             {page.title}
           </p>
+          {statusBadge}
+          {isLive ? hoverToolbar : null}
         </div>
         <div
           className={cn(
@@ -691,6 +874,67 @@ export default React.memo(function PageRenderer({
             </Button>
             <Button onClick={submitRename}>Rename</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isPreviewOpen}
+        onOpenChange={(open) => {
+          setIsPreviewOpen(open);
+          if (!open) {
+            setPreviewMobileWidth(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-[calc(100vw-4rem)] p-0"
+          style={{ maxWidth: `${Math.min(previewWidth + 32, 1400)}px` }}
+        >
+          <DialogHeader className="px-6 pb-2 pt-4">
+            <DialogTitle>{page.title}</DialogTitle>
+            <DialogDescription>
+              Live preview at {currentDevice.label.toLowerCase()} width (
+              {previewWidth}px). Interactions are enabled inside the preview.
+            </DialogDescription>
+          </DialogHeader>
+          {page.deviceType === "mobile" ? (
+            <div className="flex flex-wrap items-center gap-1.5 px-6 pb-1">
+              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                Mobile size
+              </span>
+              {MOBILE_PREVIEW_SIZES.map((size) => {
+                const isActive = previewWidth === size.width;
+                return (
+                  <button
+                    key={size.width}
+                    type="button"
+                    title={size.name}
+                    onClick={() => setPreviewMobileWidth(size.width)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                      isActive
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    {size.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="max-h-[calc(100vh-11rem)] overflow-auto px-6 pb-6">
+            <iframe
+              title={`${page.title} preview`}
+              srcDoc={previewSrcDoc}
+              className="mx-auto block rounded-md border border-border bg-background"
+              style={{
+                width: `${previewWidth}px`,
+                height: `${Math.max(currentDevice.height, 640)}px`,
+              }}
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

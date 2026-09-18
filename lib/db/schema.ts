@@ -107,6 +107,7 @@ export const projectPages = pgTable(
     title: text("title").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     htmlContent: text("html_content").default("").notNull(),
+    deviceType: text("device_type").default("desktop").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -115,6 +116,27 @@ export const projectPages = pgTable(
     projectSortIdx: index("project_pages_project_sort_idx").on(
       table.projectId,
       table.sortOrder,
+    ),
+  }),
+);
+
+export const projectPrototypeFlows = pgTable(
+  "project_prototype_flows",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    pageIds: jsonb("page_ids").$type<string[]>().notNull(),
+    startPageId: uuid("start_page_id").references(() => projectPages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectUnique: uniqueIndex("project_prototype_flows_project_id_idx").on(
+      table.projectId,
     ),
   }),
 );

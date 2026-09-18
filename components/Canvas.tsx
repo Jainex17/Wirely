@@ -17,17 +17,20 @@ import {
   createDefaultCamera,
   getDefaultPageX,
   getPageBounds,
+  getPageFrameHeight,
+  getPageFrameWidth,
   getPageRenderMode,
   getSnappedPagePosition,
   getViewportBounds,
+  resolvePageFrameDevice,
   scaleFromZoom,
   zoomAtViewportPoint,
 } from "@/lib/canvasScene";
 
-const DEVICE_DIMENSIONS = {
-  desktop: { width: 1440, height: 900, label: "Desktop" },
-  tablet: { width: 768, height: 1024, label: "Tablet" },
-  mobile: { width: 375, height: 812, label: "Mobile" },
+const DEVICE_LABELS = {
+  desktop: "Desktop",
+  tablet: "Tablet",
+  mobile: "Mobile",
 } as const;
 
 const DRAG_START_THRESHOLD_PX = 4;
@@ -98,6 +101,7 @@ export default function Canvas({
     pagePositions,
     pageStackOrder,
     pageFrameHeights,
+    pageStatuses,
     focusedPageId,
     beginSaving,
     endSaving,
@@ -116,6 +120,7 @@ export default function Canvas({
       pagePositions: state.pagePositions,
       pageStackOrder: state.pageStackOrder,
       pageFrameHeights: state.pageFrameHeights,
+      pageStatuses: state.pageStatuses,
       focusedPageId: state.focusedPageId,
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
@@ -127,7 +132,6 @@ export default function Canvas({
       setPageFrameHeight: state.setPageFrameHeight,
     })),
   );
-  const currentDevice = DEVICE_DIMENSIONS[activeDevice];
   const scale = scaleFromZoom(camera.zoom);
   const isPanModeActive = activeTool === "grab" || isSpacePanning;
   const layoutStorageKey = React.useMemo(
@@ -150,22 +154,28 @@ export default function Canvas({
     const totalPages = pages.length;
 
     return pages.map((page, index) => {
+      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
+      const deviceWidth = getPageFrameWidth(device);
+      const deviceHeight = getPageFrameHeight(device);
       const position = pagePositions[page.id] ?? {
-        x: getDefaultPageX(index, totalPages, currentDevice.width),
+        x: getDefaultPageX(index, totalPages, deviceWidth),
         y: 0,
       };
       const frameHeight = Math.max(
-        currentDevice.height,
-        pageFrameHeights[page.id] ?? currentDevice.height,
+        deviceHeight,
+        pageFrameHeights[page.id] ?? deviceHeight,
       );
       const bounds = getPageBounds({
         pageId: page.id,
         position,
-        width: currentDevice.width,
+        width: deviceWidth,
         height: frameHeight,
       });
       return {
         page,
+        device,
+        deviceWidth,
+        deviceHeight,
         position,
         frameHeight,
         bounds,
@@ -173,8 +183,7 @@ export default function Canvas({
       };
     });
   }, [
-    currentDevice.height,
-    currentDevice.width,
+    activeDevice,
     pageFrameHeights,
     pagePositions,
     pageStackOrder,
@@ -196,14 +205,16 @@ export default function Canvas({
   );
 
   React.useEffect(() => {
+    const totalPages = pages.length;
     for (const [index, page] of pages.entries()) {
       if (pagePositions[page.id]) continue;
+      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
       setPagePosition(page.id, {
-        x: getDefaultPageX(index, pages.length, currentDevice.width),
+        x: getDefaultPageX(index, totalPages, getPageFrameWidth(device)),
         y: 0,
       });
     }
-  }, [currentDevice.width, pagePositions, pages, setPagePosition]);
+  }, [activeDevice, pagePositions, pages, setPagePosition]);
 
   React.useEffect(() => {
     for (const page of pages) {
@@ -534,13 +545,20 @@ export default function Canvas({
         x: dragState.initialPosition.x + viewportDeltaX / scale,
         y: dragState.initialPosition.y + viewportDeltaY / scale,
       };
+      const draggedLayout = pageLayouts.find(
+        (layout) => layout.page.id === pageId,
+      );
       const snapped = getSnappedPagePosition({
         movingPageId: pageId,
         position: candidatePosition,
-        width: currentDevice.width,
+        width:
+          draggedLayout?.deviceWidth ??
+          pageBoundsById[pageId]?.width ??
+          getPageFrameWidth(resolvePageFrameDevice(undefined, activeDevice)),
         height:
           pageBoundsById[pageId]?.height ??
-          Math.max(currentDevice.height, pageFrameHeights[pageId] ?? currentDevice.height),
+          draggedLayout?.frameHeight ??
+          0,
         otherPages: pageLayouts.map((pageLayout) => pageLayout.bounds),
         scale,
         disabled: event.metaKey || event.ctrlKey,
@@ -551,10 +569,8 @@ export default function Canvas({
       event.preventDefault();
     },
     [
-      currentDevice.height,
-      currentDevice.width,
+      activeDevice,
       pageBoundsById,
-      pageFrameHeights,
       pageLayouts,
       scale,
       setPagePosition,
@@ -659,7 +675,12 @@ export default function Canvas({
                   onEditPage={handlePageContextEdit}
                   onFocusPage={handlePageFocus}
                   onMeasuredHeightChange={handleMeasuredHeightChange}
-                  currentDevice={currentDevice}
+                  currentDevice={{
+                    width: pageLayout.deviceWidth,
+                    height: pageLayout.deviceHeight,
+                    label: DEVICE_LABELS[pageLayout.device],
+                  }}
+                  status={pageStatuses[pageLayout.page.id] ?? null}
                   isOnlyPage={pages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
                   frameHeight={pageLayout.frameHeight}

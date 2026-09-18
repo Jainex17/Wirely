@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
 import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
-import { DEFAULT_WIRE_MODEL } from "@/lib/wireModels";
+import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel } from "@/lib/wireModels";
 import WireEditor from "./WireEditor";
 
 export const metadata: Metadata = {
@@ -37,16 +37,25 @@ export default async function WirePage({ params }: WirePageProps) {
           id: page.id,
           title: page.title,
           pageHtml: page.htmlContent,
+          deviceType:
+            page.deviceType === "mobile" ? ("mobile" as const) : ("desktop" as const),
         }))
       : [
           {
             id: "page-home",
             title: "Page 1",
             pageHtml: "",
+            deviceType: "desktop" as const,
           },
         ];
   const projectTitle = projectDetail.project.title;
-  const initialModelName = userAiSettings?.enabledModelIds[0] ?? DEFAULT_WIRE_MODEL;
+  const initialModelName = userAiSettings
+    ? resolveRunnableWireModel(userAiSettings.enabledModelIds, {
+        google: Boolean(userAiSettings.googleApiKey),
+        openrouter: Boolean(userAiSettings.openRouterApiKey),
+        zai: Boolean(userAiSettings.zaiApiKey),
+      }) ?? DEFAULT_WIRE_MODEL
+    : DEFAULT_WIRE_MODEL;
 
   return (
     <WireEditor

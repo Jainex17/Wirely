@@ -26,9 +26,12 @@ export interface PageTitle extends PageIdentity {
   title: string;
 }
 
+export type PageDeviceType = "desktop" | "mobile";
+
 export interface PageRecord extends PageTitle {
   iframeUrl?: string;
   iframeHtml?: string;
+  deviceType?: PageDeviceType;
   sections: string[];
 }
 

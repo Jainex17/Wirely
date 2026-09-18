@@ -93,4 +93,15 @@ HTML:
       "Signal Grid now feels clearer and more complete, with stronger hierarchy and a more polished page structure.",
     );
   });
+
+  it("returns an empty summary for empty content instead of a fabricated sentence", () => {
+    expect(summarizeAssistantDetails({ content: "" })).toBe("");
+  });
+
+  it("returns an empty summary for html-only content without details", () => {
+    const summary = summarizeAssistantDetails({
+      content: "<!doctype html><html><body><main>Page</main></body></html>",
+    });
+    expect(summary).toBe("");
+  });
 });

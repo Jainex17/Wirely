@@ -1,6 +1,23 @@
 import { describe, expect, it } from "bun:test";
-import { buildFallbackDesignPlan } from "@/lib/wireFallbackPlan";
+import { buildFallbackDesignPlan, resolveDeviceIntent } from "@/lib/wireFallbackPlan";
 import { WIRE_STYLE_PRESETS } from "@/lib/wirePrompt";
+
+describe("resolveDeviceIntent", () => {
+  it("detects mobile intent from common device words", () => {
+    expect(resolveDeviceIntent("Build a mobile app onboarding")).toBe("mobile");
+    expect(resolveDeviceIntent("Design a phone dashboard")).toBe("mobile");
+    expect(resolveDeviceIntent("Make all screens smartphone friendly")).toBe("mobile");
+    expect(resolveDeviceIntent("iOS and Android screens")).toBe("mobile");
+    expect(resolveDeviceIntent("A tablet layout")).toBe("mobile");
+  });
+
+  it("defaults to desktop for ordinary prompts", () => {
+    expect(resolveDeviceIntent("Build a landing page for a coffee brand")).toBe(
+      "desktop",
+    );
+    expect(resolveDeviceIntent("")).toBe("desktop");
+  });
+});
 
 describe("fallback design plan intent inference", () => {
   it("prefers explicit landing page intent over dashboard keywords in product names", () => {

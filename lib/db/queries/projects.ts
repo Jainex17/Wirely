@@ -8,6 +8,7 @@ import {
   type ConversationRole,
   type ProjectStatus,
 } from "@/lib/db/schema";
+import type { PageDeviceType } from "@/lib/types";
 import { getLatestGenerationRunWithOutputsForProject } from "@/lib/db/queries/generationRuns";
 
 export const createProject = async (userId: string, title: string) => {
@@ -182,10 +183,12 @@ export const createProjectPageForUser = async ({
   projectId,
   userId,
   title,
+  deviceType,
 }: {
   projectId: string;
   userId: string;
   title: string;
+  deviceType?: PageDeviceType;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
@@ -205,6 +208,7 @@ export const createProjectPageForUser = async ({
       title,
       sortOrder: (lastPage?.sortOrder ?? -1) + 1,
       htmlContent: "",
+      ...(deviceType ? { deviceType } : {}),
     })
     .returning();
 
@@ -219,12 +223,14 @@ export const updateProjectPageForUser = async ({
   userId,
   title,
   htmlContent,
+  deviceType,
 }: {
   projectId: string;
   pageId: string;
   userId: string;
   title?: string;
   htmlContent?: string;
+  deviceType?: PageDeviceType;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
@@ -235,6 +241,7 @@ export const updateProjectPageForUser = async ({
     .set({
       ...(title !== undefined ? { title } : {}),
       ...(htmlContent !== undefined ? { htmlContent } : {}),
+      ...(deviceType !== undefined ? { deviceType } : {}),
       updatedAt: new Date(),
     })
     .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
