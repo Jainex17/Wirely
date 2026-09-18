@@ -1,16 +1,19 @@
-export const DEFAULT_WIRE_MODEL = "gemini-2.5-flash" as const;
+export const DEFAULT_WIRE_MODEL = "gemini-3.8-flash" as const;
 
 export const GEMINI_FREE_MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
 ] as const;
 
-export const GEMINI_PAID_MODELS = ["gemini-2.5-pro"] as const;
+export const GEMINI_PAID_MODELS = ["gemini-3.1-pro-preview"] as const;
 export const OPENROUTER_GEMINI_FREE_MODELS = [
-  "google/gemini-2.5-flash-lite",
-  "google/gemini-2.5-flash",
+  "google/gemini-3.5-flash-lite",
+  "google/gemini-3.8-flash",
 ] as const;
-export const OPENROUTER_GEMINI_PAID_MODELS = ["google/gemini-2.5-pro"] as const;
+export const OPENROUTER_GEMINI_PAID_MODELS = [
+  "google/gemini-3.1-pro-preview",
+] as const;
 export const OPENROUTER_FREE_MODELS = [
   "z-ai/glm-5.2:free",
   "openrouter/free",
@@ -42,23 +45,34 @@ export type WireModelOption = {
 
 export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
   {
-    id: "gemini-2.5-flash-lite",
-    label: "Gemini 2.5 Flash Lite",
-    description: "Fast, lightweight Gemini model for quick and low-cost tasks.",
+    id: "gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash Lite",
+    description:
+      "Cost-efficient Gemini model for fast, high-volume generation tasks.",
     tier: "free",
     provider: "google",
   },
   {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
-    description: "Balanced speed and quality for most day-to-day generation.",
+    id: "gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
+    description:
+      "Latest flagship Flash model with strong reasoning, free tier available.",
     tier: "free",
     provider: "google",
   },
   {
-    id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro",
-    description: "Highest-quality Gemini option, billed by your Google plan.",
+    id: "gemini-3.7-flash",
+    label: "Gemini 3.7 Flash",
+    description:
+      "High-speed Flash model for everyday coding and agentic tasks.",
+    tier: "free",
+    provider: "google",
+  },
+  {
+    id: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    description:
+      "Most advanced Gemini Pro model, billed by your Google plan.",
     tier: "paid",
     provider: "google",
   },
@@ -111,26 +125,26 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     provider: "openrouter",
   },
   {
-    id: "google/gemini-2.5-flash-lite",
-    label: "Gemini 2.5 Flash Lite (OpenRouter)",
+    id: "google/gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash Lite (OpenRouter)",
     description:
-      "Fast Gemini model via OpenRouter, billed to your OpenRouter credits.",
+      "Cost-efficient Gemini model via OpenRouter, billed to your OpenRouter credits.",
     tier: "paid",
     provider: "openrouter",
   },
   {
-    id: "google/gemini-2.5-flash",
-    label: "Gemini 2.5 Flash (OpenRouter)",
+    id: "google/gemini-3.8-flash",
+    label: "Gemini 3.8 Flash (OpenRouter)",
     description:
-      "Balanced Gemini model via OpenRouter, billed to your OpenRouter credits.",
+      "Latest flagship Flash model via OpenRouter, billed to your OpenRouter credits.",
     tier: "paid",
     provider: "openrouter",
   },
   {
-    id: "google/gemini-2.5-pro",
-    label: "Gemini 2.5 Pro (OpenRouter)",
+    id: "google/gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro (OpenRouter)",
     description:
-      "Highest-quality Gemini option via OpenRouter using your OpenRouter account.",
+      "Most advanced Gemini Pro model via OpenRouter using your OpenRouter account.",
     tier: "paid",
     provider: "openrouter",
   },

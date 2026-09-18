@@ -6,7 +6,7 @@ import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 
-const TITLE_MODEL_NAME = "gemini-2.5-flash-lite";
+const TITLE_MODEL_NAME = "gemini-3.5-flash-lite";
 
 type CreateProjectRequestBody = {
   title?: string | null;

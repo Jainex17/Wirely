@@ -9,14 +9,14 @@ describe("wire conversation model usage", () => {
   it("detects when planner or critic differ from the selected model", () => {
     expect(
       getWireConversationModelUsage({
-        selectedModelName: "gemini-2.5-pro",
-        plannerModelName: "gemini-2.5-flash-lite",
-        criticModelName: "gemini-2.5-flash-lite",
+        selectedModelName: "gemini-3.1-pro-preview",
+        plannerModelName: "gemini-3.5-flash-lite",
+        criticModelName: "gemini-3.5-flash-lite",
       }),
     ).toEqual({
-      selectedModelName: "gemini-2.5-pro",
-      plannerModelName: "gemini-2.5-flash-lite",
-      criticModelName: "gemini-2.5-flash-lite",
+      selectedModelName: "gemini-3.1-pro-preview",
+      plannerModelName: "gemini-3.5-flash-lite",
+      criticModelName: "gemini-3.5-flash-lite",
       hasSpecializedStages: true,
     });
   });
@@ -24,14 +24,14 @@ describe("wire conversation model usage", () => {
   it("treats identical stage models as a single-model run", () => {
     expect(
       getWireConversationModelUsage({
-        selectedModelName: "gemini-2.5-flash",
-        plannerModelName: "gemini-2.5-flash",
-        criticModelName: "gemini-2.5-flash",
+        selectedModelName: "gemini-3.8-flash",
+        plannerModelName: "gemini-3.8-flash",
+        criticModelName: "gemini-3.8-flash",
       }),
     ).toEqual({
-      selectedModelName: "gemini-2.5-flash",
-      plannerModelName: "gemini-2.5-flash",
-      criticModelName: "gemini-2.5-flash",
+      selectedModelName: "gemini-3.8-flash",
+      plannerModelName: "gemini-3.8-flash",
+      criticModelName: "gemini-3.8-flash",
       hasSpecializedStages: false,
     });
   });

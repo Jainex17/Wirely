@@ -10,21 +10,21 @@ describe("wireModels settings helpers", () => {
   it("drops unknown models, removes duplicates, and sorts free-first", () => {
     const normalized = normalizeEnabledWireModels([
       "minimax-m2.5-free",
-      "gemini-2.5-pro",
+      "gemini-3.1-pro-preview",
       "glm-4.5-flash",
-      "gemini-2.5-flash-lite",
+      "gemini-3.5-flash-lite",
       "glm-4.7-flash",
-      "gemini-2.5-flash-lite",
+      "gemini-3.5-flash-lite",
       "gpt-5-nano",
       "trinity-large-preview-free",
       "unknown-model",
-      "gemini-2.5-flash",
+      "gemini-3.8-flash",
     ]);
 
     expect(normalized).toEqual([
-      "gemini-2.5-flash-lite",
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
+      "gemini-3.5-flash-lite",
+      "gemini-3.8-flash",
+      "gemini-3.1-pro-preview",
       "glm-4.7-flash",
       "glm-4.5-flash",
     ]);
@@ -45,11 +45,11 @@ describe("wireModels settings helpers", () => {
   });
 
   it("chooses the fastest model in the same provider family for planner and critic stages", () => {
-    expect(resolveFastWireModelForStage("gemini-2.5-pro")).toBe(
-      "gemini-2.5-flash-lite",
+    expect(resolveFastWireModelForStage("gemini-3.1-pro-preview")).toBe(
+      "gemini-3.5-flash-lite",
     );
-    expect(resolveFastWireModelForStage("google/gemini-2.5-pro")).toBe(
-      "google/gemini-2.5-flash-lite",
+    expect(resolveFastWireModelForStage("google/gemini-3.1-pro-preview")).toBe(
+      "google/gemini-3.5-flash-lite",
     );
     expect(resolveFastWireModelForStage("glm-4.5-flash")).toBe("glm-4.7-flash");
   });
