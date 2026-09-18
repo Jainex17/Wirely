@@ -669,33 +669,33 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 ))}
               </div>
             ) : null}
-            <div className="text-center text-sm text-muted-foreground mt-2">
-              {hasNoEnabledModels ? (
-                <>
-                  No models enabled. Update your settings in{" "}
-                  <Link
-                    href="/setting/model"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    Models
-                  </Link>
-                  .
-                </>
-              ) : hasNoRunnableModels ? (
-                <>
-                  Enabled models require provider API keys. Configure them in{" "}
-                  <Link
-                    href="/setting/provider"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    Providers
-                  </Link>{" "}
-                  or choose a model that does not require one.
-                </>
-              ) : (
-                "Select a model and start building"
-              )}
-            </div>
+            {hasNoEnabledModels || hasNoRunnableModels ? (
+              <div className="text-center text-sm text-muted-foreground mt-2">
+                {hasNoEnabledModels ? (
+                  <>
+                    No models enabled. Update your settings in{" "}
+                    <Link
+                      href="/setting/model"
+                      className="text-primary underline underline-offset-2"
+                    >
+                      Models
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Enabled models require provider API keys. Configure them in{" "}
+                    <Link
+                      href="/setting/provider"
+                      className="text-primary underline underline-offset-2"
+                    >
+                      Providers
+                    </Link>{" "}
+                    or choose a model that does not require one.
+                  </>
+                )}
+              </div>
+            ) : null}
             {state.errorMessage ? (
               <div className="mt-3 text-center text-sm text-destructive">
                 {state.errorMessage}
