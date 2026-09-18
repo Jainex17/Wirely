@@ -2,7 +2,6 @@ import React from "react";
 import { createPortal } from "react-dom";
 import {
   Check,
-  Code2,
   Copy,
   Download,
   Eye,
@@ -149,7 +148,8 @@ export default React.memo(function PageRenderer({
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
-  const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
+  // Code dialog removed from the page toolbar for now.
+  // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
   const [iframeHeight, setIframeHeight] = React.useState(
     Math.max(currentDevice.height, frameHeight),
@@ -351,20 +351,7 @@ export default React.memo(function PageRenderer({
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <button
-        type="button"
-        className={iconButtonClass}
-        aria-label={`Edit ${page.title}`}
-        title="Edit"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onFocusPage?.(page.id);
-          onEditPage?.(page.id);
-        }}
-      >
-        <PencilLine className="h-3.5 w-3.5" />
-      </button>
+      {/* Edit and Code actions hidden for now */}
       <button
         type="button"
         className={iconButtonClass}
@@ -378,20 +365,6 @@ export default React.memo(function PageRenderer({
         }}
       >
         <Eye className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className={iconButtonClass}
-        aria-label={`View code for ${page.title}`}
-        title="Code"
-        disabled={!hasPageContent}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          setIsCodeDialogOpen(true);
-        }}
-      >
-        <Code2 className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
@@ -921,38 +894,6 @@ export default React.memo(function PageRenderer({
               referrerPolicy="no-referrer"
             />
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isCodeDialogOpen}
-        onOpenChange={(open) => {
-          setIsCodeDialogOpen(open);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{page.title} — HTML</DialogTitle>
-            <DialogDescription>
-              The sanitized HTML currently rendered for this page.
-            </DialogDescription>
-          </DialogHeader>
-          <pre className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted/40 p-3 text-[11px] leading-4 text-foreground/90">
-            <code>{page.iframeHtml ?? ""}</code>
-          </pre>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCodeDialogOpen(false)}>
-              Close
-            </Button>
-            <Button
-              onClick={() => {
-                void copyToClipboard("Page HTML", page.iframeHtml ?? "");
-              }}
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              Copy HTML
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
