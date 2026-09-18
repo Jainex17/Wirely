@@ -115,6 +115,13 @@ interface ContextMenuAction {
   disabled?: boolean;
 }
 
+const MOBILE_PREVIEW_SIZES = [
+  { label: "S · 320", name: "Small (iPhone SE)", width: 320 },
+  { label: "M · 375", name: "Standard (iPhone 15)", width: 375 },
+  { label: "L · 414", name: "Large (Plus)", width: 414 },
+  { label: "XL · 430", name: "XL (Pro Max)", width: 430 },
+] as const;
+
 export default React.memo(function PageRenderer({
   page,
   onRenamePage,
@@ -148,6 +155,10 @@ export default React.memo(function PageRenderer({
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [previewMobileWidth, setPreviewMobileWidth] = React.useState<
+    number | null
+  >(null);
+  const previewWidth = previewMobileWidth ?? currentDevice.width;
   // Code dialog removed from the page toolbar for now.
   // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
@@ -870,26 +881,56 @@ export default React.memo(function PageRenderer({
         open={isPreviewOpen}
         onOpenChange={(open) => {
           setIsPreviewOpen(open);
+          if (!open) {
+            setPreviewMobileWidth(null);
+          }
         }}
       >
         <DialogContent
           className="max-w-[calc(100vw-4rem)] p-0"
-          style={{ maxWidth: `${Math.min(currentDevice.width + 32, 960)}px` }}
+          style={{ maxWidth: `${Math.min(previewWidth + 32, 1400)}px` }}
         >
           <DialogHeader className="px-6 pb-2 pt-4">
             <DialogTitle>{page.title}</DialogTitle>
             <DialogDescription>
               Live preview at {currentDevice.label.toLowerCase()} width (
-              {currentDevice.width}px). Interactions are enabled inside the
-              preview.
+              {previewWidth}px). Interactions are enabled inside the preview.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[calc(100vh-12rem)] overflow-auto px-6 pb-6">
+          {page.deviceType === "mobile" ? (
+            <div className="flex flex-wrap items-center gap-1.5 px-6 pb-1">
+              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                Mobile size
+              </span>
+              {MOBILE_PREVIEW_SIZES.map((size) => {
+                const isActive = previewWidth === size.width;
+                return (
+                  <button
+                    key={size.width}
+                    type="button"
+                    title={size.name}
+                    onClick={() => setPreviewMobileWidth(size.width)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                      isActive
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    {size.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="max-h-[calc(100vh-11rem)] overflow-auto px-6 pb-6">
             <iframe
               title={`${page.title} preview`}
               srcDoc={previewSrcDoc}
-              className="w-full rounded-md border border-border bg-background"
-              style={{ height: `${Math.max(currentDevice.height, 480)}px` }}
+              className="mx-auto block rounded-md border border-border bg-background"
+              style={{
+                width: `${previewWidth}px`,
+                height: `${Math.max(currentDevice.height, 640)}px`,
+              }}
               sandbox="allow-scripts"
               referrerPolicy="no-referrer"
             />
