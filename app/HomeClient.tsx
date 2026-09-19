@@ -3,6 +3,7 @@
 import { useReducer, type FormEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { inferGenerationMode } from "@/lib/inferGenerationMode";
 import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
@@ -56,7 +57,6 @@ export interface HomeClientInitialData {
     updatedAt: string | Date;
   }>;
   initialPrompt: string;
-  initialMode: HomeGenerationMode;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
@@ -131,7 +131,8 @@ interface HomeState {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
-  selectedGenerationMode: HomeGenerationMode;
+  // null means Wirely reads the brief and decides.
+  modeOverride: HomeGenerationMode | null;
   selectedPageCount: 1 | 2 | 3;
   isLoggingOut: boolean;
   projectToDelete: string | null;
@@ -172,8 +173,8 @@ const createHomeInitialState = (
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
   hasZaiApiKey: initialData.hasZaiApiKey,
-  selectedGenerationMode: initialData.initialMode,
-  selectedPageCount: initialData.initialMode === "single_page" ? 1 : 2,
+  modeOverride: null,
+  selectedPageCount: 2,
   isLoggingOut: false,
   projectToDelete: null,
 });
@@ -295,8 +296,13 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
+  const effectiveGenerationMode =
+    state.modeOverride ?? inferGenerationMode(state.prompt);
   const effectiveGenerationCount =
-    state.selectedGenerationMode === "single_page" ? 1 : state.selectedPageCount;
+    effectiveGenerationMode === "single_page" ? 1 : state.selectedPageCount;
+  const effectiveModeLabel =
+    GENERATION_MODE_OPTIONS.find((option) => option.value === effectiveGenerationMode)
+      ?.label ?? "Single page";
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.isSubmitting) return;
@@ -372,7 +378,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       sessionStorage.setItem(`wireModel:${projectId}`, activeSelectedModel);
       sessionStorage.setItem(
         `wireGenerationMode:${projectId}`,
-        state.selectedGenerationMode,
+        effectiveGenerationMode,
       );
       sessionStorage.setItem(
         `wirePageCount:${projectId}`,
@@ -432,59 +438,32 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
   return (
     <div className="min-h-[100dvh] bg-background">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-5xl px-4 pt-3 sm:px-6">
         <AppHeader
           user={state.user}
-          title="Wirely"
           onLogout={handleLogout}
           isLoggingOut={state.isLoggingOut}
         />
       </div>
 
-      <main className="mx-auto w-full max-w-3xl px-4 pb-28 sm:px-6">
-        <section className="pt-14 sm:pt-16">
-          <h1 className="font-display text-[clamp(1.6rem,3vw,2.15rem)] font-semibold leading-[1.1] tracking-[-0.035em] text-foreground">
+      <main>
+        <section className="relative isolate -mt-[4.25rem] flex min-h-[100dvh] items-center overflow-hidden pt-[4.25rem]">
+          <div className="ribbon-field pointer-events-none -z-10">
+            <div className="ribbon ribbon-core rings-enter" />
+          </div>
+          <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
+          <div className="hero-foot pointer-events-none absolute inset-x-0 bottom-0 h-16 -z-10" />
+
+          <div className="mx-auto w-full max-w-3xl px-4 py-14 text-center sm:px-6">
+          <h1 className="enter enter-1 font-display text-[clamp(1.9rem,4vw,2.9rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-foreground">
             What are we building{firstName ? `, ${firstName}` : ""}?
           </h1>
 
-          <form onSubmit={handleSubmit} className="mt-10">
-            <div className="composer pane overflow-hidden rounded-2xl border border-border bg-card transition-[box-shadow,border-color] duration-300">
-              <div className="flex gap-1 overflow-x-auto border-b border-border p-1.5">
-                {GENERATION_MODE_OPTIONS.map((option) => {
-                  const active = state.selectedGenerationMode === option.value;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={active}
-                      title={option.hint}
-                      onClick={() =>
-                        dispatch({
-                          type: "patch",
-                          payload: {
-                            selectedGenerationMode: option.value,
-                            selectedPageCount:
-                              option.value === "single_page"
-                                ? 1
-                                : state.selectedPageCount === 1
-                                  ? 2
-                                  : state.selectedPageCount,
-                          },
-                        })
-                      }
-                      className={`flex shrink-0 items-center rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                        active
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-
+          <form onSubmit={handleSubmit} className="enter enter-2 mt-10 text-left">
+            <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
+              <span className="beam" aria-hidden>
+                <span className="beam-spin" />
+              </span>
               <label htmlFor="home-prompt" className="sr-only">
                 Describe what you want to build
               </label>
@@ -572,7 +551,57 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {state.selectedGenerationMode !== "single_page" ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {effectiveModeLabel}
+                        {state.modeOverride === null ? (
+                          <span className="font-mono text-[10px] text-muted-foreground/70">
+                            auto
+                          </span>
+                        ) : null}
+                        <ChevronDown size={14} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-72">
+                      <DropdownMenuItem
+                        onClick={() =>
+                          dispatch({ type: "patch", payload: { modeOverride: null } })
+                        }
+                        className="flex flex-col items-start gap-0.5"
+                      >
+                        <span className="font-medium">Decide for me</span>
+                        <span className="text-xs text-muted-foreground">
+                          Read the brief and pick one
+                        </span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {GENERATION_MODE_OPTIONS.map((option) => (
+                        <DropdownMenuItem
+                          key={option.value}
+                          onClick={() =>
+                            dispatch({
+                              type: "patch",
+                              payload: { modeOverride: option.value },
+                            })
+                          }
+                          className="flex flex-col items-start gap-0.5"
+                        >
+                          <span className="font-medium">{option.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {option.hint}
+                          </span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {effectiveGenerationMode !== "single_page" ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -624,13 +653,13 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           </form>
 
           {state.prompt.trim().length === 0 ? (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
               {EXAMPLE_PROMPT_CHIPS.map((chip) => (
                 <button
                   key={chip}
                   type="button"
                   onClick={() => dispatch({ type: "patch", payload: { prompt: chip } })}
-                  className="rounded-full border border-border px-3.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  className="rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur transition-colors hover:border-foreground/25 hover:text-foreground"
                 >
                   {chip}
                 </button>
@@ -639,7 +668,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           ) : null}
 
           {hasNoEnabledModels || hasNoRunnableModels ? (
-            <p className="mt-5 text-sm text-muted-foreground">
+            <p className="mt-6 text-sm text-muted-foreground">
               {hasNoEnabledModels ? (
                 <>
                   No models are switched on. Turn one on in{" "}
@@ -667,11 +696,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           ) : null}
 
           {state.errorMessage ? (
-            <p className="mt-3 text-sm text-destructive">{state.errorMessage}</p>
+            <p className="mt-4 text-sm text-destructive">{state.errorMessage}</p>
           ) : null}
+          </div>
         </section>
 
-        <section className="mt-24">
+        <section className="mx-auto w-full max-w-5xl px-4 pb-28 sm:px-6">
           <div className="flex items-baseline justify-between gap-4">
             <h2 className="text-sm font-medium text-foreground">Pages you have made</h2>
             <span className="font-mono text-[11px] text-muted-foreground">

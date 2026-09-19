@@ -3,8 +3,7 @@ import { getServerSessionUser } from "@/lib/auth/session";
 import { listProjectsForUser } from "@/lib/db/queries/projects";
 import { getUserAiSettings } from "@/lib/db/queries/users";
 import { DEFAULT_ENABLED_WIRE_MODELS } from "@/lib/wireModels";
-import { inferGenerationMode } from "@/lib/inferGenerationMode";
-import HomeClient, { type HomeGenerationMode } from "./HomeClient";
+import HomeClient from "./HomeClient";
 import Landing from "./Landing";
 
 export const metadata: Metadata = {
@@ -14,24 +13,12 @@ export const metadata: Metadata = {
 
 const MAX_DRAFT_PROMPT_LENGTH = 500;
 
-const GENERATION_MODES: HomeGenerationMode[] = [
-  "single_page",
-  "concept_variants",
-  "information_architecture",
-];
-
-const toGenerationMode = (
-  value: string | undefined,
-  draftPrompt: string,
-): HomeGenerationMode =>
-  GENERATION_MODES.find((mode) => mode === value) ?? inferGenerationMode(draftPrompt);
-
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ prompt?: string; mode?: string }>;
+  searchParams: Promise<{ prompt?: string }>;
 }) {
-  const [{ prompt, mode }, sessionUser] = await Promise.all([
+  const [{ prompt }, sessionUser] = await Promise.all([
     searchParams,
     getServerSessionUser(),
   ]);
@@ -59,7 +46,6 @@ export default async function Home({
         },
         historyItems: projects,
         initialPrompt: draftPrompt,
-        initialMode: toGenerationMode(mode, draftPrompt),
         enabledModelIds:
           aiSettings?.enabledModelIds ?? [...DEFAULT_ENABLED_WIRE_MODELS],
         hasGoogleApiKey: aiSettings?.hasGoogleApiKey ?? true,

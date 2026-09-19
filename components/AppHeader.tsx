@@ -18,7 +18,7 @@ interface AppHeaderProps {
 
 export default function AppHeader({
   user,
-  title = "Wirely",
+  title,
   showBackButton = false,
   onLogout,
   isLoggingOut = false,
@@ -40,7 +40,7 @@ export default function AppHeader({
   };
 
   return (
-    <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
+    <header className="sticky top-0 z-40 h-14 px-5 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-2">
         {showBackButton ? (
           <Button
@@ -59,7 +59,14 @@ export default function AppHeader({
             Wirely
           </Link>
         )}
-        <h1 className="text-sm text-muted-foreground">{title}</h1>
+        {title ? (
+          <>
+            <span aria-hidden className="text-border">
+              /
+            </span>
+            <h1 className="text-sm text-muted-foreground">{title}</h1>
+          </>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         {user ? (
