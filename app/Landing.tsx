@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, KeyRound, MousePointerClick, Workflow } from "lucide-react";
+import { ArrowRight, MousePointerClick, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WIRE_MODEL_OPTIONS } from "@/lib/wireModels";
 
@@ -8,16 +8,19 @@ const MODES = [
     value: "single_page",
     name: "Single page",
     body: "One brief becomes one finished page, sectioned and styled.",
+    shape: "one",
   },
   {
     value: "concept_variants",
     name: "Concepts",
-    body: "Two or three directions for the same brief, generated side by side.",
+    body: "Two or three takes on the same brief, side by side, in one run.",
+    shape: "row",
   },
   {
     value: "information_architecture",
     name: "Website pages",
     body: "Home, About, Pricing and Contact as one linked set sharing a layout.",
+    shape: "grid",
   },
 ] as const;
 
@@ -34,48 +37,88 @@ const CHIPS = [
   "A multi-page site for a design studio",
 ] as const;
 
+// A mode is easier to show than to describe: one page, three of it side by side,
+// or a linked set. The blocks are page shapes, not a preview of real output.
+function ModeShape({ shape }: { shape: (typeof MODES)[number]["shape"] }) {
+  const cell = "rounded-sm border border-border bg-foreground/[0.06]";
+  const lead = "rounded-sm border border-primary/40 bg-primary/15";
+
+  return (
+    <div
+      className="aspect-[5/3] w-full rounded-lg border border-border bg-background/70 p-2"
+      aria-hidden
+    >
+      {shape === "one" && <div className={`h-full w-full ${lead}`} />}
+
+      {shape === "row" && (
+        <div className="flex h-full gap-1.5">
+          <div className={`flex-1 ${lead}`} />
+          <div className={`flex-1 ${cell}`} />
+          <div className={`flex-1 ${cell}`} />
+        </div>
+      )}
+
+      {shape === "grid" && (
+        <div className="grid h-full grid-cols-2 grid-rows-2 gap-1.5">
+          <div className={lead} />
+          <div className={cell} />
+          <div className={cell} />
+          <div className={cell} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Hero() {
   return (
-    <section className="relative isolate flex min-h-[calc(100dvh-4rem)] items-center overflow-hidden border-b border-border">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="ribbon ribbon-left rings-enter" />
-        <div className="ribbon ribbon-right rings-enter" />
+    <section className="relative isolate -mt-16 flex min-h-[100dvh] items-center overflow-hidden border-b border-border pt-16">
+      <div className="ribbon-field pointer-events-none -z-10">
+        <div className="ribbon ribbon-core rings-enter" />
       </div>
       <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
+      <div className="hero-foot pointer-events-none absolute inset-x-0 bottom-0 h-16 -z-10" />
 
       <div className="mx-auto w-full max-w-3xl px-6 py-16 text-center">
         <h1 className="enter enter-1 font-display text-[clamp(2.5rem,6vw,4.25rem)] font-semibold leading-[0.98] tracking-[-0.04em]">
-          Describe a screen.
+          Idea to design,
           <br />
-          Wirely writes the page.
+          in{" "}
+          <span className="lightspeed">
+            <span className="lightspeed-word">lightspeed.</span>
+            <span className="lightspeed-streaks" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </span>
+          </span>
         </h1>
         <p className="enter enter-2 mx-auto mt-6 max-w-[48ch] text-base text-muted-foreground sm:text-lg">
-          You get real HTML on a canvas. Ask for changes, link the pages, and click
-          through it.
+          Describe a screen and watch it build on the canvas. Explore a few looks at
+          once, refine the one you like, then click through it.
         </p>
 
-        <form action="/login" method="get" className="enter enter-3 mt-10 text-left">
+        <form action="/login" method="get" className="enter enter-3 mx-auto mt-9 max-w-2xl text-left">
           <input type="hidden" name="next" value="/" />
 
-          <div className="composer pane sweep overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
+          <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
+              <span className="beam" aria-hidden>
+                <span className="beam-spin" />
+              </span>
             <label htmlFor="landing-prompt" className="sr-only">
               Describe what you want to build
             </label>
             <textarea
               id="landing-prompt"
               name="prompt"
-              rows={5}
+              rows={3}
               maxLength={500}
               placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
-              className="w-full resize-none bg-transparent px-5 pt-5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none sm:text-lg"
+              className="w-full resize-none bg-transparent px-4 pt-4 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
             />
 
-            <div className="flex items-center justify-between gap-3 p-3">
-              <p className="pl-2 text-xs text-muted-foreground">
-                Wirely reads the brief and decides how many pages to make.
-              </p>
-
-              <Button type="submit" size="icon" aria-label="Generate this page">
+            <div className="flex items-center justify-end gap-3 px-3 pb-3">
+              <Button type="submit" size="icon-sm" aria-label="Generate this page">
                 <ArrowRight className="size-4" />
               </Button>
             </div>
@@ -103,7 +146,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-[100dvh] bg-background">
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40">
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="font-display text-lg font-semibold tracking-tight">
             Wirely
@@ -124,62 +167,57 @@ export default function Landing() {
 
         <section className="mx-auto max-w-6xl px-6 py-20 sm:py-24">
           <div className="grid gap-4 lg:grid-cols-6">
-            <article className="reveal pane relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border bg-card p-8 transition-transform duration-300 hover:-translate-y-1 lg:col-span-4 lg:min-h-[19rem]">
-              <div className="rings pointer-events-none absolute -right-40 -top-32 size-[30rem] opacity-70" />
-              <MousePointerClick className="size-5 text-primary" />
-              <div className="relative mt-16">
-                <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Edit one element, not the file
-                </h2>
-                <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  Point at a heading, a section or a button and describe the change.
-                  Wirely rewrites that node and leaves the rest of the page untouched.
-                </p>
-              </div>
-            </article>
-
-            <article className="reveal pane flex flex-col justify-between rounded-2xl border border-border bg-card p-8 transition-transform duration-300 hover:-translate-y-1 lg:col-span-2">
-              <KeyRound className="size-5 text-primary" />
-              <div className="mt-16">
-                <p className="font-display text-6xl font-semibold leading-none tracking-tighter">
-                  {modelCount}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  models across four providers, all running on your own key.
-                </p>
-              </div>
-            </article>
-
-            <article className="reveal pane flex flex-col justify-between rounded-2xl border border-border bg-card p-8 transition-transform duration-300 hover:-translate-y-1 lg:col-span-2">
-              <Workflow className="size-5 text-primary" />
-              <div className="mt-16">
-                <h3 className="font-display text-2xl font-semibold tracking-tight">
-                  Click through it
-                </h3>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  Generated pages link to each other, so a multi-page brief is walkable
-                  the moment it finishes.
-                </p>
-              </div>
-            </article>
-
             <article className="reveal pane rounded-2xl border border-border bg-card p-8 lg:col-span-4">
-              <h3 className="font-display text-2xl font-semibold tracking-tight">
-                One brief, three answers
-              </h3>
-              <dl className="mt-6">
+              <h2 className="font-display text-3xl font-semibold tracking-tight">
+                Explore several looks at once
+              </h2>
+              <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+                Say how much you want back. Wirely plans the run and fills the canvas
+                as each page lands.
+              </p>
+
+              <dl className="mt-7 grid gap-6 sm:grid-cols-3 sm:gap-5">
                 {MODES.map((mode) => (
-                  <div
-                    key={mode.value}
-                    className="grid gap-1 border-t border-border py-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-6"
-                  >
-                    <dt className="text-sm text-foreground">{mode.name}</dt>
-                    <dd className="text-sm leading-relaxed text-muted-foreground">
+                  <div key={mode.value}>
+                    <ModeShape shape={mode.shape} />
+                    <dt className="mt-3 text-sm text-foreground">{mode.name}</dt>
+                    <dd className="mt-1 text-sm leading-relaxed text-muted-foreground">
                       {mode.body}
                     </dd>
                   </div>
                 ))}
               </dl>
+            </article>
+
+            <article className="reveal pane flex flex-col justify-center rounded-2xl border border-border bg-card p-8 lg:col-span-2">
+              <p className="font-display text-7xl font-semibold leading-none tracking-tighter">
+                {modelCount}
+              </p>
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                models across four providers, every run on your own key.
+              </p>
+            </article>
+
+            <article className="reveal pane rounded-2xl border border-border bg-card p-8 lg:col-span-3">
+              <MousePointerClick className="size-5 text-primary" />
+              <h3 className="mt-6 font-display text-xl font-semibold tracking-tight">
+                Change one thing, not the whole page
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Point at a heading, a section or a button and say what should change.
+                Wirely rewrites that piece and leaves the rest of the page alone.
+              </p>
+            </article>
+
+            <article className="reveal pane rounded-2xl border border-border bg-card p-8 lg:col-span-3">
+              <Workflow className="size-5 text-primary" />
+              <h3 className="mt-6 font-display text-xl font-semibold tracking-tight">
+                Hand it off clickable
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Pages link to each other, so a multi-page brief is walkable the moment
+                it finishes. Share it and let people try it.
+              </p>
             </article>
           </div>
         </section>
@@ -193,8 +231,8 @@ export default function Landing() {
                 </h2>
                 <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
                   Wirely does not resell inference. Connect a provider once and every
-                  generation runs on your own quota. Keys are encrypted before they are
-                  stored and never sent back to the browser.
+                  run goes through your own quota, starting on a free tier. Keys are
+                  encrypted before they are stored and never sent back to the browser.
                 </p>
               </div>
 
@@ -219,8 +257,11 @@ export default function Landing() {
           <div className="rings-glow pointer-events-none absolute inset-0 -z-10" />
           <div className="mx-auto max-w-4xl px-6 py-28 text-center sm:py-36">
             <h2 className="font-display text-[clamp(2.25rem,5.5vw,4rem)] font-semibold leading-[1] tracking-[-0.04em]">
-              Bring a key. Ship a page.
+              Prototype. Polish. Ship.
             </h2>
+            <p className="mx-auto mt-6 max-w-[42ch] text-base text-muted-foreground">
+              Your ideas get real in Wirely. Bring a key and start with the next one.
+            </p>
             <Button asChild size="lg" className="mt-10">
               <Link href="/login">
                 Start building

@@ -193,9 +193,6 @@
   }
 }
 
-.rule-col {
-  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-}
 
 @keyframes enter-up {
   from {
@@ -217,20 +214,9 @@
   }
 }
 
-@keyframes edge-sweep {
-  0% {
-    transform: translateX(-110%);
-    opacity: 0;
-  }
-  18% {
-    opacity: 1;
-  }
-  82% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(110%);
-    opacity: 0;
+@keyframes beam-orbit {
+  to {
+    rotate: 360deg;
   }
 }
 
@@ -258,32 +244,65 @@
   animation: enter-fade 1600ms ease-out both;
 }
 
-.sweep {
-  position: relative;
+/* A light that travels the composer border. Masked to a 1px ring so only the
+   edge lights up, and rotated with transform so it stays on the compositor. */
+.beam {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  padding: 1px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
-.sweep::before {
-  content: "";
+.beam-spin {
   position: absolute;
-  inset-inline: 0;
-  top: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklab, var(--primary) 85%, transparent),
-    transparent
+  top: 50%;
+  left: 50%;
+  width: 170%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 244deg,
+    color-mix(in oklab, var(--primary) 92%, transparent) 312deg,
+    transparent 360deg
   );
-  animation: edge-sweep 1500ms cubic-bezier(0.4, 0, 0.2, 1) 420ms both;
-  pointer-events: none;
+  animation: beam-orbit 10s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .enter,
   .rings-enter,
-  .sweep::before {
+  .beam-spin {
     animation: none;
   }
+
+  .lightspeed-word {
+    animation: none;
+  }
+
+  .lightspeed-streaks {
+    display: none;
+  }
+}
+
+.hero-foot {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--background) 30%, transparent) 70%,
+    var(--background) 100%
+  );
 }
 
 .hero-dots {
@@ -296,38 +315,36 @@
   mask-image: radial-gradient(75% 60% at 50% 42%, #000 20%, transparent 100%);
 }
 
+.ribbon-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
 .ribbon {
   position: absolute;
   border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.85;
 }
 
-.ribbon-left {
-  left: -18%;
-  bottom: -14%;
-  width: 78%;
-  height: 46%;
-  transform: rotate(-17deg);
+/* A sphere edge hanging from above: bright at the top, curving down to a dark
+   arc across the lower hero. The centre sits just above the top edge so the
+   near-white core stays off screen and the nav keeps its contrast. */
+.ribbon-core {
+  left: 50%;
+  top: -205%;
+  width: 210%;
+  height: 275%;
+  transform: translateX(-50%);
+  opacity: 0.38;
+  filter: blur(30px);
   background: radial-gradient(
     closest-side,
-    color-mix(in oklab, var(--primary) 62%, transparent) 0%,
-    color-mix(in oklab, #4f6ea8 38%, transparent) 55%,
-    transparent 100%
-  );
-}
-
-.ribbon-right {
-  right: -22%;
-  top: 34%;
-  width: 66%;
-  height: 40%;
-  transform: rotate(14deg);
-  background: radial-gradient(
-    closest-side,
-    color-mix(in oklab, var(--primary) 48%, transparent) 0%,
-    color-mix(in oklab, #3f5d8f 34%, transparent) 58%,
-    transparent 100%
+    #dfe9f7 0%,
+    #9dbbdd 18%,
+    color-mix(in oklab, var(--primary) 80%, transparent) 38%,
+    color-mix(in oklab, #2b4c85 88%, transparent) 54%,
+    color-mix(in oklab, #16264a 70%, transparent) 72%,
+    transparent 92%
   );
 }
 
@@ -390,4 +407,90 @@
 
 .logout-dialog-action:hover {
   filter: brightness(0.95);
+}
+
+/* The one word that should look like it is moving. The glyphs draw in from the
+   left behind a soft-edged mask while light streaks cross them. The mask sits on
+   an inner span so it does not clip the streaks, which reach outside the word's
+   own box. One-shot on purpose: a looping hero sheen repaints for no reason. */
+.lightspeed {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+
+.lightspeed-word {
+  display: inline-block;
+  -webkit-mask-image: linear-gradient(90deg, #000 0 40%, transparent 56%);
+  mask-image: linear-gradient(90deg, #000 0 40%, transparent 56%);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: lightspeed-reveal 760ms cubic-bezier(0.16, 1, 0.3, 1) 380ms both;
+}
+
+@keyframes lightspeed-reveal {
+  from {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+.lightspeed-streaks {
+  position: absolute;
+  inset: -0.25em -1em;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lightspeed-streaks span {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 80%, white 20%),
+    transparent
+  );
+  animation: lightspeed-streak 760ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.lightspeed-streaks span:nth-child(1) {
+  top: 22%;
+  width: 28%;
+  animation-delay: 400ms;
+}
+
+.lightspeed-streaks span:nth-child(2) {
+  top: 54%;
+  width: 46%;
+  animation-delay: 480ms;
+}
+
+.lightspeed-streaks span:nth-child(3) {
+  top: 80%;
+  width: 22%;
+  animation-delay: 560ms;
+}
+
+@keyframes lightspeed-streak {
+  from {
+    opacity: 0;
+    transform: translateX(-140%) scaleX(0.35);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(260%) scaleX(1.7);
+  }
 }
