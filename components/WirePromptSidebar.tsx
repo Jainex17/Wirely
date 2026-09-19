@@ -1680,7 +1680,7 @@ export default function WirePromptSidebar({
             }`}
           >
             No models are enabled. Open{" "}
-            <Link href="/setting/model" className="underline underline-offset-2">
+            <Link href="/setting?tab=models" className="underline underline-offset-2">
               Models
             </Link>{" "}
             to enable at least one model.
@@ -1789,7 +1789,7 @@ export default function WirePromptSidebar({
                               <span
                                 className={`ml-auto mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
                                   model.tier === "paid"
-                                    ? "bg-amber-500/15 text-amber-600"
+                                    ? "bg-secondary text-secondary-foreground"
                                     : "bg-muted text-muted-foreground"
                                 }`}
                               >

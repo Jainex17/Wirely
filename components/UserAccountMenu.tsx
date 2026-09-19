@@ -41,7 +41,7 @@ export default function UserAccountMenu({
   logoutDescription,
   isLoggingOut = false,
   onLogout,
-  profileHref = "/setting/profile",
+  profileHref = "/setting?tab=account",
 }: UserAccountMenuProps) {
   const router = useRouter();
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);

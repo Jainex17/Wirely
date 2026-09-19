@@ -55,13 +55,11 @@ export default function AppHeader({
             <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : (
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-foreground flex items-center justify-center">
-              <span className="text-background text-sm font-bold">W</span>
-            </div>
+          <Link href="/" className="text-[15px] font-semibold tracking-tight">
+            Wirely
           </Link>
         )}
-        <h1 className="text-base font-semibold text-foreground">{title}</h1>
+        <h1 className="text-sm text-muted-foreground">{title}</h1>
       </div>
       <div className="flex items-center gap-2">
         {user ? (
