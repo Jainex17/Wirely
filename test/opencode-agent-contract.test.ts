@@ -717,6 +717,26 @@ describe("idle cost of a connected agent", () => {
     expect(/AGENT_VERSION = "([^"]+)"/.exec(agent)?.[1]).toBe(pkg.version);
   });
 
+  it("does not turn every poll into a database write", () => {
+    const auth = read("lib/auth/apiToken.ts");
+    const online = read("lib/db/queries/localAgent.ts");
+
+    const touch = Number(
+      /TOKEN_TOUCH_INTERVAL_MS = ([\d_]+)/.exec(auth)?.[1]?.replace(/_/g, ""),
+    );
+    const onlineWindow = Number(
+      /ONLINE_WINDOW_MS = ([\d_]+)/.exec(online)?.[1]?.replace(/_/g, ""),
+    );
+
+    // Refreshed often enough to stay "online", rarely enough that a fast poll
+    // is a read. A write on every poll keeps a suspending database awake.
+    expect(touch).toBeGreaterThan(ACTIVE_POLL_MS);
+    expect(touch).toBeLessThan(onlineWindow);
+    // A dormant poll still has to refresh it, or the agent reads as offline.
+    expect(touch).toBeGreaterThanOrEqual(DORMANT_POLL_MS);
+    expect(auth).toContain("if (Date.now() - lastUsed > TOKEN_TOUCH_INTERVAL_MS)");
+  });
+
   it("does not let a hung server stall the loop", () => {
     const agent = read("agent/wirely-agent.ts");
     expect(agent).toContain("AbortSignal.timeout(CLAIM_TIMEOUT_MS)");

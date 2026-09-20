@@ -92,6 +92,14 @@ export const revokeApiToken = async (userId: string, tokenId: string): Promise<b
  * Resolves a bearer token to its owner, or null when the token is unknown,
  * revoked, or malformed.
  */
+/**
+ * How stale `lastUsedAt` may get before a request refreshes it.
+ *
+ * Must stay well under the window `isLocalAgentOnline` treats as connected, and
+ * well over the agent's fastest poll, so most polls cost no write at all.
+ */
+const TOKEN_TOUCH_INTERVAL_MS = 30_000;
+
 export const getUserForApiToken = async (token: string): Promise<SessionUser | null> => {
   if (!token.startsWith(API_TOKEN_PREFIX)) return null;
 
@@ -102,6 +110,7 @@ export const getUserForApiToken = async (token: string): Promise<SessionUser | n
     .select({
       tokenId: apiTokens.id,
       tokenHash: apiTokens.tokenHash,
+      lastUsedAt: apiTokens.lastUsedAt,
       id: users.id,
       authSub: users.authSub,
       email: users.email,
@@ -115,12 +124,19 @@ export const getUserForApiToken = async (token: string): Promise<SessionUser | n
 
   if (!row || !hashesMatch(row.tokenHash, tokenHash)) return null;
 
-  // Best effort: a failed touch must not fail the request it is annotating.
-  void db
-    .update(apiTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiTokens.id, row.tokenId))
-    .catch(() => undefined);
+  // The agent asks for work every couple of seconds, and this column only
+  // feeds a liveness window measured in tens of seconds. Writing on every poll
+  // turned a read-only request into a write, which on a database that suspends
+  // when idle is the difference between sleeping and running all night.
+  const lastUsed = row.lastUsedAt?.getTime() ?? 0;
+  if (Date.now() - lastUsed > TOKEN_TOUCH_INTERVAL_MS) {
+    // Best effort: a failed touch must not fail the request it is annotating.
+    void db
+      .update(apiTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiTokens.id, row.tokenId))
+      .catch(() => undefined);
+  }
 
   return {
     id: row.id,
