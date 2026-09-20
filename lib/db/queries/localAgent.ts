@@ -8,9 +8,11 @@ import { logger } from "@/lib/logger";
 /**
  * How recently a token must have been used for its agent to count as online.
  *
- * The agent long-polls `/api/agent/jobs/next` on a ~25s window and each poll
- * touches `lastUsedAt`, so a live agent refreshes this well inside the window.
- * Deriving liveness this way avoids a heartbeat table and a heartbeat endpoint.
+ * The agent asks `/api/agent/jobs/next` for work every 2s while a session is
+ * active and every 8s once idle, and each poll touches `lastUsedAt`, so a live
+ * agent refreshes this well inside the window. Deriving liveness this way avoids
+ * a heartbeat table and a heartbeat endpoint. Keep this comfortably above the
+ * agent's idle interval or a connected agent will flicker offline.
  */
 const ONLINE_WINDOW_MS = 90_000;
 

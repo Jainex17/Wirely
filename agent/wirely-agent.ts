@@ -24,7 +24,14 @@ import { dirname, join } from "node:path";
 
 import { OpencodeError, probeOpencode, runOpencode, type OpencodeProbe } from "../lib/opencode/run";
 import { resolveOpencodeOutcome } from "../lib/opencode/events";
+import { resolvePollDelayMs } from "../lib/opencode/pollSchedule";
 import { INVOCATION } from "./invocation";
+
+/**
+ * Sent on every claim so Wirely can tell a paced agent from one that expects
+ * the server to hold the request open. Keep in step with agent/package.json.
+ */
+const AGENT_VERSION = "0.1.0";
 
 const CONFIG_PATH = join(homedir(), ".config", "wirely", "agent.json");
 const DEFAULT_BASE_URL = "https://wirely.app";
@@ -32,6 +39,9 @@ const DEFAULT_BASE_URL = "https://wirely.app";
 /** Backoff bounds for a Wirely that is unreachable or erroring. */
 const MIN_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 60_000;
+
+/** A claim should never outlast the poll itself; a hung server must not stall the loop. */
+const CLAIM_TIMEOUT_MS = 15_000;
 
 interface AgentConfig {
   token?: string;
@@ -84,7 +94,11 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 const claimJob = async (baseUrl: string, token: string): Promise<AgentJob | null> => {
   const response = await fetch(`${baseUrl}/api/agent/jobs/next`, {
-    headers: { authorization: `Bearer ${token}` },
+    headers: {
+      authorization: `Bearer ${token}`,
+      "x-wirely-agent-version": AGENT_VERSION,
+    },
+    signal: AbortSignal.timeout(CLAIM_TIMEOUT_MS),
   });
 
   if (response.status === 204) return null;
@@ -230,13 +244,21 @@ const commandRun = async () => {
     process.exit(0);
   });
 
+  let lastJobAt = Date.now();
+
   while (running) {
     try {
       const job = await claimJob(baseUrl, token);
       backoff = MIN_BACKOFF_MS;
+
       if (job) {
         await runJob(probe, job, baseUrl, token);
+        lastJobAt = Date.now();
+        // A run often queues siblings, so look again before sleeping.
+        continue;
       }
+
+      await sleep(resolvePollDelayMs(Date.now() - lastJobAt));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`${message} (retrying in ${Math.round(backoff / 1000)}s)`);

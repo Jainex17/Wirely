@@ -6,21 +6,32 @@ import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
-
-/** How long the request parks waiting for work before returning empty. */
-const LONG_POLL_MS = 25_000;
-const POLL_INTERVAL_MS = 1_500;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export const maxDuration = 10;
 
 /**
- * Long-poll endpoint the local agent calls to claim work.
+ * Where the local agent claims work.
  *
  * The agent dials out over ordinary HTTPS, so nothing needs to reach into the
- * user's machine: no relay, no tunnel, no inbound port. Returns 204 when the
- * poll window closes with nothing queued, and the agent simply calls again.
+ * user's machine: no relay, no tunnel, no inbound port.
+ *
+ * Deliberately answers immediately rather than holding the request open. A
+ * serverless invocation is billed for wall-clock time, so parking here for 25s
+ * meant one connected agent burned 86,400 seconds of function time and ~57,600
+ * database queries a day while completely idle. That is enough to exhaust a
+ * hobby plan on a single user, which would make Wirely cost real money to host.
+ * The agent instead paces its own polling, trading a couple of seconds of
+ * pickup latency for a roughly sixtyfold drop in idle cost.
  */
+
+/**
+ * Agents before the pacing change had no sleep of their own: they leaned on the
+ * server holding the request. Answering those instantly would spin them into a
+ * hot loop, so an unversioned caller gets a pause that stands in for the sleep
+ * it does not have. Slower than a modern agent, but bounded.
+ */
+const LEGACY_AGENT_PAUSE_MS = 2_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function GET(request: Request) {
   try {
     const user = await authenticateAgentRequest(request);
@@ -28,15 +39,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const deadline = Date.now() + LONG_POLL_MS;
-    do {
-      const job = await claimNextAgentJob(user.id);
-      if (job) {
-        return NextResponse.json({ job }, { status: 200 });
-      }
-      if (request.signal.aborted) break;
-      await sleep(POLL_INTERVAL_MS);
-    } while (Date.now() < deadline);
+    const job = await claimNextAgentJob(user.id);
+    if (job) {
+      return NextResponse.json({ job }, { status: 200 });
+    }
+
+    if (!request.headers.get("x-wirely-agent-version")) {
+      await sleep(LEGACY_AGENT_PAUSE_MS);
+    }
 
     return new Response(null, { status: 204 });
   } catch (error) {

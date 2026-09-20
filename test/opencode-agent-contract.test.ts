@@ -15,6 +15,14 @@ import { parseBatchWireOutput } from "@/lib/wireOutput";
 import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
 import { DEFAULT_OPENCODE_MODEL, isFreeOpencodeModel } from "@/lib/opencode/models";
 import { fallbackTitleFromPrompt } from "@/app/api/projects/route";
+import {
+  ACTIVE_POLL_MS,
+  ACTIVE_WINDOW_MS,
+  DORMANT_POLL_MS,
+  IDLE_POLL_MS,
+  IDLE_WINDOW_MS,
+  resolvePollDelayMs,
+} from "@/lib/opencode/pollSchedule";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -639,5 +647,78 @@ describe("project titles without a title model", () => {
     // A prompt that is only stopwords still has to produce something.
     expect(fallbackTitleFromPrompt("the")).toBe("Untitled Project");
     expect(fallbackTitleFromPrompt("a dashboard")).toBe("Dashboard");
+  });
+});
+
+describe("idle cost of a connected agent", () => {
+  // A serverless request is billed for as long as it stays open, so holding the
+  // claim endpoint meant an idle agent cost a full day of function time a day.
+  it("answers the claim immediately instead of parking the request", () => {
+    const route = read("app/api/agent/jobs/next/route.ts");
+
+    expect(route).not.toContain("LONG_POLL_MS");
+    // One claim, not a loop retrying until a deadline.
+    expect(route).not.toMatch(/while \(|do \{|for \(/);
+    expect(route).toContain("const job = await claimNextAgentJob(user.id);");
+
+    // The only wait left is the legacy-client pause, and it must stay behind
+    // the version check rather than becoming an unconditional delay.
+    const waits = route.match(/await sleep\(/g) ?? [];
+    expect(waits.length).toBe(1);
+    const guard = route.indexOf('request.headers.get("x-wirely-agent-version")');
+    expect(guard).toBeGreaterThan(-1);
+    expect(route.indexOf("await sleep(")).toBeGreaterThan(guard);
+  });
+
+  it("keeps the claim handler's budget small", () => {
+    const route = read("app/api/agent/jobs/next/route.ts");
+    const maxDuration = Number(/maxDuration = (\d+)/.exec(route)?.[1]);
+
+    // One query and a response. A large budget here only hides a regression.
+    expect(maxDuration).toBeLessThanOrEqual(10);
+  });
+
+  it("speeds up during a session and slows down when left running", () => {
+    expect(resolvePollDelayMs(0)).toBe(ACTIVE_POLL_MS);
+    expect(resolvePollDelayMs(ACTIVE_WINDOW_MS)).toBe(ACTIVE_POLL_MS);
+    expect(resolvePollDelayMs(ACTIVE_WINDOW_MS + 1)).toBe(IDLE_POLL_MS);
+    expect(resolvePollDelayMs(IDLE_WINDOW_MS + 1)).toBe(DORMANT_POLL_MS);
+    // Monotonic: waiting longer never polls harder.
+    expect(ACTIVE_POLL_MS).toBeLessThanOrEqual(IDLE_POLL_MS);
+    expect(IDLE_POLL_MS).toBeLessThanOrEqual(DORMANT_POLL_MS);
+  });
+
+  it("never polls slower than the window that marks an agent online", () => {
+    const onlineWindow = Number(
+      /ONLINE_WINDOW_MS = ([\d_]+)/
+        .exec(read("lib/db/queries/localAgent.ts"))?.[1]
+        ?.replace(/_/g, ""),
+    );
+
+    // Two missed polls must still fit, or a running agent flickers offline and
+    // the composer refuses to queue against it.
+    expect(DORMANT_POLL_MS * 2).toBeLessThan(onlineWindow);
+  });
+
+  it("keeps an agent that predates pacing from spinning", () => {
+    const route = read("app/api/agent/jobs/next/route.ts");
+    const agent = read("agent/wirely-agent.ts");
+
+    // Old agents had no sleep of their own, so an instant 204 would hot loop.
+    expect(route).toContain('request.headers.get("x-wirely-agent-version")');
+    expect(route).toContain("LEGACY_AGENT_PAUSE_MS");
+    expect(agent).toContain('"x-wirely-agent-version": AGENT_VERSION');
+  });
+
+  it("ships the version it reports", () => {
+    const agent = read("agent/wirely-agent.ts");
+    const pkg = JSON.parse(read("agent/package.json")) as { version: string };
+
+    expect(/AGENT_VERSION = "([^"]+)"/.exec(agent)?.[1]).toBe(pkg.version);
+  });
+
+  it("does not let a hung server stall the loop", () => {
+    const agent = read("agent/wirely-agent.ts");
+    expect(agent).toContain("AbortSignal.timeout(CLAIM_TIMEOUT_MS)");
   });
 });

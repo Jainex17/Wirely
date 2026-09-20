@@ -185,8 +185,16 @@ token.
 For development, `bun run agent -- login <token>` and `bun run agent` run it straight from the
 repo. The agent detects which way it was started and prints matching help.
 
+The agent paces its own polling rather than the server holding the request open, because a
+serverless request is billed for as long as it stays open: parking for 25s cost a full day of
+function time per connected agent per day. It asks for work every 2s during a session, every 8s
+between prompts, and every 30s once idle for half an hour, all inside the 90s window
+`isLocalAgentOnline` uses. `lib/opencode/pollSchedule.ts` holds those rates. An agent that sends no
+version header is assumed to predate this and gets a short server-side pause so it cannot hot loop.
+
 Publishing the agent: `bun run agent:build`, then `cd agent && npm publish`. The build is
-gitignored, and `prepublishOnly` rebuilds it.
+gitignored, and `prepublishOnly` rebuilds it. Bump `version` in `agent/package.json` and
+`AGENT_VERSION` in `agent/wirely-agent.ts` together; a test asserts they match.
 
 Agent environment variables:
 
