@@ -11,13 +11,15 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import Link from "next/link";
-import { Check, ChevronDown, ChevronRight, Loader2, Send, Square, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Send, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/store/useEditorStore";
@@ -1533,8 +1535,6 @@ export default function WirePromptSidebar({
   );
 
   const noModelsEnabled = enabledModelIds.length === 0;
-  // One group open at a time, all closed on open, so the menu starts short.
-  const [openModelProvider, setOpenModelProvider] = useState<string | null>(null);
   const groupedEnabledModels = useMemo(() => {
     const grouped: Record<WireModelProvider, typeof WIRE_MODEL_OPTIONS> = {
       opencode: [],
@@ -1686,31 +1686,17 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
-                  {(["opencode", "google", "openrouter", "zai"] as const).map((provider) => {
+                  {(["opencode", "google", "openrouter", "zai"] as const).map((provider, index) => {
                     const providerModels = groupedEnabledModels[provider];
                     if (providerModels.length === 0) return null;
-                    const open = openModelProvider === provider;
 
                     return (
                       <DropdownMenuGroup key={provider}>
-                        <DropdownMenuItem
-                          // Expands a group instead of picking a model, so the
-                          // menu has to stay open.
-                          onSelect={(event) => event.preventDefault()}
-                          onClick={() => setOpenModelProvider(open ? null : provider)}
-                          className={`${dropdownItemClassName} text-muted-foreground`}
-                        >
-                          {open ? (
-                            <ChevronDown className="h-3 w-3" />
-                          ) : (
-                            <ChevronRight className="h-3 w-3" />
-                          )}
-                          <span>{WIRE_MODEL_PROVIDER_LABEL[provider]}</span>
-                          <span className="ml-auto font-mono text-[10px]">
-                            {providerModels.length}
-                          </span>
-                        </DropdownMenuItem>
-                        {open ? providerModels.map((model) => (
+                        {index > 0 ? <DropdownMenuSeparator /> : null}
+                        <DropdownMenuLabel className="px-2 py-1.5 text-xs">
+                          {WIRE_MODEL_PROVIDER_LABEL[provider]}
+                        </DropdownMenuLabel>
+                        {providerModels.map((model) => (
                           <DropdownMenuItem
                             key={model.id}
                             onClick={() => handleModelSelection(model.id)}
@@ -1730,7 +1716,7 @@ export default function WirePromptSidebar({
                               </span>
                             </div>
                           </DropdownMenuItem>
-                        )) : null}
+                        ))}
                       </DropdownMenuGroup>
                     );
                   })}

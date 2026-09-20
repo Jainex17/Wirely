@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
   Check,
+  ChevronRight,
   KeyRound,
   Loader2,
   Pencil,
@@ -543,6 +544,10 @@ function ModelsPanel({
   onAddKey: (provider: ApiKeyProvider) => void;
   onOpenAgentTab: () => void;
 }) {
+  // One provider expanded at a time, all collapsed on arrival, so the tab opens
+  // as a short list of providers rather than every model at once.
+  const [openProvider, setOpenProvider] = useState<WireModelProvider | null>(null);
+
   return (
     <Panel
       title="Model access"
@@ -561,17 +566,31 @@ function ModelsPanel({
           const hasKey =
             provider === "opencode" ? agentOnline : keys[provider as ApiKeyProvider];
 
+          const expanded = openProvider === provider;
+
           return (
             <div key={provider}>
               <div className="flex items-end justify-between gap-4 pb-3">
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">
-                    {providerLabel(provider)}
-                  </h3>
-                  <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                    {enabledCount} of {models.length} on
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-left"
+                  onClick={() => setOpenProvider(expanded ? null : provider)}
+                  aria-expanded={expanded}
+                >
+                  <ChevronRight
+                    className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                      expanded ? "rotate-90" : ""
+                    }`}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">
+                      {providerLabel(provider)}
+                    </span>
+                    <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
+                      {enabledCount} of {models.length} on
+                    </span>
+                  </span>
+                </button>
                 {hasKey ? (
                   <Button
                     type="button"
@@ -607,6 +626,7 @@ function ModelsPanel({
                 )}
               </div>
 
+              {expanded ? (
               <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
                 {models.map((model) => {
                   const enabled = enabledModelIds.includes(model.id);
@@ -640,8 +660,9 @@ function ModelsPanel({
                   );
                 })}
               </div>
+              ) : null}
 
-              {!hasKey && enabledCount > 0 ? (
+              {expanded && !hasKey && enabledCount > 0 ? (
                 <p className="mt-2.5 text-xs text-muted-foreground">
                   {provider === "opencode"
                     ? "These stay listed but cannot run until your local agent is running."
