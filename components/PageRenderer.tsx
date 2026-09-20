@@ -116,21 +116,21 @@ interface ContextMenuAction {
   disabled?: boolean;
 }
 
+/** Narrowest the preview can be dragged. Below this nothing is readable. */
+export const MIN_PREVIEW_WIDTH = 280;
+
 /**
- * Widths offered in the preview.
+ * Clamps a dragged preview width to what the stage can show.
  *
- * Spans the whole range rather than only the page's own device, because the
- * generator is told to write responsive Tailwind and this is the only place
- * that claim can be checked. Reading a desktop concept at 375px is the point.
+ * The artboard is always drawn at 1:1, so the drag maps exactly to the pointer
+ * and the page reflows at its true width. That costs the ability to view a
+ * width wider than the dialog, which is the trade for a resize that tracks the
+ * cursor instead of sliding against it.
  */
-export const PREVIEW_WIDTHS = [
-  { label: "375", name: "Phone", width: 375 },
-  { label: "430", name: "Large phone", width: 430 },
-  { label: "768", name: "Tablet", width: 768 },
-  { label: "1024", name: "Small laptop", width: 1024 },
-  { label: "1280", name: "Laptop", width: 1280 },
-  { label: "1440", name: "Desktop", width: 1440 },
-] as const;
+export const clampPreviewWidth = (width: number, stageWidth: number) => {
+  const upper = stageWidth > MIN_PREVIEW_WIDTH ? stageWidth : Number.MAX_SAFE_INTEGER;
+  return Math.round(Math.min(Math.max(width, MIN_PREVIEW_WIDTH), upper));
+};
 
 /**
  * Lets the preview be closed from the keyboard after the pointer has gone into
@@ -188,7 +188,7 @@ export default React.memo(function PageRenderer({
   const [previewWidthOverride, setPreviewWidthOverride] = React.useState<
     number | null
   >(null);
-  const previewWidth = previewWidthOverride ?? currentDevice.width;
+  const [isResizingPreview, setIsResizingPreview] = React.useState(false);
   // Code dialog removed from the page toolbar for now.
   // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
@@ -377,6 +377,11 @@ export default React.memo(function PageRenderer({
   React.useEffect(() => {
     if (!stageEl) return;
 
+    // Measured up front rather than waiting on the observer. The stage mounts
+    // with the dialog, and the first resize callback does not arrive for a node
+    // that appears at its final size, which left the artboard unclamped.
+    setStageWidth(stageEl.clientWidth);
+
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setStageWidth(entry.contentRect.width);
     });
@@ -385,8 +390,66 @@ export default React.memo(function PageRenderer({
   }, [stageEl]);
 
   const previewFrameHeight = Math.max(currentDevice.height, 640);
-  const previewScale =
-    stageWidth > 0 ? Math.min(1, stageWidth / previewWidth) : 1;
+  const previewWidth = clampPreviewWidth(
+    previewWidthOverride ?? currentDevice.width,
+    stageWidth,
+  );
+
+  /**
+   * Drag-to-resize, the way the browser's own device toolbar works.
+   *
+   * The pointer is captured on the grip so the drag survives crossing the
+   * preview frame, and the frame stops taking pointer events for the duration:
+   * without that the iframe swallows the move the moment the cursor is over it
+   * and the drag dies halfway.
+   *
+   * The width is set straight from the move event. Batching it onto an
+   * animation frame looks like the careful choice, but the browser already
+   * coalesces pointer moves to about one per frame, and it means the drag stops
+   * dead anywhere frames are not being produced.
+   */
+  const resizeOrigin = React.useRef({ x: 0, width: 0 });
+  // A ref, not the state flag: state updates on the next render, so a move
+  // arriving in the same tick as the press would read a stale `false` and the
+  // drag would drop its first frames.
+  const isDraggingRef = React.useRef(false);
+
+  const handleResizeStart = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      resizeOrigin.current = { x: event.clientX, width: previewWidth };
+      isDraggingRef.current = true;
+      setIsResizingPreview(true);
+    },
+    [previewWidth],
+  );
+
+  const handleResizeMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDraggingRef.current) return;
+      // Doubled: the artboard is centred, so each edge moves half of what the
+      // width changes by. Without this the frame lags behind the cursor.
+      const delta = (event.clientX - resizeOrigin.current.x) * 2;
+      setPreviewWidthOverride(
+        clampPreviewWidth(resizeOrigin.current.width + delta, stageWidth),
+      );
+    },
+    [stageWidth],
+  );
+
+  const handleResizeEnd = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      isDraggingRef.current = false;
+      setIsResizingPreview(false);
+    },
+    [],
+  );
+
+
 
   // Escape forwarded out of the preview frame, since the frame swallows it.
   React.useEffect(() => {
@@ -974,45 +1037,22 @@ export default React.memo(function PageRenderer({
           showCloseButton={false}
           className="top-8 flex h-[calc(100vh-4rem)] w-[calc(100vw-4rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
         >
-          <div className="flex shrink-0 items-start justify-between gap-6 border-b border-border px-5 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-6 border-b border-border px-5 py-3">
             <div className="min-w-0">
               <DialogTitle className="truncate text-sm font-medium leading-6">
                 {page.title}
               </DialogTitle>
               <DialogDescription className="text-xs leading-5 text-muted-foreground">
-                {previewWidth} x {previewFrameHeight}
-                {previewScale < 1 ? ` at ${Math.round(previewScale * 100)}%` : null}
-                . Press Escape to close.
+                Drag the edge to resize. Press Escape to close.
               </DialogDescription>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              {/* One track, one active cell: the width is a single choice, so it
-                  reads as one control rather than seven competing buttons. */}
-              <div className="hidden items-center rounded-lg border border-border bg-muted/60 p-0.5 sm:inline-flex">
-                {PREVIEW_WIDTHS.map((size) => {
-                  const isActive = previewWidth === size.width;
-                  return (
-                    <button
-                      key={size.width}
-                      type="button"
-                      title={size.name}
-                      aria-pressed={isActive}
-                      onClick={() => setPreviewWidthOverride(size.width)}
-                      className={cn(
-                        "rounded-md px-2.5 py-1 text-xs tabular-nums transition-colors",
-                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        isActive
-                          ? "bg-background font-medium text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {size.label}
-                    </button>
-                  );
-                })}
-              </div>
-
+            <div className="flex shrink-0 items-center gap-3">
+              {/* The live width, in the same spot whether or not you are
+                  dragging, so the number never jumps around mid-drag. */}
+              <span className="rounded-md bg-muted/60 px-2 py-1 text-xs tabular-nums text-muted-foreground">
+                {previewWidth} x {previewFrameHeight}
+              </span>
               <DialogClose
                 aria-label="Close preview"
                 className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96]"
@@ -1026,31 +1066,48 @@ export default React.memo(function PageRenderer({
               on a canvas, not as more dialog. */}
           <div
             ref={setStageEl}
-            className="flex min-h-0 flex-1 overflow-auto bg-muted/40 p-6"
+            className="flex min-h-0 flex-1 overflow-auto bg-muted/40 py-6"
           >
             {/* `m-auto` inside a flex container, not `justify-center`: centring
                 via justify-content clips the overflowing edge once the artboard
                 is taller than the stage, and auto margins do not. */}
             <div
-              className="m-auto shrink-0"
+              className="relative m-auto shrink-0"
               style={{
-                width: `${previewWidth * previewScale}px`,
-                height: `${previewFrameHeight * previewScale}px`,
+                width: `${previewWidth}px`,
+                height: `${previewFrameHeight}px`,
               }}
             >
               <iframe
                 title={`${page.title} preview`}
                 srcDoc={previewSrcDoc}
-                className="block rounded-lg border border-border bg-background shadow-sm"
-                style={{
-                  width: `${previewWidth}px`,
-                  height: `${previewFrameHeight}px`,
-                  transform: `scale(${previewScale})`,
-                  transformOrigin: "top left",
-                }}
+                className={cn(
+                  "block size-full rounded-lg border border-border bg-background shadow-sm",
+                  // The frame must not eat the pointer mid-drag.
+                  isResizingPreview && "pointer-events-none select-none",
+                )}
                 sandbox="allow-scripts"
                 referrerPolicy="no-referrer"
               />
+
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize preview width"
+                onPointerDown={handleResizeStart}
+                onPointerMove={handleResizeMove}
+                onPointerUp={handleResizeEnd}
+                onPointerCancel={handleResizeEnd}
+                className="group absolute inset-y-0 -right-3 flex w-6 cursor-ew-resize touch-none items-center justify-center"
+              >
+                <span
+                  className={cn(
+                    "h-12 w-1.5 rounded-full bg-border transition-colors",
+                    "group-hover:bg-muted-foreground/60",
+                    isResizingPreview && "bg-muted-foreground",
+                  )}
+                />
+              </div>
             </div>
           </div>
         </DialogContent>

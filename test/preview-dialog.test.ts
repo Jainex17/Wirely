@@ -1,29 +1,42 @@
 import { describe, expect, it } from "bun:test";
 
-import { PREVIEW_WIDTHS, injectPreviewEscapeHandler } from "@/components/PageRenderer";
+import {
+  MIN_PREVIEW_WIDTH,
+  clampPreviewWidth,
+  injectPreviewEscapeHandler,
+} from "@/components/PageRenderer";
 
-describe("preview width choices", () => {
-  it("spans phone to desktop so responsive output can be checked", () => {
-    const widths = PREVIEW_WIDTHS.map((size) => size.width);
+describe("dragging the preview width", () => {
+  const STAGE = 1000;
 
-    expect(Math.min(...widths)).toBeLessThanOrEqual(375);
-    expect(Math.max(...widths)).toBeGreaterThanOrEqual(1440);
-    // A desktop concept has to be readable at phone width, which is the point.
-    expect(widths).toContain(375);
+  it("tracks the drag exactly within the stage", () => {
+    expect(clampPreviewWidth(640, STAGE)).toBe(640);
+    expect(clampPreviewWidth(999, STAGE)).toBe(999);
   });
 
-  it("offers each width once, in ascending order", () => {
-    const widths = PREVIEW_WIDTHS.map((size) => size.width);
-
-    expect(new Set(widths).size).toBe(widths.length);
-    expect([...widths].sort((a, b) => a - b)).toEqual(widths);
+  it("refuses to go narrower than readable", () => {
+    expect(clampPreviewWidth(0, STAGE)).toBe(MIN_PREVIEW_WIDTH);
+    expect(clampPreviewWidth(-500, STAGE)).toBe(MIN_PREVIEW_WIDTH);
+    expect(clampPreviewWidth(MIN_PREVIEW_WIDTH - 1, STAGE)).toBe(MIN_PREVIEW_WIDTH);
   });
 
-  it("labels every width for a tooltip", () => {
-    for (const size of PREVIEW_WIDTHS) {
-      expect(size.name.length).toBeGreaterThan(0);
-      expect(size.label).toBe(String(size.width) as typeof size.label);
-    }
+  it("stops at the stage edge rather than overflowing it", () => {
+    // Dragging past the edge pins the width instead of hiding the frame.
+    expect(clampPreviewWidth(STAGE + 400, STAGE)).toBe(STAGE);
+    expect(clampPreviewWidth(99999, STAGE)).toBe(STAGE);
+  });
+
+  it("does not clamp to zero before the stage has been measured", () => {
+    // First paint reports a stage width of 0; clamping to it would collapse
+    // the artboard to nothing.
+    expect(clampPreviewWidth(1440, 0)).toBe(1440);
+    expect(clampPreviewWidth(1440, MIN_PREVIEW_WIDTH)).toBe(1440);
+  });
+
+  it("returns whole pixels, so the readout never shows a fraction", () => {
+    expect(clampPreviewWidth(640.4, STAGE)).toBe(640);
+    expect(clampPreviewWidth(640.6, STAGE)).toBe(641);
+    expect(Number.isInteger(clampPreviewWidth(777.777, STAGE))).toBe(true);
   });
 });
 
