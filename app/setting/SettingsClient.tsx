@@ -30,8 +30,9 @@ import ApiKeyDialog, {
   PROVIDERS,
   type ApiKeyProvider,
 } from "./ApiKeyDialog";
+import LocalAgentPanel, { type AgentTokenSummary } from "./LocalAgentPanel";
 
-export type SettingsTab = "account" | "providers" | "models";
+export type SettingsTab = "account" | "providers" | "models" | "agent";
 export type ProviderKeys = Record<ApiKeyProvider, boolean>;
 
 interface SettingsClientProps {
@@ -39,6 +40,8 @@ interface SettingsClientProps {
   initialKeys: ProviderKeys;
   initialEnabledModelIds: WireModelName[];
   initialTab: SettingsTab;
+  initialAgentTokens: AgentTokenSummary[];
+  initialAgentOnline: boolean;
 }
 
 const MODEL_PROVIDERS: WireModelProvider[] = ["google", "openrouter", "zai"];
@@ -83,6 +86,8 @@ export default function SettingsClient({
   initialKeys,
   initialEnabledModelIds,
   initialTab,
+  initialAgentTokens,
+  initialAgentOnline,
 }: SettingsClientProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [keys, setKeys] = useState(initialKeys);
@@ -196,6 +201,11 @@ export default function SettingsClient({
               label="Models"
               meta={`${enabledModelIds.length}/${WIRE_MODEL_OPTIONS.length}`}
             />
+            <SettingsTabTrigger
+              value="agent"
+              label="Local agent"
+              meta={initialAgentOnline ? "on" : undefined}
+            />
           </TabsList>
 
           <TabsContent value="account" className="pt-10">
@@ -213,6 +223,13 @@ export default function SettingsClient({
               onToggleModel={toggleModel}
               onToggleProvider={setProviderModels}
               onAddKey={setDialogProvider}
+            />
+          </TabsContent>
+
+          <TabsContent value="agent" className="pt-10">
+            <LocalAgentPanel
+              initialTokens={initialAgentTokens}
+              initialOnline={initialAgentOnline}
             />
           </TabsContent>
         </Tabs>

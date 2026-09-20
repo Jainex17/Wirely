@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
+import { listApiTokens } from "@/lib/auth/apiToken";
+import { isLocalAgentOnline } from "@/lib/db/queries/localAgent";
 import { getUserAiSettings } from "@/lib/db/queries/users";
 import { DEFAULT_ENABLED_WIRE_MODELS } from "@/lib/wireModels";
 import SettingsClient, { type SettingsTab } from "./SettingsClient";
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
   description: "Account, provider keys, and model access for Wirely.",
 };
 
-const TABS: SettingsTab[] = ["account", "providers", "models"];
+const TABS: SettingsTab[] = ["account", "providers", "models", "agent"];
 
 const toTab = (value: string | undefined): SettingsTab =>
   TABS.find((tab) => tab === value) ?? "account";
@@ -29,7 +31,11 @@ export default async function SettingPage({
     redirect("/login?next=/setting");
   }
 
-  const settings = await getUserAiSettings(sessionUser.id);
+  const [settings, agentTokens, agentOnline] = await Promise.all([
+    getUserAiSettings(sessionUser.id),
+    listApiTokens(sessionUser.id),
+    isLocalAgentOnline(sessionUser.id),
+  ]);
 
   return (
     <SettingsClient
@@ -48,6 +54,14 @@ export default async function SettingPage({
         settings?.enabledModelIds ?? [...DEFAULT_ENABLED_WIRE_MODELS]
       }
       initialTab={toTab(tab)}
+      initialAgentTokens={agentTokens.map((token) => ({
+        id: token.id,
+        name: token.name,
+        prefix: token.prefix,
+        lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
+        createdAt: token.createdAt.toISOString(),
+      }))}
+      initialAgentOnline={agentOnline}
     />
   );
 }
