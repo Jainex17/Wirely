@@ -216,13 +216,15 @@ export default function LocalAgentPanel({
                 </li>
                 <li>2. Create a token below and copy it.</li>
                 <li>
-                  3. Run{" "}
+                  3. From the Wirely repo, run{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                    wirely-agent login &lt;token&gt;
-                  </code>{" "}
-                  then{" "}
+                    bun run agent -- login &lt;token&gt;
+                  </code>
+                </li>
+                <li>
+                  4. Then start it with{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                    wirely-agent
+                    bun run agent
                   </code>
                 </li>
               </ol>

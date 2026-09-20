@@ -7,9 +7,11 @@
  * outbound only: no port is opened, no tunnel is needed, and opencode's
  * credentials never leave the machine.
  *
- *   wirely-agent login <token>   save a token minted in Wirely settings
- *   wirely-agent                 start the loop
- *   wirely-agent doctor          check opencode and print what was detected
+ * Run from the Wirely repo. There is no installed binary yet:
+ *
+ *   bun run agent -- login <token>   save a token minted in Wirely settings
+ *   bun run agent                    start the loop
+ *   bun run agent:doctor             check opencode and print what was detected
  *
  * Environment:
  *   WIRELY_URL     Wirely base URL (default https://wirely.app)
@@ -87,7 +89,9 @@ const claimJob = async (baseUrl: string, token: string): Promise<AgentJob | null
 
   if (response.status === 204) return null;
   if (response.status === 401) {
-    throw new Error("Wirely rejected the token. Run `wirely-agent login <token>` again.");
+    throw new Error(
+      "Wirely rejected the token. Run `bun run agent -- login <token>` again.",
+    );
   }
   if (!response.ok) {
     throw new Error(`Wirely returned ${response.status} when claiming a job.`);
@@ -171,7 +175,7 @@ const runJob = async (
 
 const commandLogin = (token: string | undefined) => {
   if (!token) {
-    console.error("Usage: wirely-agent login <token>");
+    console.error("Usage: bun run agent -- login <token>");
     process.exit(1);
   }
   const config = readConfig();
@@ -182,7 +186,7 @@ const commandLogin = (token: string | undefined) => {
 const commandDoctor = async () => {
   const { token, baseUrl } = resolveSettings();
   console.log(`Wirely URL:  ${baseUrl}`);
-  console.log(`Token:       ${token ? "saved" : "missing (run `wirely-agent login <token>`)"}`);
+  console.log(`Token:       ${token ? "saved" : "missing (run `bun run agent -- login <token>`)"}`);
 
   try {
     const probe = await probeOpencode(process.env.OPENCODE_BIN);
@@ -197,7 +201,9 @@ const commandDoctor = async () => {
 const commandRun = async () => {
   const { token, baseUrl } = resolveSettings();
   if (!token) {
-    console.error("No token. Mint one in Wirely settings, then run `wirely-agent login <token>`.");
+    console.error(
+      "No token. Mint one in Wirely settings, then run `bun run agent -- login <token>`.",
+    );
     process.exit(1);
   }
 
@@ -248,6 +254,6 @@ if (command === "login") {
   await commandRun();
 } else {
   console.error(`Unknown command: ${command}`);
-  console.error("Usage: wirely-agent [run|login <token>|doctor]");
+  console.error("Usage: bun run agent -- [run|login <token>|doctor]");
   process.exit(1);
 }

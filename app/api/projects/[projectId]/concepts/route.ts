@@ -59,7 +59,7 @@ export async function POST(request: Request, context: RouteContext) {
     // Fail loudly rather than queueing into a machine that is not listening.
     if (!(await isLocalAgentOnline(sessionUser.id))) {
       return NextResponse.json(
-        { error: "No local agent is connected. Run `wirely-agent` and try again." },
+        { error: "No local agent is connected. Run `bun run agent` and try again." },
         { status: 409 },
       );
     }
