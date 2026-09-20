@@ -37,6 +37,7 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   getWireModelProvider,
+  type WireModelProvider,
   isWireModelName,
   normalizeEnabledWireModels,
   type WireModelName,
@@ -1540,10 +1541,11 @@ export default function WirePromptSidebar({
 
   const noModelsEnabled = enabledModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
-    const grouped = {
-      google: [] as typeof WIRE_MODEL_OPTIONS,
-      openrouter: [] as typeof WIRE_MODEL_OPTIONS,
-      zai: [] as typeof WIRE_MODEL_OPTIONS,
+    const grouped: Record<WireModelProvider, typeof WIRE_MODEL_OPTIONS> = {
+      opencode: [],
+      google: [],
+      openrouter: [],
+      zai: [],
     };
 
     enabledModelIds.forEach((modelId) => {

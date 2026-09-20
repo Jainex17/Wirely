@@ -10,6 +10,7 @@ import { isLocalAgentOnline } from "@/lib/db/queries/localAgent";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { clampConceptCount, composeConceptBatchPrompt } from "@/lib/opencode/conceptPrompt";
+import { DEFAULT_OPENCODE_MODEL } from "@/lib/opencode/models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,7 +77,12 @@ export async function POST(request: Request, context: RouteContext) {
       userId: sessionUser.id,
       projectId,
       prompt: composeConceptBatchPrompt({ userPrompt, conceptCount }),
-      model: typeof modelValue === "string" && modelValue.trim() ? modelValue.trim() : null,
+      // Pinned to a free model rather than left null, which would fall through
+      // to whatever the user set as their opencode default, possibly a paid one.
+      model:
+        typeof modelValue === "string" && modelValue.trim()
+          ? modelValue.trim()
+          : DEFAULT_OPENCODE_MODEL,
       variantCount: conceptCount,
     });
 

@@ -52,13 +52,6 @@ layout structure, the typographic scale, the density, and the visual tone betwee
 Design request:
 ${userPrompt}
 
-Answer in plain text using exactly this structure and nothing else:
-
-DETAILS:
-<two sentences describing the set of concepts>
-
-${blocks}
-
 Rules for every HTML document:
 - A complete document starting with <!doctype html>.
 - Semantic HTML5 with Tailwind utility classes only.
@@ -68,12 +61,23 @@ Rules for every HTML document:
 - Include ${CHARTJS_CDN} only when the screen genuinely needs a chart.
 - Include a viewport meta tag and explicit background and text classes on <body>.
 - No <style> tags and no inline style attributes.
-- No markdown, no code fences, no commentary between sections.
 - ${
     allowImages
       ? "Use <img> with descriptive alt text where a photograph genuinely helps."
       : "Do not use <img> tags or external image URLs. Represent imagery with styled placeholder blocks."
   }
 
-Do not read or write any files. Do not run any commands. Answer directly with the text above.`;
+How to reply:
+- Do not read or write any files. Do not run any commands.
+- Do not think out loud, explain your approach, or restate these instructions.
+- Write nothing before the first section and nothing after the last one.
+- No markdown, no code fences, no commentary between sections.
+- The very first characters of your reply must be "DETAILS:".
+
+Reply in exactly this shape:
+
+DETAILS:
+<two sentences describing the set of concepts>
+
+${blocks}`;
 };

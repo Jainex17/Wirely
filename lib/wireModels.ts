@@ -25,14 +25,28 @@ export const OPENROUTER_FREE_MODELS = [
 ] as const;
 export const ZAI_FREE_MODELS = ["glm-4.7-flash", "glm-4.5-flash"] as const;
 
+/**
+ * Models that run through the user's local agent rather than a hosted provider.
+ *
+ * Free on any opencode account, so they need no key at all: the "credential" is
+ * a connected agent. Ordered fastest first, measured by running the concept
+ * prompt for two screens against each one. See lib/opencode/models.ts.
+ */
+export const OPENCODE_FREE_MODELS = [
+  "opencode/ling-3.0-flash-fin-free",
+  "opencode/muse-spark-1.3-contributor-free",
+  "opencode/mimo-v2.5-free",
+] as const;
+
 export type WireModelTier = "free" | "paid";
-export type WireModelProvider = "google" | "openrouter" | "zai";
+export type WireModelProvider = "google" | "openrouter" | "zai" | "opencode";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
   | (typeof GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_FREE_MODELS)[number]
+  | (typeof OPENCODE_FREE_MODELS)[number]
   | (typeof ZAI_FREE_MODELS)[number];
 
 export type WireModelOption = {
@@ -164,6 +178,28 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     tier: "free",
     provider: "zai",
   },
+  {
+    id: "opencode/ling-3.0-flash-fin-free",
+    label: "Ling 3.0 Flash (local)",
+    description:
+      "Fastest free model on your local agent. Around 20s for two concepts.",
+    tier: "free",
+    provider: "opencode",
+  },
+  {
+    id: "opencode/muse-spark-1.3-contributor-free",
+    label: "Muse Spark 1.3 (local)",
+    description: "Free model on your local agent, a little slower than Ling.",
+    tier: "free",
+    provider: "opencode",
+  },
+  {
+    id: "opencode/mimo-v2.5-free",
+    label: "MiMo v2.5 (local)",
+    description: "Free model on your local agent, a third option to compare against.",
+    tier: "free",
+    provider: "opencode",
+  },
 ];
 
 export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
@@ -201,6 +237,13 @@ export const getWireModelProvider = (
   modelName: WireModelName,
 ): WireModelProvider => WIRE_MODEL_PROVIDER_MAP.get(modelName) ?? "google";
 
+export const WIRE_MODEL_PROVIDER_LABEL: Record<WireModelProvider, string> = {
+  google: "Google",
+  openrouter: "OpenRouter",
+  zai: "Z.ai",
+  opencode: "opencode (local)",
+};
+
 export const isGoogleWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "google";
 
@@ -209,6 +252,16 @@ export const isOpenRouterWireModel = (modelName: WireModelName) =>
 
 export const isZaiWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "zai";
+
+/**
+ * True when this model runs on the user's machine.
+ *
+ * These take a different path entirely: the request is queued for the local
+ * agent instead of going through the hosted wire route, and no provider key is
+ * involved.
+ */
+export const isOpencodeWireModel = (modelName: WireModelName) =>
+  getWireModelProvider(modelName) === "opencode";
 
 export const resolveFastWireModelForStage = (
   modelName: WireModelName,
@@ -255,6 +308,15 @@ export interface WireProviderKeyPresence {
   google: boolean;
   openrouter: boolean;
   zai: boolean;
+  /**
+   * opencode has no key: this is whether a local agent is connected.
+   *
+   * Optional because most callers have no reason to know about the agent. When
+   * it is absent an opencode model is simply never auto-selected as runnable,
+   * which is the safe default: picking one without an agent would queue work
+   * nothing can claim.
+   */
+  opencode?: boolean;
 }
 
 /**

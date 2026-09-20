@@ -44,7 +44,19 @@ interface SettingsClientProps {
   initialAgentOnline: boolean;
 }
 
-const MODEL_PROVIDERS: WireModelProvider[] = ["google", "openrouter", "zai"];
+const MODEL_PROVIDERS: WireModelProvider[] = ["opencode", "google", "openrouter", "zai"];
+
+/**
+ * opencode models run on the user's own machine, so they have no API key and no
+ * entry in PROVIDERS. Their credential is a connected local agent instead.
+ */
+const OPENCODE_PROVIDER = {
+  label: "opencode (local)",
+  summary: "Free models through the agent on your machine.",
+} as const;
+
+const providerLabel = (provider: WireModelProvider) =>
+  provider === "opencode" ? OPENCODE_PROVIDER.label : PROVIDERS[provider].label;
 
 const KEY_FIELD: Record<ApiKeyProvider, string> = {
   google: "googleApiKey",
@@ -220,9 +232,11 @@ export default function SettingsClient({
             <ModelsPanel
               keys={keys}
               enabledModelIds={enabledModelIds}
+              agentOnline={initialAgentOnline}
               onToggleModel={toggleModel}
               onToggleProvider={setProviderModels}
               onAddKey={setDialogProvider}
+              onOpenAgentTab={() => setTab("agent")}
             />
           </TabsContent>
 
@@ -515,15 +529,19 @@ function ProvidersPanel({
 function ModelsPanel({
   keys,
   enabledModelIds,
+  agentOnline,
   onToggleModel,
   onToggleProvider,
   onAddKey,
+  onOpenAgentTab,
 }: {
   keys: ProviderKeys;
   enabledModelIds: WireModelName[];
+  agentOnline: boolean;
   onToggleModel: (modelId: WireModelName) => void;
   onToggleProvider: (provider: WireModelProvider, enabled: boolean) => void;
   onAddKey: (provider: ApiKeyProvider) => void;
+  onOpenAgentTab: () => void;
 }) {
   return (
     <Panel
@@ -539,14 +557,16 @@ function ModelsPanel({
             enabledModelIds.includes(model.id),
           ).length;
           const allEnabled = enabledCount === models.length;
-          const hasKey = keys[provider];
+          // For opencode the gate is a running agent, not a saved key.
+          const hasKey =
+            provider === "opencode" ? agentOnline : keys[provider as ApiKeyProvider];
 
           return (
             <div key={provider}>
               <div className="flex items-end justify-between gap-4 pb-3">
                 <div>
                   <h3 className="text-sm font-medium text-foreground">
-                    {PROVIDERS[provider].label}
+                    {providerLabel(provider)}
                   </h3>
                   <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                     {enabledCount} of {models.length} on
@@ -562,13 +582,24 @@ function ModelsPanel({
                   >
                     {allEnabled ? "Turn all off" : "Turn all on"}
                   </Button>
+                ) : provider === "opencode" ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-foreground"
+                    onClick={onOpenAgentTab}
+                  >
+                    Connect agent
+                    <ArrowUpRight className="size-3.5" />
+                  </Button>
                 ) : (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     className="text-foreground"
-                    onClick={() => onAddKey(provider)}
+                    onClick={() => onAddKey(provider as ApiKeyProvider)}
                   >
                     Add key
                     <ArrowUpRight className="size-3.5" />
@@ -612,8 +643,9 @@ function ModelsPanel({
 
               {!hasKey && enabledCount > 0 ? (
                 <p className="mt-2.5 text-xs text-muted-foreground">
-                  These stay listed but cannot run until a {PROVIDERS[provider].label} key
-                  is connected.
+                  {provider === "opencode"
+                    ? "These stay listed but cannot run until your local agent is running."
+                    : `These stay listed but cannot run until a ${providerLabel(provider)} key is connected.`}
                 </p>
               ) : null}
             </div>

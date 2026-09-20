@@ -11,6 +11,8 @@ import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persis
 import { resolveInvocation } from "@/agent/invocation";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput } from "@/lib/wireOutput";
+import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
+import { DEFAULT_OPENCODE_MODEL, isFreeOpencodeModel } from "@/lib/opencode/models";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -368,5 +370,41 @@ describe("agent invocation text", () => {
     // Every user-facing command string flows through INVOCATION.
     expect(cli.includes("INVOCATION")).toBe(true);
     expect(/Usage: (wirely-agent|bun run)/.test(cli)).toBe(false);
+  });
+});
+
+describe("opencode models in the catalog", () => {
+  it("lists opencode models as free and local", () => {
+    const opencodeModels = WIRE_MODEL_OPTIONS.filter(
+      (model) => model.provider === "opencode",
+    );
+
+    expect(opencodeModels.length).toBeGreaterThan(0);
+    for (const model of opencodeModels) {
+      // These run on the user's own machine, so they can never cost money.
+      expect(model.tier).toBe("free");
+      expect(isOpencodeWireModel(model.id)).toBe(true);
+      expect(model.id.startsWith("opencode/")).toBe(true);
+    }
+  });
+
+  it("defaults a job to a free model rather than the user's opencode default", () => {
+    expect(isFreeOpencodeModel(DEFAULT_OPENCODE_MODEL)).toBe(true);
+    const route = read("app/api/projects/[projectId]/concepts/route.ts");
+    expect(route.includes("DEFAULT_OPENCODE_MODEL")).toBe(true);
+  });
+
+  it("does not mistake a hosted model for a local one", () => {
+    expect(isOpencodeWireModel("gemini-3.8-flash")).toBe(false);
+    expect(isOpencodeWireModel("glm-4.7-flash")).toBe(false);
+    expect(isFreeOpencodeModel("openrouter/free")).toBe(false);
+  });
+
+  it("rejects an opencode model in the hosted wire route", () => {
+    // Falling through would hit a provider client with no matching credential.
+    const route = read("app/api/wire/[id]/route.ts");
+
+    expect(route.includes("isOpencodeWireModel")).toBe(true);
+    expect(route.includes("runs on your local agent")).toBe(true);
   });
 });
