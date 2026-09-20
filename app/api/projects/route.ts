@@ -5,12 +5,21 @@ import { createProject, listProjectsForUser } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
+import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
+import { getKeyForWireModel, getLanguageModel } from "@/lib/wireProviderClient";
+import {
+  isOpencodeWireModel,
+  isWireModelName,
+  resolveFastWireModelForStage,
+  type WireModelName,
+} from "@/lib/wireModels";
 
 const TITLE_MODEL_NAME = "gemini-3.5-flash-lite";
 
 type CreateProjectRequestBody = {
   title?: string | null;
   prompt?: string | null;
+  model?: string | null;
 };
 
 const cleanTitle = (value: string) => {
@@ -36,9 +45,50 @@ const fallbackTitleFromPrompt = (prompt: string) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
-const generateProjectTitle = async (prompt: string) => {
+/**
+ * Names a project from its opening prompt.
+ *
+ * Uses the model the user picked, on their own key, so a title costs them the
+ * same as any other call and nothing to the maintainer. Falls back through:
+ * their key, the server Google key, then a title derived from the prompt text.
+ * A missing key is normal, not an error, so only a real failure is logged.
+ *
+ * opencode models are skipped deliberately. They run on the user's machine, and
+ * queueing an agent job that takes tens of seconds to name a project would make
+ * project creation feel broken.
+ */
+const generateProjectTitle = async (
+  prompt: string,
+  { userId, modelName }: { userId: string; modelName: WireModelName | null },
+) => {
   const trimmedPrompt = prompt.trim();
   if (!trimmedPrompt) return "Untitled Project";
+
+  const system =
+    "You create concise project titles. Return only one plain text title, 2 to 6 words, no punctuation except apostrophes.";
+  const titlePrompt = `Prompt:\n${trimmedPrompt}\n\nShort project title:`;
+
+  const readTitle = (text: string | undefined) =>
+    cleanTitle((text ?? "").split("\n")[0] ?? "");
+
+  if (modelName && !isOpencodeWireModel(modelName)) {
+    try {
+      const keys = await getUserAiSettingsForGeneration(userId);
+      // A cheap model from the same provider: a title does not need the good one.
+      const fastModel = resolveFastWireModelForStage(modelName);
+      if (keys && getKeyForWireModel(fastModel, keys)) {
+        const result = await generateText({
+          model: getLanguageModel({ modelName: fastModel, ...keys }),
+          system,
+          prompt: titlePrompt,
+        });
+        const title = readTitle(result.text);
+        if (title) return title;
+      }
+    } catch (error) {
+      logger.error("projects_title_generation_failed", { error });
+    }
+  }
 
   const googleApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!googleApiKey) {
@@ -49,13 +99,11 @@ const generateProjectTitle = async (prompt: string) => {
     const provider = createGoogleGenerativeAI({ apiKey: googleApiKey });
     const result = await generateText({
       model: provider(TITLE_MODEL_NAME),
-      system:
-        "You create concise project titles. Return only one plain text title, 2 to 6 words, no punctuation except apostrophes.",
-      prompt: `Prompt:\n${trimmedPrompt}\n\nShort project title:`,
+      system,
+      prompt: titlePrompt,
     });
 
-    const firstLine = (result.text ?? "").split("\n")[0] ?? "";
-    const title = cleanTitle(firstLine);
+    const title = readTitle(result.text);
     if (!title) return fallbackTitleFromPrompt(trimmedPrompt);
     return title;
   } catch (error) {
@@ -97,7 +145,16 @@ export async function POST(request: Request) {
       typeof body.title === "string" && body.title.trim().length > 0
         ? body.title.trim()
         : null;
-    const title = explicitTitle ?? (await generateProjectTitle(prompt));
+    const requestedModel =
+      typeof body.model === "string" && isWireModelName(body.model)
+        ? body.model
+        : null;
+    const title =
+      explicitTitle ??
+      (await generateProjectTitle(prompt, {
+        userId: sessionUser.id,
+        modelName: requestedModel,
+      }));
 
     const created = await createProject(sessionUser.id, title);
 

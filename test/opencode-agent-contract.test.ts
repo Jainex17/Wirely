@@ -444,3 +444,37 @@ describe("composer routing", () => {
     expect(route.includes("Unauthenticated")).toBe(true);
   });
 });
+
+describe("project title generation", () => {
+  const route = () => read("app/api/projects/route.ts");
+
+  it("titles with the model the user picked, on their own key", () => {
+    const source = route();
+
+    expect(source.includes("getUserAiSettingsForGeneration")).toBe(true);
+    expect(source.includes("getLanguageModel")).toBe(true);
+    // A title does not need the expensive model.
+    expect(source.includes("resolveFastWireModelForStage")).toBe(true);
+  });
+
+  it("does not queue an agent job just to name a project", () => {
+    // An opencode title would take tens of seconds and block project creation.
+    expect(route().includes("isOpencodeWireModel(modelName)")).toBe(true);
+  });
+
+  it("still falls back when the user has no usable key", () => {
+    const source = route();
+
+    expect(source.includes("getKeyForWireModel")).toBe(true);
+    expect(source.includes("fallbackTitleFromPrompt")).toBe(true);
+  });
+
+  it("builds provider clients from one shared resolver", () => {
+    // The wire route used to carry its own copy of this.
+    const wireRoute = read("app/api/wire/[id]/route.ts");
+
+    expect(wireRoute.includes('from "@/lib/wireProviderClient"')).toBe(true);
+    expect(wireRoute.includes("createGoogleGenerativeAI")).toBe(false);
+    expect(wireRoute.includes("createOpenRouter")).toBe(false);
+  });
+});

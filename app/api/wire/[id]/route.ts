@@ -1,7 +1,5 @@
 import { createDataStreamResponse, generateText, type DataStreamWriter } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { getLanguageModel } from "@/lib/wireProviderClient";
 import {
   buildFallbackCritiqueReport,
   hasCriticalQualityViolations,
@@ -80,7 +78,6 @@ export const maxDuration = 60;
 
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
-const ZAI_BASE_URL = "https://api.z.ai/api/paas/v4/";
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -551,34 +548,6 @@ const persistConversationTurn = async ({
   } catch (error) {
     logger.error("wire_conversation_persist_failed", { error });
   }
-};
-
-const getLanguageModel = ({
-  modelName,
-  googleApiKey,
-  openRouterApiKey,
-  zaiApiKey,
-}: {
-  modelName: WireModelName;
-  googleApiKey?: string | null;
-  openRouterApiKey?: string | null;
-  zaiApiKey?: string | null;
-}) => {
-  if (isGoogleWireModel(modelName)) {
-    const provider = createGoogleGenerativeAI({ apiKey: googleApiKey as string });
-    return provider(modelName);
-  }
-
-  if (isZaiWireModel(modelName)) {
-    const provider = createOpenAI({
-      apiKey: zaiApiKey as string,
-      baseURL: ZAI_BASE_URL,
-    });
-    return provider.chat(modelName);
-  }
-
-  const provider = createOpenRouter({ apiKey: openRouterApiKey as string });
-  return provider(modelName);
 };
 
 const writeAssistantStreamFinish = (dataStream: DataStreamWriter, content: string) => {
