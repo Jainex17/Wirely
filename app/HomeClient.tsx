@@ -305,7 +305,8 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: trimmedPrompt }),
+        // Name the project with the model the user picked, on their key.
+        body: JSON.stringify({ prompt: trimmedPrompt, model: activeSelectedModel }),
       });
 
       if (response.status === 401) {
