@@ -3,7 +3,7 @@
 import { useReducer, type FormEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { inferGenerationMode } from "@/lib/inferGenerationMode";
+import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea";
 import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
@@ -63,49 +63,10 @@ export interface HomeClientInitialData {
   hasZaiApiKey: boolean;
 }
 
-const PAGE_VARIATION_OPTIONS: Array<{
-  value: 2 | 3;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: 2,
-    label: "2 outputs",
-    hint: "Generate 2 coordinated results for the selected mode",
-  },
-  {
-    value: 3,
-    label: "3 outputs",
-    hint: "Generate 3 coordinated results for the selected mode",
-  },
-];
-
 export type HomeGenerationMode =
   | "single_page"
   | "concept_variants"
   | "information_architecture";
-
-const GENERATION_MODE_OPTIONS: Array<{
-  value: HomeGenerationMode;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: "single_page",
-    label: "Single page",
-    hint: "Generate one polished page",
-  },
-  {
-    value: "concept_variants",
-    label: "Concepts",
-    hint: "Generate different design directions for the same brief",
-  },
-  {
-    value: "information_architecture",
-    label: "Website pages",
-    hint: "Generate real site pages like Home, About, or Contact",
-  },
-];
 
 const MODEL_PROVIDER_LABEL = {
   google: "Google",
@@ -132,8 +93,6 @@ interface HomeState {
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
   // null means Wirely reads the brief and decides.
-  modeOverride: HomeGenerationMode | null;
-  selectedPageCount: 1 | 2 | 3;
   isLoggingOut: boolean;
   projectToDelete: string | null;
 }
@@ -173,8 +132,6 @@ const createHomeInitialState = (
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
   hasZaiApiKey: initialData.hasZaiApiKey,
-  modeOverride: null,
-  selectedPageCount: 2,
   isLoggingOut: false,
   projectToDelete: null,
 });
@@ -257,6 +214,8 @@ const modelRequiresMissingKey = ({
 export default function HomeClient({ initialData }: HomeClientProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(homeReducer, initialData, createHomeInitialState);
+  const { ref: promptTextareaRef, resize: resizePromptTextarea } =
+    useAutoGrowTextarea({ value: state.prompt, minRows: 4 });
 
   const enabledModelOptions = state.enabledModelIds
     .map((modelId) => WIRE_MODEL_OPTIONS.find((model) => model.id === modelId))
@@ -296,13 +255,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
-  const effectiveGenerationMode =
-    state.modeOverride ?? inferGenerationMode(state.prompt);
-  const effectiveGenerationCount =
-    effectiveGenerationMode === "single_page" ? 1 : state.selectedPageCount;
-  const effectiveModeLabel =
-    GENERATION_MODE_OPTIONS.find((option) => option.value === effectiveGenerationMode)
-      ?.label ?? "Single page";
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.isSubmitting) return;
@@ -376,14 +328,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         sessionStorage.setItem(`wirePrompt:${projectId}`, trimmedPrompt);
       }
       sessionStorage.setItem(`wireModel:${projectId}`, activeSelectedModel);
-      sessionStorage.setItem(
-        `wireGenerationMode:${projectId}`,
-        effectiveGenerationMode,
-      );
-      sessionStorage.setItem(
-        `wirePageCount:${projectId}`,
-        String(effectiveGenerationCount),
-      );
 
       router.push(`/wire/${projectId}`);
     } catch {
@@ -473,6 +417,8 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 onChange={(event) =>
                   dispatch({ type: "patch", payload: { prompt: event.target.value } })
                 }
+                ref={promptTextareaRef}
+                onInput={resizePromptTextarea}
                 placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
                 rows={4}
                 className="w-full resize-none bg-transparent px-4 py-3.5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
@@ -551,90 +497,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        {effectiveModeLabel}
-                        {state.modeOverride === null ? (
-                          <span className="font-mono text-[10px] text-muted-foreground/70">
-                            auto
-                          </span>
-                        ) : null}
-                        <ChevronDown size={14} />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-72">
-                      <DropdownMenuItem
-                        onClick={() =>
-                          dispatch({ type: "patch", payload: { modeOverride: null } })
-                        }
-                        className="flex flex-col items-start gap-0.5"
-                      >
-                        <span className="font-medium">Decide for me</span>
-                        <span className="text-xs text-muted-foreground">
-                          Read the brief and pick one
-                        </span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {GENERATION_MODE_OPTIONS.map((option) => (
-                        <DropdownMenuItem
-                          key={option.value}
-                          onClick={() =>
-                            dispatch({
-                              type: "patch",
-                              payload: { modeOverride: option.value },
-                            })
-                          }
-                          className="flex flex-col items-start gap-0.5"
-                        >
-                          <span className="font-medium">{option.label}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {option.hint}
-                          </span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  {effectiveGenerationMode !== "single_page" ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          {effectiveGenerationCount} outputs
-                          <ChevronDown size={14} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-72">
-                        {PAGE_VARIATION_OPTIONS.map((option) => (
-                          <DropdownMenuItem
-                            key={option.value}
-                            onClick={() =>
-                              dispatch({
-                                type: "patch",
-                                payload: { selectedPageCount: option.value },
-                              })
-                            }
-                            className="flex flex-col items-start gap-0.5"
-                          >
-                            <span className="font-medium">{option.label}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {option.hint}
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
                 </div>
 
                 <Button

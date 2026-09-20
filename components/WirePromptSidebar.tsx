@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/store/useEditorStore";
+import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea";
 import {
   normalizeGeneratedHtml,
   parseBatchWireOutput,
@@ -96,31 +97,6 @@ type RequestedGenerationMode =
   | "single_page"
   | "concept_variants"
   | "information_architecture";
-
-const clampPageCount = (value: unknown): 1 | 2 | 3 => {
-  if (typeof value !== "number" || !Number.isInteger(value)) return 1;
-  if (value <= 1) return 1;
-  if (value >= 3) return 3;
-  return 2;
-};
-
-const parseStoredPageCount = (raw: string | null): 1 | 2 | 3 => {
-  if (!raw) return 1;
-  return clampPageCount(Number.parseInt(raw, 10));
-};
-
-const parseStoredGenerationMode = (
-  raw: string | null,
-): RequestedGenerationMode | null => {
-  if (
-    raw === "single_page" ||
-    raw === "concept_variants" ||
-    raw === "information_architecture"
-  ) {
-    return raw;
-  }
-  return null;
-};
 
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
@@ -322,7 +298,8 @@ export default function WirePromptSidebar({
   );
 
   const autoRunRef = useRef(false);
-  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const { ref: promptTextareaRef, resize: resizePromptTextarea } =
+    useAutoGrowTextarea({ value: prompt });
   const latestPromptRef = useRef("");
   const pendingTargetPageIdRef = useRef<string | null>(null);
   const pendingCreatedPageIdRef = useRef<string | null>(null);
@@ -849,13 +826,22 @@ export default function WirePromptSidebar({
     for (const entry of data as unknown[]) {
       if (!isWireProgressEvent(entry)) continue;
       if (entry.type === "page") {
-        setPageDeviceType(entry.pageId, entry.deviceType);
-        renamePageLocal(entry.pageId, entry.title);
+        // The planner can ask the server for more pages than the client created,
+        // so a page id here may be one this canvas has never seen.
+        const isKnownPage = useEditorStore
+          .getState()
+          .pages.some((page) => page.id === entry.pageId);
+        if (isKnownPage) {
+          setPageDeviceType(entry.pageId, entry.deviceType);
+          renamePageLocal(entry.pageId, entry.title);
+        } else {
+          createPageLocal(entry.title, undefined, entry.pageId, entry.deviceType);
+        }
       } else if (entry.type === "page-status") {
         setPageStatus(entry.pageId, entry.status, entry.detail);
       }
     }
-  }, [data, renamePageLocal, setPageDeviceType, setPageStatus]);
+  }, [createPageLocal, data, renamePageLocal, setPageDeviceType, setPageStatus]);
 
   useEffect(() => {
     const pendingUserMessageId = pendingUserMessageIdRef.current;
@@ -888,7 +874,7 @@ export default function WirePromptSidebar({
         textarea.setSelectionRange(cursorPosition, cursorPosition);
       });
     },
-    [],
+    [promptTextareaRef],
   );
 
   const startGenerationForPage = useCallback(
@@ -1185,28 +1171,6 @@ export default function WirePromptSidebar({
     ],
   );
 
-  const resizePromptTextarea = useCallback(() => {
-    const textarea = promptTextareaRef.current;
-    if (!textarea) return;
-
-    const computedStyles = window.getComputedStyle(textarea);
-    const lineHeight = Number.parseFloat(computedStyles.lineHeight) || 20;
-    const minHeight = lineHeight * 3;
-    const maxHeight = lineHeight * 9;
-
-    textarea.style.height = "auto";
-    const clampedHeight = Math.min(
-      Math.max(textarea.scrollHeight, minHeight),
-      maxHeight,
-    );
-    textarea.style.height = `${clampedHeight}px`;
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, []);
-
-  useEffect(() => {
-    resizePromptTextarea();
-  }, [prompt, resizePromptTextarea]);
-
   useEffect(() => {
     const effectiveSelectedPageId = resolvePromptTargetPageId(
       pages,
@@ -1227,7 +1191,7 @@ export default function WirePromptSidebar({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [focusRequestKey, pages, selectedPageId]);
+  }, [focusRequestKey, pages, selectedPageId, promptTextareaRef]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1299,18 +1263,10 @@ export default function WirePromptSidebar({
       }
 
       const storedPrompt = sessionStorage.getItem(`wirePrompt:${wireId}`);
-      const storedPageCount = parseStoredPageCount(
-        sessionStorage.getItem(`wirePageCount:${wireId}`),
-      );
-      const storedGenerationMode = parseStoredGenerationMode(
-        sessionStorage.getItem(`wireGenerationMode:${wireId}`),
-      );
 
       autoRunRef.current = true;
       sessionStorage.removeItem(`wireModel:${wireId}`);
       sessionStorage.removeItem(`wirePrompt:${wireId}`);
-      sessionStorage.removeItem(`wirePageCount:${wireId}`);
-      sessionStorage.removeItem(`wireGenerationMode:${wireId}`);
 
       if (!storedPrompt) return;
 
@@ -1319,7 +1275,6 @@ export default function WirePromptSidebar({
       const runInitialBatch = async () => {
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
-          let firstPageWasCreated = false;
           if (!firstPageId) {
             const createdFirstPage = await createPageOnServer("Page 1");
             createPageLocal(
@@ -1328,55 +1283,22 @@ export default function WirePromptSidebar({
               createdFirstPage.id,
             );
             firstPageId = createdFirstPage.id;
-            firstPageWasCreated = true;
           }
           if (!firstPageId) return;
 
-          const targets: Array<{ pageId: string; isCreated: boolean }> = [
-            { pageId: firstPageId, isCreated: firstPageWasCreated },
-          ];
-
-          for (let index = 1; index < storedPageCount; index += 1) {
-            const nextPageNumber = useEditorStore.getState().pages.length + 1;
-            const createdPage = await createPageOnServer(
-              `Page ${nextPageNumber}`,
-            );
-            createPageLocal(
-              createdPage.title,
-              undefined,
-              createdPage.id,
-              resolveDeviceIntent(storedPrompt),
-            );
-            targets.push({ pageId: createdPage.id, isCreated: true });
-          }
-
-          if (storedPageCount === 1) {
-            await startGenerationForPage({
-              promptText: storedPrompt,
-              targetPageId: targets[0].pageId,
-              modelName: resolvedModel,
-              force: true,
-            });
-            return;
-          }
-
-          const targetPageIds = targets.map((target) => target.pageId);
-          const createdPageIds = targets
-            .filter((target) => target.isCreated)
-            .map((target) => target.pageId);
-
-          await startBatchGeneration({
+          // Only the first page is created up front. The planner decides how many
+          // outputs this brief needs and the server creates the rest.
+          await startGenerationForPage({
             promptText: storedPrompt,
-            targetPageIds,
-            createdPageIds,
+            targetPageId: firstPageId,
             modelName: resolvedModel,
-            generationMode: storedGenerationMode ?? undefined,
+            force: true,
           });
         } catch (error) {
           const message =
             error instanceof Error && error.message.trim().length > 0
               ? error.message
-              : `Could not generate ${storedPageCount} pages in one request. Please try again.`;
+              : "Could not start generation for this brief. Please try again.";
           reportError(message);
         }
       };

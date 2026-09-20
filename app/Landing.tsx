@@ -114,7 +114,7 @@ function Hero() {
               rows={3}
               maxLength={500}
               placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
-              className="w-full resize-none bg-transparent px-4 pt-4 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
+              className="max-h-56 w-full resize-none bg-transparent px-4 pt-4 text-base leading-relaxed text-foreground [field-sizing:content] placeholder:text-muted-foreground/80 focus:outline-none"
             />
 
             <div className="flex items-center justify-end gap-3 px-3 pb-3">
