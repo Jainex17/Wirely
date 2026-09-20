@@ -39,14 +39,61 @@ const cleanTitle = (value: string) => {
   return normalized.slice(0, 60).trim();
 };
 
-const fallbackTitleFromPrompt = (prompt: string) => {
+const TITLE_MAX_WORDS = 6;
+
+/** Words that begin a new phrase, so a title may end just before one. */
+const TITLE_PHRASE_STARTS = new Set([
+  "with", "for", "and", "or", "that", "to", "in", "on", "of", "using",
+  "featuring", "showing", "where", "plus", "including",
+]);
+
+/** Words not worth ending a title on. */
+const TITLE_TRAILING_STOPWORDS = new Set([
+  "a", "an", "the", "for", "with", "and", "or", "of", "in", "on", "to", "that",
+]);
+
+/**
+ * Names a project from its prompt when no title model is available.
+ *
+ * Used whenever generation runs on a local opencode model, since those cannot
+ * be called server-side, so this is the title most local-agent projects get
+ * rather than a rare fallback. Drops the instruction lead-in ("Design a ...")
+ * and refuses to end mid-phrase, which is what produced "A pricing page for a
+ * note".
+ */
+export const fallbackTitleFromPrompt = (prompt: string) => {
   const cleaned = prompt
     .replace(/\s+/g, " ")
-    .replace(/[^\w\s]/g, " ")
+    // Keep hyphens and apostrophes: "note-taking" is one word, not two.
+    .replace(/[^\w\s'-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    // "Design a pricing page" and "pricing page" should title the same.
+    .replace(/^(?:please\s+)?(?:design|create|build|make|generate|draw)\s+(?:me\s+)?(?:a|an|the)?\s*/i, "")
+    .replace(/^(?:a|an|the)(?:\s+|$)/i, "")
     .trim();
   if (!cleaned) return "Untitled Project";
 
-  const words = cleaned.split(" ").filter(Boolean).slice(0, 6);
+  const all = cleaned.split(" ").filter(Boolean);
+  const words = all.slice(0, TITLE_MAX_WORDS);
+
+  // If the word that fell off the end does not start a new phrase, the cut
+  // landed inside one ("... dashboard with a weekly | streak grid"). Walk back
+  // past the dangling phrase so the title ends where a phrase ends.
+  const nextWord = all[TITLE_MAX_WORDS]?.toLowerCase();
+  if (nextWord && !TITLE_PHRASE_STARTS.has(nextWord)) {
+    for (let i = words.length - 1; i > 0; i -= 1) {
+      const word = words[i]!.toLowerCase();
+      words.pop();
+      if (TITLE_PHRASE_STARTS.has(word)) break;
+    }
+  }
+
+  while (words.length > 0 && TITLE_TRAILING_STOPWORDS.has(words[words.length - 1]!.toLowerCase())) {
+    words.pop();
+  }
+  if (words.length === 0) return "Untitled Project";
+
   const text = words.join(" ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 };

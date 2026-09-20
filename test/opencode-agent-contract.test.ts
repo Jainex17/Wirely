@@ -14,6 +14,7 @@ import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput } from "@/lib/wireOutput";
 import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
 import { DEFAULT_OPENCODE_MODEL, isFreeOpencodeModel } from "@/lib/opencode/models";
+import { fallbackTitleFromPrompt } from "@/app/api/projects/route";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -584,5 +585,59 @@ describe("editing an existing page", () => {
   it("sends no target for the all-pages and new-page sentinels", () => {
     const sidebar = read("components/WirePromptSidebar.tsx");
     expect(sidebar).toContain("isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)");
+  });
+});
+
+describe("project titles without a title model", () => {
+  // opencode runs locally, so there is no server-side call to name the project.
+  // Every local-agent project gets this title.
+  it("does not end mid-phrase", () => {
+    expect(
+      fallbackTitleFromPrompt(
+        "A pricing page for a note-taking app with a monthly and yearly toggle",
+      ),
+    ).toBe("Pricing page for a note-taking app");
+  });
+
+  it("backs out of a phrase the word limit cut into", () => {
+    // Without this the title reads "Habit tracker dashboard with a weekly".
+    expect(
+      fallbackTitleFromPrompt(
+        "Design a habit tracker dashboard with a weekly streak grid and a stats summary",
+      ),
+    ).toBe("Habit tracker dashboard");
+  });
+
+  it("keeps a phrase that ends exactly on the limit", () => {
+    // The dropped word starts a new phrase, so the cut is already clean.
+    expect(
+      fallbackTitleFromPrompt("A pricing page for a note-taking app with a yearly toggle"),
+    ).toBe("Pricing page for a note-taking app");
+  });
+
+  it("keeps hyphenated words whole", () => {
+    expect(fallbackTitleFromPrompt("A two-chair barbershop booking page")).toBe(
+      "Two-chair barbershop booking page",
+    );
+  });
+
+  it("drops the instruction lead-in", () => {
+    expect(fallbackTitleFromPrompt("Design a landing page for plants")).toBe(
+      "Landing page for plants",
+    );
+    expect(fallbackTitleFromPrompt("please build me the checkout flow")).toBe(
+      "Checkout flow",
+    );
+  });
+
+  it("falls back rather than returning an empty title", () => {
+    expect(fallbackTitleFromPrompt("   ")).toBe("Untitled Project");
+    expect(fallbackTitleFromPrompt("!!!")).toBe("Untitled Project");
+  });
+
+  it("never strips a prompt down to nothing", () => {
+    // A prompt that is only stopwords still has to produce something.
+    expect(fallbackTitleFromPrompt("the")).toBe("Untitled Project");
+    expect(fallbackTitleFromPrompt("a dashboard")).toBe("Dashboard");
   });
 });
