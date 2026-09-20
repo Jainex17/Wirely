@@ -16,6 +16,12 @@ import {
 
 const TITLE_MODEL_NAME = "gemini-3.5-flash-lite";
 
+/**
+ * A broken server key fails identically on every project creation, so the full
+ * stack is logged once per process rather than on each request.
+ */
+let loggedServerTitleKeyFailure = false;
+
 type CreateProjectRequestBody = {
   title?: string | null;
   prompt?: string | null;
@@ -107,7 +113,13 @@ const generateProjectTitle = async (
     if (!title) return fallbackTitleFromPrompt(trimmedPrompt);
     return title;
   } catch (error) {
-    logger.error("projects_title_generation_failed", { error });
+    if (!loggedServerTitleKeyFailure) {
+      loggedServerTitleKeyFailure = true;
+      logger.error("projects_title_generation_failed", {
+        error,
+        hint: "Server GOOGLE_GENERATIVE_AI_API_KEY is unusable. Titles fall back to the prompt text until it is fixed.",
+      });
+    }
     return fallbackTitleFromPrompt(trimmedPrompt);
   }
 };

@@ -421,6 +421,23 @@ describe("composer routing", () => {
     expect(source.includes("/concepts")).toBe(true);
   });
 
+  /**
+   * Generation starts two ways: the composer, and the brief handed over from the
+   * home page, which auto-runs on mount through its own code path. Guarding only
+   * the composer left the home-page route posting to the hosted endpoint.
+   */
+  it("also routes the auto-run brief from the home page", () => {
+    expect(sidebar().includes("isOpencodeWireModel(resolvedModel)")).toBe(true);
+  });
+
+  it("guards every generation entry point", () => {
+    const source = sidebar();
+    const guards = source.match(/isOpencodeWireModel\(/g) ?? [];
+
+    // One per entry point: handleSubmit and the auto-run effect.
+    expect(guards.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("reloads pages from the server after a local run", () => {
     const source = sidebar();
 

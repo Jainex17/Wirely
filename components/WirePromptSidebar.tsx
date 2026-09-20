@@ -1091,9 +1091,10 @@ export default function WirePromptSidebar({
    * does not go through useChat like every other model.
    */
   const startLocalAgentGeneration = useCallback(
-    async (promptText: string) => {
+    async (promptText: string, modelName?: WireModelName) => {
       const trimmedPrompt = promptText.trim();
       if (!trimmedPrompt) return false;
+      const runModel = modelName ?? activeModelName;
 
       beginSaving();
       try {
@@ -1103,7 +1104,7 @@ export default function WirePromptSidebar({
           body: JSON.stringify({
             prompt: trimmedPrompt,
             conceptCount: LOCAL_AGENT_CONCEPT_COUNT,
-            model: activeModelName,
+            model: runModel,
           }),
         });
         const queued = (await queueResponse.json()) as {
@@ -1397,6 +1398,11 @@ export default function WirePromptSidebar({
 
       setPrompt("");
 
+      if (isOpencodeWireModel(resolvedModel)) {
+        void startLocalAgentGeneration(storedPrompt, resolvedModel);
+        return;
+      }
+
       const runInitialBatch = async () => {
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
@@ -1443,6 +1449,7 @@ export default function WirePromptSidebar({
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
+    startLocalAgentGeneration,
     reportError,
     wireId,
   ]);
