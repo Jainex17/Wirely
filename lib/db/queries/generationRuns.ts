@@ -8,23 +8,8 @@ import {
   type GenerationOutputStatus,
   type GenerationRunStatus,
 } from "@/lib/db/schema";
+import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { logger } from "@/lib/logger";
-
-const isMissingRelationError = (error: unknown) => {
-  if (!error || typeof error !== "object") return false;
-  const candidate = error as {
-    code?: string;
-    cause?: { code?: string; message?: string };
-    message?: string;
-  };
-
-  return (
-    candidate.code === "42P01" ||
-    candidate.cause?.code === "42P01" ||
-    candidate.message?.includes('does not exist') === true ||
-    candidate.cause?.message?.includes('does not exist') === true
-  );
-};
 
 const loggedMissingGenerationTableActions = new Set<string>();
 

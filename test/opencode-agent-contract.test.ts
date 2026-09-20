@@ -8,6 +8,7 @@ import {
 } from "@/lib/opencode/conceptPrompt";
 import { readBearerToken, hashApiToken, API_TOKEN_PREFIX } from "@/lib/auth/apiToken";
 import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persistConcepts";
+import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput } from "@/lib/wireOutput";
 
 const read = (path: string) => readFileSync(path, "utf8");
@@ -309,5 +310,38 @@ describe("credential containment", () => {
 
     expect(tokensBlock).toContain("tokenHash");
     expect(tokensBlock).not.toMatch(/\btoken:\s*text\(/);
+  });
+});
+
+describe("unmigrated database", () => {
+  it("recognises a postgres missing-relation error at either nesting level", () => {
+    expect(isMissingRelationError({ code: "42P01" })).toBe(true);
+    expect(isMissingRelationError({ cause: { code: "42P01" } })).toBe(true);
+    expect(
+      isMissingRelationError({ message: 'relation "api_tokens" does not exist' }),
+    ).toBe(true);
+    expect(
+      isMissingRelationError({ cause: { message: 'relation "agent_jobs" does not exist' } }),
+    ).toBe(true);
+  });
+
+  it("does not swallow unrelated database errors", () => {
+    expect(isMissingRelationError({ code: "23505" })).toBe(false);
+    expect(isMissingRelationError(new Error("connection refused"))).toBe(false);
+    expect(isMissingRelationError(null)).toBe(false);
+    expect(isMissingRelationError("nope")).toBe(false);
+  });
+
+  it("degrades the agent panel instead of failing the whole settings page", () => {
+    // Settings renders Account and Providers too; one missing table must not
+    // take those down with it.
+    const localAgent = read("lib/db/queries/localAgent.ts");
+    const tokens = read("lib/auth/apiToken.ts");
+
+    for (const source of [localAgent, tokens]) {
+      expect(source.includes("isMissingRelationError")).toBe(true);
+    }
+    expect(localAgent.includes("return false")).toBe(true);
+    expect(tokens.includes("return [];")).toBe(true);
   });
 });

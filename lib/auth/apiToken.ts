@@ -9,6 +9,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { apiTokens, users } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
 
@@ -51,18 +52,29 @@ export const createApiToken = async (
   return { id: row.id, name: row.name, prefix: row.prefix, token };
 };
 
+/**
+ * Lists a user's live tokens.
+ *
+ * Returns an empty list rather than throwing when the table is missing, so the
+ * settings page still renders on a database that has not been migrated yet.
+ */
 export const listApiTokens = async (userId: string) => {
-  const db = getDb();
-  return db
-    .select({
-      id: apiTokens.id,
-      name: apiTokens.name,
-      prefix: apiTokens.prefix,
-      lastUsedAt: apiTokens.lastUsedAt,
-      createdAt: apiTokens.createdAt,
-    })
-    .from(apiTokens)
-    .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
+  try {
+    const db = getDb();
+    return await db
+      .select({
+        id: apiTokens.id,
+        name: apiTokens.name,
+        prefix: apiTokens.prefix,
+        lastUsedAt: apiTokens.lastUsedAt,
+        createdAt: apiTokens.createdAt,
+      })
+      .from(apiTokens)
+      .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+    return [];
+  }
 };
 
 export const revokeApiToken = async (userId: string, tokenId: string): Promise<boolean> => {
