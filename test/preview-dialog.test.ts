@@ -4,6 +4,7 @@ import {
   MIN_PREVIEW_WIDTH,
   clampPreviewWidth,
   injectPreviewEscapeHandler,
+  resolvePreviewDragWidth,
 } from "@/components/PageRenderer";
 
 describe("dragging the preview width", () => {
@@ -75,5 +76,42 @@ describe("closing the preview from inside the frame", () => {
 
   it("leaves empty html alone rather than shipping a bare script", () => {
     expect(injectPreviewEscapeHandler("", reporterId)).toBe("");
+  });
+});
+
+describe("which way a drag resizes", () => {
+  const base = { startWidth: 800, maxWidth: 2000 } as const;
+
+  it("follows the cursor: each edge moves half the width change", () => {
+    // Drag the right grip 100px out, the frame gains 100 on each side.
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 100, side: "right" })).toBe(1000);
+    expect(resolvePreviewDragWidth({ ...base, deltaX: -100, side: "right" })).toBe(600);
+  });
+
+  it("counts the left grip the other way", () => {
+    // Pulling the left edge leftwards makes the frame wider, not narrower.
+    expect(resolvePreviewDragWidth({ ...base, deltaX: -100, side: "left" })).toBe(1000);
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 100, side: "left" })).toBe(600);
+  });
+
+  it("moves both grips the same distance for the same width", () => {
+    const viaRight = resolvePreviewDragWidth({ ...base, deltaX: 120, side: "right" });
+    const viaLeft = resolvePreviewDragWidth({ ...base, deltaX: -120, side: "left" });
+    expect(viaLeft).toBe(viaRight);
+  });
+
+  it("stays within the bounds however far the cursor goes", () => {
+    expect(resolvePreviewDragWidth({ ...base, deltaX: -9000, side: "right" })).toBe(
+      MIN_PREVIEW_WIDTH,
+    );
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 9000, side: "right" })).toBe(2000);
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 9000, side: "left" })).toBe(
+      MIN_PREVIEW_WIDTH,
+    );
+  });
+
+  it("does not move at all before the cursor does", () => {
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 0, side: "right" })).toBe(800);
+    expect(resolvePreviewDragWidth({ ...base, deltaX: 0, side: "left" })).toBe(800);
   });
 });

@@ -120,6 +120,37 @@ interface ContextMenuAction {
 export const MIN_PREVIEW_WIDTH = 280;
 
 /**
+ * Room kept either side of the artboard for the drag handles.
+ *
+ * They sit outside the frame, so without this the widest preview pushes them
+ * past the edge of the scrolling stage and they cannot be grabbed at all.
+ */
+export const PREVIEW_HANDLE_GUTTER = 40;
+
+/**
+ * Width for a drag that started at `startWidth` and has moved `deltaX` so far.
+ *
+ * Doubled because the artboard is centred: each edge only travels half of what
+ * the width changes by, so without it the frame slides behind the cursor. The
+ * left grip counts the other way, since moving it left makes the frame wider.
+ */
+export const resolvePreviewDragWidth = ({
+  startWidth,
+  deltaX,
+  side,
+  maxWidth,
+}: {
+  startWidth: number;
+  deltaX: number;
+  side: "left" | "right";
+  maxWidth: number;
+}) =>
+  clampPreviewWidth(
+    startWidth + deltaX * 2 * (side === "left" ? -1 : 1),
+    maxWidth,
+  );
+
+/**
  * Clamps a dragged preview width to what the stage can show.
  *
  * The artboard is always drawn at 1:1, so the drag maps exactly to the pointer
@@ -390,66 +421,63 @@ export default React.memo(function PageRenderer({
   }, [stageEl]);
 
   const previewFrameHeight = Math.max(currentDevice.height, 640);
+  const previewMaxWidth = Math.max(0, stageWidth - PREVIEW_HANDLE_GUTTER * 2);
   const previewWidth = clampPreviewWidth(
     previewWidthOverride ?? currentDevice.width,
-    stageWidth,
+    previewMaxWidth,
   );
 
   /**
    * Drag-to-resize, the way the browser's own device toolbar works.
    *
-   * The pointer is captured on the grip so the drag survives crossing the
-   * preview frame, and the frame stops taking pointer events for the duration:
-   * without that the iframe swallows the move the moment the cursor is over it
-   * and the drag dies halfway.
-   *
-   * The width is set straight from the move event. Batching it onto an
-   * animation frame looks like the careful choice, but the browser already
-   * coalesces pointer moves to about one per frame, and it means the drag stops
-   * dead anywhere frames are not being produced.
+   * The move and release listeners go on the window for the length of the drag
+   * rather than on the grip. Pointer capture looks like the tidier answer, but
+   * it puts the whole gesture at the mercy of one element keeping a capture it
+   * can lose, and the preview is a sandboxed iframe sitting directly under the
+   * cursor. On the window the drag cannot be stolen. The frame also stops
+   * taking pointer events while dragging, so it never swallows a move.
    */
-  const resizeOrigin = React.useRef({ x: 0, width: 0 });
-  // A ref, not the state flag: state updates on the next render, so a move
-  // arriving in the same tick as the press would read a stale `false` and the
-  // drag would drop its first frames.
-  const isDraggingRef = React.useRef(false);
+  const releaseResizeRef = React.useRef<(() => void) | null>(null);
 
   const handleResizeStart = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
       event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      resizeOrigin.current = { x: event.clientX, width: previewWidth };
-      isDraggingRef.current = true;
+
+      const startX = event.clientX;
+      const startWidth = previewWidth;
+      const side = event.currentTarget.dataset.side === "left" ? "left" : "right";
+
+      const onMove = (moveEvent: PointerEvent) => {
+        setPreviewWidthOverride(
+          resolvePreviewDragWidth({
+            startWidth,
+            deltaX: moveEvent.clientX - startX,
+            side,
+            maxWidth: previewMaxWidth,
+          }),
+        );
+      };
+
+      const release = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", release);
+        window.removeEventListener("pointercancel", release);
+        releaseResizeRef.current = null;
+        setIsResizingPreview(false);
+      };
+
+      releaseResizeRef.current = release;
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", release);
+      window.addEventListener("pointercancel", release);
       setIsResizingPreview(true);
     },
-    [previewWidth],
+    [previewMaxWidth, previewWidth],
   );
 
-  const handleResizeMove = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!isDraggingRef.current) return;
-      // Doubled: the artboard is centred, so each edge moves half of what the
-      // width changes by. Without this the frame lags behind the cursor.
-      const delta = (event.clientX - resizeOrigin.current.x) * 2;
-      setPreviewWidthOverride(
-        clampPreviewWidth(resizeOrigin.current.width + delta, stageWidth),
-      );
-    },
-    [stageWidth],
-  );
-
-  const handleResizeEnd = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      isDraggingRef.current = false;
-      setIsResizingPreview(false);
-    },
-    [],
-  );
-
-
+  // Unmounting mid-drag would otherwise leave the listeners on the window.
+  React.useEffect(() => () => releaseResizeRef.current?.(), []);
 
   // Escape forwarded out of the preview frame, since the frame swallows it.
   React.useEffect(() => {
@@ -1090,24 +1118,37 @@ export default React.memo(function PageRenderer({
                 referrerPolicy="no-referrer"
               />
 
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize preview width"
-                onPointerDown={handleResizeStart}
-                onPointerMove={handleResizeMove}
-                onPointerUp={handleResizeEnd}
-                onPointerCancel={handleResizeEnd}
-                className="group absolute inset-y-0 -right-3 flex w-6 cursor-ew-resize touch-none items-center justify-center"
-              >
-                <span
+              {(["left", "right"] as const).map((side) => (
+                <div
+                  key={side}
+                  data-side={side}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={`Resize preview from the ${side}`}
+                  onPointerDown={handleResizeStart}
                   className={cn(
-                    "h-12 w-1.5 rounded-full bg-border transition-colors",
-                    "group-hover:bg-muted-foreground/60",
-                    isResizingPreview && "bg-muted-foreground",
+                    "group absolute inset-y-0 flex w-8 cursor-ew-resize touch-none select-none items-center justify-center",
+                    side === "left" ? "-left-8" : "-right-8",
                   )}
-                />
-              </div>
+                >
+                  <span
+                    className={cn(
+                      "h-16 w-1.5 rounded-full transition-colors",
+                      isResizingPreview
+                        ? "bg-foreground/70"
+                        : "bg-muted-foreground/40 group-hover:bg-foreground/60",
+                    )}
+                  />
+                </div>
+              ))}
+
+              {/* The width follows the frame during a drag, so the number is
+                  where the eye already is rather than up in the header. */}
+              {isResizingPreview ? (
+                <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-medium tabular-nums text-background">
+                  {previewWidth}px
+                </span>
+              ) : null}
             </div>
           </div>
         </DialogContent>
