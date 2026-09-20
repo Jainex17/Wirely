@@ -9,8 +9,10 @@
  */
 import {
   createProjectPageForUser,
+  listProjectPagesForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import type { PageDeviceType } from "@/lib/types";
 import { logger } from "@/lib/logger";
 import { normalizeGeneratedHtml, parseBatchWireOutput } from "@/lib/wireOutput";
 
@@ -64,13 +66,27 @@ export const persistAgentConcepts = async ({
   userId,
   rawText,
   expectedCount,
+  targetPageId = null,
+  deviceType,
 }: {
   projectId: string;
   userId: string;
   rawText: string;
   expectedCount: number;
+  /** When set, the single result overwrites this page instead of adding pages. */
+  targetPageId?: string | null;
+  deviceType?: PageDeviceType;
 }): Promise<PersistConceptsResult> => {
   const { details, titleByIndex, htmlByIndex } = parseBatchWireOutput(rawText, expectedCount);
+
+  // An edit run writes back to the page the user picked. A concept run fills the
+  // empty page that project creation leaves behind before adding new ones, which
+  // is what stops a blank "Page 1" sitting next to the concepts forever.
+  const reusablePageIds = targetPageId
+    ? [targetPageId]
+    : (await listProjectPagesForUser({ projectId, userId }))
+        .filter((page) => !page.htmlContent.trim())
+        .map((page) => page.id);
 
   const concepts: PersistedConcept[] = [];
   let skipped = 0;
@@ -83,19 +99,28 @@ export const persistAgentConcepts = async ({
     }
 
     const title = sanitizeConceptTitle(titleByIndex[index]) ?? `Concept ${index + 1}`;
-    const page = await createProjectPageForUser({ projectId, userId, title });
-    if (!page) {
-      // Ownership changed underneath us, or the project was deleted mid-run.
-      skipped += 1;
-      continue;
+    // An edit keeps the name the user already knows the page by.
+    const isEdit = Boolean(targetPageId);
+
+    let pageId = reusablePageIds.shift();
+    if (!pageId) {
+      const page = await createProjectPageForUser({ projectId, userId, title, deviceType });
+      if (!page) {
+        // Ownership changed underneath us, or the project was deleted mid-run.
+        skipped += 1;
+        continue;
+      }
+      pageId = page.id;
     }
 
     const normalized = normalizeGeneratedHtml(html, { allowImages: false });
     const updated = await updateProjectPageForUser({
       projectId,
-      pageId: page.id,
+      pageId,
       userId,
+      ...(isEdit ? {} : { title }),
       htmlContent: normalized.html,
+      deviceType,
     });
 
     if (!updated) {
@@ -103,7 +128,7 @@ export const persistAgentConcepts = async ({
       continue;
     }
 
-    concepts.push({ pageId: page.id, title });
+    concepts.push({ pageId, title });
   }
 
   if (skipped > 0) {

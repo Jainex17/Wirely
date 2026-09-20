@@ -381,6 +381,26 @@ export const appendConversationMessage = async ({
   return message;
 };
 
+/**
+ * The most recent assistant reply in a project's conversation.
+ *
+ * A local-agent run writes its summary here rather than streaming it, so the
+ * polling client reads it back instead of inventing its own wording. Returns
+ * null before the first reply lands.
+ */
+export const getLatestAssistantMessage = async (projectId: string) => {
+  const db = getDb();
+  const [row] = await db
+    .select({ content: conversationMessages.content })
+    .from(conversationMessages)
+    .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+    .where(and(eq(conversations.projectId, projectId), eq(conversationMessages.role, "assistant")))
+    .orderBy(desc(conversationMessages.createdAt))
+    .limit(1);
+
+  return row?.content ?? null;
+};
+
 export const deleteProjectForUser = async ({
   projectId,
   userId,

@@ -297,6 +297,15 @@ export const agentJobs = pgTable(
     model: text("model"),
     variant: text("variant"),
     prompt: text("prompt").notNull(),
+    /**
+     * Set when the run edits one existing page instead of adding concepts.
+     * The result overwrites this page rather than creating new ones.
+     */
+    targetPageId: uuid("target_page_id").references(() => projectPages.id, {
+      onDelete: "cascade",
+    }),
+    /** Desktop or mobile, so a mobile brief does not save as a desktop frame. */
+    deviceType: text("device_type").default("desktop").notNull(),
     /** How many screen concepts this job should return. */
     variantCount: integer("variant_count").default(1).notNull(),
     /** Raw assistant text, parsed server-side by the existing wireOutput pipeline. */

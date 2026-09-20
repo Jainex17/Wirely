@@ -1092,7 +1092,11 @@ export default function WirePromptSidebar({
    * does not go through useChat like every other model.
    */
   const startLocalAgentGeneration = useCallback(
-    async (promptText: string, modelName?: WireModelName) => {
+    async (
+      promptText: string,
+      modelName?: WireModelName,
+      targetPageId?: string | null,
+    ) => {
       const trimmedPrompt = promptText.trim();
       if (!trimmedPrompt) return false;
       const runModel = modelName ?? activeModelName;
@@ -1111,6 +1115,9 @@ export default function WirePromptSidebar({
             prompt: trimmedPrompt,
             conceptCount: LOCAL_AGENT_CONCEPT_COUNT,
             model: runModel,
+            // Present means "revise this page"; absent means "add concepts".
+            ...(targetPageId ? { targetPageId } : {}),
+            deviceType: useEditorStore.getState().activeDevice,
           }),
         });
         const queued = (await queueResponse.json()) as {
@@ -1135,7 +1142,12 @@ export default function WirePromptSidebar({
           );
           const payload = (await statusResponse.json()) as {
             error?: string;
-            job?: { status?: string; error?: string | null; conceptCount?: number };
+            job?: {
+              status?: string;
+              error?: string | null;
+              conceptCount?: number;
+              summary?: string | null;
+            };
           };
           if (!statusResponse.ok) {
             throw new Error(payload.error || "Lost track of the local run.");
@@ -1175,15 +1187,21 @@ export default function WirePromptSidebar({
             })),
           );
 
+          // Prefer the reply the server already stored, so the message shown now
+          // is the message still there after a reload.
           const conceptCount = payload.job?.conceptCount ?? LOCAL_AGENT_CONCEPT_COUNT;
           setMessages((current) => [
             ...current,
             {
               id: crypto.randomUUID(),
               role: "assistant",
-              content: `Generated ${conceptCount} concept${
-                conceptCount === 1 ? "" : "s"
-              } on your local agent.`,
+              content:
+                payload.job?.summary?.trim() ||
+                (targetPageId
+                  ? "Updated the page on your local agent."
+                  : `Generated ${conceptCount} concept${
+                      conceptCount === 1 ? "" : "s"
+                    } on your local agent.`),
             },
           ]);
           return true;
@@ -1217,9 +1235,16 @@ export default function WirePromptSidebar({
       event.preventDefault();
 
       // opencode models never reach the hosted route: they run on the user's
-      // machine and target the project rather than one page.
+      // machine. A selected page means revise that page; "all pages" means add
+      // a fresh batch of concepts to the project.
       if (isOpencodeWireModel(activeModelName)) {
-        const generated = await startLocalAgentGeneration(prompt);
+        const generated = await startLocalAgentGeneration(
+          prompt,
+          undefined,
+          isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)
+            ? null
+            : selectedPageId,
+        );
         if (generated) {
           setPrompt("");
         }

@@ -229,6 +229,47 @@ export const getDefaultPageX = (
   return index * (pageWidth + PAGE_GAP) - totalWidth / 2;
 };
 
+/**
+ * Picks an x for every page that has no position yet.
+ *
+ * `getDefaultPageX` centres a whole row and only makes sense when all the pages
+ * are placed together. A page that shows up later (a generated concept, an added
+ * page) has to go to the right of what is already on the canvas: its neighbours
+ * kept positions computed back when the page count was smaller, so reusing the
+ * centred slot puts it exactly on top of one of them.
+ */
+export const placeMissingPages = <T extends { id: string; width: number }>(
+  pages: T[],
+  positions: Record<string, { x: number } | undefined>,
+): Record<string, number> => {
+  // Layouts saved before positions were collision-free can hold two pages at the
+  // same x. Treat the duplicate as unplaced so an existing canvas repairs itself
+  // instead of showing the frames stacked forever.
+  const takenX = new Set<number>();
+  const keeps = new Set<string>();
+  let rightEdge = Number.NEGATIVE_INFINITY;
+  for (const page of pages) {
+    const placed = positions[page.id];
+    if (!placed || takenX.has(placed.x)) continue;
+    takenX.add(placed.x);
+    keeps.add(page.id);
+    rightEdge = Math.max(rightEdge, placed.x + page.width);
+  }
+
+  const assigned: Record<string, number> = {};
+  pages.forEach((page, index) => {
+    if (keeps.has(page.id)) return;
+    const x =
+      rightEdge === Number.NEGATIVE_INFINITY
+        ? getDefaultPageX(index, pages.length, page.width)
+        : rightEdge + PAGE_GAP;
+    rightEdge = x + page.width;
+    assigned[page.id] = x;
+  });
+
+  return assigned;
+};
+
 export const createDefaultCamera = (): CameraState => ({
   x: 0,
   y: 0,

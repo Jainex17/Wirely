@@ -78,6 +78,8 @@ export async function POST(request: Request, context: RouteContext) {
       userId: user.id,
       rawText: text,
       expectedCount: claimed.variantCount,
+      targetPageId: claimed.targetPageId,
+      deviceType: claimed.deviceType === "mobile" ? "mobile" : "desktop",
     });
 
     if (persisted.concepts.length === 0) {

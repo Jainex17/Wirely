@@ -31,6 +31,65 @@ export interface ConceptPromptOptions {
   allowImages?: boolean;
 }
 
+/**
+ * Prompt for editing one existing screen rather than generating new concepts.
+ *
+ * Deliberately emits the same `DETAILS:` / `TITLE_1:` / `HTML_1:` shape as a
+ * one-concept batch, so `parseBatchWireOutput` reads it with no special case.
+ */
+export const composeEditPrompt = ({
+  userPrompt,
+  currentHtml,
+  allowImages = false,
+}: {
+  userPrompt: string;
+  currentHtml: string;
+  allowImages?: boolean;
+}): string =>
+  `You are an expert product designer. Revise the HTML document below.
+
+Apply exactly this change:
+${userPrompt}
+
+Keep everything the request does not mention: the same layout structure, copy,
+and visual language. This is an edit, not a redesign.
+
+Current document:
+${currentHtml}
+
+Rules for the document you return:
+- A complete document starting with <!doctype html>.
+- Semantic HTML5 with Tailwind utility classes only.
+- Include ${TAILWIND_CDN} in <head>.
+- Include ${ELEMENTS_CDN} in <head>.
+- Include ${BOOTSTRAP_ICONS_CDN} in <head>.
+- Include ${CHARTJS_CDN} only when the screen genuinely needs a chart.
+- Include a viewport meta tag and explicit background and text classes on <body>.
+- No <style> tags and no inline style attributes.
+- ${
+    allowImages
+      ? "Use <img> with descriptive alt text where a photograph genuinely helps."
+      : "Do not use <img> tags or external image URLs. Represent imagery with styled placeholder blocks."
+  }
+
+How to reply:
+- Do not read or write any files. Do not run any commands.
+- Do not think out loud, explain your approach, or restate these instructions.
+- Write nothing before the first section and nothing after the last one.
+- No markdown, no code fences, no commentary between sections.
+- The very first characters of your reply must be "DETAILS:".
+
+Reply in exactly this shape:
+
+DETAILS:
+<one sentence describing what you changed>
+
+TITLE_1:
+<short name for the screen>
+
+HTML_1:
+<!doctype html> ... the full revised document`;
+
 export const composeConceptBatchPrompt = ({
   userPrompt,
   conceptCount,

@@ -19,6 +19,9 @@ export interface QueueAgentJobInput {
   model?: string | null;
   variant?: string | null;
   variantCount?: number;
+  /** Set to edit that page in place instead of adding new concepts. */
+  targetPageId?: string | null;
+  deviceType?: string;
 }
 
 export const queueAgentJob = async ({
@@ -28,11 +31,22 @@ export const queueAgentJob = async ({
   model = null,
   variant = null,
   variantCount = 1,
+  targetPageId = null,
+  deviceType = "desktop",
 }: QueueAgentJobInput) => {
   const db = getDb();
   const [job] = await db
     .insert(agentJobs)
-    .values({ userId, projectId, prompt, model, variant, variantCount })
+    .values({
+      userId,
+      projectId,
+      prompt,
+      model,
+      variant,
+      variantCount,
+      targetPageId,
+      deviceType,
+    })
     .returning({ id: agentJobs.id, status: agentJobs.status, createdAt: agentJobs.createdAt });
 
   return job;
@@ -116,6 +130,8 @@ export const claimAgentJobResult = async (
       id: agentJobs.id,
       projectId: agentJobs.projectId,
       variantCount: agentJobs.variantCount,
+      targetPageId: agentJobs.targetPageId,
+      deviceType: agentJobs.deviceType,
     });
 
   return job ?? null;

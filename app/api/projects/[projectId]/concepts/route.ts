@@ -4,6 +4,7 @@ import { getRequestSessionUser } from "@/lib/auth/session";
 import {
   appendConversationMessage,
   getProjectForUser,
+  getProjectPageForUser,
 } from "@/lib/db/queries/projects";
 import {
   hasActiveAgentJob,
@@ -12,7 +13,11 @@ import {
 import { isLocalAgentOnline } from "@/lib/db/queries/localAgent";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
-import { clampConceptCount, composeConceptBatchPrompt } from "@/lib/opencode/conceptPrompt";
+import {
+  clampConceptCount,
+  composeConceptBatchPrompt,
+  composeEditPrompt,
+} from "@/lib/opencode/conceptPrompt";
 import { DEFAULT_OPENCODE_MODEL } from "@/lib/opencode/models";
 
 export const runtime = "nodejs";
@@ -75,11 +80,39 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const conceptCount = clampConceptCount(parsed.data.conceptCount ?? 3);
+    const deviceType = parsed.data.deviceType === "mobile" ? "mobile" : "desktop";
+
+    // A target page turns this into an edit: one revision of that page rather
+    // than a batch of new concepts.
+    const targetPageValue = parsed.data.targetPageId;
+    if (targetPageValue !== undefined && typeof targetPageValue !== "string") {
+      return NextResponse.json(
+        { error: "`targetPageId` must be a string." },
+        { status: 400 },
+      );
+    }
+
+    let targetPage = null;
+    if (typeof targetPageValue === "string" && targetPageValue) {
+      targetPage = await getProjectPageForUser({
+        projectId,
+        pageId: targetPageValue,
+        userId: sessionUser.id,
+      });
+      if (!targetPage) {
+        return NextResponse.json({ error: "Page not found." }, { status: 404 });
+      }
+    }
+
+    const conceptCount = targetPage ? 1 : clampConceptCount(parsed.data.conceptCount ?? 3);
     const job = await queueAgentJob({
       userId: sessionUser.id,
       projectId,
-      prompt: composeConceptBatchPrompt({ userPrompt, conceptCount }),
+      targetPageId: targetPage?.id ?? null,
+      deviceType: targetPage?.deviceType ?? deviceType,
+      prompt: targetPage
+        ? composeEditPrompt({ userPrompt, currentHtml: targetPage.htmlContent })
+        : composeConceptBatchPrompt({ userPrompt, conceptCount }),
       // Pinned to a free model rather than left null, which would fall through
       // to whatever the user set as their opencode default, possibly a paid one.
       model:

@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import {
   clampConceptCount,
   composeConceptBatchPrompt,
+  composeEditPrompt,
   MAX_CONCEPTS_PER_JOB,
 } from "@/lib/opencode/conceptPrompt";
 import { readBearerToken, hashApiToken, API_TOKEN_PREFIX } from "@/lib/auth/apiToken";
@@ -531,5 +532,57 @@ describe("local run result ordering", () => {
 
   it("shows the exchange without waiting for a reload", () => {
     expect(read("components/WirePromptSidebar.tsx")).toContain("setMessages");
+  });
+});
+
+describe("editing an existing page", () => {
+  const currentHtml = "<!doctype html><html><body>the original screen</body></html>";
+
+  it("asks for a revision, not a redesign, and carries the current document", () => {
+    const prompt = composeEditPrompt({
+      userPrompt: "make the primary button amber",
+      currentHtml,
+    });
+
+    expect(prompt).toContain("make the primary button amber");
+    expect(prompt).toContain(currentHtml);
+    expect(prompt).toContain("This is an edit, not a redesign.");
+  });
+
+  it("uses the one-concept marker shape the batch parser already reads", () => {
+    const prompt = composeEditPrompt({ userPrompt: "tighten the spacing", currentHtml });
+
+    expect(prompt).toContain("DETAILS:");
+    expect(prompt).toContain("TITLE_1:");
+    expect(prompt).toContain("HTML_1:");
+    // A second block would make the parser expect concepts that never arrive.
+    expect(prompt).not.toContain("TITLE_2:");
+
+    const parsed = parseBatchWireOutput(
+      `DETAILS:\nTightened it.\n\nTITLE_1:\nAerial\n\nHTML_1:\n${currentHtml}`,
+      1,
+    );
+    expect(parsed.htmlByIndex[0]).toContain("the original screen");
+  });
+
+  it("queues an edit as a single output written back to the chosen page", () => {
+    const route = read("app/api/projects/[projectId]/concepts/route.ts");
+
+    // One revision, never a batch, when a page is named.
+    expect(route).toContain("targetPage ? 1 : clampConceptCount");
+    expect(route).toContain("composeEditPrompt");
+    // Ownership is checked before the page's HTML is put into a prompt.
+    expect(route).toContain("getProjectPageForUser");
+    expect(route).toContain('{ error: "Page not found." }');
+  });
+
+  it("keeps the page's existing name when revising it", () => {
+    const persist = read("lib/opencode/persistConcepts.ts");
+    expect(persist).toContain("...(isEdit ? {} : { title })");
+  });
+
+  it("sends no target for the all-pages and new-page sentinels", () => {
+    const sidebar = read("components/WirePromptSidebar.tsx");
+    expect(sidebar).toContain("isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)");
   });
 });
