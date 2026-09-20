@@ -408,3 +408,39 @@ describe("opencode models in the catalog", () => {
     expect(route.includes("runs on your local agent")).toBe(true);
   });
 });
+
+describe("composer routing", () => {
+  const sidebar = () => read("components/WirePromptSidebar.tsx");
+
+  it("sends opencode models to the local agent, not the hosted route", () => {
+    const source = sidebar();
+
+    // The branch must sit in handleSubmit before any hosted-route call.
+    expect(source.includes("isOpencodeWireModel(activeModelName)")).toBe(true);
+    expect(source.includes("startLocalAgentGeneration")).toBe(true);
+    expect(source.includes("/concepts")).toBe(true);
+  });
+
+  it("reloads pages from the server after a local run", () => {
+    const source = sidebar();
+
+    // Concepts are written server-side, so the client cannot guess them.
+    expect(source.includes("hydrateProject")).toBe(true);
+    expect(source.includes("/pages`")).toBe(true);
+  });
+
+  it("gives up rather than polling a dead agent forever", () => {
+    const source = sidebar();
+
+    expect(source.includes("LOCAL_AGENT_TIMEOUT_MS")).toBe(true);
+    expect(source.includes("did not finish in time")).toBe(true);
+  });
+
+  it("exposes the pages list the reload depends on", () => {
+    const route = read("app/api/projects/[projectId]/pages/route.ts");
+
+    expect(route.includes("export async function GET")).toBe(true);
+    expect(route.includes("listProjectPagesForUser")).toBe(true);
+    expect(route.includes("Unauthenticated")).toBe(true);
+  });
+});
