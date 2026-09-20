@@ -214,17 +214,28 @@ export default function LocalAgentPanel({
                     opencode auth login
                   </code>
                 </li>
-                <li>2. Create a token below and copy it.</li>
                 <li>
-                  3. From the Wirely repo, run{" "}
+                  2. In the Wirely repo, run{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                    bun run agent -- login &lt;token&gt;
+                    bun link
+                  </code>{" "}
+                  once to install the{" "}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                    wirely-agent
+                  </code>{" "}
+                  command.
+                </li>
+                <li>3. Create a token below and copy it.</li>
+                <li>
+                  4. Run{" "}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                    wirely-agent login &lt;token&gt;
                   </code>
                 </li>
                 <li>
-                  4. Then start it with{" "}
+                  5. Start it with{" "}
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                    bun run agent
+                    wirely-agent
                   </code>
                 </li>
               </ol>

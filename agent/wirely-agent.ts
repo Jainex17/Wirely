@@ -7,11 +7,10 @@
  * outbound only: no port is opened, no tunnel is needed, and opencode's
  * credentials never leave the machine.
  *
- * Run from the Wirely repo. There is no installed binary yet:
+ * Two ways to run it, and the help text adapts to which one you used:
  *
- *   bun run agent -- login <token>   save a token minted in Wirely settings
- *   bun run agent                    start the loop
- *   bun run agent:doctor             check opencode and print what was detected
+ *   wirely-agent login <token>      after `bun link` in the Wirely repo
+ *   bun run agent -- login <token>  straight from the repo, no link needed
  *
  * Environment:
  *   WIRELY_URL     Wirely base URL (default https://wirely.app)
@@ -25,6 +24,7 @@ import { dirname, join } from "node:path";
 
 import { OpencodeError, probeOpencode, runOpencode, type OpencodeProbe } from "../lib/opencode/run";
 import { resolveOpencodeOutcome } from "../lib/opencode/events";
+import { INVOCATION } from "./invocation";
 
 const CONFIG_PATH = join(homedir(), ".config", "wirely", "agent.json");
 const DEFAULT_BASE_URL = "https://wirely.app";
@@ -90,7 +90,7 @@ const claimJob = async (baseUrl: string, token: string): Promise<AgentJob | null
   if (response.status === 204) return null;
   if (response.status === 401) {
     throw new Error(
-      "Wirely rejected the token. Run `bun run agent -- login <token>` again.",
+      `Wirely rejected the token. Run \`${INVOCATION} login <token>\` again.`,
     );
   }
   if (!response.ok) {
@@ -175,7 +175,7 @@ const runJob = async (
 
 const commandLogin = (token: string | undefined) => {
   if (!token) {
-    console.error("Usage: bun run agent -- login <token>");
+    console.error(`Usage: ${INVOCATION} login <token>`);
     process.exit(1);
   }
   const config = readConfig();
@@ -186,7 +186,9 @@ const commandLogin = (token: string | undefined) => {
 const commandDoctor = async () => {
   const { token, baseUrl } = resolveSettings();
   console.log(`Wirely URL:  ${baseUrl}`);
-  console.log(`Token:       ${token ? "saved" : "missing (run `bun run agent -- login <token>`)"}`);
+  console.log(
+    `Token:       ${token ? "saved" : `missing (run \`${INVOCATION} login <token>\`)`}`,
+  );
 
   try {
     const probe = await probeOpencode(process.env.OPENCODE_BIN);
@@ -202,7 +204,7 @@ const commandRun = async () => {
   const { token, baseUrl } = resolveSettings();
   if (!token) {
     console.error(
-      "No token. Mint one in Wirely settings, then run `bun run agent -- login <token>`.",
+      `No token. Mint one in Wirely settings, then run \`${INVOCATION} login <token>\`.`,
     );
     process.exit(1);
   }
@@ -254,6 +256,6 @@ if (command === "login") {
   await commandRun();
 } else {
   console.error(`Unknown command: ${command}`);
-  console.error("Usage: bun run agent -- [run|login <token>|doctor]");
+  console.error(`Usage: ${INVOCATION} [run|login <token>|doctor]`);
   process.exit(1);
 }

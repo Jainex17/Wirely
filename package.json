@@ -2,6 +2,9 @@
   "name": "wirely",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "wirely-agent": "./agent/wirely-agent.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

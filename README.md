@@ -174,8 +174,15 @@ and nothing else.
 Setup:
 
 1. Install opencode (1.18.0 or newer) and sign in with `opencode auth login`.
-2. Mint a token in Wirely settings.
-3. `bun run agent -- login <token>`, then `bun run agent`.
+2. Run `bun link` once in this repo to install the `wirely-agent` command.
+3. Mint a token in Wirely settings.
+4. `wirely-agent login <token>`, then `wirely-agent`.
+
+Without `bun link`, the same commands work from the repo as `bun run agent -- login <token>`
+and `bun run agent`. The agent detects which way it was started and prints matching help.
+
+Point it at a local Wirely with `WIRELY_URL=http://localhost:3000 wirely-agent login <token>`.
+The URL is saved alongside the token.
 
 Agent environment variables:
 

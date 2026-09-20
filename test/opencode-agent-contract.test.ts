@@ -8,6 +8,7 @@ import {
 } from "@/lib/opencode/conceptPrompt";
 import { readBearerToken, hashApiToken, API_TOKEN_PREFIX } from "@/lib/auth/apiToken";
 import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persistConcepts";
+import { resolveInvocation } from "@/agent/invocation";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput } from "@/lib/wireOutput";
 
@@ -343,5 +344,29 @@ describe("unmigrated database", () => {
     }
     expect(localAgent.includes("return false")).toBe(true);
     expect(tokens.includes("return [];")).toBe(true);
+  });
+});
+
+describe("agent invocation text", () => {
+  /**
+   * process.argv is identical for both paths: `bun link` symlinks to the .ts
+   * file and the shebang re-executes it under bun. Only the package runner's
+   * lifecycle event distinguishes them.
+   */
+  it("names the repo script when run through bun run", () => {
+    expect(resolveInvocation("agent")).toBe("bun run agent --");
+    expect(resolveInvocation("agent:doctor")).toBe("bun run agent --");
+  });
+
+  it("names the binary when run directly", () => {
+    expect(resolveInvocation(undefined)).toBe("wirely-agent");
+    expect(resolveInvocation("")).toBe("wirely-agent");
+  });
+
+  it("keeps the panel and the CLI from hardcoding one invocation", () => {
+    const cli = read("agent/wirely-agent.ts");
+    // Every user-facing command string flows through INVOCATION.
+    expect(cli.includes("INVOCATION")).toBe(true);
+    expect(/Usage: (wirely-agent|bun run)/.test(cli)).toBe(false);
   });
 });
