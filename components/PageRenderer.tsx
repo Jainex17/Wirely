@@ -115,12 +115,41 @@ interface ContextMenuAction {
   disabled?: boolean;
 }
 
-const MOBILE_PREVIEW_SIZES = [
-  { label: "S · 320", name: "Small (iPhone SE)", width: 320 },
-  { label: "M · 375", name: "Standard (iPhone 15)", width: 375 },
-  { label: "L · 414", name: "Large (Plus)", width: 414 },
-  { label: "XL · 430", name: "XL (Pro Max)", width: 430 },
+/**
+ * Widths offered in the preview.
+ *
+ * Spans the whole range rather than only the page's own device, because the
+ * generator is told to write responsive Tailwind and this is the only place
+ * that claim can be checked. Reading a desktop concept at 375px is the point.
+ */
+export const PREVIEW_WIDTHS = [
+  { label: "375", name: "Phone", width: 375 },
+  { label: "430", name: "Large phone", width: 430 },
+  { label: "768", name: "Tablet", width: 768 },
+  { label: "1024", name: "Small laptop", width: 1024 },
+  { label: "1280", name: "Laptop", width: 1280 },
+  { label: "1440", name: "Desktop", width: 1440 },
 ] as const;
+
+/**
+ * Lets the preview be closed from the keyboard after the pointer has gone into
+ * the iframe.
+ *
+ * The preview deliberately enables interaction, and the moment you click inside
+ * a sandboxed frame it owns the keyboard: Escape never reaches the dialog. The
+ * frame forwards it back out instead. Posting a message keeps the sandbox as it
+ * is, which reaching for `allow-same-origin` would not.
+ */
+export const injectPreviewEscapeHandler = (html: string, reporterId: string) => {
+  if (!html) return html;
+
+  const script = `<script>(function(){const id=${JSON.stringify(reporterId)};document.addEventListener("keydown",function(event){if(event.key==="Escape"){window.parent.postMessage({type:"wirely-preview-escape",id:id},"*");}});})();</script>`;
+
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${script}</body>`);
+  }
+  return `${html}${script}`;
+};
 
 export default React.memo(function PageRenderer({
   page,
@@ -155,10 +184,10 @@ export default React.memo(function PageRenderer({
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
-  const [previewMobileWidth, setPreviewMobileWidth] = React.useState<
+  const [previewWidthOverride, setPreviewWidthOverride] = React.useState<
     number | null
   >(null);
-  const previewWidth = previewMobileWidth ?? currentDevice.width;
+  const previewWidth = previewWidthOverride ?? currentDevice.width;
   // Code dialog removed from the page toolbar for now.
   // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
@@ -319,13 +348,32 @@ export default React.memo(function PageRenderer({
   const previewSrcDoc = React.useMemo(
     () =>
       hasRawHtml
-        ? stabilizeViewportHeightClasses(
-            sanitizeIframeHtml(page.iframeHtml ?? ""),
-            currentDevice.height,
+        ? injectPreviewEscapeHandler(
+            stabilizeViewportHeightClasses(
+              sanitizeIframeHtml(page.iframeHtml ?? ""),
+              currentDevice.height,
+            ),
+            iframeReporterId,
           )
         : "",
-    [currentDevice.height, hasRawHtml, page.iframeHtml],
+    [currentDevice.height, hasRawHtml, iframeReporterId, page.iframeHtml],
   );
+
+  // Escape forwarded out of the preview frame, since the frame swallows it.
+  React.useEffect(() => {
+    if (!isPreviewOpen) return;
+
+    const handleEscape = (event: MessageEvent) => {
+      const data = event.data as { type?: string; id?: string } | null;
+      if (!data || data.type !== "wirely-preview-escape") return;
+      if (data.id !== iframeReporterId) return;
+      setIsPreviewOpen(false);
+      setPreviewWidthOverride(null);
+    };
+
+    window.addEventListener("message", handleEscape);
+    return () => window.removeEventListener("message", handleEscape);
+  }, [iframeReporterId, isPreviewOpen]);
 
   const openToolbarContextMenu = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -882,7 +930,7 @@ export default React.memo(function PageRenderer({
         onOpenChange={(open) => {
           setIsPreviewOpen(open);
           if (!open) {
-            setPreviewMobileWidth(null);
+            setPreviewWidthOverride(null);
           }
         }}
       >
@@ -893,36 +941,44 @@ export default React.memo(function PageRenderer({
           <DialogHeader className="px-6 pb-2 pt-4">
             <DialogTitle>{page.title}</DialogTitle>
             <DialogDescription>
-              Live preview at {currentDevice.label.toLowerCase()} width (
-              {previewWidth}px). Interactions are enabled inside the preview.
+              Live preview at {previewWidth}px. Interactions are enabled inside
+              the preview, so press Escape or use Close when you are done.
             </DialogDescription>
           </DialogHeader>
-          {page.deviceType === "mobile" ? (
-            <div className="flex flex-wrap items-center gap-1.5 px-6 pb-1">
-              <span className="mr-1 text-xs font-medium text-muted-foreground">
-                Mobile size
-              </span>
-              {MOBILE_PREVIEW_SIZES.map((size) => {
-                const isActive = previewWidth === size.width;
-                return (
-                  <button
-                    key={size.width}
-                    type="button"
-                    title={size.name}
-                    onClick={() => setPreviewMobileWidth(size.width)}
-                    className={`rounded-full border px-2.5 py-1 text-xs transition ${
-                      isActive
-                        ? "border-primary bg-primary/10 font-medium text-primary"
-                        : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    {size.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          <div className="max-h-[calc(100vh-11rem)] overflow-auto px-6 pb-6">
+          <div className="flex flex-wrap items-center gap-1.5 px-6 pb-1">
+            <span className="mr-1 text-xs font-medium text-muted-foreground">
+              Width
+            </span>
+            {PREVIEW_WIDTHS.map((size) => {
+              const isActive = previewWidth === size.width;
+              return (
+                <button
+                  key={size.width}
+                  type="button"
+                  title={size.name}
+                  onClick={() => setPreviewWidthOverride(size.width)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                    isActive
+                      ? "border-primary bg-primary/10 font-medium text-primary"
+                      : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  }`}
+                >
+                  {size.label}
+                </button>
+              );
+            })}
+            {previewWidthOverride !== null &&
+            previewWidthOverride !== currentDevice.width ? (
+              <button
+                type="button"
+                onClick={() => setPreviewWidthOverride(null)}
+                className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+              >
+                Reset
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-[calc(100vh-13rem)] overflow-auto px-6 pb-4">
             <iframe
               title={`${page.title} preview`}
               srcDoc={previewSrcDoc}
@@ -934,6 +990,11 @@ export default React.memo(function PageRenderer({
               sandbox="allow-scripts"
               referrerPolicy="no-referrer"
             />
+          </div>
+          <div className="flex justify-end border-t border-border px-6 py-3">
+            <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>
+              Close preview
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
