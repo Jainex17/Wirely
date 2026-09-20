@@ -175,7 +175,8 @@ Setup:
 
 1. Install opencode (1.18.0 or newer) and sign in with `opencode auth login`.
 2. Mint a token in Wirely settings, under Local agent.
-3. `npx wirely-agent login <token>`, then `npx wirely-agent`.
+3. `npm install -g wirely-agent`.
+4. `wirely-agent login <token>`, then `wirely-agent`.
 
 The agent ships as its own npm package (`agent/`): one bundled file, no dependencies, plain
 node 18 or newer. It needs neither this repo nor bun. Point it at a local Wirely with
