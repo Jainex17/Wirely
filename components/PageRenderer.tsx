@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -358,6 +359,34 @@ export default React.memo(function PageRenderer({
         : "",
     [currentDevice.height, hasRawHtml, iframeReporterId, page.iframeHtml],
   );
+
+  /**
+   * Width of the area the artboard has to live in.
+   *
+   * The dialog is a fixed stage, so a wider device does not make the window
+   * grow. Anything too wide to fit is scaled down instead, the way a design
+   * tool fits a frame to the canvas, which keeps the whole width visible rather
+   * than hiding half of it behind a horizontal scrollbar.
+   */
+  // A callback ref, not useRef: the stage lives inside a portal that mounts
+  // with the dialog, so a ref read during an effect on `isPreviewOpen` is still
+  // null. This fires exactly when the node attaches.
+  const [stageEl, setStageEl] = React.useState<HTMLDivElement | null>(null);
+  const [stageWidth, setStageWidth] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!stageEl) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setStageWidth(entry.contentRect.width);
+    });
+    observer.observe(stageEl);
+    return () => observer.disconnect();
+  }, [stageEl]);
+
+  const previewFrameHeight = Math.max(currentDevice.height, 640);
+  const previewScale =
+    stageWidth > 0 ? Math.min(1, stageWidth / previewWidth) : 1;
 
   // Escape forwarded out of the preview frame, since the frame swallows it.
   React.useEffect(() => {
@@ -935,67 +964,94 @@ export default React.memo(function PageRenderer({
         }}
       >
         {/*
-          Pinned to the top with a fixed height rather than centred on its own
-          size. A centred dialog taller than the viewport overflows at both
-          ends, which put the width controls above the top of the screen on any
-          laptop-height window and left no way to reach them.
+          A fixed stage. The dialog keeps its size whatever width is picked, and
+          the artboard scales to fit inside it, so choosing a width moves the
+          page being designed rather than the window around it. Pinned to the
+          top because a dialog centred on its own height hangs off both ends of
+          a laptop screen and puts its own controls out of reach.
         */}
         <DialogContent
-          className="top-6 flex max-h-[calc(100vh-3rem)] h-[calc(100vh-3rem)] max-w-[calc(100vw-4rem)] translate-y-0 flex-col p-0"
-          style={{ maxWidth: `${Math.min(previewWidth + 32, 1400)}px` }}
+          showCloseButton={false}
+          className="top-8 flex h-[calc(100vh-4rem)] w-[calc(100vw-4rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
         >
-          <DialogHeader className="shrink-0 px-6 pb-2 pt-4">
-            <DialogTitle>{page.title}</DialogTitle>
-            <DialogDescription>
-              Live preview at {previewWidth}px. Interactions are enabled inside
-              the preview; press Escape to close it.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-6 pb-2">
-            <span className="mr-1 text-xs font-medium text-muted-foreground">
-              Width
-            </span>
-            {PREVIEW_WIDTHS.map((size) => {
-              const isActive = previewWidth === size.width;
-              return (
-                <button
-                  key={size.width}
-                  type="button"
-                  title={size.name}
-                  onClick={() => setPreviewWidthOverride(size.width)}
-                  className={`rounded-full border px-2.5 py-1 text-xs transition ${
-                    isActive
-                      ? "border-primary bg-primary/10 font-medium text-primary"
-                      : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                >
-                  {size.label}
-                </button>
-              );
-            })}
-            {previewWidthOverride !== null &&
-            previewWidthOverride !== currentDevice.width ? (
-              <button
-                type="button"
-                onClick={() => setPreviewWidthOverride(null)}
-                className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
+          <div className="flex shrink-0 items-start justify-between gap-6 border-b border-border px-5 py-3">
+            <div className="min-w-0">
+              <DialogTitle className="truncate text-sm font-medium leading-6">
+                {page.title}
+              </DialogTitle>
+              <DialogDescription className="text-xs leading-5 text-muted-foreground">
+                {previewWidth} x {previewFrameHeight}
+                {previewScale < 1 ? ` at ${Math.round(previewScale * 100)}%` : null}
+                . Press Escape to close.
+              </DialogDescription>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {/* One track, one active cell: the width is a single choice, so it
+                  reads as one control rather than seven competing buttons. */}
+              <div className="hidden items-center rounded-lg border border-border bg-muted/60 p-0.5 sm:inline-flex">
+                {PREVIEW_WIDTHS.map((size) => {
+                  const isActive = previewWidth === size.width;
+                  return (
+                    <button
+                      key={size.width}
+                      type="button"
+                      title={size.name}
+                      aria-pressed={isActive}
+                      onClick={() => setPreviewWidthOverride(size.width)}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-xs tabular-nums transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        isActive
+                          ? "bg-background font-medium text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {size.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <DialogClose
+                aria-label="Close preview"
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96]"
               >
-                Reset
-              </button>
-            ) : null}
+                <X className="size-4" />
+              </DialogClose>
+            </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
-            <iframe
-              title={`${page.title} preview`}
-              srcDoc={previewSrcDoc}
-              className="mx-auto block rounded-md border border-border bg-background"
+
+          {/* The artboard sits on a recessed surface so it reads as an object
+              on a canvas, not as more dialog. */}
+          <div
+            ref={setStageEl}
+            className="flex min-h-0 flex-1 overflow-auto bg-muted/40 p-6"
+          >
+            {/* `m-auto` inside a flex container, not `justify-center`: centring
+                via justify-content clips the overflowing edge once the artboard
+                is taller than the stage, and auto margins do not. */}
+            <div
+              className="m-auto shrink-0"
               style={{
-                width: `${previewWidth}px`,
-                height: `${Math.max(currentDevice.height, 640)}px`,
+                width: `${previewWidth * previewScale}px`,
+                height: `${previewFrameHeight * previewScale}px`,
               }}
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-            />
+            >
+              <iframe
+                title={`${page.title} preview`}
+                srcDoc={previewSrcDoc}
+                className="block rounded-lg border border-border bg-background shadow-sm"
+                style={{
+                  width: `${previewWidth}px`,
+                  height: `${previewFrameHeight}px`,
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: "top left",
+                }}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>
