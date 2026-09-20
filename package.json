@@ -2,9 +2,6 @@
   "name": "wirely",
   "version": "0.1.0",
   "private": true,
-  "bin": {
-    "wirely-agent": "./agent/wirely-agent.ts"
-  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,6 +9,7 @@
     "test": "bun test",
     "agent": "bun run agent/wirely-agent.ts",
     "agent:doctor": "bun run agent/wirely-agent.ts doctor",
+    "agent:build": "bun build agent/wirely-agent.ts --target=node --outfile agent/dist/wirely-agent.js --banner '#!/usr/bin/env node' && chmod +x agent/dist/wirely-agent.js",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

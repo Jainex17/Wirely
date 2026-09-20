@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 /**
  * Wirely local agent.
  *
@@ -7,10 +6,11 @@
  * outbound only: no port is opened, no tunnel is needed, and opencode's
  * credentials never leave the machine.
  *
- * Two ways to run it, and the help text adapts to which one you used:
+ * Ships as the standalone `wirely-agent` npm package: one bundled file, no
+ * dependencies, plain node. The help text adapts to how it was started:
  *
- *   wirely-agent login <token>      after `bun link` in the Wirely repo
- *   bun run agent -- login <token>  straight from the repo, no link needed
+ *   wirely-agent login <token>      installed package, any machine
+ *   bun run agent -- login <token>  from this repo, for development
  *
  * Environment:
  *   WIRELY_URL     Wirely base URL (default https://wirely.app)
