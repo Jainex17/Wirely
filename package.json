@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test": "bun test",
+    "agent": "bun run agent/wirely-agent.ts",
+    "agent:doctor": "bun run agent/wirely-agent.ts doctor",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

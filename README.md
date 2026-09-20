@@ -136,6 +136,8 @@ Notes:
 | `bun run db:generate` | Generate Drizzle migration files. |
 | `bun run db:migrate` | Apply Drizzle migrations. |
 | `bun run db:backfill:page-html` | Currently points to a missing script path (see Known Limitations). |
+| `bun run agent` | Start the Wirely local agent (runs opencode on your machine). |
+| `bun run agent:doctor` | Check the local opencode install and print the detected flags. |
 
 ## API Surface (Core Routes)
 
@@ -148,6 +150,47 @@ Notes:
 - `POST /api/projects/[projectId]/pages` - create page.
 - `PATCH /api/projects/[projectId]/pages/[pageId]` - update page.
 - `DELETE /api/projects/[projectId]/pages/[pageId]` - delete page.
+
+Local agent routes (see "Local agent" below):
+
+- `POST /api/projects/[projectId]/concepts` - queue a screen-concept run for the user's local agent.
+- `GET /api/projects/[projectId]/concepts/[jobId]` - poll job status.
+- `GET /api/profile/agent-tokens` - list agent tokens and whether an agent is connected.
+- `POST /api/profile/agent-tokens` - mint an agent token (plaintext returned once).
+- `DELETE /api/profile/agent-tokens` - revoke an agent token.
+- `GET /api/agent/jobs/next` - long-poll claim endpoint, bearer auth only.
+- `POST /api/agent/jobs/[jobId]/result` - agent reports back, bearer auth only.
+
+## Local agent (bring your own subscription)
+
+The local agent lets Wirely generate designs through the opencode already installed on the
+user's machine, using whatever providers they configured with `opencode auth login`. A GitHub
+Copilot, OpenRouter, or Z.AI coding plan therefore works without Wirely integrating any of them.
+
+Credentials never reach the server. The agent dials out over ordinary HTTPS, so no relay, tunnel,
+or inbound port is involved. Wirely stores the prompt going out and the model text coming back,
+and nothing else.
+
+Setup:
+
+1. Install opencode (1.18.0 or newer) and sign in with `opencode auth login`.
+2. Mint a token in Wirely settings.
+3. `bun run agent -- login <token>`, then `bun run agent`.
+
+Agent environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WIRELY_URL` | `https://wirely.app` | Wirely base URL the agent polls. |
+| `WIRELY_TOKEN` | unset | Token, overriding the one saved in `~/.config/wirely/agent.json`. |
+| `OPENCODE_BIN` | `opencode` | Path to the opencode binary. |
+| `WIRELY_MODEL` | unset | Default `provider/model` when a job does not name one. |
+
+Version handling: the agent probes `opencode run --help` at startup and builds its argv from the
+flags that build actually accepts, rather than from a hardcoded version table. This is what keeps
+the 1.18.x line (which takes `--variant` and `--dir`) and the 2.0.x line (which uses
+`provider/model#variant` and `--standalone`) both working. Both lines emit the same
+`--format json` event stream, which is what the adapter parses.
 
 ## Security and Reliability Notes
 

@@ -18,10 +18,18 @@ export const getRequestBodyMaxBytes = () => {
   );
 };
 
+/**
+ * Reads and parses a JSON body, rejecting anything over the limit.
+ *
+ * `maxBytesOverride` exists for the local-agent result route, which carries
+ * generated HTML for several screens and legitimately exceeds the default.
+ * Every other caller stays on the shared `REQUEST_BODY_MAX_BYTES` budget.
+ */
 export const readJsonBodyWithLimit = async <T = Record<string, unknown>>(
   request: Request,
+  maxBytesOverride?: number,
 ): Promise<ReadJsonBodyResult<T>> => {
-  const maxBytes = getRequestBodyMaxBytes();
+  const maxBytes = maxBytesOverride ?? getRequestBodyMaxBytes();
   const contentLengthHeader = request.headers.get("content-length");
 
   if (contentLengthHeader) {

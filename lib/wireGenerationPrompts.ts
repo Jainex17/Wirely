@@ -12,10 +12,10 @@ import type {
   PlannedOutput,
 } from "@/lib/wireGenerationTypes";
 
-const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
-const ELEMENTS_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
-const CHARTJS_CDN = `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>`;
-const BOOTSTRAP_ICONS_CDN = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">`;
+export const TAILWIND_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>`;
+export const ELEMENTS_CDN = `<script src="https://cdn.jsdelivr.net/npm/@tailwindplus/elements@1" type="module"></script>`;
+export const CHARTJS_CDN = `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>`;
+export const BOOTSTRAP_ICONS_CDN = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">`;
 
 const formatHistory = (
   history: Array<{ role: "user" | "assistant"; content: string }>,
