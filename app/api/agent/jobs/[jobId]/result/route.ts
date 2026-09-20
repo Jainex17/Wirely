@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { authenticateAgentRequest } from "@/lib/auth/apiToken";
-import { completeAgentJob, failAgentJob } from "@/lib/db/queries/agentJobs";
+import {
+  claimAgentJobResult,
+  completeAgentJob,
+  failAgentJob,
+} from "@/lib/db/queries/agentJobs";
+import { appendConversationMessage } from "@/lib/db/queries/projects";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { persistAgentConcepts } from "@/lib/opencode/persistConcepts";
@@ -61,18 +66,18 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const completed = await completeAgentJob(user.id, jobId, text);
-    if (!completed) {
+    // Claimed, not completed: the job stays running until the concepts are
+    // readable, so a polling client never sees "done" before the pages exist.
+    const claimed = await claimAgentJobResult(user.id, jobId, text);
+    if (!claimed) {
       return NextResponse.json({ error: "Job not found or not running." }, { status: 404 });
     }
 
-    // Parse and persist here rather than on the browser's next status poll, so
-    // the work happens exactly once no matter how many tabs are watching.
     const persisted = await persistAgentConcepts({
-      projectId: completed.projectId,
+      projectId: claimed.projectId,
       userId: user.id,
       rawText: text,
-      expectedCount: completed.variantCount,
+      expectedCount: claimed.variantCount,
     });
 
     if (persisted.concepts.length === 0) {
@@ -87,10 +92,27 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    // Give the editor's chat history something to show, and something that
+    // survives a reload, since this run never went through the chat route.
+    await appendConversationMessage({
+      projectId: claimed.projectId,
+      role: "assistant",
+      content:
+        persisted.details.trim() ||
+        `Generated ${persisted.concepts.length} concept${
+          persisted.concepts.length === 1 ? "" : "s"
+        } on your local agent.`,
+    }).catch((error) => {
+      logger.warn("agent.jobs.conversation_append_failed", { error });
+    });
+
+    await completeAgentJob(user.id, jobId);
+
     return NextResponse.json(
       { status: "completed", concepts: persisted.concepts, skipped: persisted.skipped },
       { status: 200 },
     );
+
   } catch (error) {
     logger.error("agent.jobs.result_failed", { error });
     return NextResponse.json({ error: "Failed to record the result." }, { status: 500 });

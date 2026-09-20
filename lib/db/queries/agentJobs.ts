@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { agentJobs } from "@/lib/db/schema";
@@ -88,7 +88,14 @@ export const claimNextAgentJob = async (userId: string) => {
   return job ?? null;
 };
 
-export const completeAgentJob = async (
+/**
+ * Claims the right to record a result, without announcing completion yet.
+ *
+ * The job stays `running` so a client polling its status does not see
+ * `completed` before the concepts it implies have been written. `resultText IS
+ * NULL` is what makes this idempotent: a retried post finds nothing to claim.
+ */
+export const claimAgentJobResult = async (
   userId: string,
   jobId: string,
   resultText: string,
@@ -96,18 +103,13 @@ export const completeAgentJob = async (
   const db = getDb();
   const [job] = await db
     .update(agentJobs)
-    .set({
-      status: "completed",
-      resultText,
-      errorMessage: null,
-      finishedAt: new Date(),
-      updatedAt: new Date(),
-    })
+    .set({ resultText, errorMessage: null, updatedAt: new Date() })
     .where(
       and(
         eq(agentJobs.id, jobId),
         eq(agentJobs.userId, userId),
         eq(agentJobs.status, "running"),
+        isNull(agentJobs.resultText),
       ),
     )
     .returning({
@@ -115,6 +117,24 @@ export const completeAgentJob = async (
       projectId: agentJobs.projectId,
       variantCount: agentJobs.variantCount,
     });
+
+  return job ?? null;
+};
+
+/** Announces completion, once the concepts are actually readable. */
+export const completeAgentJob = async (userId: string, jobId: string) => {
+  const db = getDb();
+  const [job] = await db
+    .update(agentJobs)
+    .set({ status: "completed", finishedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(agentJobs.id, jobId),
+        eq(agentJobs.userId, userId),
+        eq(agentJobs.status, "running"),
+      ),
+    )
+    .returning({ id: agentJobs.id, projectId: agentJobs.projectId });
 
   return job ?? null;
 };

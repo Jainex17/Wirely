@@ -497,6 +497,7 @@ export default function WirePromptSidebar({
   const {
     messages,
     append,
+    setMessages,
     isLoading,
     stop,
     data,
@@ -1097,6 +1098,11 @@ export default function WirePromptSidebar({
       const runModel = modelName ?? activeModelName;
 
       beginSaving();
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: "user", content: trimmedPrompt },
+      ]);
+
       try {
         const queueResponse = await fetch(`/api/projects/${wireId}/concepts`, {
           method: "POST",
@@ -1129,7 +1135,7 @@ export default function WirePromptSidebar({
           );
           const payload = (await statusResponse.json()) as {
             error?: string;
-            job?: { status?: string; error?: string | null };
+            job?: { status?: string; error?: string | null; conceptCount?: number };
           };
           if (!statusResponse.ok) {
             throw new Error(payload.error || "Lost track of the local run.");
@@ -1168,6 +1174,18 @@ export default function WirePromptSidebar({
               sections: [],
             })),
           );
+
+          const conceptCount = payload.job?.conceptCount ?? LOCAL_AGENT_CONCEPT_COUNT;
+          setMessages((current) => [
+            ...current,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: `Generated ${conceptCount} concept${
+                conceptCount === 1 ? "" : "s"
+              } on your local agent.`,
+            },
+          ]);
           return true;
         }
 
@@ -1189,6 +1207,7 @@ export default function WirePromptSidebar({
       endSaving,
       hydrateProject,
       reportError,
+      setMessages,
       wireId,
     ],
   );

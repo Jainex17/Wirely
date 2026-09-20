@@ -495,3 +495,41 @@ describe("project title generation", () => {
     expect(wireRoute.includes("createOpenRouter")).toBe(false);
   });
 });
+
+describe("local run result ordering", () => {
+  const resultRoute = () => read("app/api/agent/jobs/[jobId]/result/route.ts");
+
+  /**
+   * The client polls job status and fetches pages the moment it reads
+   * "completed". Marking the job complete before writing the concepts let it
+   * fetch a half-written project and render an empty frame.
+   */
+  it("writes the concepts before announcing completion", () => {
+    const source = resultRoute();
+    const claimed = source.indexOf("claimAgentJobResult");
+    const persisted = source.indexOf("persistAgentConcepts(");
+    const completed = source.indexOf("completeAgentJob(");
+
+    expect(claimed).toBeGreaterThan(-1);
+    expect(persisted).toBeGreaterThan(claimed);
+    expect(completed).toBeGreaterThan(persisted);
+  });
+
+  it("claims the result idempotently so a retry cannot double-write", () => {
+    const queries = read("lib/db/queries/agentJobs.ts");
+
+    expect(queries.includes("isNull(agentJobs.resultText)")).toBe(true);
+  });
+
+  it("records both sides of the exchange so the sidebar is not empty", () => {
+    // The run never touches the chat route, so nothing else writes these.
+    expect(read("app/api/projects/[projectId]/concepts/route.ts")).toContain(
+      'role: "user"',
+    );
+    expect(resultRoute()).toContain('role: "assistant"');
+  });
+
+  it("shows the exchange without waiting for a reload", () => {
+    expect(read("components/WirePromptSidebar.tsx")).toContain("setMessages");
+  });
+});

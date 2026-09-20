@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getRequestSessionUser } from "@/lib/auth/session";
-import { getProjectForUser } from "@/lib/db/queries/projects";
+import {
+  appendConversationMessage,
+  getProjectForUser,
+} from "@/lib/db/queries/projects";
 import {
   hasActiveAgentJob,
   queueAgentJob,
@@ -84,6 +87,15 @@ export async function POST(request: Request, context: RouteContext) {
           ? modelValue.trim()
           : DEFAULT_OPENCODE_MODEL,
       variantCount: conceptCount,
+    });
+
+    // Recorded now so the prompt survives a reload while the run is in flight.
+    await appendConversationMessage({
+      projectId,
+      role: "user",
+      content: userPrompt,
+    }).catch((error) => {
+      logger.warn("projects.concepts.conversation_append_failed", { error });
     });
 
     return NextResponse.json({ job }, { status: 202 });
