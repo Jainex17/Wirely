@@ -18,7 +18,7 @@ interface AppHeaderProps {
 
 export default function AppHeader({
   user,
-  title = "Wirely",
+  title,
   showBackButton = false,
   onLogout,
   isLoggingOut = false,
@@ -40,7 +40,7 @@ export default function AppHeader({
   };
 
   return (
-    <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
+    <header className="sticky top-0 z-40 h-14 px-5 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-2">
         {showBackButton ? (
           <Button
@@ -55,13 +55,18 @@ export default function AppHeader({
             <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : (
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-foreground flex items-center justify-center">
-              <span className="text-background text-sm font-bold">W</span>
-            </div>
+          <Link href="/" className="text-[15px] font-semibold tracking-tight">
+            Wirely
           </Link>
         )}
-        <h1 className="text-base font-semibold text-foreground">{title}</h1>
+        {title ? (
+          <>
+            <span aria-hidden className="text-border">
+              /
+            </span>
+            <h1 className="text-sm text-muted-foreground">{title}</h1>
+          </>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         {user ? (

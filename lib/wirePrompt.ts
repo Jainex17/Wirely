@@ -1,4 +1,10 @@
-import { inferRequestedArtifactType, isDashboardArtifactRequest } from "@/lib/wireIntent";
+import {
+  inferRequestedArtifactType,
+  isDashboardCategory,
+  isLandingCategory,
+  resolveArtifactCategory,
+  type ArtifactCategory,
+} from "@/lib/wireIntent";
 
 export interface WireStylePreset {
   id: string;
@@ -147,17 +153,41 @@ export const selectWireStylePreset = ({
   return WIRE_STYLE_PRESETS[index];
 };
 
+/**
+ * Distilled design-taste directives shared by every generate and repair prompt.
+ * Kept short on purpose: this rides on every generation call, including free
+ * models with small budgets. Each rule targets a specific AI-default tell and
+ * none of them fight the checks in wireQuality.
+ */
+export const DESIGN_TASTE_RULES = `
+Design taste:
+- Commit to one accent colour and use it across the whole page. Do not introduce a second accent later on.
+- Do not default to purple or violet gradients over near-black. Pick neutrals plus one accent that suits this brand.
+- Pick one corner-radius scale and apply it to every card, input and button.
+- Build hierarchy with weight, spacing and colour, not size alone. Headline, body and caption must read as clearly different roles.
+- Vary the section layout. Never run the same layout family twice in a row, and never three image-and-text splits in sequence.
+- A feature grid is fine, but do not ship a row of identical equal-weight cards. Vary tile size or emphasis so one leads.
+- Small uppercase wide-tracking label above a heading: at most one for every three sections.
+- Never use an em dash or en dash in visible text. Use a comma, a full stop, or a plain hyphen.
+- Invent specific believable names, brands and figures. No Acme, no Lorem ipsum, no John Doe, no fake-precise statistics presented as real data.
+- Give every interactive element a visible hover and focus-visible state. Button labels stay on one line and must contrast against their own background.
+- Keep the hero to one headline of at most two lines plus one short supporting line.
+- No decorative status dots, no scroll cues, no version badges, unless the content genuinely needs them.
+`.trim();
+
 export const buildImageRule = (allowImages: boolean) =>
   allowImages
     ? "- Stock bitmap images are allowed for this output. Inline <svg> UI icons/charts are always allowed."
     : "- Do not use external bitmap image assets (<img>, <picture>, or CSS background-image URLs). Inline <svg> icons/charts are allowed and encouraged.";
 
-export const buildIntentGuardrails = (userPrompt?: string) => {
+export const buildIntentGuardrails = (
+  userPrompt?: string,
+  artifactCategory?: ArtifactCategory,
+) => {
   const text = (userPrompt ?? "").toLowerCase();
-  const artifactType = inferRequestedArtifactType(text);
-  const dashboardRequested = isDashboardArtifactRequest(text);
-  const landingRequested =
-    artifactType === "landing page" || artifactType === "marketing page";
+  const category = resolveArtifactCategory(artifactCategory, text);
+  const dashboardRequested = isDashboardCategory(category);
+  const landingRequested = isLandingCategory(category);
   const hasUnified = /\bunified\b/.test(text);
   const hasActive = /\bactive\b/.test(text);
   const hasFoundational = /\bfoundational\b/.test(text);
@@ -263,6 +293,7 @@ Quality requirements:
 - Do not use icon-only controls unless an explicit aria-label is present.
 - Avoid giant clip-path blobs and noisy ornamental effects.
 ${buildImageRule(allowImages)}
+${DESIGN_TASTE_RULES}
 ${buildIntentGuardrails(userPrompt)}
 
 Iframe/runtime constraints:

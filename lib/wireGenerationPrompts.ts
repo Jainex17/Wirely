@@ -1,6 +1,7 @@
 import {
   buildImageRule,
   buildIntentGuardrails,
+  DESIGN_TASTE_RULES,
   getWireStylePresetById,
   selectWireStylePreset,
   type WireStylePreset,
@@ -53,6 +54,7 @@ export const composePlannerPrompt = ({
   targetPages,
   forceSinglePage,
   suggestedPreset,
+  allowPlannerOutputCount = false,
 }: {
   userPrompt: string;
   compactHistory: Array<{ role: "user" | "assistant"; content: string }>;
@@ -60,8 +62,17 @@ export const composePlannerPrompt = ({
   targetPages: Array<{ id: string; title: string; html?: string }>;
   forceSinglePage: boolean;
   suggestedPreset: WireStylePreset;
+  allowPlannerOutputCount?: boolean;
 }) => {
-  const modeInstruction = forceSinglePage
+  const modeInstruction = allowPlannerOutputCount
+    ? [
+        "- You choose both the generation mode and how many outputs to emit (1 to 3). Nobody has constrained this.",
+        '- Choose "single_page" with 1 output when the user described one screen, or asked for something simple. This is the common case.',
+        '- Choose "concept_variants" with 2 or 3 outputs when the user asked for options, alternatives, directions, or wants to compare looks for the same screen.',
+        '- Choose "information_architecture" with 2 or 3 outputs when the user described a site with distinct pages or named routes such as Home, About, Pricing or Contact.',
+        "- Do not pad. Emit more than 1 output only when the request genuinely calls for it, and never emit 2 or 3 just to look thorough.",
+      ].join("\n")
+    : forceSinglePage
     ? '- You must emit "single_page" mode and exactly 1 output.'
     : requestedOutputCount > 1
       ? [
@@ -84,7 +95,7 @@ Rules:
 - Decide structure first, not code.
 - The plan must be rich enough that another model can generate distinctive HTML without inventing core architecture.
 - Do not return wrapper keys like "designPlan", "pages", or "outputKind" at the top level.
-- The top-level object must contain exactly these conceptual fields: generationMode, artifactType, audience, brandSummary, tone, globalDesign, outputs.
+- The top-level object must contain exactly these conceptual fields: generationMode, artifactType, artifactCategory, audience, brandSummary, tone, globalDesign, outputs.
 - Keep titles concrete and marketable. Avoid generic titles like "Page 1" or "Variant 2".
 - Use preset id "${suggestedPreset.id}" unless the prompt strongly implies a different preset from the allowed set.
 - Prefer memorable concept names for concept variants.
@@ -104,6 +115,9 @@ ${formatTargetPages(targetPages)}
 
 Required planning standards:
 - artifactType must match the requested thing exactly.
+- artifactCategory is your classification of that artifact and drives how the page is briefed and judged. Choose exactly one of: landing_page, marketing_page, pricing_page, dashboard, app_screen, other.
+- Read the whole request before choosing. "A crypto portfolio dashboard with live prices" is dashboard, not landing_page, even though no verb precedes the word. A landing page that merely mentions a dashboard feature is still landing_page.
+- Choose dashboard or app_screen when the user wants the working product interface. Choose landing_page or marketing_page when they want a page that sells it.
 - audience must be specific.
 - brandSummary should compress the product/value proposition.
 - globalDesign must commit to palette, typography, density, motion, and one memorable hook.
@@ -449,6 +463,7 @@ Execution rules:
 - If outputKind is "page", make the page role obvious in the information hierarchy.
 - Keep copy concise but specific.
 - Use meaningful hover/focus states.
+${DESIGN_TASTE_RULES}
 ${composeInformationArchitectureRules({
   plan,
   output,
@@ -459,7 +474,7 @@ ${composeConceptVariantDifferentiationRules({
   allOutputs,
 })}
 ${buildImageRule(allowImages)}
-${buildIntentGuardrails(userPrompt)}
+${buildIntentGuardrails(userPrompt, plan.artifactCategory)}
 ${buildStockSlotExecutionRules(output)}
 `.trim();
 
@@ -539,7 +554,7 @@ Editing rules:
 - Strengthen hierarchy, CTA clarity, and interaction states only where needed.
 - Avoid unnecessary rewrites or reordering that would make the page feel replaced instead of edited.
 ${buildImageRule(allowImages)}
-${buildIntentGuardrails(userPrompt)}
+${buildIntentGuardrails(userPrompt, plan.artifactCategory)}
 ${buildStockSlotExecutionRules(output)}
 `.trim();
 
@@ -654,13 +669,14 @@ Repair rules:
 - Increase specificity, hierarchy, and visual intentionality.
 - Keep the result self-contained and deterministic for iframe rendering.
 - DETAILS must describe the final page in 1-2 short sentences only, never the repair process.
+${DESIGN_TASTE_RULES}
 ${composeConceptVariantDifferentiationRules({
   plan,
   outputIndex,
   allOutputs,
 })}
 ${buildImageRule(allowImages)}
-${buildIntentGuardrails(userPrompt)}
+${buildIntentGuardrails(userPrompt, plan.artifactCategory)}
 ${buildStockSlotExecutionRules(output)}
 `.trim();
 

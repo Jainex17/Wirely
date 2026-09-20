@@ -1,13 +1,5 @@
-import type { Metadata } from "next";
-import ProfileModelsClient from "../../profile/ProfileModelsClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Models | Wirely",
-  description: "Manage model availability for Wirely generation.",
-};
-
-export default function SettingModelPage() {
-  return (
-    <ProfileModelsClient />
-  );
+export default function LegacySettingRoute() {
+  redirect("/setting?tab=models");
 }

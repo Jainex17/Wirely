@@ -9,18 +9,29 @@ export const metadata: Metadata = {
 };
 
 interface LoginPageProps {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; prompt?: string }>;
 }
+
+const MAX_DRAFT_PROMPT_LENGTH = 500;
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const resolvedParams = await searchParams;
   const user = await getServerSessionUser();
-  const nextPath =
+  const requestedNext =
     typeof resolvedParams.next === "string" &&
     resolvedParams.next.startsWith("/") &&
     resolvedParams.next !== "/login"
       ? resolvedParams.next
       : "/";
+
+  // A draft typed on the landing page rides through sign-in as a query param.
+  const draftPrompt =
+    requestedNext === "/" && typeof resolvedParams.prompt === "string"
+      ? resolvedParams.prompt.trim().slice(0, MAX_DRAFT_PROMPT_LENGTH)
+      : "";
+  const nextPath = draftPrompt
+    ? `/?prompt=${encodeURIComponent(draftPrompt)}`
+    : requestedNext;
 
   if (user) {
     redirect(nextPath);

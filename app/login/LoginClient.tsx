@@ -52,8 +52,8 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
   };
 
   return (
-    <main className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
-      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-lg p-8">
+    <main className="relative min-h-[100dvh] overflow-hidden bg-background text-foreground flex items-center justify-center px-6">
+      <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-xl p-8">
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
             Wirely
@@ -68,7 +68,7 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
           <button
             onClick={handleGoogleLogin}
             disabled={isLoading}
-            className="inline-flex w-full items-center justify-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           >
             {isLoading ? "Redirecting..." : "Continue with Google"}
           </button>

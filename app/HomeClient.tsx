@@ -3,8 +3,8 @@
 import { useReducer, type FormEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea";
 import {
-  DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   getWireModelProvider,
@@ -31,7 +31,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  ArrowUp,
   AlertTriangle,
   ChevronDown,
   Loader2,
@@ -57,55 +56,17 @@ export interface HomeClientInitialData {
     createdAt: string | Date;
     updatedAt: string | Date;
   }>;
+  initialPrompt: string;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
 }
 
-const PAGE_VARIATION_OPTIONS: Array<{
-  value: 2 | 3;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: 2,
-    label: "2 outputs",
-    hint: "Generate 2 coordinated results for the selected mode",
-  },
-  {
-    value: 3,
-    label: "3 outputs",
-    hint: "Generate 3 coordinated results for the selected mode",
-  },
-];
-
-type HomeGenerationMode =
+export type HomeGenerationMode =
   | "single_page"
   | "concept_variants"
   | "information_architecture";
-
-const GENERATION_MODE_OPTIONS: Array<{
-  value: HomeGenerationMode;
-  label: string;
-  hint: string;
-}> = [
-  {
-    value: "single_page",
-    label: "Single page",
-    hint: "Generate one polished page",
-  },
-  {
-    value: "concept_variants",
-    label: "Concepts",
-    hint: "Generate different design directions for the same brief",
-  },
-  {
-    value: "information_architecture",
-    label: "Website pages",
-    hint: "Generate real site pages like Home, About, or Contact",
-  },
-];
 
 const MODEL_PROVIDER_LABEL = {
   google: "Google",
@@ -131,8 +92,7 @@ interface HomeState {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
-  selectedGenerationMode: HomeGenerationMode;
-  selectedPageCount: 1 | 2 | 3;
+  // null means Wirely reads the brief and decides.
   isLoggingOut: boolean;
   projectToDelete: string | null;
 }
@@ -141,9 +101,6 @@ type HomeAction =
   | {
       type: "patch";
       payload: Partial<HomeState>;
-    }
-  | {
-      type: "logout";
     }
   | {
       type: "openDeleteDialog";
@@ -160,7 +117,7 @@ type HomeAction =
 const createHomeInitialState = (
   initialData: HomeClientInitialData,
 ): HomeState => ({
-  prompt: "",
+  prompt: initialData.initialPrompt,
   isSubmitting: false,
   user: initialData.user,
   errorMessage: null,
@@ -175,8 +132,6 @@ const createHomeInitialState = (
   hasGoogleApiKey: initialData.hasGoogleApiKey,
   hasOpenRouterApiKey: initialData.hasOpenRouterApiKey,
   hasZaiApiKey: initialData.hasZaiApiKey,
-  selectedGenerationMode: "single_page",
-  selectedPageCount: 1,
   isLoggingOut: false,
   projectToDelete: null,
 });
@@ -187,20 +142,6 @@ const homeReducer = (state: HomeState, action: HomeAction): HomeState => {
       return {
         ...state,
         ...action.payload,
-      };
-    case "logout":
-      return {
-        ...state,
-        user: null,
-        historyItems: [],
-        enabledModelIds: [...DEFAULT_ENABLED_WIRE_MODELS],
-        hasGoogleApiKey: true,
-        hasOpenRouterApiKey: true,
-        hasZaiApiKey: true,
-        selectedModel: DEFAULT_WIRE_MODEL,
-        isLoggingOut: false,
-        errorMessage: null,
-        projectToDelete: null,
       };
     case "openDeleteDialog":
       return {
@@ -273,6 +214,8 @@ const modelRequiresMissingKey = ({
 export default function HomeClient({ initialData }: HomeClientProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(homeReducer, initialData, createHomeInitialState);
+  const { ref: promptTextareaRef, resize: resizePromptTextarea } =
+    useAutoGrowTextarea({ value: state.prompt, minRows: 4 });
 
   const enabledModelOptions = state.enabledModelIds
     .map((modelId) => WIRE_MODEL_OPTIONS.find((model) => model.id === modelId))
@@ -312,12 +255,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const selectedModelLabel =
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
-  const activeGenerationModeOption =
-    GENERATION_MODE_OPTIONS.find(
-      (option) => option.value === state.selectedGenerationMode,
-    ) ?? GENERATION_MODE_OPTIONS[0];
-  const effectiveGenerationCount =
-    state.selectedGenerationMode === "single_page" ? 1 : state.selectedPageCount;
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (state.isSubmitting) return;
@@ -391,14 +328,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         sessionStorage.setItem(`wirePrompt:${projectId}`, trimmedPrompt);
       }
       sessionStorage.setItem(`wireModel:${projectId}`, activeSelectedModel);
-      sessionStorage.setItem(
-        `wireGenerationMode:${projectId}`,
-        state.selectedGenerationMode,
-      );
-      sessionStorage.setItem(
-        `wirePageCount:${projectId}`,
-        String(effectiveGenerationCount),
-      );
 
       router.push(`/wire/${projectId}`);
     } catch {
@@ -414,7 +343,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   };
 
   const handleLogout = () => {
-    dispatch({ type: "logout" });
+    router.refresh();
   };
 
   const handleDeleteProject = (
@@ -447,321 +376,256 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
+  const firstName = (state.user?.name ?? "").trim().split(" ")[0] ?? "";
+  const composerDisabled =
+    state.isSubmitting || hasNoEnabledModels || hasNoRunnableModels;
+
   return (
-    <div className="h-screen w-full flex flex-col bg-muted p-3 gap-2 overflow-hidden">
-      <AppHeader
-        user={state.user}
-        title="Wirely"
-        onLogout={handleLogout}
-        isLoggingOut={state.isLoggingOut}
-      />
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto px-4 py-8">
-          <h1 className="text-4xl font-medium text-center mt-8 text-foreground">
-            What do you want to create?
+    <div className="min-h-[100dvh] bg-background">
+      <div className="mx-auto w-full max-w-5xl px-4 pt-3 sm:px-6">
+        <AppHeader
+          user={state.user}
+          onLogout={handleLogout}
+          isLoggingOut={state.isLoggingOut}
+        />
+      </div>
+
+      <main>
+        <section className="relative isolate -mt-[4.25rem] flex min-h-[100dvh] items-center overflow-hidden pt-[4.25rem]">
+          <div className="ribbon-field pointer-events-none -z-10">
+            <div className="ribbon ribbon-core rings-enter" />
+          </div>
+          <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
+          <div className="hero-foot pointer-events-none absolute inset-x-0 bottom-0 h-16 -z-10" />
+
+          <div className="mx-auto w-full max-w-3xl px-4 py-14 text-center sm:px-6">
+          <h1 className="enter enter-1 font-display text-[clamp(1.9rem,4vw,2.9rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-foreground">
+            What are we building{firstName ? `, ${firstName}` : ""}?
           </h1>
 
-          <div className="mt-8">
-            <form onSubmit={handleSubmit}>
-              <div className="bg-card border border-border rounded-xl p-4">
-                <textarea
-                  value={state.prompt}
-                  onChange={(event) =>
-                    dispatch({ type: "patch", payload: { prompt: event.target.value } })
-                  }
-                  placeholder="Ask Wirely to build..."
-                  rows={4}
-                  className="w-full bg-transparent text-lg text-foreground placeholder:text-muted-foreground focus:outline-none resize-none"
-                />
-                <div className="flex justify-between items-center mt-4">
-                  <div className="flex items-center gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="bg-transparent border-border hover:bg-muted"
-                          disabled={hasNoEnabledModels}
-                        >
-                          <GeminiIcon className="mr-2 size-4 text-primary" />
-                          {selectedModelLabel}{" "}
-                          {showApiKeyWarning ? (
-                            <AlertTriangle
-                              size={14}
-                              className="ml-1 mr-1 text-destructive"
-                            />
-                          ) : null}
-                          <ChevronDown size={16} className="ml-2" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-card border-border">
-                        {showConfigureApiKeysCta ? (
-                          <>
-                            <DropdownMenuItem
-                              onClick={() => router.push("/setting/provider")}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <AlertTriangle size={14} className="mr-2" />
-                              First configure API keys
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                          </>
-                        ) : null}
-                        {(["google", "openrouter", "zai"] as const).map((provider, index) => {
-                          const providerModels = enabledModelOptions.filter(
-                            (model) => model.provider === provider,
-                          );
-                          if (providerModels.length === 0) return null;
+          <form onSubmit={handleSubmit} className="enter enter-2 mt-10 text-left">
+            <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
+              <span className="beam" aria-hidden>
+                <span className="beam-spin" />
+              </span>
+              <label htmlFor="home-prompt" className="sr-only">
+                Describe what you want to build
+              </label>
+              <textarea
+                id="home-prompt"
+                value={state.prompt}
+                onChange={(event) =>
+                  dispatch({ type: "patch", payload: { prompt: event.target.value } })
+                }
+                ref={promptTextareaRef}
+                onInput={resizePromptTextarea}
+                placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
+                rows={4}
+                className="w-full resize-none bg-transparent px-4 py-3.5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
+              />
 
-                          return (
-                            <DropdownMenuGroup key={provider}>
-                              {index > 0 || showConfigureApiKeysCta ? (
-                                <DropdownMenuSeparator />
-                              ) : null}
-                              <DropdownMenuLabel className="px-2 py-1.5 text-xs">
-                                {MODEL_PROVIDER_LABEL[provider]}
-                              </DropdownMenuLabel>
-                              {providerModels.map((model) => (
-                                <DropdownMenuItem
-                                  key={model.id}
-                                  onClick={() =>
-                                    dispatch({
-                                      type: "patch",
-                                      payload: { selectedModel: model.id },
-                                    })
-                                  }
-                                  className="flex items-start gap-2"
-                                >
-                                  <GeminiIcon className="mr-2 mt-0.5 size-4 text-primary" />
-                                  <span>{model.label}</span>
-                                  <span
-                                    className={`ml-auto mt-0.5 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
-                                      model.tier === "paid"
-                                        ? "bg-amber-500/15 text-amber-600"
-                                        : "bg-muted text-muted-foreground"
-                                    }`}
-                                  >
-                                    {model.tier}
-                                  </span>
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuGroup>
-                          );
-                        })}
-                        {enabledModelOptions.length === 0 ? (
-                          <DropdownMenuItem disabled>
-                            No models enabled
-                          </DropdownMenuItem>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={hasNoEnabledModels}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <GeminiIcon className="size-4 text-primary" />
+                        {selectedModelLabel}
+                        {showApiKeyWarning ? (
+                          <AlertTriangle size={14} className="text-destructive" />
                         ) : null}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="bg-transparent border-border hover:bg-muted"
-                        >
-                          {activeGenerationModeOption.label}
-                          <ChevronDown size={16} className="ml-2" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-card border-border">
-                        {GENERATION_MODE_OPTIONS.map((option) => (
+                        <ChevronDown size={14} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                      {showConfigureApiKeysCta ? (
+                        <>
                           <DropdownMenuItem
-                            key={option.value}
-                            onClick={() =>
-                              dispatch({
-                                type: "patch",
-                                payload: {
-                                  selectedGenerationMode: option.value,
-                                  selectedPageCount:
-                                    option.value === "single_page"
-                                      ? 1
-                                      : state.selectedPageCount === 1
-                                        ? 2
-                                        : state.selectedPageCount,
-                                },
-                              })
-                            }
-                            className="flex flex-col items-start"
+                            onClick={() => router.push("/setting?tab=providers")}
+                            className="text-destructive focus:text-destructive"
                           >
-                            <span>{option.label}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {option.hint}
-                            </span>
+                            <AlertTriangle size={14} />
+                            Connect a provider key first
                           </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    {state.selectedGenerationMode !== "single_page" ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="bg-transparent border-border hover:bg-muted"
-                          >
-                            Count: {effectiveGenerationCount}
-                            <ChevronDown size={16} className="ml-2" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="bg-card border-border">
-                          {PAGE_VARIATION_OPTIONS.map((option) => (
-                            <DropdownMenuItem
-                              key={option.value}
-                              onClick={() =>
-                                dispatch({
-                                  type: "patch",
-                                  payload: { selectedPageCount: option.value },
-                                })
-                              }
-                              className="flex flex-col items-start"
-                            >
-                              <span>{option.label}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {option.hint}
-                              </span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={
-                      state.isSubmitting ||
-                      state.prompt.trim().length < 10 ||
-                      hasNoEnabledModels ||
-                      hasNoRunnableModels
-                    }
-                    className={
-                      state.prompt.trim().length >= 10 &&
-                      !hasNoEnabledModels &&
-                      !hasNoRunnableModels
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
-                        : "bg-muted text-muted-foreground"
-                    }
-                  >
-                    {state.isSubmitting ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <ArrowUp size={16} />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </form>
-            {state.prompt.trim().length === 0 ? (
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {EXAMPLE_PROMPT_CHIPS.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() =>
-                      dispatch({ type: "patch", payload: { prompt: chip } })
-                    }
-                    className="rounded-full border border-border bg-card px-3.5 py-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {hasNoEnabledModels || hasNoRunnableModels ? (
-              <div className="text-center text-sm text-muted-foreground mt-2">
-                {hasNoEnabledModels ? (
-                  <>
-                    No models enabled. Update your settings in{" "}
-                    <Link
-                      href="/setting/model"
-                      className="text-primary underline underline-offset-2"
-                    >
-                      Models
-                    </Link>
-                    .
-                  </>
-                ) : (
-                  <>
-                    Enabled models require provider API keys. Configure them in{" "}
-                    <Link
-                      href="/setting/provider"
-                      className="text-primary underline underline-offset-2"
-                    >
-                      Providers
-                    </Link>{" "}
-                    or choose a model that does not require one.
-                  </>
-                )}
-              </div>
-            ) : null}
-            {state.errorMessage ? (
-              <div className="mt-3 text-center text-sm text-destructive">
-                {state.errorMessage}
-              </div>
-            ) : null}
-          </div>
+                          <DropdownMenuSeparator />
+                        </>
+                      ) : null}
+                      {(["google", "openrouter", "zai"] as const).map((provider, index) => {
+                        const providerModels = enabledModelOptions.filter(
+                          (model) => model.provider === provider,
+                        );
+                        if (providerModels.length === 0) return null;
 
-          {state.historyItems.length > 0 ? (
-            <div className="mt-16">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-medium text-muted-foreground">
-                  Recent Projects
-                </h2>
-              </div>
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
-                {state.historyItems.map((project) => (
-                  <div key={project.id}>
-                    <Link
-                      href={`/wire/${project.id}`}
-                      className="flex flex-col p-4 bg-card rounded-lg h-full min-h-[120px] transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="font-medium line-clamp-2 flex-1">
-                          {project.title}
-                        </span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={(event) => event.preventDefault()}
-                              className="p-1 hover:bg-muted-foreground/10 rounded transition-colors ml-2 flex-shrink-0"
-                            >
-                              <MoreHorizontal size={16} />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            className="bg-card border-border"
-                          >
-                            <DropdownMenuItem
-                              onClick={(event) =>
-                                handleDeleteProject(
-                                  project.id,
-                                  event as unknown as MouseEvent<HTMLElement>,
-                                )
-                              }
-                              className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                            >
-                              <Trash2 size={16} className="mr-2" />
-                              Delete Project
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="flex items-center justify-between mt-auto text-muted-foreground text-sm">
-                        <span>Draft</span>
-                        <span>{timeAgo(project.updatedAt)}</span>
-                      </div>
-                    </Link>
-                  </div>
-                ))}
+                        return (
+                          <DropdownMenuGroup key={provider}>
+                            {index > 0 || showConfigureApiKeysCta ? (
+                              <DropdownMenuSeparator />
+                            ) : null}
+                            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {MODEL_PROVIDER_LABEL[provider]}
+                            </DropdownMenuLabel>
+                            {providerModels.map((model) => (
+                              <DropdownMenuItem
+                                key={model.id}
+                                onClick={() =>
+                                  dispatch({
+                                    type: "patch",
+                                    payload: { selectedModel: model.id },
+                                  })
+                                }
+                              >
+                                <span className="truncate">{model.label}</span>
+                                {model.tier === "paid" ? (
+                                  <span className="ml-auto rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                                    Billed
+                                  </span>
+                                ) : null}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuGroup>
+                        );
+                      })}
+                      {enabledModelOptions.length === 0 ? (
+                        <DropdownMenuItem disabled>No models enabled</DropdownMenuItem>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                </div>
+
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={composerDisabled || state.prompt.trim().length < 10}
+                >
+                  {state.isSubmitting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    "Generate"
+                  )}
+                </Button>
               </div>
             </div>
+          </form>
+
+          {state.prompt.trim().length === 0 ? (
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {EXAMPLE_PROMPT_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => dispatch({ type: "patch", payload: { prompt: chip } })}
+                  className="rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur transition-colors hover:border-foreground/25 hover:text-foreground"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           ) : null}
-        </div>
-      </div>
+
+          {hasNoEnabledModels || hasNoRunnableModels ? (
+            <p className="mt-6 text-sm text-muted-foreground">
+              {hasNoEnabledModels ? (
+                <>
+                  No models are switched on. Turn one on in{" "}
+                  <Link
+                    href="/setting?tab=models"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    Models
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>
+                  The models you enabled need a provider key. Connect one in{" "}
+                  <Link
+                    href="/setting?tab=providers"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    Providers
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          ) : null}
+
+          {state.errorMessage ? (
+            <p className="mt-4 text-sm text-destructive">{state.errorMessage}</p>
+          ) : null}
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-5xl px-4 pb-28 sm:px-6">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 className="text-sm font-medium text-foreground">Pages you have made</h2>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {state.historyItems.length}
+            </span>
+          </div>
+
+          {state.historyItems.length === 0 ? (
+            <div className="mt-6 border-t border-border py-12">
+              <p className="text-sm text-muted-foreground">
+                Nothing generated yet. The brief above becomes your first page.
+              </p>
+            </div>
+          ) : (
+            <ul className="mt-6">
+              {state.historyItems.map((project) => (
+                <li key={project.id} className="group relative border-t border-border">
+                  <Link
+                    href={`/wire/${project.id}`}
+                    className="flex items-baseline gap-4 py-4 pr-12"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-base font-medium text-foreground transition-colors duration-300 group-hover:text-primary">
+                      {project.title}
+                    </span>
+                    <span className="hidden font-mono text-[11px] capitalize text-muted-foreground sm:block">
+                      {project.status}
+                    </span>
+                    <span className="w-28 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
+                      {timeAgo(project.updatedAt)}
+                    </span>
+                  </Link>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Actions for ${project.title}`}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={(event) =>
+                          handleDeleteProject(
+                            project.id,
+                            event as unknown as MouseEvent<HTMLElement>,
+                          )
+                        }
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        <Trash2 size={16} />
+                        Delete project
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
 
       <AlertDialog
         open={state.projectToDelete !== null}
@@ -771,30 +635,23 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           }
         }}
       >
-        <AlertDialogContent className="bg-card border border-border rounded-lg shadow-xl">
+        <AlertDialogContent className="rounded-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-foreground text-xl">
-              Delete Project
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-muted-foreground">
-              Are you sure you want to delete this project? This action cannot
-              be undone and all associated data will be permanently removed.
+            <AlertDialogTitle>Delete this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The generated pages and their history are removed for good. This cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel
-              onClick={() => {
-                dispatch({ type: "closeDeleteDialog" });
-              }}
-              className="bg-card border border-border text-foreground hover:bg-secondary"
-            >
+            <AlertDialogCancel onClick={() => dispatch({ type: "closeDeleteDialog" })}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteProject}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <Trash2 size={16} className="mr-2" />
+              <Trash2 size={16} />
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

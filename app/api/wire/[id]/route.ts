@@ -18,6 +18,7 @@ import {
 import {
   appendConversationMessage,
   getProjectForUser,
+  createProjectPageForUser,
   listProjectPagesForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
@@ -26,6 +27,7 @@ import {
   buildAssistantContent,
   composeCritiquePrompt,
   composeDesignBriefPrompt,
+  composePlannerPrompt,
   composePageEditSystemPrompt,
   composePlannedGenerateSystemPrompt,
   composeRepairPrompt,
@@ -33,6 +35,7 @@ import {
   buildFallbackDesignBrief,
 } from "@/lib/wireGenerationPrompts";
 import { buildFallbackDesignPlan, resolveDeviceIntent } from "@/lib/wireFallbackPlan";
+import { validateDesignPlan } from "@/lib/wireGenerationTypes";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
 import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
 import { buildWireSuggestions } from "@/lib/wireSuggestions";
@@ -44,6 +47,7 @@ import {
   evaluateWireHtmlQuality,
   type WireQualityReport,
 } from "@/lib/wireQuality";
+import type { ArtifactCategory } from "@/lib/wireIntent";
 import {
   isGoogleWireModel,
   isOpenRouterWireModel,
@@ -605,6 +609,7 @@ const buildQualitySnapshot = ({
   userPrompt,
   stylePresetId,
   plannedImageSlots,
+  artifactCategory,
   enforcePlannedImageSlots = true,
 }: {
   html: string;
@@ -612,6 +617,7 @@ const buildQualitySnapshot = ({
   userPrompt: string;
   stylePresetId: string;
   plannedImageSlots?: Array<{ id: string }>;
+  artifactCategory?: ArtifactCategory;
   enforcePlannedImageSlots?: boolean;
 }): WireQualityReport => {
   const baseReport = evaluateWireHtmlQuality({
@@ -619,6 +625,7 @@ const buildQualitySnapshot = ({
     allowImages,
     userPrompt,
     stylePresetId,
+    artifactCategory,
   });
 
   if (
@@ -658,6 +665,7 @@ const generateDesignBrief = async ({
   targetPages,
   forceSinglePage,
   requestedGenerationMode,
+  allowPlannerOutputCount = false,
   projectId,
 }: {
   modelName: WireModelName;
@@ -670,13 +678,14 @@ const generateDesignBrief = async ({
   targetPages: Array<{ id: string; title: string; html?: string }>;
   forceSinglePage: boolean;
   requestedGenerationMode?: GenerationMode;
+  allowPlannerOutputCount?: boolean;
   projectId: string;
 }) => {
   const suggestedPreset = selectWireStylePreset({
     wireId: projectId,
     userPrompt,
   });
-  const plan = buildFallbackDesignPlan({
+  const fallbackPlan = buildFallbackDesignPlan({
     userPrompt,
     requestedOutputCount,
     targetPages,
@@ -684,6 +693,44 @@ const generateDesignBrief = async ({
     requestedMode: requestedGenerationMode,
     stylePreset: suggestedPreset,
   });
+
+  // Ask the model to plan. The keyword-built plan above is the fallback for when
+  // it returns something the schema rejects.
+  let plan = fallbackPlan;
+  try {
+    const planResult = await generateText({
+      model: getLanguageModel({
+        modelName,
+        googleApiKey,
+        openRouterApiKey,
+        zaiApiKey,
+      }),
+      prompt: userPrompt,
+      system: composePlannerPrompt({
+        userPrompt,
+        compactHistory,
+        requestedOutputCount,
+        targetPages,
+        forceSinglePage,
+        suggestedPreset,
+        allowPlannerOutputCount,
+      }),
+    });
+    plan = validateDesignPlan({
+      value: planResult.text,
+      expectedOutputCount: requestedOutputCount,
+      requestedMode: requestedGenerationMode,
+      allowPlannerOutputCount,
+    });
+  } catch (error) {
+    logger.warn("wire_design_plan_fallback_used", {
+      projectId,
+      modelName,
+      reason: "planner_generation_failed",
+      message: getErrorMessage(error),
+    });
+  }
+
   const fallbackBrief = buildFallbackDesignBrief({ plan });
 
   try {
@@ -1017,6 +1064,14 @@ export async function POST(request: Request, context: RouteContext) {
       ? resolvedTargetPages.length
       : requestedVariationCount;
 
+  // Nobody asked for a specific shape and the target page is still blank, so this
+  // is a fresh brief: let the planner decide the mode and how many outputs it needs.
+  const allowPlannerOutputCount =
+    requestedGenerationMode === undefined &&
+    requestedVariationCount <= 1 &&
+    resolvedTargetPages.length <= 1 &&
+    !resolvedSingleTargetPage?.htmlContent.trim();
+
   return createDataStreamResponse({
     headers: {
       "cache-control": "no-store, no-transform",
@@ -1093,8 +1148,10 @@ export async function POST(request: Request, context: RouteContext) {
       compactHistory,
       requestedOutputCount: expectedOutputCount,
       targetPages: plannerTargetPages,
-      forceSinglePage: Boolean(resolvedSingleTargetPage),
+      forceSinglePage:
+        !allowPlannerOutputCount && Boolean(resolvedSingleTargetPage),
       requestedGenerationMode,
+      allowPlannerOutputCount,
       projectId: id,
     });
 
@@ -1114,9 +1171,33 @@ export async function POST(request: Request, context: RouteContext) {
 
     const deviceIntent = resolveDeviceIntent(latestUserPrompt);
 
+    // The planner decides how many outputs this run produces, so the pages it
+    // asked for may not exist yet. Create the shortfall here rather than making
+    // the client guess a count before planning.
+    const generationTargetPages = [...plannerTargetPages];
+    for (
+      let index = generationTargetPages.length;
+      index < plan.outputs.length;
+      index += 1
+    ) {
+      const createdPage = await createProjectPageForUser({
+        projectId: id,
+        userId: sessionUser.id,
+        title: plan.outputs[index].title,
+        deviceType: deviceIntent,
+      });
+      if (!createdPage) break;
+      generationTargetPages.push({
+        id: createdPage.id,
+        title: createdPage.title,
+        html: createdPage.htmlContent,
+      });
+      pageById.set(createdPage.id, createdPage);
+    }
+
     const mappedOutputs = mapPlanOutputsToTargets({
       plan,
-      targetPageIds: plannerTargetPages.map((page) => page.id),
+      targetPageIds: generationTargetPages.map((page) => page.id),
     });
 
     for (const item of mappedOutputs) {
@@ -1184,7 +1265,7 @@ export async function POST(request: Request, context: RouteContext) {
     const rejectionReasons: Array<{
       outputIndex: number;
       title: string;
-      stage: "initial" | "final";
+      stage: "initial" | "repaired" | "final";
       qualityScore: number;
       qualityViolations: string[];
     }> = [];
@@ -1264,6 +1345,7 @@ export async function POST(request: Request, context: RouteContext) {
           userPrompt: latestUserPrompt,
           stylePresetId: stylePreset.id,
           plannedImageSlots: item.output.imageSlots,
+          artifactCategory: plan.artifactCategory,
         });
 
         const critiqueResult = isDirectEditRequest
@@ -1302,6 +1384,9 @@ export async function POST(request: Request, context: RouteContext) {
           isRenderable: initialQuality.isRenderable,
           qualityViolations: initialQuality.violations,
         });
+        // A repair pass overwrites acceptedQuality below, so a rejection after it
+        // reports repaired numbers. Track it so the logged stage matches them.
+        let repairAttempted = false;
 
         if (
           !isDirectEditRequest &&
@@ -1312,6 +1397,7 @@ export async function POST(request: Request, context: RouteContext) {
             critique,
           })
         ) {
+          repairAttempted = true;
           if (item.targetPageId) {
             emitProgress({
               type: "page-status",
@@ -1400,10 +1486,11 @@ export async function POST(request: Request, context: RouteContext) {
         }
 
         if (!accepted) {
+          const rejectionStage = repairAttempted ? "repaired" : "initial";
           rejectionReasons.push({
             outputIndex: item.outputIndex,
             title: item.output.title,
-            stage: "initial",
+            stage: rejectionStage,
             qualityScore: acceptedQuality.score,
             qualityViolations: acceptedQuality.violations,
           });
@@ -1413,7 +1500,7 @@ export async function POST(request: Request, context: RouteContext) {
             generationOutputId: persisted.id,
             outputIndex: item.outputIndex,
             title: item.output.title,
-            stage: "initial",
+            stage: rejectionStage,
             qualityScore: acceptedQuality.score,
             qualityViolations: acceptedQuality.violations,
           });
@@ -1469,6 +1556,7 @@ export async function POST(request: Request, context: RouteContext) {
           userPrompt: latestUserPrompt,
           stylePresetId: stylePreset.id,
           plannedImageSlots: item.output.imageSlots,
+          artifactCategory: plan.artifactCategory,
           enforcePlannedImageSlots: false,
         });
         accepted = isAcceptedGeneratedOutput({

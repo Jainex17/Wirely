@@ -124,4 +124,79 @@ describe("evaluateWireHtmlQuality", () => {
       true,
     );
   });
+
+  it("does not charge a dashboard for missing landing page furniture", () => {
+    const dashboardHtml = `<!doctype html>
+      <html>
+        <head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope" /></head>
+        <body class="bg-neutral-50 text-neutral-900">
+          <header class="px-8 py-4"><h1 class="text-2xl">Portfolio</h1></header>
+          <main class="p-8 px-8 py-8 m-2 mx-2 my-2 p-6 px-6 py-6 m-4 mx-4 my-4 p-4 px-4 py-4 m-6 mx-6 my-6 p-3 px-3 py-3 m-3">
+            <aside class="p-6">${"<svg><path d=\"M0 0\"/></svg>".repeat(4)}</aside>
+            <section class="p-6"><p class="text-base">Balance</p><p class="text-5xl">$48,210</p></section>
+            <section class="p-6 hover:bg-neutral-100 focus-visible:ring-2"><canvas id="trend"></canvas></section>
+            <section class="p-6"><table class="text-lg"><tr><td>BTC</td></tr></table></section>
+          </main>
+        </body>
+      </html>`;
+
+    const report = evaluateWireHtmlQuality({
+      html: dashboardHtml,
+      allowImages: false,
+      userPrompt: "A crypto portfolio dashboard with live prices",
+      artifactCategory: "dashboard",
+    });
+
+    expect(report.violations.includes("weak_value_section")).toBe(false);
+    expect(report.violations.includes("missing_social_proof_signal")).toBe(false);
+    expect(report.violations.includes("missing_strong_cta_signal")).toBe(false);
+    expect(report.violations.includes("missing_footer_landmark")).toBe(false);
+    expect(report.score).toBeGreaterThanOrEqual(90);
+  });
+
+  it("still holds landing pages to the hero, proof and CTA conventions", () => {
+    const report = evaluateWireHtmlQuality({
+      html: `<!doctype html><html><body class="bg-white text-black">
+        <header></header><main><section>a</section><section>b</section><section>c</section></main>
+      </body></html>`,
+      allowImages: false,
+      userPrompt: "a landing page for a dev tool",
+    });
+
+    expect(report.violations.includes("weak_hero_hierarchy")).toBe(true);
+    expect(report.violations.includes("weak_value_section")).toBe(true);
+    expect(report.violations.includes("missing_social_proof_signal")).toBe(true);
+    expect(report.violations.includes("missing_strong_cta_signal")).toBe(true);
+    expect(report.violations.includes("missing_footer_landmark")).toBe(true);
+  });
+
+  it("does not demand a chart from a non-reporting app screen", () => {
+    const settingsHtml = `<!doctype html><html><body class="bg-white text-slate-900">
+      <header></header>
+      <main>
+        <section><svg><path d="M0 0"/></svg><svg><rect/></svg><svg><circle/></svg></section>
+        <section>Notification preferences</section>
+        <section>Danger zone</section>
+      </main>
+    </body></html>`;
+
+    expect(
+      evaluateWireHtmlQuality({
+        html: settingsHtml,
+        allowImages: false,
+        userPrompt: "an account settings screen",
+        artifactCategory: "app_screen",
+      }).violations.includes("missing_chart_render_signal"),
+    ).toBe(false);
+
+    expect(
+      evaluateWireHtmlQuality({
+        html: settingsHtml,
+        allowImages: false,
+        userPrompt: "an analytics dashboard",
+        artifactCategory: "dashboard",
+      }).violations.includes("missing_chart_render_signal"),
+    ).toBe(true);
+  });
 });

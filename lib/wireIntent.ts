@@ -29,7 +29,11 @@ export const inferRequestedArtifactType = (prompt: string): WireArtifactType => 
   const landingRequested =
     LANDING_PHRASE_PATTERN.test(text) ||
     hasDirectedRequest(text, /\b(?:landing page|homepage|home page|marketing page|website)\b/i);
+  // A bare noun is enough on the landing side, so it has to be enough here too.
+  // Without this, "A crypto portfolio dashboard with live prices" fell through to
+  // "marketing page" and got planned and scored as a landing page.
   const dashboardRequested =
+    DASHBOARD_PHRASE_PATTERN.test(text) ||
     hasDirectedRequest(
       text,
       /\b(?:dashboard|admin dashboard|admin panel|workspace|console)\b/i,
@@ -70,3 +74,40 @@ export const isLandingArtifactRequest = (prompt: string) => {
   const artifactType = inferRequestedArtifactType(prompt);
   return artifactType === "landing page" || artifactType === "marketing page";
 };
+
+/**
+ * The planner model classifies the artifact itself. The keyword heuristic above
+ * stays as the fallback for the paths that have no plan to read: the fallback
+ * plan, and any planner that omits the field.
+ */
+export const artifactCategories = [
+  "landing_page",
+  "marketing_page",
+  "pricing_page",
+  "dashboard",
+  "app_screen",
+  "other",
+] as const;
+
+export type ArtifactCategory = (typeof artifactCategories)[number];
+
+const ARTIFACT_TYPE_TO_CATEGORY: Record<WireArtifactType, ArtifactCategory> = {
+  "landing page": "landing_page",
+  "marketing page": "marketing_page",
+  "pricing page": "pricing_page",
+  dashboard: "dashboard",
+};
+
+export const resolveArtifactCategory = (
+  plannedCategory: ArtifactCategory | undefined,
+  userPrompt: string,
+): ArtifactCategory =>
+  plannedCategory ?? ARTIFACT_TYPE_TO_CATEGORY[inferRequestedArtifactType(userPrompt)];
+
+export const isDashboardCategory = (category: ArtifactCategory) =>
+  category === "dashboard" || category === "app_screen";
+
+export const isLandingCategory = (category: ArtifactCategory) =>
+  category === "landing_page" ||
+  category === "marketing_page" ||
+  category === "pricing_page";

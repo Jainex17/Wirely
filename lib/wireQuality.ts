@@ -1,4 +1,9 @@
-import { inferRequestedArtifactType } from "@/lib/wireIntent";
+import {
+  isDashboardCategory,
+  isLandingCategory,
+  resolveArtifactCategory,
+  type ArtifactCategory,
+} from "@/lib/wireIntent";
 
 export interface WireQualityReport {
   score: number;
@@ -11,6 +16,7 @@ interface EvaluateWireHtmlQualityOptions {
   allowImages: boolean;
   userPrompt: string;
   stylePresetId?: string;
+  artifactCategory?: ArtifactCategory;
 }
 
 const clampScore = (value: number) => Math.max(0, Math.min(100, value));
@@ -24,13 +30,17 @@ export const evaluateWireHtmlQuality = ({
   html,
   allowImages,
   userPrompt,
+  artifactCategory,
 }: EvaluateWireHtmlQualityOptions): WireQualityReport => {
   let score = 100;
   const violations: string[] = [];
-  const artifactType = inferRequestedArtifactType(userPrompt);
-  const dashboardRequested = artifactType === "dashboard";
-  const landingRequested =
-    artifactType === "landing page" || artifactType === "marketing page";
+  const category = resolveArtifactCategory(artifactCategory, userPrompt);
+  const dashboardRequested = isDashboardCategory(category);
+  // Only a reporting surface owes us a chart. An app_screen is an inbox, a
+  // settings page or a form, and demanding a chart from one is the same mistake
+  // as demanding a signup CTA from a dashboard.
+  const chartsExpected = category === "dashboard";
+  const landingRequested = isLandingCategory(category);
 
   const hasHtmlTag = /<html[\s>]/i.test(html) && /<\/html>/i.test(html);
   const hasBodyTag = /<body[\s>]/i.test(html) && /<\/body>/i.test(html);
@@ -55,45 +65,8 @@ export const evaluateWireHtmlQuality = ({
     violations.push("missing_explicit_body_theme");
     score -= 8;
   }
-  if (!hasFooterTag) {
-    violations.push("missing_footer_landmark");
-    score -= 6;
-  }
   if (sectionCount < 3) {
     violations.push("insufficient_section_depth");
-    score -= 10;
-  }
-
-  const hasHeroSignal =
-    /<h1[\s>]/i.test(html) && /(text-5|text-6|text-7|py-20|py-24|py-28)/i.test(html);
-  if (!hasHeroSignal) {
-    violations.push("weak_hero_hierarchy");
-    score -= 8;
-  }
-
-  const hasFeatureSignal =
-    /(features?|benefits?|value|why choose)/i.test(html) &&
-    /(grid-cols-|md:grid-cols-|lg:grid-cols-)/i.test(html);
-  if (!hasFeatureSignal) {
-    violations.push("weak_value_section");
-    score -= 8;
-  }
-
-  const hasProofSignal =
-    /(testimonial|customers|trusted|reviews|ratings|case study|proof|logos?|metrics?|stats?)/i.test(
-      html,
-    );
-  if (!hasProofSignal) {
-    violations.push("missing_social_proof_signal");
-    score -= 8;
-  }
-
-  const hasCtaSignal =
-    /(get started|start for free|book demo|try now|sign up|request demo|contact sales)/i.test(
-      html,
-    );
-  if (!hasCtaSignal) {
-    violations.push("missing_strong_cta_signal");
     score -= 10;
   }
 
@@ -177,7 +150,49 @@ export const evaluateWireHtmlQuality = ({
     score -= 8;
   }
 
+  // A marketing page needs a hero, a value section, proof and a signup CTA. A
+  // dashboard needs none of them, and these used to run on every artifact: a
+  // correct dashboard lost 40 points for missing furniture it should not have,
+  // then the repair pass read the violations back and bolted that furniture on.
   if (landingRequested) {
+    const hasHeroSignal =
+      /<h1[\s>]/i.test(html) && /(text-5|text-6|text-7|py-20|py-24|py-28)/i.test(html);
+    if (!hasHeroSignal) {
+      violations.push("weak_hero_hierarchy");
+      score -= 8;
+    }
+
+    const hasFeatureSignal =
+      /(features?|benefits?|value|why choose)/i.test(html) &&
+      /(grid-cols-|md:grid-cols-|lg:grid-cols-)/i.test(html);
+    if (!hasFeatureSignal) {
+      violations.push("weak_value_section");
+      score -= 8;
+    }
+
+    const hasProofSignal =
+      /(testimonial|customers|trusted|reviews|ratings|case study|proof|logos?|metrics?|stats?)/i.test(
+        html,
+      );
+    if (!hasProofSignal) {
+      violations.push("missing_social_proof_signal");
+      score -= 8;
+    }
+
+    const hasCtaSignal =
+      /(get started|start for free|book demo|try now|sign up|request demo|contact sales)/i.test(
+        html,
+      );
+    if (!hasCtaSignal) {
+      violations.push("missing_strong_cta_signal");
+      score -= 10;
+    }
+
+    if (!hasFooterTag) {
+      violations.push("missing_footer_landmark");
+      score -= 6;
+    }
+
     const hasDashboardShell = /<aside[\s>]/i.test(html) || /\bsidebar\b/i.test(html);
     const hasDashboardDataElements =
       /<table[\s>]/i.test(html) ||
@@ -213,7 +228,7 @@ export const evaluateWireHtmlQuality = ({
     const hasSvgChartSignal =
       /<svg[\s\S]*?(?:polyline|path|rect|line|circle)[\s\S]*?<\/svg>/i.test(html) &&
       /(chart|trend|series|axis|bar|line|distribution)/i.test(html);
-    if (!((hasChartJsScript && hasCanvas) || hasSvgChartSignal)) {
+    if (chartsExpected && !((hasChartJsScript && hasCanvas) || hasSvgChartSignal)) {
       violations.push("missing_chart_render_signal");
       score -= 30;
     }

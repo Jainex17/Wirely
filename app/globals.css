@@ -3,111 +3,105 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #f9f9f9;
-  --foreground: #202020;
-  --card: #fcfcfc;
-  --card-foreground: #202020;
-  --popover: #fcfcfc;
-  --popover-foreground: #202020;
-  --primary: #644a40;
+  --background: #f7f8fc;
+  --foreground: #0b1020;
+  --card: #ffffff;
+  --card-foreground: #0b1020;
+  --popover: #ffffff;
+  --popover-foreground: #0b1020;
+  --primary: #2f6699;
   --primary-foreground: #ffffff;
-  --secondary: #ffdfb5;
-  --secondary-foreground: #582d1d;
-  --muted: #efefef;
-  --muted-foreground: #646464;
-  --accent: #e8e8e8;
-  --accent-foreground: #202020;
-  --destructive: #e54d2e;
+  --secondary: #e7eef5;
+  --secondary-foreground: #1f4a69;
+  --muted: #eef1f8;
+  --muted-foreground: #5a6478;
+  --accent: #e8edfa;
+  --accent-foreground: #0b1020;
+  --destructive: #e04a2f;
   --destructive-foreground: #ffffff;
-  --border: #e0d5c5;
-  --input: #e0d5c5;
-  --ring: #644a40;
-  --chart-1: #644a40;
-  --chart-2: #ffdfb5;
-  --chart-3: #e8e8e8;
-  --chart-4: #ffe6c4;
-  --chart-5: #66493e;
-  --sidebar: #fbfbfb;
-  --sidebar-foreground: #252525;
-  --sidebar-primary: #343434;
-  --sidebar-primary-foreground: #fbfbfb;
-  --sidebar-accent: #f7f7f7;
-  --sidebar-accent-foreground: #343434;
-  --sidebar-border: #ebebeb;
-  --sidebar-ring: #b5b5b5;
+  --border: #dde3f0;
+  --input: #dde3f0;
+  --ring: #3d78ad;
+  --chart-1: #2f6699;
+  --chart-2: #6c9bd2;
+  --chart-3: #a3c0dd;
+  --chart-4: #1f4a69;
+  --chart-5: #cddff0;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1020;
+  --sidebar-primary: #2f6699;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef1f8;
+  --sidebar-accent-foreground: #0b1020;
+  --sidebar-border: #dde3f0;
+  --sidebar-ring: #3d78ad;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --shadow-x: 0;
   --shadow-y: 1px;
   --shadow-blur: 3px;
   --shadow-spread: 0px;
   --shadow-opacity: 0.1;
   --shadow-color: oklch(0 0 0);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow-2xs: 0 1px 2px 0px hsl(226 60% 8% / 0.06);
+  --shadow-xs: 0 1px 3px 0px hsl(226 60% 8% / 0.08);
+  --shadow-sm: 0 1px 3px 0px hsl(226 60% 8% / 0.10), 0 1px 2px -1px hsl(226 60% 8% / 0.10);
+  --shadow: 0 1px 3px 0px hsl(226 60% 8% / 0.10), 0 1px 2px -1px hsl(226 60% 8% / 0.10);
+  --shadow-md: 0 2px 6px -1px hsl(226 60% 8% / 0.12), 0 1px 3px -1px hsl(226 60% 8% / 0.10);
+  --shadow-lg: 0 12px 32px -12px hsl(226 70% 6% / 0.45), 0 2px 6px -2px hsl(226 60% 8% / 0.12);
+  --shadow-xl: 0 24px 60px -20px hsl(226 70% 6% / 0.55), 0 4px 10px -4px hsl(226 60% 8% / 0.14);
+  --shadow-2xl: 0 32px 80px -24px hsl(226 70% 6% / 0.65);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 }
 
 .dark {
-  --background: #111111;
-  --foreground: #eeeeee;
-  --card: #191919;
-  --card-foreground: #eeeeee;
-  --popover: #191919;
-  --popover-foreground: #eeeeee;
-  --primary: #ffe0c2;
-  --primary-foreground: #081a1b;
-  --secondary: #393028;
-  --secondary-foreground: #ffe0c2;
-  --muted: #222222;
-  --muted-foreground: #b4b4b4;
-  --accent: #2a2a2a;
-  --accent-foreground: #eeeeee;
-  --destructive: #e54d2e;
-  --destructive-foreground: #ffffff;
-  --border: #2d2a24;
-  --input: #2d2a24;
-  --ring: #ffe0c2;
-  --chart-1: #ffe0c2;
-  --chart-2: #393028;
-  --chart-3: #2a2a2a;
-  --chart-4: #42382e;
-  --chart-5: #ffe0c1;
-  --sidebar: #18181b;
-  --sidebar-foreground: #f4f4f5;
-  --sidebar-primary: #1d4ed8;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #27272a;
-  --sidebar-accent-foreground: #f4f4f5;
-  --sidebar-border: #27272a;
-  --sidebar-ring: #d4d4d8;
+  --background: #08090d;
+  --foreground: #e9ecf5;
+  --card: #0e1014;
+  --card-foreground: #e9ecf5;
+  --popover: #0e1014;
+  --popover-foreground: #e9ecf5;
+  --primary: #6c9bd2;
+  --primary-foreground: #08121c;
+  --secondary: #1a1d24;
+  --secondary-foreground: #dfe3ec;
+  --muted: #121419;
+  --muted-foreground: #8d94a3;
+  --accent: #16181e;
+  --accent-foreground: #e9ecf5;
+  --destructive: #ff5f45;
+  --destructive-foreground: #14050a;
+  --border: #1c1f26;
+  --input: #1c1f26;
+  --ring: #6c9bd2;
+  --chart-1: #6c9bd2;
+  --chart-2: #4e7fb5;
+  --chart-3: #a3c0dd;
+  --chart-4: #1a1d24;
+  --chart-5: #cddff0;
+  --sidebar: #0b0c10;
+  --sidebar-foreground: #e9ecf5;
+  --sidebar-primary: #6c9bd2;
+  --sidebar-primary-foreground: #060a18;
+  --sidebar-accent: #16181e;
+  --sidebar-accent-foreground: #e9ecf5;
+  --sidebar-border: #1c1f26;
+  --sidebar-ring: #6c9bd2;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --radius: 0.5rem;
-  --shadow-x: 0;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.1;
-  --shadow-color: oklch(0 0 0);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --radius: 0.625rem;
+  --shadow-2xs: 0 1px 2px 0px hsl(226 80% 2% / 0.5);
+  --shadow-xs: 0 1px 3px 0px hsl(226 80% 2% / 0.55);
+  --shadow-sm: 0 1px 3px 0px hsl(226 80% 2% / 0.6), 0 1px 2px -1px hsl(226 80% 2% / 0.6);
+  --shadow: 0 1px 3px 0px hsl(226 80% 2% / 0.6), 0 1px 2px -1px hsl(226 80% 2% / 0.6);
+  --shadow-md: 0 4px 12px -2px hsl(226 80% 2% / 0.65);
+  --shadow-lg: 0 18px 44px -16px hsl(226 80% 2% / 0.8), 0 2px 8px -2px hsl(226 80% 2% / 0.6);
+  --shadow-xl: 0 32px 72px -24px hsl(226 80% 2% / 0.85);
+  --shadow-2xl: 0 44px 96px -32px hsl(226 80% 2% / 0.9);
 }
 
 @theme inline {
@@ -146,6 +140,7 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-display: var(--font-bricolage), var(--font-sans);
   --font-serif: var(--font-serif);
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -177,30 +172,213 @@
   border-color: inherit !important;
 }
 
-.hero-surface {
-  background-color: var(--background);
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.hero-grid {
-  background-image:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--border) 55%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      0deg,
-      color-mix(in srgb, var(--border) 40%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 120px 120px;
-  mask-image: radial-gradient(circle at 50% 30%, var(--foreground) 0%, transparent 70%);
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 6% cover 26%;
+    }
+  }
+}
+
+
+@keyframes enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes enter-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes beam-orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.enter {
+  animation: enter-up 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.enter-1 {
+  animation-delay: 40ms;
+}
+
+.enter-2 {
+  animation-delay: 130ms;
+}
+
+.enter-3 {
+  animation-delay: 240ms;
+}
+
+.enter-4 {
+  animation-delay: 360ms;
+}
+
+.rings-enter {
+  animation: enter-fade 1600ms ease-out both;
+}
+
+/* A light that travels the composer border. Masked to a 1px ring so only the
+   edge lights up, and rotated with transform so it stays on the compositor. */
+.beam {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  padding: 1px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.beam-spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 170%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 244deg,
+    color-mix(in oklab, var(--primary) 92%, transparent) 312deg,
+    transparent 360deg
+  );
+  animation: beam-orbit 10s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter,
+  .rings-enter,
+  .beam-spin {
+    animation: none;
+  }
+
+  .lightspeed-word {
+    animation: none;
+  }
+
+  .lightspeed-streaks {
+    display: none;
+  }
+}
+
+.hero-foot {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--background) 30%, transparent) 70%,
+    var(--background) 100%
+  );
+}
+
+.hero-dots {
+  background-image: radial-gradient(
+    circle,
+    rgb(255 255 255 / 0.07) 1px,
+    transparent 1.1px
+  );
+  background-size: 22px 22px;
+  mask-image: radial-gradient(75% 60% at 50% 42%, #000 20%, transparent 100%);
+}
+
+.ribbon-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.ribbon {
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* A sphere edge hanging from above: bright at the top, curving down to a dark
+   arc across the lower hero. The centre sits just above the top edge so the
+   near-white core stays off screen and the nav keeps its contrast. */
+.ribbon-core {
+  left: 50%;
+  top: -205%;
+  width: 210%;
+  height: 275%;
+  transform: translateX(-50%);
+  opacity: 0.38;
+  filter: blur(30px);
+  background: radial-gradient(
+    closest-side,
+    #dfe9f7 0%,
+    #9dbbdd 18%,
+    color-mix(in oklab, var(--primary) 80%, transparent) 38%,
+    color-mix(in oklab, #2b4c85 88%, transparent) 54%,
+    color-mix(in oklab, #16264a 70%, transparent) 72%,
+    transparent 92%
+  );
+}
+
+.rings {
+  background-image: repeating-radial-gradient(
+    circle at 50% 38%,
+    transparent 0 74px,
+    color-mix(in srgb, var(--foreground) 7%, transparent) 74px 75px
+  );
+  mask-image: radial-gradient(circle at 50% 38%, #000 6%, transparent 64%);
+}
+
+.rings-glow {
+  background: radial-gradient(
+    46% 40% at 50% 34%,
+    color-mix(in oklab, var(--primary) 16%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.pane {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+    0 30px 70px -34px rgb(0 0 0 / 0.95);
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
 }
 
 .canvas-dots {
   background-image: radial-gradient(
     circle,
-    color-mix(in srgb, var(--chart-2) 62%, transparent) 1.6px,
+    color-mix(in srgb, var(--muted-foreground) 22%, transparent) 1.6px,
     transparent 1.9px
   );
   background-size: 20px 20px;
@@ -229,4 +407,90 @@
 
 .logout-dialog-action:hover {
   filter: brightness(0.95);
+}
+
+/* The one word that should look like it is moving. The glyphs draw in from the
+   left behind a soft-edged mask while light streaks cross them. The mask sits on
+   an inner span so it does not clip the streaks, which reach outside the word's
+   own box. One-shot on purpose: a looping hero sheen repaints for no reason. */
+.lightspeed {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+
+.lightspeed-word {
+  display: inline-block;
+  -webkit-mask-image: linear-gradient(90deg, #000 0 40%, transparent 56%);
+  mask-image: linear-gradient(90deg, #000 0 40%, transparent 56%);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: lightspeed-reveal 760ms cubic-bezier(0.16, 1, 0.3, 1) 380ms both;
+}
+
+@keyframes lightspeed-reveal {
+  from {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+.lightspeed-streaks {
+  position: absolute;
+  inset: -0.25em -1em;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lightspeed-streaks span {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 80%, white 20%),
+    transparent
+  );
+  animation: lightspeed-streak 760ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.lightspeed-streaks span:nth-child(1) {
+  top: 22%;
+  width: 28%;
+  animation-delay: 400ms;
+}
+
+.lightspeed-streaks span:nth-child(2) {
+  top: 54%;
+  width: 46%;
+  animation-delay: 480ms;
+}
+
+.lightspeed-streaks span:nth-child(3) {
+  top: 80%;
+  width: 22%;
+  animation-delay: 560ms;
+}
+
+@keyframes lightspeed-streak {
+  from {
+    opacity: 0;
+    transform: translateX(-140%) scaleX(0.35);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(260%) scaleX(1.7);
+  }
 }

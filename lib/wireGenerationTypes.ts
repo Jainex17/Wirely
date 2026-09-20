@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WIRE_STYLE_PRESETS } from "@/lib/wirePrompt";
+import { artifactCategories } from "@/lib/wireIntent";
 
 const PRESET_IDS = WIRE_STYLE_PRESETS.map((preset) => preset.id) as [
   string,
@@ -60,6 +61,9 @@ export const plannedOutputSchema = z.object({
 export const designPlanSchema = z.object({
   generationMode: generationModeSchema,
   artifactType: z.string().trim().min(2).max(120),
+  // Optional so a weaker planner that omits it still produces a valid plan; the
+  // keyword fallback in wireIntent covers that case.
+  artifactCategory: z.enum(artifactCategories).optional(),
   audience: z.string().trim().min(2).max(240),
   brandSummary: z.string().trim().min(8).max(280),
   tone: z.string().trim().min(2).max(120),
@@ -181,14 +185,17 @@ export const validateDesignPlan = ({
   value,
   expectedOutputCount,
   requestedMode,
+  allowPlannerOutputCount = false,
 }: {
   value: unknown;
   expectedOutputCount: number;
   requestedMode?: GenerationMode;
+  /** When the planner owns the decision, any count the schema allows is valid. */
+  allowPlannerOutputCount?: boolean;
 }) => {
   const parsed = designPlanSchema.parse(unwrapDesignPlanCandidate(value));
 
-  if (parsed.outputs.length !== expectedOutputCount) {
+  if (!allowPlannerOutputCount && parsed.outputs.length !== expectedOutputCount) {
     throw new Error(
       `Planner output count mismatch. Expected ${expectedOutputCount}, received ${parsed.outputs.length}.`,
     );

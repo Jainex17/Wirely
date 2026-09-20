@@ -41,7 +41,7 @@ export default function UserAccountMenu({
   logoutDescription,
   isLoggingOut = false,
   onLogout,
-  profileHref = "/setting/profile",
+  profileHref = "/setting?tab=account",
 }: UserAccountMenuProps) {
   const router = useRouter();
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
@@ -70,11 +70,9 @@ export default function UserAccountMenu({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-muted/40"
+            aria-label={`Account menu for ${name}`}
+            className="flex items-center rounded-full p-0.5 transition-colors hover:bg-muted/40"
           >
-            <span className="max-w-[220px] truncate text-sm font-medium text-foreground">
-              {name}
-            </span>
             {user.avatarUrl ? (
               <Image
                 loader={passthroughImageLoader}
