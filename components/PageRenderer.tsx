@@ -934,18 +934,24 @@ export default React.memo(function PageRenderer({
           }
         }}
       >
+        {/*
+          Pinned to the top with a fixed height rather than centred on its own
+          size. A centred dialog taller than the viewport overflows at both
+          ends, which put the width controls above the top of the screen on any
+          laptop-height window and left no way to reach them.
+        */}
         <DialogContent
-          className="max-w-[calc(100vw-4rem)] p-0"
+          className="top-6 flex max-h-[calc(100vh-3rem)] h-[calc(100vh-3rem)] max-w-[calc(100vw-4rem)] translate-y-0 flex-col p-0"
           style={{ maxWidth: `${Math.min(previewWidth + 32, 1400)}px` }}
         >
-          <DialogHeader className="px-6 pb-2 pt-4">
+          <DialogHeader className="shrink-0 px-6 pb-2 pt-4">
             <DialogTitle>{page.title}</DialogTitle>
             <DialogDescription>
               Live preview at {previewWidth}px. Interactions are enabled inside
-              the preview, so press Escape or use Close when you are done.
+              the preview; press Escape to close it.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-wrap items-center gap-1.5 px-6 pb-1">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-6 pb-2">
             <span className="mr-1 text-xs font-medium text-muted-foreground">
               Width
             </span>
@@ -978,7 +984,7 @@ export default React.memo(function PageRenderer({
               </button>
             ) : null}
           </div>
-          <div className="max-h-[calc(100vh-13rem)] overflow-auto px-6 pb-4">
+          <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
             <iframe
               title={`${page.title} preview`}
               srcDoc={previewSrcDoc}
@@ -990,11 +996,6 @@ export default React.memo(function PageRenderer({
               sandbox="allow-scripts"
               referrerPolicy="no-referrer"
             />
-          </div>
-          <div className="flex justify-end border-t border-border px-6 py-3">
-            <Button variant="outline" onClick={() => setIsPreviewOpen(false)}>
-              Close preview
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
