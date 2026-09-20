@@ -25,12 +25,79 @@ export const getUserByAuthSub = async (authSub: string) => {
   const db = getDb();
 
   const [user] = await db
-    .select()
+    .select({
+      id: users.id,
+      authSub: users.authSub,
+      email: users.email,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+    })
     .from(users)
     .where(eq(users.authSub, authSub))
     .limit(1);
 
   return user ?? null;
+};
+
+export interface UserWithAiSettings {
+  user: {
+    id: string;
+    authSub: string;
+    email: string | null;
+    name: string | null;
+    avatarUrl: string | null;
+  };
+  aiSettings: UserAiSettings;
+}
+
+// Identity and AI settings live on the same users row, so callers that need
+// both (the home page) can read them in one query instead of two.
+export const getUserWithAiSettingsByAuthSub = async (
+  authSub: string,
+): Promise<UserWithAiSettings | null> => {
+  const db = getDb();
+
+  const [user] = await db
+    .select({
+      id: users.id,
+      authSub: users.authSub,
+      email: users.email,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+      googleApiKeyCiphertext: users.googleApiKeyCiphertext,
+      googleApiKeyIv: users.googleApiKeyIv,
+      googleApiKeyHmac: users.googleApiKeyHmac,
+      googleApiKeyKeyVersion: users.googleApiKeyKeyVersion,
+      openRouterApiKeyCiphertext: users.openRouterApiKeyCiphertext,
+      openRouterApiKeyIv: users.openRouterApiKeyIv,
+      openRouterApiKeyHmac: users.openRouterApiKeyHmac,
+      openRouterApiKeyKeyVersion: users.openRouterApiKeyKeyVersion,
+      zaiApiKeyCiphertext: users.zaiApiKeyCiphertext,
+      zaiApiKeyIv: users.zaiApiKeyIv,
+      zaiApiKeyHmac: users.zaiApiKeyHmac,
+      zaiApiKeyKeyVersion: users.zaiApiKeyKeyVersion,
+      unsplashApiKeyCiphertext: users.unsplashApiKeyCiphertext,
+      unsplashApiKeyIv: users.unsplashApiKeyIv,
+      unsplashApiKeyHmac: users.unsplashApiKeyHmac,
+      unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
+      enabledGoogleModels: users.enabledGoogleModels,
+    })
+    .from(users)
+    .where(eq(users.authSub, authSub))
+    .limit(1);
+
+  if (!user) return null;
+
+  return {
+    user: {
+      id: user.id,
+      authSub: user.authSub,
+      email: user.email,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+    },
+    aiSettings: toPublicUserAiSettings(user),
+  };
 };
 
 export interface UserAiSettings {

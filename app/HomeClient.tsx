@@ -1,12 +1,14 @@
 "use client";
 
 import { useReducer, type FormEvent, type MouseEvent } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea";
 import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
+  WIRE_MODEL_PROVIDER_LABEL,
   getWireModelProvider,
   resolveRunnableWireModel,
   type WireModelName,
@@ -14,33 +16,32 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  AlertTriangle,
-  ChevronDown,
-  Loader2,
-  MoreHorizontal,
-  Trash2,
-} from "lucide-react";
+import { Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "@/components/ui/sonner";
-import GeminiIcon from "@/components/icons/GeminiIcon";
+
+// The model picker and delete dialog only matter once the user interacts with
+// them, so they load on demand instead of weighing down the first paint.
+const ModelPicker = dynamic(() => import("./ModelPicker"), {
+  ssr: false,
+  loading: () => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled
+      className="pointer-events-none text-muted-foreground"
+    >
+      <span className="h-4 w-28 animate-pulse rounded bg-muted" />
+    </Button>
+  ),
+});
+
+const DeleteProjectDialog = dynamic(() => import("./DeleteProjectDialog"));
 
 export interface HomeClientInitialData {
   user: {
@@ -56,6 +57,8 @@ export interface HomeClientInitialData {
     createdAt: string | Date;
     updatedAt: string | Date;
   }>;
+  // Total active projects, which can exceed the capped historyItems list.
+  historyTotal: number;
   initialPrompt: string;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
@@ -67,12 +70,6 @@ export type HomeGenerationMode =
   | "single_page"
   | "concept_variants"
   | "information_architecture";
-
-const MODEL_PROVIDER_LABEL = {
-  google: "Google",
-  openrouter: "OpenRouter",
-  zai: "Z.ai",
-} as const;
 
 const EXAMPLE_PROMPT_CHIPS = [
   "A landing page for a plant care subscription",
@@ -87,6 +84,7 @@ interface HomeState {
   user: HomeClientInitialData["user"];
   errorMessage: string | null;
   historyItems: HomeClientInitialData["historyItems"];
+  historyTotal: number;
   selectedModel: WireModelName;
   enabledModelIds: WireModelName[];
   hasGoogleApiKey: boolean;
@@ -122,6 +120,7 @@ const createHomeInitialState = (
   user: initialData.user,
   errorMessage: null,
   historyItems: initialData.historyItems,
+  historyTotal: initialData.historyTotal,
   selectedModel:
     resolveRunnableWireModel(initialData.enabledModelIds, {
       google: initialData.hasGoogleApiKey,
@@ -157,6 +156,7 @@ const homeReducer = (state: HomeState, action: HomeAction): HomeState => {
       return {
         ...state,
         historyItems: state.historyItems.filter((project) => project.id !== action.projectId),
+        historyTotal: Math.max(state.historyTotal - 1, 0),
       };
     default:
       return state;
@@ -275,7 +275,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
     if (selectedModelRequiresMissingKey) {
       const selectedModelProviderLabel =
-        MODEL_PROVIDER_LABEL[activeSelectedModelProvider];
+        WIRE_MODEL_PROVIDER_LABEL[activeSelectedModelProvider];
       dispatch({
         type: "patch",
         payload: {
@@ -426,77 +426,20 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
               <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={hasNoEnabledModels}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <GeminiIcon className="size-4 text-primary" />
-                        {selectedModelLabel}
-                        {showApiKeyWarning ? (
-                          <AlertTriangle size={14} className="text-destructive" />
-                        ) : null}
-                        <ChevronDown size={14} />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64">
-                      {showConfigureApiKeysCta ? (
-                        <>
-                          <DropdownMenuItem
-                            onClick={() => router.push("/setting?tab=providers")}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <AlertTriangle size={14} />
-                            Connect a provider key first
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                        </>
-                      ) : null}
-                      {(["google", "openrouter", "zai"] as const).map((provider, index) => {
-                        const providerModels = enabledModelOptions.filter(
-                          (model) => model.provider === provider,
-                        );
-                        if (providerModels.length === 0) return null;
-
-                        return (
-                          <DropdownMenuGroup key={provider}>
-                            {index > 0 || showConfigureApiKeysCta ? (
-                              <DropdownMenuSeparator />
-                            ) : null}
-                            <DropdownMenuLabel className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                              {MODEL_PROVIDER_LABEL[provider]}
-                            </DropdownMenuLabel>
-                            {providerModels.map((model) => (
-                              <DropdownMenuItem
-                                key={model.id}
-                                onClick={() =>
-                                  dispatch({
-                                    type: "patch",
-                                    payload: { selectedModel: model.id },
-                                  })
-                                }
-                              >
-                                <span className="truncate">{model.label}</span>
-                                {model.tier === "paid" ? (
-                                  <span className="ml-auto rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                                    Billed
-                                  </span>
-                                ) : null}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuGroup>
-                        );
-                      })}
-                      {enabledModelOptions.length === 0 ? (
-                        <DropdownMenuItem disabled>No models enabled</DropdownMenuItem>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
+                  <ModelPicker
+                    label={selectedModelLabel}
+                    disabled={hasNoEnabledModels}
+                    showApiKeyWarning={showApiKeyWarning}
+                    showConfigureApiKeysCta={showConfigureApiKeysCta}
+                    models={enabledModelOptions}
+                    onSelectModel={(modelId) =>
+                      dispatch({
+                        type: "patch",
+                        payload: { selectedModel: modelId },
+                      })
+                    }
+                    onOpenProviders={() => router.push("/setting?tab=providers")}
+                  />
                 </div>
 
                 <Button
@@ -568,6 +511,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
             <h2 className="text-sm font-medium text-foreground">Pages you have made</h2>
             <span className="font-mono text-[11px] text-muted-foreground">
               {state.historyItems.length}
+              {state.historyTotal > state.historyItems.length ? "+" : ""}
             </span>
           </div>
 
@@ -627,36 +571,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         </section>
       </main>
 
-      <AlertDialog
-        open={state.projectToDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            dispatch({ type: "closeDeleteDialog" });
-          }
-        }}
-      >
-        <AlertDialogContent className="rounded-xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this project?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The generated pages and their history are removed for good. This cannot be
-              undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel onClick={() => dispatch({ type: "closeDeleteDialog" })}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteProject}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              <Trash2 size={16} />
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {state.projectToDelete ? (
+        <DeleteProjectDialog
+          onCancel={() => dispatch({ type: "closeDeleteDialog" })}
+          onConfirm={confirmDeleteProject}
+        />
+      ) : null}
     </div>
   );
 }
