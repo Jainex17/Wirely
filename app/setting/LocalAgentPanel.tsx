@@ -395,7 +395,12 @@ export default function LocalAgentPanel({
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                 provider/model
               </code>
-              , for example{" "}
+              . Run{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                opencode models
+              </code>{" "}
+              in a terminal to see every id your setup offers — copy the line
+              you want, for example{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                 zai-coding-plan/glm-4.6
               </code>
