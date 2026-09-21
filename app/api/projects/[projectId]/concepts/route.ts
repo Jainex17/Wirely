@@ -17,6 +17,8 @@ import {
   clampConceptCount,
   composeConceptBatchPrompt,
   composeEditPrompt,
+  CONCEPT_DIRECTIONS,
+  resolveRequestedConceptCount,
 } from "@/lib/opencode/conceptPrompt";
 import { DEFAULT_OPENCODE_MODEL } from "@/lib/opencode/models";
 
@@ -29,10 +31,11 @@ interface RouteContext {
 }
 
 /**
- * Queues a screen-concept run for the user's local agent.
+ * Queues a screen-concept generation for the user's local agent.
  *
- * Returns immediately with a job id; the browser polls
- * `GET /api/projects/:projectId/concepts/:jobId` for the outcome. The
+ * A multi-concept request becomes one job per concept, each answering with a
+ * single screen; the browser polls
+ * `GET /api/projects/:projectId/concepts/:jobId` for each outcome. The
  * generation itself happens on the user's machine against their own opencode
  * credentials, so nothing here touches a provider key.
  */
@@ -104,25 +107,43 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
-    const conceptCount = targetPage ? 1 : clampConceptCount(parsed.data.conceptCount ?? 3);
-    const job = await queueAgentJob({
-      userId: sessionUser.id,
-      projectId,
-      targetPageId: targetPage?.id ?? null,
-      deviceType: targetPage?.deviceType ?? deviceType,
-      prompt: targetPage
-        ? composeEditPrompt({ userPrompt, currentHtml: targetPage.htmlContent })
-        : composeConceptBatchPrompt({ userPrompt, conceptCount }),
-      // Pinned to a free model rather than left null, which would fall through
-      // to whatever the user set as their opencode default, possibly a paid one.
-      model:
-        typeof modelValue === "string" && modelValue.trim()
-          ? modelValue.trim()
-          : DEFAULT_OPENCODE_MODEL,
-      variantCount: conceptCount,
-    });
+    const conceptCount = targetPage ? 1 : clampConceptCount(
+      parsed.data.conceptCount ?? resolveRequestedConceptCount(userPrompt) ?? 3,
+    );
 
-    // Recorded now so the prompt survives a reload while the run is in flight.
+    // One job per concept. The agent claims them oldest-first and reports each
+    // separately, so pages land on the canvas as they finish instead of in one
+    // batch, and a failed concept costs one job rather than the whole reply.
+    // The count comes from the body, then the user's own words, then three.
+    const jobs: Array<{ id: string }> = [];
+    for (let index = 0; index < conceptCount; index += 1) {
+      const job = await queueAgentJob({
+        userId: sessionUser.id,
+        projectId,
+        targetPageId: targetPage?.id ?? null,
+        deviceType: targetPage?.deviceType ?? deviceType,
+        prompt: targetPage
+          ? composeEditPrompt({ userPrompt, currentHtml: targetPage.htmlContent })
+          : composeConceptBatchPrompt({
+              userPrompt,
+              conceptCount: 1,
+              ...(conceptCount > 1
+                ? { direction: CONCEPT_DIRECTIONS[index % CONCEPT_DIRECTIONS.length] }
+                : {}),
+            }),
+        // Pinned to a free model rather than left null, which would fall through
+        // to whatever the user set as their opencode default, possibly a paid one.
+        model:
+          typeof modelValue === "string" && modelValue.trim()
+            ? modelValue.trim()
+            : DEFAULT_OPENCODE_MODEL,
+        variantCount: 1,
+      });
+      jobs.push({ id: job.id });
+    }
+
+    // Recorded now so the exchange survives a reload while the runs are in
+    // flight. Finished concepts show up as pages, not as more chat.
     await appendConversationMessage({
       projectId,
       role: "user",
@@ -130,8 +151,17 @@ export async function POST(request: Request, context: RouteContext) {
     }).catch((error) => {
       logger.warn("projects.concepts.conversation_append_failed", { error });
     });
+    await appendConversationMessage({
+      projectId,
+      role: "assistant",
+      content: targetPage
+        ? "Asked your local agent to revise the page."
+        : `Asked your local agent for ${conceptCount} concept${conceptCount === 1 ? "" : "s"}.`,
+    }).catch((error) => {
+      logger.warn("projects.concepts.conversation_append_failed", { error });
+    });
 
-    return NextResponse.json({ job }, { status: 202 });
+    return NextResponse.json({ jobs }, { status: 202 });
   } catch (error) {
     logger.error("projects.concepts.queue_failed", { error });
     return NextResponse.json({ error: "Failed to queue the generation." }, { status: 500 });

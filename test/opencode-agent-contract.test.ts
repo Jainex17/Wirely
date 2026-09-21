@@ -5,7 +5,9 @@ import {
   clampConceptCount,
   composeConceptBatchPrompt,
   composeEditPrompt,
+  CONCEPT_DIRECTIONS,
   MAX_CONCEPTS_PER_JOB,
+  resolveRequestedConceptCount,
 } from "@/lib/opencode/conceptPrompt";
 import { readBearerToken, hashApiToken, API_TOKEN_PREFIX } from "@/lib/auth/apiToken";
 import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persistConcepts";
@@ -47,7 +49,47 @@ describe("concept count clamping", () => {
   });
 });
 
+describe("concept count from the prompt", () => {
+  it("reads a count the user stated in prose", () => {
+    expect(resolveRequestedConceptCount("generate 2 concepts of a dashboard")).toBe(2);
+    expect(resolveRequestedConceptCount("Give me 3 different variants for a login")).toBe(3);
+    expect(resolveRequestedConceptCount("design 1 screen for onboarding")).toBe(1);
+  });
+
+  it("returns null when the prompt names no count", () => {
+    expect(resolveRequestedConceptCount("a habit tracker dashboard")).toBeNull();
+    expect(resolveRequestedConceptCount("two concepts please")).toBeNull();
+  });
+
+  it("clamps an unreasonable prose count", () => {
+    expect(resolveRequestedConceptCount("make 50 concepts")).toBe(MAX_CONCEPTS_PER_JOB);
+  });
+});
+
 describe("concept prompt", () => {
+  it("stamps a one-concept run with its own design direction", () => {
+    const prompt = composeConceptBatchPrompt({
+      userPrompt: "A landing page",
+      conceptCount: 1,
+      direction: CONCEPT_DIRECTIONS[0],
+    });
+
+    expect(prompt).toContain("Design direction for this concept: Editorial and typographic");
+    expect(prompt).not.toContain("Each concept must be a distinct design direction");
+  });
+
+  it("keeps the differentiate instruction for an undirected batch", () => {
+    const prompt = composeConceptBatchPrompt({ userPrompt: "x", conceptCount: 3 });
+
+    expect(prompt).toContain("Each concept must be a distinct design direction");
+    expect(prompt).not.toContain("Design direction for this concept");
+  });
+
+  it("rotates distinct directions across the rungs", () => {
+    const directions = new Set(CONCEPT_DIRECTIONS);
+    expect(directions.size).toBe(CONCEPT_DIRECTIONS.length);
+  });
+
   it("asks for one marker block per requested concept", () => {
     const prompt = composeConceptBatchPrompt({ userPrompt: "A pricing page", conceptCount: 3 });
 
@@ -583,6 +625,22 @@ describe("editing an existing page", () => {
     // Ownership is checked before the page's HTML is put into a prompt.
     expect(route).toContain("getProjectPageForUser");
     expect(route).toContain('{ error: "Page not found." }');
+  });
+
+  it("queues one job per concept so pages land one by one", () => {
+    const route = read("app/api/projects/[projectId]/concepts/route.ts");
+
+    // The count falls through body, prose, then the default, and each concept
+    // becomes its own job carrying a single direction hint.
+    expect(route).toContain("resolveRequestedConceptCount");
+    expect(route).toContain("CONCEPT_DIRECTIONS");
+    expect(route).toContain("variantCount: 1");
+    expect(route).toContain("conceptCount: 1");
+  });
+
+  it("caps the drift a runaway reply can add to a one-concept job", () => {
+    const persist = read("lib/opencode/persistConcepts.ts");
+    expect(persist).toContain("Math.min(htmlByIndex.length, expectedCount)");
   });
 
   it("keeps the page's existing name when revising it", () => {

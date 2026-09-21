@@ -29,7 +29,38 @@ export interface ConceptPromptOptions {
   userPrompt: string;
   conceptCount: number;
   allowImages?: boolean;
+  /**
+   * A design direction for a one-concept run. Multi-concept jobs rely on the
+   * model varying between blocks in one reply; separate runs need something
+   * stronger than hope to diverge, so each queued concept carries its own.
+   */
+  direction?: string;
 }
+
+/**
+ * Design directions a multi-concept generation rotates through, one per job.
+ * Deterministic diversity: a three-concept request becomes three different
+ * briefs rather than three samples of one reply.
+ */
+export const CONCEPT_DIRECTIONS = [
+  "Editorial and typographic: generous whitespace, large display type, a restrained palette, content-led hierarchy.",
+  "Dense and instrumental: compact spacing on a strong grid, data-forward panels, product-like efficiency.",
+  "Bold and expressive: high-contrast color blocking, oversized imagery blocks, marketing-page energy.",
+] as const;
+
+const CONCEPT_COUNT_PATTERN =
+  /(\d+)\s*(?:genuinely\s+)?(?:different\s+)?(?:design\s+)?(?:concepts?|variants?|options?|designs?|screens?|versions?)/i;
+
+/**
+ * Reads a concept count the user stated in prose, so "generate 2 concepts"
+ * means two runs even though the request body carries no count. Digits only —
+ * spelled-out numbers are a rabbit hole for little gain. Returns null when the
+ * prompt names no count and the caller falls back to its default.
+ */
+export const resolveRequestedConceptCount = (prompt: string): number | null => {
+  const match = CONCEPT_COUNT_PATTERN.exec(prompt);
+  return match ? clampConceptCount(match[1]) : null;
+};
 
 /**
  * Prompt for editing one existing screen rather than generating new concepts.
@@ -94,6 +125,7 @@ export const composeConceptBatchPrompt = ({
   userPrompt,
   conceptCount,
   allowImages = false,
+  direction,
 }: ConceptPromptOptions): string => {
   const count = clampConceptCount(conceptCount);
   const blocks = Array.from({ length: count }, (_, index) => {
@@ -101,12 +133,19 @@ export const composeConceptBatchPrompt = ({
     return `TITLE_${n}:\n<short name for concept ${n}>\n\nHTML_${n}:\n<!doctype html> ... full document for concept ${n}`;
   }).join("\n\n");
 
-  return `You are an expert product designer. Produce ${count} genuinely different design ${
-    count === 1 ? "concept" : "concepts"
-  } for the screen described below.
+  const brief =
+    count === 1
+      ? `You are an expert product designer. Produce a design concept for the screen described below.`
+      : `You are an expert product designer. Produce ${count} genuinely different design concepts for the screen described below.`;
 
-Each concept must be a distinct design direction, not a recolour of the same layout. Vary the
-layout structure, the typographic scale, the density, and the visual tone between them.
+  const differentiation = direction
+    ? `Design direction for this concept: ${direction}`
+    : `Each concept must be a distinct design direction, not a recolour of the same layout. Vary the
+layout structure, the typographic scale, the density, and the visual tone between them.`;
+
+  return `${brief}
+
+${differentiation}
 
 Design request:
 ${userPrompt}
@@ -136,7 +175,7 @@ How to reply:
 Reply in exactly this shape:
 
 DETAILS:
-<two sentences describing the set of concepts>
+<${count === 1 ? "one sentence describing the concept" : "two sentences describing the set of concepts"}>
 
 ${blocks}`;
 };

@@ -94,19 +94,20 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    // Give the editor's chat history something to show, and something that
-    // survives a reload, since this run never went through the chat route.
-    await appendConversationMessage({
-      projectId: claimed.projectId,
-      role: "assistant",
-      content:
-        persisted.details.trim() ||
-        `Generated ${persisted.concepts.length} concept${
-          persisted.concepts.length === 1 ? "" : "s"
-        } on your local agent.`,
-    }).catch((error) => {
-      logger.warn("agent.jobs.conversation_append_failed", { error });
-    });
+    // A batch arrives one job at a time and has no single reply to quote; the
+    // conversation already carries the queue-time note. An edit is one job,
+    // and its change summary is worth keeping in the chat across reloads.
+    if (claimed.targetPageId) {
+      await appendConversationMessage({
+        projectId: claimed.projectId,
+        role: "assistant",
+        content:
+          persisted.details.trim() ||
+          `Updated the page on your local agent.`,
+      }).catch((error) => {
+        logger.warn("agent.jobs.conversation_append_failed", { error });
+      });
+    }
 
     await completeAgentJob(user.id, jobId);
 

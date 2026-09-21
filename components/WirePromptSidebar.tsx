@@ -104,10 +104,11 @@ type RequestedGenerationMode =
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
 
-/** How many concepts one local-agent run produces. */
-const LOCAL_AGENT_CONCEPT_COUNT = 3;
 const LOCAL_AGENT_POLL_INTERVAL_MS = 2_500;
-/** Generous: a slow free model can take several minutes for three screens. */
+/**
+ * Generous: a slow free model can take several minutes for one screen, and a
+ * multi-concept run finishes one job at a time.
+ */
 const LOCAL_AGENT_TIMEOUT_MS = 10 * 60_000;
 
 const STAGE_LABELS: Record<WireProgressStage, string> = {
@@ -1114,7 +1115,6 @@ export default function WirePromptSidebar({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: trimmedPrompt,
-            conceptCount: LOCAL_AGENT_CONCEPT_COUNT,
             model: runModel,
             // Present means "revise this page"; absent means "add concepts".
             ...(targetPageId ? { targetPageId } : {}),
@@ -1123,45 +1123,28 @@ export default function WirePromptSidebar({
         });
         const queued = (await queueResponse.json()) as {
           error?: string;
-          job?: { id?: string };
+          jobs?: Array<{ id?: string }>;
         };
-        if (!queueResponse.ok || !queued.job?.id) {
+        if (!queueResponse.ok || !queued.jobs?.length) {
           throw new Error(queued.error || "Could not queue the local run.");
         }
 
-        const jobId = queued.job.id;
+        // Each concept is its own job and finishes on its own clock. Pages are
+        // pulled in per completion, which is what makes the canvas fill one
+        // concept at a time instead of all at once at the end.
+        const jobIds = queued.jobs
+          .map((job) => job.id)
+          .filter((id): id is string => Boolean(id));
+        if (jobIds.length === 0) {
+          throw new Error("Could not queue the local run.");
+        }
+
         const deadline = Date.now() + LOCAL_AGENT_TIMEOUT_MS;
+        const pending = new Set(jobIds);
+        const failures: string[] = [];
+        let completed = 0;
 
-        while (Date.now() < deadline) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, LOCAL_AGENT_POLL_INTERVAL_MS),
-          );
-
-          const statusResponse = await fetch(
-            `/api/projects/${wireId}/concepts/${jobId}`,
-            { cache: "no-store" },
-          );
-          const payload = (await statusResponse.json()) as {
-            error?: string;
-            job?: {
-              status?: string;
-              error?: string | null;
-              conceptCount?: number;
-              summary?: string | null;
-            };
-          };
-          if (!statusResponse.ok) {
-            throw new Error(payload.error || "Lost track of the local run.");
-          }
-
-          const status = payload.job?.status;
-          if (status === "failed" || status === "cancelled") {
-            throw new Error(payload.job?.error || "The local run failed.");
-          }
-          if (status !== "completed") continue;
-
-          // The agent's concepts were saved server-side, so pull them in
-          // rather than guessing what landed.
+        const pullPages = async () => {
           const pagesResponse = await fetch(`/api/projects/${wireId}/pages`, {
             cache: "no-store",
           });
@@ -1187,30 +1170,61 @@ export default function WirePromptSidebar({
               sections: [],
             })),
           );
+        };
 
-          // Prefer the reply the server already stored, so the message shown now
-          // is the message still there after a reload.
-          const conceptCount = payload.job?.conceptCount ?? LOCAL_AGENT_CONCEPT_COUNT;
-          setMessages((current) => [
-            ...current,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content:
-                payload.job?.summary?.trim() ||
-                (targetPageId
-                  ? "Updated the page on your local agent."
-                  : `Generated ${conceptCount} concept${
-                      conceptCount === 1 ? "" : "s"
-                    } on your local agent.`),
-            },
-          ]);
-          return true;
+        while (pending.size > 0 && Date.now() < deadline) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, LOCAL_AGENT_POLL_INTERVAL_MS),
+          );
+
+          await Promise.all(
+            [...pending].map(async (jobId) => {
+              const statusResponse = await fetch(
+                `/api/projects/${wireId}/concepts/${jobId}`,
+                { cache: "no-store" },
+              );
+              // A blip on one poll should not sink the batch; the next tick
+              // retries and the deadline bounds a genuinely lost job.
+              if (!statusResponse.ok) return;
+              const payload = (await statusResponse.json()) as {
+                job?: { status?: string; error?: string | null };
+              };
+              const status = payload.job?.status;
+              if (status === "failed" || status === "cancelled") {
+                pending.delete(jobId);
+                failures.push(payload.job?.error || "A concept run failed.");
+                return;
+              }
+              if (status !== "completed") return;
+              pending.delete(jobId);
+              completed += 1;
+              await pullPages();
+            }),
+          );
         }
 
-        throw new Error(
-          "The local agent did not finish in time. Check that it is still running.",
-        );
+        if (completed === 0) {
+          throw new Error(
+            failures[0] ||
+              "The local agent did not finish in time. Check that it is still running.",
+          );
+        }
+
+        // The count is what actually landed, not what was asked for.
+        const requested = jobIds.length;
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: targetPageId
+              ? "Updated the page on your local agent."
+              : completed === requested
+                ? `Generated ${completed} concept${completed === 1 ? "" : "s"} on your local agent.`
+                : `Generated ${completed} of ${requested} concepts on your local agent.`,
+          },
+        ]);
+        return true;
       } catch (error) {
         reportError(
           error instanceof Error ? error.message : "The local run failed.",

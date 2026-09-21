@@ -91,7 +91,11 @@ export const persistAgentConcepts = async ({
   const concepts: PersistedConcept[] = [];
   let skipped = 0;
 
-  for (let index = 0; index < htmlByIndex.length; index += 1) {
+  // A job promises `expectedCount` concepts. A model that ignores the reply
+  // shape and emits extra HTML_n blocks would otherwise grow the project past
+  // the batch the user asked for, so anything past the promised count is drift.
+  const usableCount = Math.min(htmlByIndex.length, expectedCount);
+  for (let index = 0; index < usableCount; index += 1) {
     const html = htmlByIndex[index]?.trim();
     if (!html || !isUsableConceptHtml(html)) {
       skipped += 1;
