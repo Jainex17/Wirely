@@ -36,9 +36,13 @@ import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
+  fromCustomLocalModelId,
   getWireModelProvider,
+  isCustomLocalModelId,
   isOpencodeWireModel,
+  toCustomLocalModelId,
   WIRE_MODEL_PROVIDER_LABEL,
+  type WireModelOption,
   type WireModelProvider,
   isWireModelName,
   normalizeEnabledWireModels,
@@ -85,6 +89,7 @@ interface WirePromptSidebarProps {
 
 interface AiSettingsResponse {
   enabledModelIds: WireModelName[];
+  customLocalModelIds?: string[];
 }
 
 interface CompactHistoryMessage {
@@ -270,6 +275,7 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
+  const [customLocalModelIds, setCustomLocalModelIds] = useState<string[]>([]);
   const [isAiSettingsLoaded, setIsAiSettingsLoaded] = useState(false);
   const [messageModelUsageById, setMessageModelUsageById] = useState<
     Record<string, WireConversationModelUsage>
@@ -1397,6 +1403,7 @@ export default function WirePromptSidebar({
         const payload = (await response.json()) as AiSettingsResponse;
         if (!isCancelled) {
           setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
+          setCustomLocalModelIds(payload.customLocalModelIds ?? []);
           setIsAiSettingsLoaded(true);
         }
       } catch {
@@ -1415,7 +1422,9 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     if (enabledModelIds.length === 0) return;
-    if (!enabledModelIds.includes(activeModelName)) {
+    // A user-added local model is not in the enabled catalog by design; it is
+    // selectable whenever its id was saved, so the reset must leave it alone.
+    if (!enabledModelIds.includes(activeModelName) && !isCustomLocalModelId(activeModelName)) {
       setActiveModelName(enabledModelIds[0]);
     }
   }, [activeModelName, enabledModelIds]);
@@ -1734,10 +1743,12 @@ export default function WirePromptSidebar({
     effectiveSelectedPageId,
   );
 
-  const noModelsEnabled = enabledModelIds.length === 0;
+  const noModelsEnabled =
+    enabledModelIds.length === 0 && customLocalModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
-    const grouped: Record<WireModelProvider, typeof WIRE_MODEL_OPTIONS> = {
+    const grouped: Record<WireModelProvider, WireModelOption[]> = {
       opencode: [],
+      local: [],
       google: [],
       openrouter: [],
       zai: [],
@@ -1750,9 +1761,22 @@ export default function WirePromptSidebar({
       }
     });
 
+    // User-added models are not catalog entries; they render as their own
+    // group and carry the raw id the agent will run.
+    customLocalModelIds.forEach((rawModel) => {
+      grouped.local.push({
+        id: toCustomLocalModelId(rawModel),
+        label: rawModel,
+        description: "From your local opencode setup.",
+        tier: "paid",
+        provider: "local",
+      });
+    });
+
     return grouped;
-  }, [enabledModelIds]);
+  }, [enabledModelIds, customLocalModelIds]);
   const activeModelLabel =
+    fromCustomLocalModelId(activeModelName) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
   const dropdownContentClassName =
@@ -1886,7 +1910,7 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
-                  {(["opencode", "google", "openrouter", "zai"] as const).map((provider, index) => {
+                  {(["opencode", "local", "google", "openrouter", "zai"] as const).map((provider, index) => {
                     const providerModels = groupedEnabledModels[provider];
                     if (providerModels.length === 0) return null;
 

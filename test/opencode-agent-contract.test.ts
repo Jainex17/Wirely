@@ -636,6 +636,10 @@ describe("editing an existing page", () => {
     expect(route).toContain("CONCEPT_DIRECTIONS");
     expect(route).toContain("variantCount: 1");
     expect(route).toContain("conceptCount: 1");
+    // Custom `local/...` ids are accepted, but the wire prefix is stripped
+    // before the raw model string reaches the agent's argv.
+    expect(route).toContain("fromCustomLocalModelId");
+    expect(route).toContain("Only local agent models can be queued.");
   });
 
   it("caps the drift a runaway reply can add to a one-concept job", () => {

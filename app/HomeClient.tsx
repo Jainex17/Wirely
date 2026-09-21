@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, type FormEvent, type MouseEvent } from "react";
+import { useMemo, useReducer, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,13 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   WIRE_MODEL_PROVIDER_LABEL,
+  fromCustomLocalModelId,
   getWireModelProvider,
+  isCustomLocalModelId,
   resolveRunnableWireModel,
+  toCustomLocalModelId,
   type WireModelName,
+  type WireModelOption,
 } from "@/lib/wireModels";
 import {
   DropdownMenu,
@@ -61,6 +65,7 @@ export interface HomeClientInitialData {
   historyTotal: number;
   initialPrompt: string;
   enabledModelIds: WireModelName[];
+  customLocalModelIds: string[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
@@ -221,15 +226,34 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     .map((modelId) => WIRE_MODEL_OPTIONS.find((model) => model.id === modelId))
     .filter((model): model is (typeof WIRE_MODEL_OPTIONS)[number] => Boolean(model));
 
-  const activeSelectedModel = state.enabledModelIds.includes(state.selectedModel)
-    ? state.selectedModel
-    : resolveRunnableWireModel(state.enabledModelIds, {
-        google: state.hasGoogleApiKey,
-        openrouter: state.hasOpenRouterApiKey,
-        zai: state.hasZaiApiKey,
-      }) ?? DEFAULT_WIRE_MODEL;
+  const customLocalModelIds = initialData.customLocalModelIds;
+  const customModelOptions = useMemo<WireModelOption[]>(
+    () =>
+      customLocalModelIds.map((rawModel) => ({
+        id: toCustomLocalModelId(rawModel),
+        label: rawModel,
+        description: "From your local opencode setup.",
+        tier: "paid" as const,
+        provider: "local" as const,
+      })),
+    [customLocalModelIds],
+  );
+  const pickerModels = [...enabledModelOptions, ...customModelOptions];
 
-  const hasNoEnabledModels = Boolean(state.user) && state.enabledModelIds.length === 0;
+  const activeSelectedModel =
+    state.enabledModelIds.includes(state.selectedModel) ||
+    isCustomLocalModelId(state.selectedModel)
+      ? state.selectedModel
+      : resolveRunnableWireModel(state.enabledModelIds, {
+          google: state.hasGoogleApiKey,
+          openrouter: state.hasOpenRouterApiKey,
+          zai: state.hasZaiApiKey,
+        }) ?? DEFAULT_WIRE_MODEL;
+
+  const hasNoEnabledModels =
+    Boolean(state.user) &&
+    state.enabledModelIds.length === 0 &&
+    customLocalModelIds.length === 0;
   const activeSelectedModelProvider = getWireModelProvider(activeSelectedModel);
   const selectedModelRequiresMissingKey = modelRequiresMissingKey({
     modelName: activeSelectedModel,
@@ -237,15 +261,16 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     hasOpenRouterApiKey: state.hasOpenRouterApiKey,
     hasZaiApiKey: state.hasZaiApiKey,
   });
-  const hasAtLeastOneRunnableModel = enabledModelOptions.some(
-    (model) =>
-      !modelRequiresMissingKey({
-        modelName: model.id,
-        hasGoogleApiKey: state.hasGoogleApiKey,
-        hasOpenRouterApiKey: state.hasOpenRouterApiKey,
-        hasZaiApiKey: state.hasZaiApiKey,
-      }),
-  );
+  const hasAtLeastOneRunnableModel =
+    enabledModelOptions.some(
+      (model) =>
+        !modelRequiresMissingKey({
+          modelName: model.id,
+          hasGoogleApiKey: state.hasGoogleApiKey,
+          hasOpenRouterApiKey: state.hasOpenRouterApiKey,
+          hasZaiApiKey: state.hasZaiApiKey,
+        }),
+    ) || customModelOptions.length > 0;
   const hasNoRunnableModels = Boolean(state.user) && !hasAtLeastOneRunnableModel;
   const showApiKeyWarning =
     Boolean(state.user) &&
@@ -253,6 +278,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   // Only push users toward key setup when nothing they enabled can run.
   const showConfigureApiKeysCta = hasNoRunnableModels;
   const selectedModelLabel =
+    fromCustomLocalModelId(activeSelectedModel) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -265,7 +291,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       return;
     }
 
-    if (state.enabledModelIds.length === 0) {
+    if (state.enabledModelIds.length === 0 && customLocalModelIds.length === 0) {
       dispatch({
         type: "patch",
         payload: { errorMessage: "No models are enabled. Enable at least one model in Models." },
@@ -432,7 +458,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                     disabled={hasNoEnabledModels}
                     showApiKeyWarning={showApiKeyWarning}
                     showConfigureApiKeysCta={showConfigureApiKeysCta}
-                    models={enabledModelOptions}
+                    models={pickerModels}
                     onSelectModel={(modelId) =>
                       dispatch({
                         type: "patch",

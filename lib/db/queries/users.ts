@@ -8,6 +8,7 @@ import {
 } from "@/lib/security/userApiKeyCrypto";
 import {
   normalizeEnabledWireModels,
+  normalizeCustomLocalModels,
   resolveEnabledWireModels,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -81,6 +82,7 @@ export const getUserWithAiSettingsByAuthSub = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
+      customLocalModels: users.customLocalModels,
     })
     .from(users)
     .where(eq(users.authSub, authSub))
@@ -106,6 +108,8 @@ export interface UserAiSettings {
   hasZaiApiKey: boolean;
   hasUnsplashApiKey: boolean;
   enabledModelIds: WireModelName[];
+  /** Raw `provider/model` strings the user added for the local agent. */
+  customLocalModelIds: string[];
 }
 
 export interface UserAiSettingsForGeneration {
@@ -127,6 +131,7 @@ export interface UpdateUserAiSettingsInput {
   unsplashApiKey?: string;
   clearUnsplashApiKey?: boolean;
   enabledGoogleModels?: WireModelName[];
+  customLocalModels?: string[];
 }
 
 export interface UserProfileDetails {
@@ -152,6 +157,7 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyHmac,
   unsplashApiKeyKeyVersion,
   enabledGoogleModels,
+  customLocalModels,
 }: {
   googleApiKeyCiphertext: string | null | undefined;
   googleApiKeyIv: string | null | undefined;
@@ -170,6 +176,7 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyHmac: string | null | undefined;
   unsplashApiKeyKeyVersion: number | null | undefined;
   enabledGoogleModels: UserEnabledGoogleModels;
+  customLocalModels: string[] | null | undefined;
 }): UserAiSettings => ({
   hasGoogleApiKey: hasEncryptedApiKeyMaterial({
     ciphertext: googleApiKeyCiphertext,
@@ -196,6 +203,7 @@ export const toPublicUserAiSettings = ({
     keyVersion: unsplashApiKeyKeyVersion,
   }),
   enabledModelIds: resolveEnabledWireModels(enabledGoogleModels),
+  customLocalModelIds: normalizeCustomLocalModels(customLocalModels),
 });
 
 export const upsertUserByAuthSub = async ({
@@ -252,6 +260,7 @@ export const getUserAiSettings = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
+      customLocalModels: users.customLocalModels,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -277,6 +286,7 @@ export const getUserAiSettings = async (
     unsplashApiKeyHmac: user.unsplashApiKeyHmac,
     unsplashApiKeyKeyVersion: user.unsplashApiKeyKeyVersion,
     enabledGoogleModels: user.enabledGoogleModels,
+    customLocalModels: user.customLocalModels,
   });
 };
 
@@ -304,6 +314,7 @@ export const getUserAiSettingsForGeneration = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
+      customLocalModels: users.customLocalModels,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -403,6 +414,7 @@ export const updateUserAiSettings = async ({
   unsplashApiKey,
   clearUnsplashApiKey,
   enabledGoogleModels,
+  customLocalModels,
 }: UpdateUserAiSettingsInput): Promise<UserAiSettings | null> => {
   const db = getDb();
 
@@ -484,6 +496,10 @@ export const updateUserAiSettings = async ({
 
   if (enabledGoogleModels !== undefined) {
     setPayload.enabledGoogleModels = normalizeEnabledWireModels(enabledGoogleModels);
+  }
+
+  if (customLocalModels !== undefined) {
+    setPayload.customLocalModels = normalizeCustomLocalModels(customLocalModels);
   }
 
   const [updated] = await db

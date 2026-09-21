@@ -53,6 +53,7 @@ export default async function SettingPage({
       initialEnabledModelIds={
         settings?.enabledModelIds ?? [...DEFAULT_ENABLED_WIRE_MODELS]
       }
+      initialCustomLocalModels={settings?.customLocalModelIds ?? []}
       initialTab={toTab(tab)}
       initialAgentTokens={agentTokens.map((token) => ({
         id: token.id,

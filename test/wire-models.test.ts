@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import {
+  fromCustomLocalModelId,
+  getWireModelProvider,
+  isCustomLocalModelId,
+  isOpencodeWireModel,
+  isWireModelName,
+  normalizeCustomLocalModels,
   resolveRunnableWireModel,
+  MAX_CUSTOM_LOCAL_MODELS,
+  toCustomLocalModelId,
   type WireModelName,
 } from "@/lib/wireModels";
 
@@ -58,5 +66,53 @@ describe("resolveRunnableWireModel", () => {
 
   it("returns null when nothing is enabled", () => {
     expect(resolveRunnableWireModel([], PRESENCE)).toBeNull();
+  });
+});
+
+describe("custom local models", () => {
+  const CUSTOM_ID = "local/zai-coding-plan/glm-4.6";
+
+  it("treats a prefixed provider/model as a wire model routed to the agent", () => {
+    expect(isWireModelName(CUSTOM_ID)).toBe(true);
+    expect(getWireModelProvider(CUSTOM_ID)).toBe("local");
+    expect(isOpencodeWireModel(CUSTOM_ID)).toBe(true);
+  });
+
+  it("rejects malformed custom ids", () => {
+    expect(isWireModelName("local/nope")).toBe(false);
+    expect(isWireModelName("local//")).toBe(false);
+    expect(isWireModelName("locally/gemini")).toBe(false);
+    expect(isCustomLocalModelId("local/ok-model/name")).toBe(true);
+  });
+
+  it("round-trips between the wire id and the raw opencode string", () => {
+    expect(toCustomLocalModelId("zai-coding-plan/glm-4.6")).toBe(CUSTOM_ID);
+    expect(fromCustomLocalModelId(CUSTOM_ID)).toBe("zai-coding-plan/glm-4.6");
+    expect(fromCustomLocalModelId("gemini-3.8-flash")).toBeNull();
+  });
+
+  it("keeps the stored list valid, unique and bounded", () => {
+    const normalized = normalizeCustomLocalModels([
+      "zai-coding-plan/glm-4.6",
+      "zai-coding-plan/glm-4.6",
+      " github-copilot/claude-opus-5 ",
+      "not-a-model",
+      "",
+      42,
+      null,
+    ]);
+
+    expect(normalized).toEqual([
+      "zai-coding-plan/glm-4.6",
+      "github-copilot/claude-opus-5",
+    ]);
+  });
+
+  it("caps the list so one settings call cannot flood the picker", () => {
+    const flood = Array.from(
+      { length: MAX_CUSTOM_LOCAL_MODELS + 5 },
+      (_, index) => `provider/model-${index}`,
+    );
+    expect(normalizeCustomLocalModels(flood)).toHaveLength(MAX_CUSTOM_LOCAL_MODELS);
   });
 });

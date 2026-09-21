@@ -24,6 +24,7 @@ import GeminiIcon from "@/components/icons/GeminiIcon";
 import { toast } from "@/components/ui/sonner";
 import {
   WIRE_MODEL_OPTIONS,
+  WIRE_MODEL_PROVIDER_LABEL,
   type WireModelName,
   type WireModelProvider,
 } from "@/lib/wireModels";
@@ -40,6 +41,7 @@ interface SettingsClientProps {
   user: { name: string | null; email: string | null; avatarUrl: string | null };
   initialKeys: ProviderKeys;
   initialEnabledModelIds: WireModelName[];
+  initialCustomLocalModels: string[];
   initialTab: SettingsTab;
   initialAgentTokens: AgentTokenSummary[];
   initialAgentOnline: boolean;
@@ -56,8 +58,11 @@ const OPENCODE_PROVIDER = {
   summary: "Free models through the agent on your machine.",
 } as const;
 
-const providerLabel = (provider: WireModelProvider) =>
-  provider === "opencode" ? OPENCODE_PROVIDER.label : PROVIDERS[provider].label;
+const providerLabel = (provider: WireModelProvider) => {
+  if (provider === "opencode") return OPENCODE_PROVIDER.label;
+  if (provider === "local") return WIRE_MODEL_PROVIDER_LABEL.local;
+  return PROVIDERS[provider].label;
+};
 
 const KEY_FIELD: Record<ApiKeyProvider, string> = {
   google: "googleApiKey",
@@ -98,6 +103,7 @@ export default function SettingsClient({
   user,
   initialKeys,
   initialEnabledModelIds,
+  initialCustomLocalModels,
   initialTab,
   initialAgentTokens,
   initialAgentOnline,
@@ -245,6 +251,7 @@ export default function SettingsClient({
             <LocalAgentPanel
               initialTokens={initialAgentTokens}
               initialOnline={initialAgentOnline}
+              initialCustomLocalModels={initialCustomLocalModels}
             />
           </TabsContent>
         </Tabs>

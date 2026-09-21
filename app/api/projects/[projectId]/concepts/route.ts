@@ -21,6 +21,12 @@ import {
   resolveRequestedConceptCount,
 } from "@/lib/opencode/conceptPrompt";
 import { DEFAULT_OPENCODE_MODEL } from "@/lib/opencode/models";
+import {
+  fromCustomLocalModelId,
+  isOpencodeWireModel,
+  isWireModelName,
+  type WireModelName,
+} from "@/lib/wireModels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,6 +121,19 @@ export async function POST(request: Request, context: RouteContext) {
     // separately, so pages land on the canvas as they finish instead of in one
     // batch, and a failed concept costs one job rather than the whole reply.
     // The count comes from the body, then the user's own words, then three.
+    // Only local-agent models may be queued here: catalog `opencode/*` ids and
+    // user-added `local/provider/model` ids. The wire prefix is stripped so the
+    // agent receives the raw model string opencode expects.
+    const trimmedModel = typeof modelValue === "string" ? modelValue.trim() : "";
+    const requestedModel: WireModelName | null =
+      trimmedModel && isWireModelName(trimmedModel) ? trimmedModel : null;
+    if (requestedModel && !isOpencodeWireModel(requestedModel)) {
+      return NextResponse.json(
+        { error: "Only local agent models can be queued." },
+        { status: 400 },
+      );
+    }
+
     const jobs: Array<{ id: string }> = [];
     for (let index = 0; index < conceptCount; index += 1) {
       const job = await queueAgentJob({
@@ -133,10 +152,9 @@ export async function POST(request: Request, context: RouteContext) {
             }),
         // Pinned to a free model rather than left null, which would fall through
         // to whatever the user set as their opencode default, possibly a paid one.
-        model:
-          typeof modelValue === "string" && modelValue.trim()
-            ? modelValue.trim()
-            : DEFAULT_OPENCODE_MODEL,
+        model: requestedModel
+          ? fromCustomLocalModelId(requestedModel) ?? requestedModel
+          : DEFAULT_OPENCODE_MODEL,
         variantCount: 1,
       });
       jobs.push({ id: job.id });
