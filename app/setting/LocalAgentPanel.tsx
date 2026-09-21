@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Terminal,
   Trash2,
-  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +26,6 @@ export interface AgentTokenSummary {
 export interface LocalAgentPanelProps {
   initialTokens: AgentTokenSummary[];
   initialOnline: boolean;
-  initialCustomLocalModels: string[];
 }
 
 const formatDate = (value: string | null) => {
@@ -53,7 +51,6 @@ const formatDate = (value: string | null) => {
 export default function LocalAgentPanel({
   initialTokens,
   initialOnline,
-  initialCustomLocalModels,
 }: LocalAgentPanelProps) {
   const [tokens, setTokens] = useState(initialTokens);
   const [online, setOnline] = useState(initialOnline);
@@ -63,47 +60,6 @@ export default function LocalAgentPanel({
   const [copied, setCopied] = useState(false);
   /** Plaintext of a freshly minted token. The server cannot show it again. */
   const [newToken, setNewToken] = useState<string | null>(null);
-  const [customModels, setCustomModels] = useState(initialCustomLocalModels);
-  const [modelInput, setModelInput] = useState("");
-  const [isSavingModels, setIsSavingModels] = useState(false);
-
-  const saveCustomModels = async (next: string[]) => {
-    setIsSavingModels(true);
-    try {
-      const response = await fetch("/api/profile/ai-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customLocalModels: next }),
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        customLocalModelIds?: string[];
-      };
-      if (!response.ok) throw new Error(payload.error || "Could not save the model.");
-
-      setCustomModels(payload.customLocalModelIds ?? next);
-      setModelInput("");
-      toast.success("Model list saved.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save the model.");
-    } finally {
-      setIsSavingModels(false);
-    }
-  };
-
-  const addCustomModel = () => {
-    const raw = modelInput.trim();
-    if (!raw) return;
-    if (customModels.includes(raw)) {
-      toast.error("That model is already in the list.");
-      return;
-    }
-    void saveCustomModels([...customModels, raw]);
-  };
-
-  const removeCustomModel = (raw: string) => {
-    void saveCustomModels(customModels.filter((model) => model !== raw));
-  };
 
 
   const refresh = async () => {
@@ -377,88 +333,6 @@ export default function LocalAgentPanel({
           )}
         </div>
 
-        <div className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4">
-            <p className="text-sm font-medium text-foreground">
-              Models from your opencode setup
-              <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                {customModels.length}
-              </span>
-            </p>
-          </div>
-
-          <div className="space-y-3 px-5 py-5">
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              The picker only lists the built-in free opencode models. If your
-              opencode has more — a Z.ai plan, Copilot, anything — add it here
-              as{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                provider/model
-              </code>
-              . Run{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                opencode models
-              </code>{" "}
-              in a terminal to see every id your setup offers — copy the line
-              you want, for example{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                zai-coding-plan/glm-4.6
-              </code>
-              . It appears in the composer under “Your local models” and runs on
-              your machine.
-            </p>
-
-            <form
-              className="flex items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                addCustomModel();
-              }}
-            >
-              <input
-                value={modelInput}
-                onChange={(event) => setModelInput(event.target.value)}
-                placeholder="provider/model"
-                spellCheck={false}
-                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              <Button type="submit" size="sm" disabled={isSavingModels || !modelInput.trim()}>
-                {isSavingModels ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Plus className="size-3.5" />
-                )}
-                Add
-              </Button>
-            </form>
-
-            {customModels.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No models added yet.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {customModels.map((model) => (
-                  <span
-                    key={model}
-                    className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5 font-mono text-xs text-foreground"
-                  >
-                    {model}
-                    <button
-                      type="button"
-                      aria-label={`Remove ${model}`}
-                      className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() => removeCustomModel(model)}
-                      disabled={isSavingModels}
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </section>
   );

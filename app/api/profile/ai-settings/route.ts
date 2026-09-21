@@ -10,7 +10,6 @@ import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 import {
   WIRE_MODEL_OPTIONS,
   isWireModelName,
-  normalizeCustomLocalModels,
   normalizeEnabledWireModels,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -25,7 +24,6 @@ type UpdateAiSettingsRequestBody = {
   unsplashApiKey?: string;
   clearUnsplashApiKey?: boolean;
   enabledModelIds?: WireModelName[];
-  customLocalModels?: string[];
 };
 
 const MAX_GOOGLE_API_KEY_LENGTH = 512;
@@ -42,7 +40,6 @@ const toAiSettingsResponse = (settings: UserAiSettings) => ({
   hasZaiApiKey: settings.hasZaiApiKey,
   hasUnsplashApiKey: settings.hasUnsplashApiKey,
   enabledModelIds: settings.enabledModelIds,
-  customLocalModelIds: settings.customLocalModelIds,
   discoveredLocalModelIds: settings.discoveredLocalModelIds,
   models: WIRE_MODEL_OPTIONS.map((model) => ({
     id: model.id,
@@ -307,34 +304,6 @@ export async function PATCH(request: Request) {
     enabledModelIds = normalizeEnabledWireModels(body.enabledModelIds);
   }
 
-  let customLocalModels: string[] | undefined;
-  if (body.customLocalModels !== undefined) {
-    if (!Array.isArray(body.customLocalModels)) {
-      return NextResponse.json(
-        { error: "customLocalModels must be an array." },
-        { status: 400 },
-      );
-    }
-    if (body.customLocalModels.some((model) => typeof model !== "string")) {
-      return NextResponse.json(
-        { error: "customLocalModels must contain only strings." },
-        { status: 400 },
-      );
-    }
-    // Stored through the same normalizer that reads them back, so the list can
-    // never hold a shape the picker or the agent would choke on.
-    customLocalModels = normalizeCustomLocalModels(body.customLocalModels);
-    if (customLocalModels.length !== body.customLocalModels.length) {
-      return NextResponse.json(
-        {
-          error:
-            "Each model must look like provider/model (up to 100 characters), at most 12 models.",
-        },
-        { status: 400 },
-      );
-    }
-  }
-
   if (
     googleApiKey === undefined &&
     !clearGoogleApiKey &&
@@ -344,8 +313,7 @@ export async function PATCH(request: Request) {
     !clearZaiApiKey &&
     unsplashApiKey === undefined &&
     !clearUnsplashApiKey &&
-    enabledModelIds === undefined &&
-    customLocalModels === undefined
+    enabledModelIds === undefined
   ) {
     return NextResponse.json(
       { error: "No AI settings fields provided." },
@@ -368,7 +336,6 @@ export async function PATCH(request: Request) {
       ...(enabledModelIds !== undefined
         ? { enabledGoogleModels: enabledModelIds }
         : {}),
-      ...(customLocalModels !== undefined ? { customLocalModels } : {}),
     });
   } catch (error) {
     if (isUserApiKeyCryptoError(error) && error.code === "CRYPTO_CONFIG_ERROR") {

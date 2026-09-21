@@ -88,15 +88,13 @@ export const isCustomLocalModelId = (value: string): boolean =>
     value.slice(CUSTOM_LOCAL_MODEL_PREFIX.length),
   );
 
-/** Most local agents allow per-user custom models; a sane cap keeps the picker honest. */
-export const MAX_CUSTOM_LOCAL_MODELS = 12;
-
 /** One machine can expose hundreds of models; the catalog is still bounded. */
 export const MAX_DISCOVERED_LOCAL_MODELS = 500;
 
 /**
- * Normalizes the model list an agent reports from the user's machine. Same
- * charset rules as the hand-added list, a much larger ceiling.
+ * Normalizes the model list an agent reports from the user's machine, or that
+ * a user hand-adds in the Models tab. Invalid shapes are dropped rather than
+ * trusted: entries are echoed into the picker and sent to the agent as argv.
  */
 export const normalizeDiscoveredLocalModels = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
@@ -110,27 +108,6 @@ export const normalizeDiscoveredLocalModels = (value: unknown): string[] => {
     }
     unique.add(raw);
     if (unique.size >= MAX_DISCOVERED_LOCAL_MODELS) break;
-  }
-  return [...unique];
-};
-
-/**
- * Normalizes the stored custom model list. Invalid shapes are dropped rather
- * than trusted: this list is echoed into prompts as a model selector and sent
- * to the agent as an argv value.
- */
-export const normalizeCustomLocalModels = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-
-  const unique = new Set<string>();
-  for (const entry of value) {
-    if (typeof entry !== "string") continue;
-    const raw = entry.trim();
-    if (!raw || raw.length > 100 || !RAW_CUSTOM_LOCAL_MODEL_PATTERN.test(raw)) {
-      continue;
-    }
-    unique.add(raw);
-    if (unique.size >= MAX_CUSTOM_LOCAL_MODELS) break;
   }
   return [...unique];
 };

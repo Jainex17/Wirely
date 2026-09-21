@@ -35,13 +35,11 @@ import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
-  OPENCODE_FREE_MODELS,
   WIRE_MODEL_OPTIONS,
   fromCustomLocalModelId,
   getWireModelProvider,
   isCustomLocalModelId,
   isOpencodeWireModel,
-  toCustomLocalModelId,
   WIRE_MODEL_PROVIDER_LABEL,
   type WireModelOption,
   type WireModelProvider,
@@ -90,8 +88,6 @@ interface WirePromptSidebarProps {
 
 interface AiSettingsResponse {
   enabledModelIds: WireModelName[];
-  customLocalModelIds?: string[];
-  discoveredLocalModelIds?: string[];
 }
 
 interface CompactHistoryMessage {
@@ -277,10 +273,6 @@ export default function WirePromptSidebar({
   const [enabledModelIds, setEnabledModelIds] = useState<WireModelName[]>([
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
-  const [customLocalModelIds, setCustomLocalModelIds] = useState<string[]>([]);
-  const [discoveredLocalModelIds, setDiscoveredLocalModelIds] = useState<
-    string[]
-  >([]);
   const [isAiSettingsLoaded, setIsAiSettingsLoaded] = useState(false);
   const [messageModelUsageById, setMessageModelUsageById] = useState<
     Record<string, WireConversationModelUsage>
@@ -1408,8 +1400,6 @@ export default function WirePromptSidebar({
         const payload = (await response.json()) as AiSettingsResponse;
         if (!isCancelled) {
           setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
-          setCustomLocalModelIds(payload.customLocalModelIds ?? []);
-          setDiscoveredLocalModelIds(payload.discoveredLocalModelIds ?? []);
           setIsAiSettingsLoaded(true);
         }
       } catch {
@@ -1428,9 +1418,7 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     if (enabledModelIds.length === 0) return;
-    // A user-added local model is not in the enabled catalog by design; it is
-    // selectable whenever its id was saved, so the reset must leave it alone.
-    if (!enabledModelIds.includes(activeModelName) && !isCustomLocalModelId(activeModelName)) {
+    if (!enabledModelIds.includes(activeModelName)) {
       setActiveModelName(enabledModelIds[0]);
     }
   }, [activeModelName, enabledModelIds]);
@@ -1758,8 +1746,7 @@ export default function WirePromptSidebar({
     effectiveSelectedPageId,
   );
 
-  const noModelsEnabled =
-    enabledModelIds.length === 0 && customLocalModelIds.length === 0;
+  const noModelsEnabled = enabledModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
     const grouped: Record<WireModelProvider, WireModelOption[]> = {
       opencode: [],
@@ -1773,37 +1760,23 @@ export default function WirePromptSidebar({
       const model = WIRE_MODEL_OPTIONS.find((option) => option.id === modelId);
       if (model) {
         grouped[model.provider].push(model);
+        return;
+      }
+      // Enabled local ids have no catalog entry: the label is the raw
+      // `provider/model` string the agent will run.
+      if (isCustomLocalModelId(modelId)) {
+        grouped.local.push({
+          id: modelId,
+          label: fromCustomLocalModelId(modelId) ?? modelId,
+          description: "From your local opencode setup.",
+          tier: "paid",
+          provider: "local",
+        });
       }
     });
 
-    // User-added models are not catalog entries; they render as their own
-    // group and carry the raw id the agent will run. Models the agent itself
-    // reported join them — except the curated free ones, which already live
-    // in the opencode group, and anything the user added by hand.
-    customLocalModelIds.forEach((rawModel) => {
-      grouped.local.push({
-        id: toCustomLocalModelId(rawModel),
-        label: rawModel,
-        description: "From your local opencode setup.",
-        tier: "paid",
-        provider: "local",
-      });
-    });
-    const handAdded = new Set(customLocalModelIds);
-    const curatedFree = new Set<string>(OPENCODE_FREE_MODELS);
-    discoveredLocalModelIds.forEach((rawModel) => {
-      if (handAdded.has(rawModel) || curatedFree.has(rawModel)) return;
-      grouped.local.push({
-        id: toCustomLocalModelId(rawModel),
-        label: rawModel,
-        description: "Reported by your local agent.",
-        tier: "paid",
-        provider: "local",
-      });
-    });
-
     return grouped;
-  }, [enabledModelIds, customLocalModelIds, discoveredLocalModelIds]);
+  }, [enabledModelIds]);
   const activeModelLabel =
     fromCustomLocalModelId(activeModelName) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??

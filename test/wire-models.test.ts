@@ -5,9 +5,9 @@ import {
   isCustomLocalModelId,
   isOpencodeWireModel,
   isWireModelName,
-  normalizeCustomLocalModels,
+  normalizeDiscoveredLocalModels,
+  RAW_CUSTOM_LOCAL_MODEL_PATTERN,
   resolveRunnableWireModel,
-  MAX_CUSTOM_LOCAL_MODELS,
   toCustomLocalModelId,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -92,10 +92,11 @@ describe("custom local models", () => {
   });
 
   it("keeps the stored list valid, unique and bounded", () => {
-    const normalized = normalizeCustomLocalModels([
+    const normalized = normalizeDiscoveredLocalModels([
       "zai-coding-plan/glm-4.6",
       "zai-coding-plan/glm-4.6",
       " github-copilot/claude-opus-5 ",
+      "openrouter/google/gemma-4:free",
       "not-a-model",
       "",
       42,
@@ -105,14 +106,27 @@ describe("custom local models", () => {
     expect(normalized).toEqual([
       "zai-coding-plan/glm-4.6",
       "github-copilot/claude-opus-5",
+      "openrouter/google/gemma-4:free",
     ]);
   });
 
-  it("caps the list so one settings call cannot flood the picker", () => {
+  it("caps the discovered catalog so one machine cannot flood the picker", () => {
     const flood = Array.from(
-      { length: MAX_CUSTOM_LOCAL_MODELS + 5 },
+      { length: 600 },
       (_, index) => `provider/model-${index}`,
     );
-    expect(normalizeCustomLocalModels(flood)).toHaveLength(MAX_CUSTOM_LOCAL_MODELS);
+    expect(normalizeDiscoveredLocalModels(flood)).toHaveLength(500);
+  });
+
+  it("accepts the id shapes opencode models actually prints", () => {
+    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("zai-coding-plan/glm-4.6")).toBe(true);
+    expect(
+      RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("openrouter/google/gemma-4:free"),
+    ).toBe(true);
+    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("openrouter/~z-ai/glm-flash-latest")).toBe(
+      true,
+    );
+    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("not-a-model")).toBe(false);
+    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("has spaces/in it")).toBe(false);
   });
 });

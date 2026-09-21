@@ -44,8 +44,6 @@ export default async function Home({
         historyTotal: projects[0]?.totalActive ?? 0,
         initialPrompt: draftPrompt,
         enabledModelIds: session.aiSettings.enabledModelIds,
-        customLocalModelIds: session.aiSettings.customLocalModelIds,
-        discoveredLocalModelIds: session.aiSettings.discoveredLocalModelIds,
         hasGoogleApiKey: session.aiSettings.hasGoogleApiKey,
         hasOpenRouterApiKey: session.aiSettings.hasOpenRouterApiKey,
         hasZaiApiKey: session.aiSettings.hasZaiApiKey,

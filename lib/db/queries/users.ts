@@ -8,7 +8,6 @@ import {
 } from "@/lib/security/userApiKeyCrypto";
 import {
   normalizeEnabledWireModels,
-  normalizeCustomLocalModels,
   normalizeDiscoveredLocalModels,
   resolveEnabledWireModels,
   type WireModelName,
@@ -83,7 +82,6 @@ export const getUserWithAiSettingsByAuthSub = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
-      customLocalModels: users.customLocalModels,
       localModelCatalog: users.localModelCatalog,
     })
     .from(users)
@@ -111,7 +109,6 @@ export interface UserAiSettings {
   hasUnsplashApiKey: boolean;
   enabledModelIds: WireModelName[];
   /** Raw `provider/model` strings the user added for the local agent. */
-  customLocalModelIds: string[];
   /** Raw ids the user's own agent reported from `opencode models`. */
   discoveredLocalModelIds: string[];
 }
@@ -135,7 +132,6 @@ export interface UpdateUserAiSettingsInput {
   unsplashApiKey?: string;
   clearUnsplashApiKey?: boolean;
   enabledGoogleModels?: WireModelName[];
-  customLocalModels?: string[];
 }
 
 export interface UserProfileDetails {
@@ -161,7 +157,6 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyHmac,
   unsplashApiKeyKeyVersion,
   enabledGoogleModels,
-  customLocalModels,
   localModelCatalog,
 }: {
   googleApiKeyCiphertext: string | null | undefined;
@@ -181,7 +176,6 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyHmac: string | null | undefined;
   unsplashApiKeyKeyVersion: number | null | undefined;
   enabledGoogleModels: UserEnabledGoogleModels;
-  customLocalModels: string[] | null | undefined;
   localModelCatalog: string[] | null | undefined;
 }): UserAiSettings => ({
   hasGoogleApiKey: hasEncryptedApiKeyMaterial({
@@ -209,7 +203,6 @@ export const toPublicUserAiSettings = ({
     keyVersion: unsplashApiKeyKeyVersion,
   }),
   enabledModelIds: resolveEnabledWireModels(enabledGoogleModels),
-  customLocalModelIds: normalizeCustomLocalModels(customLocalModels),
   discoveredLocalModelIds: normalizeDiscoveredLocalModels(localModelCatalog),
 });
 
@@ -267,7 +260,6 @@ export const getUserAiSettings = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
-      customLocalModels: users.customLocalModels,
       localModelCatalog: users.localModelCatalog,
     })
     .from(users)
@@ -294,7 +286,6 @@ export const getUserAiSettings = async (
     unsplashApiKeyHmac: user.unsplashApiKeyHmac,
     unsplashApiKeyKeyVersion: user.unsplashApiKeyKeyVersion,
     enabledGoogleModels: user.enabledGoogleModels,
-    customLocalModels: user.customLocalModels,
     localModelCatalog: user.localModelCatalog,
   });
 };
@@ -323,7 +314,6 @@ export const getUserAiSettingsForGeneration = async (
       unsplashApiKeyHmac: users.unsplashApiKeyHmac,
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
-      customLocalModels: users.customLocalModels,
       localModelCatalog: users.localModelCatalog,
     })
     .from(users)
@@ -424,7 +414,6 @@ export const updateUserAiSettings = async ({
   unsplashApiKey,
   clearUnsplashApiKey,
   enabledGoogleModels,
-  customLocalModels,
 }: UpdateUserAiSettingsInput): Promise<UserAiSettings | null> => {
   const db = getDb();
 
@@ -508,9 +497,6 @@ export const updateUserAiSettings = async ({
     setPayload.enabledGoogleModels = normalizeEnabledWireModels(enabledGoogleModels);
   }
 
-  if (customLocalModels !== undefined) {
-    setPayload.customLocalModels = normalizeCustomLocalModels(customLocalModels);
-  }
 
   const [updated] = await db
     .update(users)

@@ -78,7 +78,6 @@ export const users = pgTable(
     unsplashApiKeyHmac: text("unsplash_api_key_hmac"),
     unsplashApiKeyKeyVersion: integer("unsplash_api_key_key_version"),
     enabledGoogleModels: jsonb("enabled_google_models").$type<string[]>(),
-    customLocalModels: jsonb("custom_local_models").$type<string[]>(),
     localModelCatalog: jsonb("local_model_catalog").$type<string[]>(),
     localModelCatalogAt: timestamp("local_model_catalog_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
