@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { createProjectPageForUser } from "@/lib/db/queries/projects";
+import {
+  createProjectPageForUser,
+  listProjectPagesForUser,
+} from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
@@ -15,6 +18,33 @@ type CreateProjectPageRequestBody = {
 
 const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
   value === "desktop" || value === "mobile";
+
+/**
+ * Lists a project's pages.
+ *
+ * The editor hydrates from server props on load, but a local-agent run creates
+ * pages after that, so the sidebar needs a way to pick them up without a full
+ * navigation.
+ */
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const sessionUser = await getRequestSessionUser();
+    if (!sessionUser) {
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    }
+
+    const { projectId } = await context.params;
+    const pages = await listProjectPagesForUser({
+      projectId,
+      userId: sessionUser.id,
+    });
+
+    return NextResponse.json({ pages }, { status: 200 });
+  } catch (error) {
+    logger.error("projects_pages_list_failed", { error });
+    return NextResponse.json({ error: "Failed to list pages." }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request, context: RouteContext) {
   try {

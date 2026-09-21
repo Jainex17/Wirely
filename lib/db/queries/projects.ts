@@ -40,7 +40,14 @@ export const createProject = async (userId: string, title: string) => {
   return { project, page, conversation };
 };
 
-export const listProjectsForUser = async (userId: string) => {
+// The home page renders recent projects as a flat list, so cap the query and
+// report the true active total alongside it; the UI shows "50+" when capped.
+export const PROJECT_HISTORY_LIMIT = 50;
+
+export const listProjectsForUser = async (
+  userId: string,
+  limit: number = PROJECT_HISTORY_LIMIT,
+) => {
   const db = getDb();
   return db
     .select({
@@ -49,10 +56,12 @@ export const listProjectsForUser = async (userId: string) => {
       status: projects.status,
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
+      totalActive: sql<number>`(count(*) over ())::int`,
     })
     .from(projects)
     .where(and(eq(projects.userId, userId), eq(projects.status, "active")))
-    .orderBy(desc(projects.updatedAt));
+    .orderBy(desc(projects.updatedAt))
+    .limit(limit);
 };
 
 export const getProjectForUser = async (projectId: string, userId: string) => {
@@ -379,6 +388,26 @@ export const appendConversationMessage = async ({
 
   await touchProjectUpdatedAt(projectId);
   return message;
+};
+
+/**
+ * The most recent assistant reply in a project's conversation.
+ *
+ * A local-agent run writes its summary here rather than streaming it, so the
+ * polling client reads it back instead of inventing its own wording. Returns
+ * null before the first reply lands.
+ */
+export const getLatestAssistantMessage = async (projectId: string) => {
+  const db = getDb();
+  const [row] = await db
+    .select({ content: conversationMessages.content })
+    .from(conversationMessages)
+    .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
+    .where(and(eq(conversations.projectId, projectId), eq(conversationMessages.role, "assistant")))
+    .orderBy(desc(conversationMessages.createdAt))
+    .limit(1);
+
+  return row?.content ?? null;
 };
 
 export const deleteProjectForUser = async ({

@@ -1,0 +1,40 @@
+{
+  "name": "wirely-agent",
+  "version": "0.1.0",
+  "description": "Run Wirely design generation through the opencode on your own machine.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "wirely-agent": "dist/wirely-agent.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepublishOnly": "cd .. && bun run agent:build"
+  },
+  "keywords": [
+    "wirely",
+    "opencode",
+    "ai",
+    "design"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jainex17/Wirely.git",
+    "directory": "agent"
+  },
+  "homepage": "https://wirely.app",
+  "bugs": {
+    "url": "https://github.com/Jainex17/Wirely/issues"
+  },
+  "author": "jainex17",
+  "publishConfig": {
+    "access": "public"
+  }
+}

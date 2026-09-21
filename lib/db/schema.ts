@@ -34,6 +34,13 @@ export const generationOutputKindEnum = pgEnum("generation_output_kind", [
   "page",
   "concept",
 ]);
+export const agentJobStatusEnum = pgEnum("agent_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
 export const generationOutputStatusEnum = pgEnum("generation_output_status", [
   "planned",
   "generating",
@@ -241,7 +248,84 @@ export const generationOutputs = pgTable(
   }),
 );
 
+/**
+ * Personal access tokens for the Wirely local agent.
+ *
+ * Only the SHA-256 hash is stored, so a database read cannot recover a usable
+ * token. `prefix` is the first few characters of the plaintext, kept purely so
+ * the settings page can show the user which token is which.
+ */
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").default("Local agent").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    prefix: text("prefix").notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("api_tokens_user_id_idx").on(table.userId),
+    tokenHashUnique: uniqueIndex("api_tokens_token_hash_idx").on(table.tokenHash),
+  }),
+);
+
+/**
+ * Work queued for a user's local agent.
+ *
+ * The agent long-polls for `queued` rows, runs opencode, and posts the raw
+ * assistant text back. No credential ever lands here: the row holds the prompt
+ * going out and the model text coming back, and nothing else.
+ */
+export const agentJobs = pgTable(
+  "agent_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    status: agentJobStatusEnum("status").default("queued").notNull(),
+    /** `provider/model` as opencode names it, e.g. `github-copilot/claude-opus-5`. */
+    model: text("model"),
+    variant: text("variant"),
+    prompt: text("prompt").notNull(),
+    /**
+     * Set when the run edits one existing page instead of adding concepts.
+     * The result overwrites this page rather than creating new ones.
+     */
+    targetPageId: uuid("target_page_id").references(() => projectPages.id, {
+      onDelete: "cascade",
+    }),
+    /** Desktop or mobile, so a mobile brief does not save as a desktop frame. */
+    deviceType: text("device_type").default("desktop").notNull(),
+    /** How many screen concepts this job should return. */
+    variantCount: integer("variant_count").default(1).notNull(),
+    /** Raw assistant text, parsed server-side by the existing wireOutput pipeline. */
+    resultText: text("result_text"),
+    errorMessage: text("error_message"),
+    /** Bumped each time the agent claims the row, to bound retries on a crash loop. */
+    attempts: integer("attempts").default(0).notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userStatusIdx: index("agent_jobs_user_status_idx").on(table.userId, table.status),
+    projectIdx: index("agent_jobs_project_id_idx").on(table.projectId),
+  }),
+);
+
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
+export type AgentJobStatus = (typeof agentJobStatusEnum.enumValues)[number];
 export type ConversationRole = (typeof conversationRoleEnum.enumValues)[number];
 export type GenerationMode = (typeof generationModeEnum.enumValues)[number];
 export type GenerationRunStatus = (typeof generationRunStatusEnum.enumValues)[number];

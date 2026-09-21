@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { getServerSessionUser } from "@/lib/auth/session";
+import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { listProjectsForUser } from "@/lib/db/queries/projects";
-import { getUserAiSettings } from "@/lib/db/queries/users";
-import { DEFAULT_ENABLED_WIRE_MODELS } from "@/lib/wireModels";
 import HomeClient from "./HomeClient";
 import Landing from "./Landing";
 
@@ -18,19 +16,16 @@ export default async function Home({
 }: {
   searchParams: Promise<{ prompt?: string }>;
 }) {
-  const [{ prompt }, sessionUser] = await Promise.all([
+  const [{ prompt }, session] = await Promise.all([
     searchParams,
-    getServerSessionUser(),
+    getServerSessionUserWithAiSettings(),
   ]);
 
-  if (!sessionUser) {
+  if (!session) {
     return <Landing />;
   }
 
-  const [projects, aiSettings] = await Promise.all([
-    listProjectsForUser(sessionUser.id),
-    getUserAiSettings(sessionUser.id),
-  ]);
+  const projects = await listProjectsForUser(session.user.id);
 
   const draftPrompt =
     typeof prompt === "string" ? prompt.slice(0, MAX_DRAFT_PROMPT_LENGTH) : "";
@@ -38,19 +33,20 @@ export default async function Home({
   return (
     <HomeClient
       initialData={{
-        user: {
-          id: sessionUser.id,
-          email: sessionUser.email,
-          name: sessionUser.name,
-          avatarUrl: sessionUser.avatarUrl,
-        },
-        historyItems: projects,
+        user: session.user,
+        historyItems: projects.map((project) => ({
+          id: project.id,
+          title: project.title,
+          status: project.status,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+        })),
+        historyTotal: projects[0]?.totalActive ?? 0,
         initialPrompt: draftPrompt,
-        enabledModelIds:
-          aiSettings?.enabledModelIds ?? [...DEFAULT_ENABLED_WIRE_MODELS],
-        hasGoogleApiKey: aiSettings?.hasGoogleApiKey ?? true,
-        hasOpenRouterApiKey: aiSettings?.hasOpenRouterApiKey ?? true,
-        hasZaiApiKey: aiSettings?.hasZaiApiKey ?? true,
+        enabledModelIds: session.aiSettings.enabledModelIds,
+        hasGoogleApiKey: session.aiSettings.hasGoogleApiKey,
+        hasOpenRouterApiKey: session.aiSettings.hasOpenRouterApiKey,
+        hasZaiApiKey: session.aiSettings.hasZaiApiKey,
       }}
     />
   );

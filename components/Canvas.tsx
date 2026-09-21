@@ -22,6 +22,7 @@ import {
   getPageRenderMode,
   getSnappedPagePosition,
   getViewportBounds,
+  placeMissingPages,
   resolvePageFrameDevice,
   scaleFromZoom,
   zoomAtViewportPoint,
@@ -205,14 +206,15 @@ export default function Canvas({
   );
 
   React.useEffect(() => {
-    const totalPages = pages.length;
-    for (const [index, page] of pages.entries()) {
-      if (pagePositions[page.id]) continue;
-      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
-      setPagePosition(page.id, {
-        x: getDefaultPageX(index, totalPages, getPageFrameWidth(device)),
-        y: 0,
-      });
+    const assigned = placeMissingPages(
+      pages.map((page) => ({
+        id: page.id,
+        width: getPageFrameWidth(resolvePageFrameDevice(page.deviceType, activeDevice)),
+      })),
+      pagePositions,
+    );
+    for (const [pageId, x] of Object.entries(assigned)) {
+      setPagePosition(pageId, { x, y: 0 });
     }
   }, [activeDevice, pagePositions, pages, setPagePosition]);
 

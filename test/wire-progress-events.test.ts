@@ -11,6 +11,24 @@ describe("isWireProgressEvent", () => {
     ).toBe(true);
   });
 
+  test("accepts the researching stage", () => {
+    expect(isWireProgressEvent({ type: "stage", stage: "researching" })).toBe(true);
+  });
+
+  test("accepts a notice event", () => {
+    expect(
+      isWireProgressEvent({
+        type: "notice",
+        message: "Couldn't load somesite.com — designing from your description instead.",
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects a notice event without a message", () => {
+    expect(isWireProgressEvent({ type: "notice", message: "" })).toBe(false);
+    expect(isWireProgressEvent({ type: "notice" })).toBe(false);
+  });
+
   test("rejects an unknown stage", () => {
     expect(isWireProgressEvent({ type: "stage", stage: "hatching" })).toBe(false);
   });

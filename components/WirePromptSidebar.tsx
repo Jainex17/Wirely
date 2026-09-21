@@ -37,6 +37,9 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   getWireModelProvider,
+  isOpencodeWireModel,
+  WIRE_MODEL_PROVIDER_LABEL,
+  type WireModelProvider,
   isWireModelName,
   normalizeEnabledWireModels,
   type WireModelName,
@@ -101,14 +104,15 @@ type RequestedGenerationMode =
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
 
-const MODEL_PROVIDER_LABEL = {
-  google: "Google",
-  openrouter: "OpenRouter",
-  zai: "Z.ai",
-} as const;
+/** How many concepts one local-agent run produces. */
+const LOCAL_AGENT_CONCEPT_COUNT = 3;
+const LOCAL_AGENT_POLL_INTERVAL_MS = 2_500;
+/** Generous: a slow free model can take several minutes for three screens. */
+const LOCAL_AGENT_TIMEOUT_MS = 10 * 60_000;
 
 const STAGE_LABELS: Record<WireProgressStage, string> = {
   processing: "Processing your request…",
+  researching: "Reading the site you linked…",
   thinking: "Thinking about your request…",
   planning: "Planning the design…",
   generating: "Generating screens…",
@@ -320,6 +324,7 @@ export default function WirePromptSidebar({
   const setPageDeviceType = useEditorStore((state) => state.setPageDeviceType);
   const setPageStatus = useEditorStore((state) => state.setPageStatus);
   const clearPageStatuses = useEditorStore((state) => state.clearPageStatuses);
+  const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const beginSaving = useEditorStore((state) => state.beginSaving);
   const endSaving = useEditorStore((state) => state.endSaving);
   const requestGeneratedPageFocusCheck = useEditorStore(
@@ -493,6 +498,7 @@ export default function WirePromptSidebar({
   const {
     messages,
     append,
+    setMessages,
     isLoading,
     stop,
     data,
@@ -1078,9 +1084,173 @@ export default function WirePromptSidebar({
     ],
   );
 
+  /**
+   * Runs a prompt through the user's local agent instead of the hosted route.
+   *
+   * opencode models execute on the user's own machine, so there is nothing to
+   * stream: the request is queued, the agent claims it on its next poll, and the
+   * pages appear when it reports back. Polling rather than streaming is why this
+   * does not go through useChat like every other model.
+   */
+  const startLocalAgentGeneration = useCallback(
+    async (
+      promptText: string,
+      modelName?: WireModelName,
+      targetPageId?: string | null,
+    ) => {
+      const trimmedPrompt = promptText.trim();
+      if (!trimmedPrompt) return false;
+      const runModel = modelName ?? activeModelName;
+
+      beginSaving();
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: "user", content: trimmedPrompt },
+      ]);
+
+      try {
+        const queueResponse = await fetch(`/api/projects/${wireId}/concepts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: trimmedPrompt,
+            conceptCount: LOCAL_AGENT_CONCEPT_COUNT,
+            model: runModel,
+            // Present means "revise this page"; absent means "add concepts".
+            ...(targetPageId ? { targetPageId } : {}),
+            deviceType: useEditorStore.getState().activeDevice,
+          }),
+        });
+        const queued = (await queueResponse.json()) as {
+          error?: string;
+          job?: { id?: string };
+        };
+        if (!queueResponse.ok || !queued.job?.id) {
+          throw new Error(queued.error || "Could not queue the local run.");
+        }
+
+        const jobId = queued.job.id;
+        const deadline = Date.now() + LOCAL_AGENT_TIMEOUT_MS;
+
+        while (Date.now() < deadline) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, LOCAL_AGENT_POLL_INTERVAL_MS),
+          );
+
+          const statusResponse = await fetch(
+            `/api/projects/${wireId}/concepts/${jobId}`,
+            { cache: "no-store" },
+          );
+          const payload = (await statusResponse.json()) as {
+            error?: string;
+            job?: {
+              status?: string;
+              error?: string | null;
+              conceptCount?: number;
+              summary?: string | null;
+            };
+          };
+          if (!statusResponse.ok) {
+            throw new Error(payload.error || "Lost track of the local run.");
+          }
+
+          const status = payload.job?.status;
+          if (status === "failed" || status === "cancelled") {
+            throw new Error(payload.job?.error || "The local run failed.");
+          }
+          if (status !== "completed") continue;
+
+          // The agent's concepts were saved server-side, so pull them in
+          // rather than guessing what landed.
+          const pagesResponse = await fetch(`/api/projects/${wireId}/pages`, {
+            cache: "no-store",
+          });
+          const pagesPayload = (await pagesResponse.json()) as {
+            error?: string;
+            pages?: Array<{
+              id: string;
+              title: string;
+              htmlContent: string | null;
+              deviceType: PageDeviceType | null;
+            }>;
+          };
+          if (!pagesResponse.ok || !pagesPayload.pages) {
+            throw new Error(pagesPayload.error || "Could not load the new concepts.");
+          }
+
+          hydrateProject(
+            pagesPayload.pages.map((page) => ({
+              id: page.id,
+              title: page.title,
+              iframeHtml: page.htmlContent ?? "",
+              deviceType: page.deviceType ?? undefined,
+              sections: [],
+            })),
+          );
+
+          // Prefer the reply the server already stored, so the message shown now
+          // is the message still there after a reload.
+          const conceptCount = payload.job?.conceptCount ?? LOCAL_AGENT_CONCEPT_COUNT;
+          setMessages((current) => [
+            ...current,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content:
+                payload.job?.summary?.trim() ||
+                (targetPageId
+                  ? "Updated the page on your local agent."
+                  : `Generated ${conceptCount} concept${
+                      conceptCount === 1 ? "" : "s"
+                    } on your local agent.`),
+            },
+          ]);
+          return true;
+        }
+
+        throw new Error(
+          "The local agent did not finish in time. Check that it is still running.",
+        );
+      } catch (error) {
+        reportError(
+          error instanceof Error ? error.message : "The local run failed.",
+        );
+        return false;
+      } finally {
+        endSaving();
+      }
+    },
+    [
+      activeModelName,
+      beginSaving,
+      endSaving,
+      hydrateProject,
+      reportError,
+      setMessages,
+      wireId,
+    ],
+  );
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+
+      // opencode models never reach the hosted route: they run on the user's
+      // machine. A selected page means revise that page; "all pages" means add
+      // a fresh batch of concepts to the project.
+      if (isOpencodeWireModel(activeModelName)) {
+        const generated = await startLocalAgentGeneration(
+          prompt,
+          undefined,
+          isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)
+            ? null
+            : selectedPageId,
+        );
+        if (generated) {
+          setPrompt("");
+        }
+        return;
+      }
 
       if (isAllPagesPromptTarget(selectedPageId)) {
         const targetPageIds = useEditorStore.getState().pages.map((page) => page.id);
@@ -1168,6 +1338,7 @@ export default function WirePromptSidebar({
       selectedPageId,
       startBatchGeneration,
       startGenerationForPage,
+      startLocalAgentGeneration,
     ],
   );
 
@@ -1272,6 +1443,11 @@ export default function WirePromptSidebar({
 
       setPrompt("");
 
+      if (isOpencodeWireModel(resolvedModel)) {
+        void startLocalAgentGeneration(storedPrompt, resolvedModel);
+        return;
+      }
+
       const runInitialBatch = async () => {
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
@@ -1318,6 +1494,7 @@ export default function WirePromptSidebar({
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
+    startLocalAgentGeneration,
     reportError,
     wireId,
   ]);
@@ -1407,6 +1584,11 @@ export default function WirePromptSidebar({
               <Loader2 className="h-3 w-3 animate-spin" />
               {progress.stage ? STAGE_LABELS[progress.stage] : "Processing your request…"}
             </div>
+            {progress.notice ? (
+              <div className="mt-1 text-[11px] text-muted-foreground/80">
+                {progress.notice}
+              </div>
+            ) : null}
             {progress.planItems.length > 0 ? (
               <ul className="mt-2 space-y-1.5">
                 {progress.planItems.map((item) => {
@@ -1540,10 +1722,11 @@ export default function WirePromptSidebar({
 
   const noModelsEnabled = enabledModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
-    const grouped = {
-      google: [] as typeof WIRE_MODEL_OPTIONS,
-      openrouter: [] as typeof WIRE_MODEL_OPTIONS,
-      zai: [] as typeof WIRE_MODEL_OPTIONS,
+    const grouped: Record<WireModelProvider, typeof WIRE_MODEL_OPTIONS> = {
+      opencode: [],
+      google: [],
+      openrouter: [],
+      zai: [],
     };
 
     enabledModelIds.forEach((modelId) => {
@@ -1689,7 +1872,7 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
-                  {(["google", "openrouter", "zai"] as const).map((provider, index) => {
+                  {(["opencode", "google", "openrouter", "zai"] as const).map((provider, index) => {
                     const providerModels = groupedEnabledModels[provider];
                     if (providerModels.length === 0) return null;
 
@@ -1697,7 +1880,7 @@ export default function WirePromptSidebar({
                       <DropdownMenuGroup key={provider}>
                         {index > 0 ? <DropdownMenuSeparator /> : null}
                         <DropdownMenuLabel className="px-2 py-1.5 text-xs">
-                          {MODEL_PROVIDER_LABEL[provider]}
+                          {WIRE_MODEL_PROVIDER_LABEL[provider]}
                         </DropdownMenuLabel>
                         {providerModels.map((model) => (
                           <DropdownMenuItem

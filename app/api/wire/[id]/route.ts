@@ -1,7 +1,5 @@
 import { createDataStreamResponse, generateText, type DataStreamWriter } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { getLanguageModel } from "@/lib/wireProviderClient";
 import {
   buildFallbackCritiqueReport,
   hasCriticalQualityViolations,
@@ -38,6 +36,7 @@ import { buildFallbackDesignPlan, resolveDeviceIntent } from "@/lib/wireFallback
 import { validateDesignPlan } from "@/lib/wireGenerationTypes";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
 import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
+import { resolveSourceSiteContext } from "@/lib/urlContext";
 import { buildWireSuggestions } from "@/lib/wireSuggestions";
 import { type WireProgressEvent } from "@/lib/wireProgressEvents";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
@@ -50,6 +49,7 @@ import {
 import type { ArtifactCategory } from "@/lib/wireIntent";
 import {
   isGoogleWireModel,
+  isOpencodeWireModel,
   isOpenRouterWireModel,
   isZaiWireModel,
   isWireModelName,
@@ -79,7 +79,6 @@ export const maxDuration = 60;
 
 const wireRateLimiter = createRateLimiter();
 const includeErrorStack = process.env.NODE_ENV !== "production";
-const ZAI_BASE_URL = "https://api.z.ai/api/paas/v4/";
 
 type WireMessage = {
   role: "system" | "user" | "assistant";
@@ -552,34 +551,6 @@ const persistConversationTurn = async ({
   }
 };
 
-const getLanguageModel = ({
-  modelName,
-  googleApiKey,
-  openRouterApiKey,
-  zaiApiKey,
-}: {
-  modelName: WireModelName;
-  googleApiKey?: string | null;
-  openRouterApiKey?: string | null;
-  zaiApiKey?: string | null;
-}) => {
-  if (isGoogleWireModel(modelName)) {
-    const provider = createGoogleGenerativeAI({ apiKey: googleApiKey as string });
-    return provider(modelName);
-  }
-
-  if (isZaiWireModel(modelName)) {
-    const provider = createOpenAI({
-      apiKey: zaiApiKey as string,
-      baseURL: ZAI_BASE_URL,
-    });
-    return provider.chat(modelName);
-  }
-
-  const provider = createOpenRouter({ apiKey: openRouterApiKey as string });
-  return provider(modelName);
-};
-
 const writeAssistantStreamFinish = (dataStream: DataStreamWriter, content: string) => {
   dataStream.write(`f:${JSON.stringify({ messageId: crypto.randomUUID() })}\n`);
   dataStream.write(`0:${JSON.stringify(content)}\n`);
@@ -667,6 +638,7 @@ const generateDesignBrief = async ({
   requestedGenerationMode,
   allowPlannerOutputCount = false,
   projectId,
+  sourceSiteContext = null,
 }: {
   modelName: WireModelName;
   googleApiKey?: string | null;
@@ -680,6 +652,7 @@ const generateDesignBrief = async ({
   requestedGenerationMode?: GenerationMode;
   allowPlannerOutputCount?: boolean;
   projectId: string;
+  sourceSiteContext?: string | null;
 }) => {
   const suggestedPreset = selectWireStylePreset({
     wireId: projectId,
@@ -714,6 +687,7 @@ const generateDesignBrief = async ({
         forceSinglePage,
         suggestedPreset,
         allowPlannerOutputCount,
+        sourceSiteContext,
       }),
     });
     plan = validateDesignPlan({
@@ -747,6 +721,7 @@ const generateDesignBrief = async ({
         targetPages,
         plan,
         suggestedPreset,
+        sourceSiteContext,
       }),
     });
 
@@ -961,6 +936,17 @@ export async function POST(request: Request, context: RouteContext) {
       ),
     );
   }
+  // opencode models run on the user's machine through the local agent, not
+  // here. Reject them explicitly rather than falling through to a provider
+  // client that would fail with a confusing credential error.
+  if (isOpencodeWireModel(effectiveModelName)) {
+    return applyRateHeaders(
+      new Response(
+        `${effectiveModelName} runs on your local agent. Generate concepts from the local agent instead.`,
+        { status: 400 },
+      ),
+    );
+  }
   if (isGoogleWireModel(effectiveModelName) && !userAiSettings.googleApiKey) {
     return applyRateHeaders(
       new Response(
@@ -1116,6 +1102,23 @@ export async function POST(request: Request, context: RouteContext) {
 
     emitProgress({ type: "stage", stage: "thinking" });
 
+    // A URL in the brief means a redesign of an existing site, so read what is
+    // on it before planning. Failure is not fatal: the run continues on the
+    // prompt alone and the user is told the site could not be read.
+    const sourceSite = await resolveSourceSiteContext({
+      projectId: id,
+      prompt: latestUserPrompt,
+    });
+    if (sourceSite.status !== "unused") {
+      emitProgress({ type: "stage", stage: "researching" });
+    }
+    if (sourceSite.status === "unavailable") {
+      emitProgress({
+        type: "notice",
+        message: `Couldn't load ${sourceSite.host} — designing from your description instead.`,
+      });
+    }
+
     const plannerTargetPages =
       resolvedTargetPages.length > 0
         ? resolvedTargetPages.map((page) => ({
@@ -1153,6 +1156,7 @@ export async function POST(request: Request, context: RouteContext) {
       requestedGenerationMode,
       allowPlannerOutputCount,
       projectId: id,
+      sourceSiteContext: sourceSite.status === "ready" ? sourceSite.contextText : null,
     });
 
     emitProgress({ type: "stage", stage: "planning" });

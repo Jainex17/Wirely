@@ -136,6 +136,8 @@ Notes:
 | `bun run db:generate` | Generate Drizzle migration files. |
 | `bun run db:migrate` | Apply Drizzle migrations. |
 | `bun run db:backfill:page-html` | Currently points to a missing script path (see Known Limitations). |
+| `bun run agent` | Start the Wirely local agent (runs opencode on your machine). |
+| `bun run agent:doctor` | Check the local opencode install and print the detected flags. |
 
 ## API Surface (Core Routes)
 
@@ -148,6 +150,67 @@ Notes:
 - `POST /api/projects/[projectId]/pages` - create page.
 - `PATCH /api/projects/[projectId]/pages/[pageId]` - update page.
 - `DELETE /api/projects/[projectId]/pages/[pageId]` - delete page.
+
+Local agent routes (see "Local agent" below):
+
+- `POST /api/projects/[projectId]/concepts` - queue a screen-concept run for the user's local agent.
+- `GET /api/projects/[projectId]/concepts/[jobId]` - poll job status.
+- `GET /api/profile/agent-tokens` - list agent tokens and whether an agent is connected.
+- `POST /api/profile/agent-tokens` - mint an agent token (plaintext returned once).
+- `DELETE /api/profile/agent-tokens` - revoke an agent token.
+- `GET /api/agent/jobs/next` - long-poll claim endpoint, bearer auth only.
+- `POST /api/agent/jobs/[jobId]/result` - agent reports back, bearer auth only.
+
+## Local agent (bring your own subscription)
+
+The local agent lets Wirely generate designs through the opencode already installed on the
+user's machine, using whatever providers they configured with `opencode auth login`. A GitHub
+Copilot, OpenRouter, or Z.AI coding plan therefore works without Wirely integrating any of them.
+
+Credentials never reach the server. The agent dials out over ordinary HTTPS, so no relay, tunnel,
+or inbound port is involved. Wirely stores the prompt going out and the model text coming back,
+and nothing else.
+
+Setup:
+
+1. Install opencode (1.18.0 or newer) and sign in with `opencode auth login`.
+2. Mint a token in Wirely settings, under Local agent.
+3. `npm install -g wirely-agent`.
+4. `wirely-agent login <token>`, then `wirely-agent`.
+
+The agent ships as its own npm package (`agent/`): one bundled file, no dependencies, plain
+node 18 or newer. It needs neither this repo nor bun. Point it at a local Wirely with
+`WIRELY_URL=http://localhost:3000 npx wirely-agent login <token>`; the URL is saved with the
+token.
+
+For development, `bun run agent -- login <token>` and `bun run agent` run it straight from the
+repo. The agent detects which way it was started and prints matching help.
+
+The agent paces its own polling rather than the server holding the request open, because a
+serverless request is billed for as long as it stays open: parking for 25s cost a full day of
+function time per connected agent per day. It asks for work every 2s during a session, every 8s
+between prompts, and every 30s once idle for half an hour, all inside the 90s window
+`isLocalAgentOnline` uses. `lib/opencode/pollSchedule.ts` holds those rates. An agent that sends no
+version header is assumed to predate this and gets a short server-side pause so it cannot hot loop.
+
+Publishing the agent: `bun run agent:build`, then `cd agent && npm publish`. The build is
+gitignored, and `prepublishOnly` rebuilds it. Bump `version` in `agent/package.json` and
+`AGENT_VERSION` in `agent/wirely-agent.ts` together; a test asserts they match.
+
+Agent environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WIRELY_URL` | `https://wirely.app` | Wirely base URL the agent polls. |
+| `WIRELY_TOKEN` | unset | Token, overriding the one saved in `~/.config/wirely/agent.json`. |
+| `OPENCODE_BIN` | `opencode` | Path to the opencode binary. |
+| `WIRELY_MODEL` | unset | Default `provider/model` when a job does not name one. |
+
+Version handling: the agent probes `opencode run --help` at startup and builds its argv from the
+flags that build actually accepts, rather than from a hardcoded version table. This is what keeps
+the 1.18.x line (which takes `--variant` and `--dir`) and the 2.0.x line (which uses
+`provider/model#variant` and `--standalone`) both working. Both lines emit the same
+`--format json` event stream, which is what the adapter parses.
 
 ## Security and Reliability Notes
 
