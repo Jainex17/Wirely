@@ -13,6 +13,7 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:prod": "bun run scripts/migrate-prod.ts",
     "db:backfill:page-html": "bun run scripts/backfill-page-html-from-conversation.ts"
   },
   "dependencies": {

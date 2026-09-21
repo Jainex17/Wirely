@@ -81,6 +81,18 @@ Use the generated value for `USER_API_KEY_MASTER_SECRET_BASE64`.
 bun run db:migrate
 ```
 
+`db:migrate` targets the `DATABASE_URL` in `.env.local` — point it at a local
+Postgres for development. Production (Vercel) runs on the database in
+`PROD_DATABASE_URL`; apply schema changes there with:
+
+```bash
+bun run db:migrate:prod
+```
+
+Deploy a schema change and its migration in the same push — code that selects
+a column the production database does not have yet breaks every signed-in
+page.
+
 > Migration `0013_mighty_juggernaut` (or later) is required for the live
 > generation progress, per-screen device frames, and prototype flow features:
 > it adds `project_pages.device_type` and the `project_prototype_flows` table.
@@ -134,7 +146,8 @@ Notes:
 | `bun run lint` | Run ESLint. |
 | `bun run test` | Run Bun tests. |
 | `bun run db:generate` | Generate Drizzle migration files. |
-| `bun run db:migrate` | Apply Drizzle migrations. |
+| `bun run db:migrate` | Apply Drizzle migrations to the `DATABASE_URL` database. |
+| `bun run db:migrate:prod` | Apply pending migrations to production (`PROD_DATABASE_URL`). |
 | `bun run db:backfill:page-html` | Currently points to a missing script path (see Known Limitations). |
 | `bun run agent` | Start the Wirely local agent (runs opencode on your machine). |
 | `bun run agent:doctor` | Check the local opencode install and print the detected flags. |
@@ -248,7 +261,8 @@ If you change schema:
 
 ```bash
 bun run db:generate
-bun run db:migrate
+bun run db:migrate        # local database
+bun run db:migrate:prod   # production database, same push as the code
 ```
 
 ## Known Limitations
