@@ -446,7 +446,7 @@ HTML:
 - Include ${ELEMENTS_CDN} in <head>.
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
 - Include ${CHARTJS_CDN} only when the artifact genuinely needs charts.
-- Include viewport meta and explicit background/text classes on <body>.
+- Include viewport meta and explicit background/text classes on <body>. Use only default Tailwind palette colors (stone, zinc, emerald, …); invented names like bg-cream or text-bark generate no CSS.
 - Do not use <style> tags or inline style attributes.
 - No markdown or code fences.
 
@@ -534,7 +534,7 @@ HTML:
 - Include ${ELEMENTS_CDN} in <head>.
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
 - Include ${CHARTJS_CDN} only when the page genuinely needs charts.
-- Include viewport meta and explicit background/text classes on <body>.
+- Include viewport meta and explicit background/text classes on <body>. Use only default Tailwind palette colors (stone, zinc, emerald, …); invented names like bg-cream or text-bark generate no CSS.
 - Do not use <style> tags or inline style attributes.
 - No markdown or code fences.
 

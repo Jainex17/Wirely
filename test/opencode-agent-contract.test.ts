@@ -14,7 +14,7 @@ import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persis
 import { resolveInvocation } from "@/agent/invocation";
 import { parseOpencodeModelLines } from "@/lib/opencode/run";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
-import { parseBatchWireOutput } from "@/lib/wireOutput";
+import { parseBatchWireOutput, normalizeGeneratedHtml } from "@/lib/wireOutput";
 import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
 import { DEFAULT_OPENCODE_MODEL, isFreeOpencodeModel } from "@/lib/opencode/models";
 import { fallbackTitleFromPrompt } from "@/app/api/projects/route";
@@ -304,6 +304,41 @@ describe("opencode model catalog", () => {
     const route = read("app/api/agent/models/route.ts");
 
     expect(route).toContain("normalizeDiscoveredLocalModels");
+  });
+});
+
+describe("body color repair", () => {
+  const normalizeBody = (bodyTag: string) =>
+    normalizeGeneratedHtml(
+      `<!doctype html><html lang="en"><head><title>T</title></head>${bodyTag}<main><p>Hi</p></main></body></html>`,
+      { allowImages: false },
+    ).html;
+
+  it("replaces invented body colors with a readable default pair", () => {
+    // The exact failure from production: bg-cream/text-bark resolve to nothing,
+    // leaving black text on a transparent body over the dark canvas.
+    // bg-cream is dropped, the invented text- token survives harmlessly, and a
+    // readable default pair is appended.
+    const html = normalizeBody('<body class="bg-cream text-bark font-body antialiased">');
+    expect(html).toContain('class="text-bark font-body antialiased bg-white text-zinc-900"');
+  });
+
+  it("keeps a known dark theme untouched", () => {
+    const html = normalizeBody('<body class="bg-stone-950 text-stone-100">');
+    expect(html).toContain('class="bg-stone-950 text-stone-100"');
+  });
+
+  it("keeps typography and bg-behavior utilities while adding missing colors", () => {
+    const html = normalizeBody('<body class="bg-cover text-lg">');
+    expect(html).toContain("bg-cover");
+    expect(html).toContain("text-lg");
+    expect(html).toContain("bg-white");
+    expect(html).toContain("text-zinc-900");
+  });
+
+  it("keeps opacity-modified palette colors", () => {
+    const html = normalizeBody('<body class="bg-zinc-950/80 text-zinc-200/90">');
+    expect(html).toContain('class="bg-zinc-950/80 text-zinc-200/90"');
   });
 });
 

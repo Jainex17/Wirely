@@ -96,6 +96,7 @@ Rules for the document you return:
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
 - Include ${CHARTJS_CDN} only when the screen genuinely needs a chart.
 - Include a viewport meta tag and explicit background and text classes on <body>.
+- Use only colors from Tailwind's default palette (stone, zinc, emerald, amber, …). Never invent color names like bg-cream or text-bark — they generate no CSS.
 - No <style> tags and no inline style attributes.
 - ${
     allowImages
@@ -158,6 +159,7 @@ Rules for every HTML document:
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
 - Include ${CHARTJS_CDN} only when the screen genuinely needs a chart.
 - Include a viewport meta tag and explicit background and text classes on <body>.
+- Use only colors from Tailwind's default palette (stone, zinc, emerald, amber, …). Never invent color names like bg-cream or text-bark — they generate no CSS.
 - No <style> tags and no inline style attributes.
 - ${
     allowImages

@@ -491,6 +491,95 @@ const sanitizeBackgroundImageUrls = (value: string, allowImages: boolean) => {
     );
 };
 
+/**
+ * Body color utilities must compile, or the page renders with a transparent
+ * background and default black text — invisible over the dark editor canvas.
+ * Models sometimes invent plausible tokens (`bg-cream`, `text-bark`) that
+ * Tailwind cannot resolve. Known color tokens (palette + shade, opacity
+ * modifiers, anchors, arbitrary values) are kept; unknown `bg-*` tokens are
+ * dropped; unknown `text-*` tokens are kept but do not count as a color, so a
+ * readable default pair is appended when the body loses its real one.
+ */
+const TAILWIND_PALETTE_COLORS = new Set([
+  "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber",
+  "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue",
+  "indigo", "violet", "purple", "fuchsia", "pink", "rose",
+]);
+const TAILWIND_SHADES = new Set([
+  "50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950",
+]);
+const COLOR_ANCHOR_TOKENS = new Set([
+  "white", "black", "transparent", "current", "inherit", "none",
+]);
+const BG_NON_COLOR_MEMBERS = new Set([
+  "auto", "cover", "contain", "none", "fixed", "local", "scroll",
+  "center", "top", "bottom", "left", "right", "repeat", "no-repeat",
+  "repeat-x", "repeat-y", "round", "space", "border-box", "padding-box",
+  "content-box", "linear", "radial", "conic",
+]);
+const TEXT_NON_COLOR_MEMBERS = new Set([
+  "left", "center", "right", "justify", "start", "end",
+  "uppercase", "lowercase", "capitalize", "normal-case",
+  "italic", "not-italic", "underline", "line-through", "no-underline",
+  "balance", "pretty", "wrap", "nowrap", "truncate",
+  "xs", "sm", "base", "lg", "xl",
+  "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl",
+]);
+
+const isKnownTailwindColorToken = (token: string): boolean => {
+  const base = token.split("/")[0];
+  if (COLOR_ANCHOR_TOKENS.has(base)) return true;
+  if (base.startsWith("[") || base.startsWith("(")) return true;
+  const parts = base.split("-");
+  if (parts.length < 2) return false;
+  return TAILWIND_PALETTE_COLORS.has(parts[0]) && TAILWIND_SHADES.has(parts[parts.length - 1]);
+};
+
+const repairUnknownBodyColorClasses = (bodyOpenTag: string): string => {
+  const classMatch = /class\s*=\s*(["'])([\s\S]*?)\1/i.exec(bodyOpenTag);
+  const classes = (classMatch?.[2] ?? "").split(/\s+/).filter(Boolean);
+
+  let hasBackground = false;
+  let hasTextColor = false;
+  const repaired: string[] = [];
+
+  for (const cls of classes) {
+    if (cls.startsWith("bg-")) {
+      const member = cls.slice(3).split("/")[0];
+      if (BG_NON_COLOR_MEMBERS.has(member)) {
+        repaired.push(cls);
+      } else if (isKnownTailwindColorToken(cls.slice(3))) {
+        repaired.push(cls);
+        hasBackground = true;
+      }
+      // Unknown bg-* tokens are dropped entirely: an unresolved background is
+      // what made the body transparent in the first place.
+      continue;
+    }
+    if (cls.startsWith("text-")) {
+      if (TEXT_NON_COLOR_MEMBERS.has(cls.slice(5).split("/")[0])) {
+        repaired.push(cls);
+      } else if (isKnownTailwindColorToken(cls.slice(5))) {
+        repaired.push(cls);
+        hasTextColor = true;
+      } else {
+        // An invented token: keep it for typography safety, but it colors nothing.
+        repaired.push(cls);
+      }
+      continue;
+    }
+    repaired.push(cls);
+  }
+
+  if (!hasBackground) repaired.push("bg-white");
+  if (!hasTextColor) repaired.push("text-zinc-900");
+
+  const classValue = repaired.join(" ");
+  return classMatch
+    ? bodyOpenTag.replace(classMatch[0], `class="${classValue}"`)
+    : `${bodyOpenTag.replace(/>$/, "")} class="${classValue}">`;
+};
+
 const ensureDocumentSkeleton = (input: string) => {
   const cleaned = input.trim();
   const contentWithoutDoctype = cleaned.replace(/<!doctype[^>]*>/i, "").trim();
@@ -561,7 +650,7 @@ ${ensureMainLandmark(contentWithoutDoctype)}
     return tag.replace(/>$/, ' lang="en">');
   })();
 
-  const bodyOpenTag = bodyOpenTagMatch?.[0] ?? "<body>";
+  const bodyOpenTag = repairUnknownBodyColorClasses(bodyOpenTagMatch?.[0] ?? "<body>");
 
   return `<!doctype html>
 ${htmlOpenTag}
