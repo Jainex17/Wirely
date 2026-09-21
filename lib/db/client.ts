@@ -1,5 +1,10 @@
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+
+// pg over TCP rather than @neondatabase/serverless: every route runs in the
+// Node runtime, where a plain connection reaches both Neon and a local
+// Postgres. The serverless driver only speaks Neon's WebSocket proxy protocol
+// and cannot connect to a local database at all.
 
 const parsePositiveInteger = (value: string | undefined, fallback: number) => {
   if (!value) return fallback;

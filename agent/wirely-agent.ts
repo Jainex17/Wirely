@@ -22,7 +22,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { OpencodeError, probeOpencode, runOpencode, type OpencodeProbe } from "../lib/opencode/run";
+import {
+  OpencodeError,
+  listOpencodeModels,
+  probeOpencode,
+  runOpencode,
+  type OpencodeProbe,
+} from "../lib/opencode/run";
 import { resolveOpencodeOutcome } from "../lib/opencode/events";
 import { resolvePollDelayMs } from "../lib/opencode/pollSchedule";
 import { INVOCATION } from "./invocation";
@@ -31,7 +37,7 @@ import { INVOCATION } from "./invocation";
  * Sent on every claim so Wirely can tell a paced agent from one that expects
  * the server to hold the request open. Keep in step with agent/package.json.
  */
-const AGENT_VERSION = "0.1.1";
+const AGENT_VERSION = "0.1.2";
 
 const CONFIG_PATH = join(homedir(), ".config", "wirely", "agent.json");
 const DEFAULT_BASE_URL = "https://wirely.vercel.app";
@@ -214,6 +220,35 @@ const commandDoctor = async () => {
   }
 };
 
+/**
+ * Reports the models this machine's opencode offers, so the composer can
+ * offer them by name. Runs once at startup: the list changes only when the
+ * user changes their opencode setup, and they restart the agent then anyway.
+ * Failure is not fatal — the curated free models keep working without it.
+ */
+const reportModels = async (
+  baseUrl: string,
+  token: string,
+  binary: string,
+): Promise<void> => {
+  const models = await listOpencodeModels(binary);
+  if (models.length === 0) return;
+
+  const response = await fetch(`${baseUrl}/api/agent/models`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      "x-wirely-agent-version": AGENT_VERSION,
+    },
+    body: JSON.stringify({ models }),
+    signal: AbortSignal.timeout(CLAIM_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`Wirely returned ${response.status} when saving the model list.`);
+  }
+};
+
 const commandRun = async () => {
   const { token, baseUrl } = resolveSettings();
   if (!token) {
@@ -235,6 +270,16 @@ const commandRun = async () => {
   }
 
   log(`opencode ${probe.version.raw} ready, polling ${baseUrl}`);
+
+  try {
+    await reportModels(baseUrl, token, probe.binary);
+  } catch (error) {
+    log(
+      `could not save the model list: ${
+        error instanceof Error ? error.message : String(error)
+      } (continuing without it)`,
+    );
+  }
 
   let backoff = MIN_BACKOFF_MS;
   let running = true;

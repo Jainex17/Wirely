@@ -11,7 +11,9 @@ a subscription you already have rather than per-token.
 
 The agent dials out to Wirely over ordinary HTTPS and asks whether you have any design work waiting.
 When you hit Generate in the browser, it picks the job up, runs it through `opencode run`, and posts
-the finished HTML back.
+the finished HTML back. On startup it also tells Wirely which models your opencode offers, so they
+appear in the picker by name — restart the agent after changing your opencode setup to refresh the
+list.
 
 Nothing connects *to* your machine. There is no tunnel, no relay, and no inbound port to open. Your
 opencode credentials never leave the machine, and Wirely never sees them.

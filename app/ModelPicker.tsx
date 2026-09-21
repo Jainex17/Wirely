@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,6 +41,13 @@ export default function ModelPicker({
   onSelectModel,
   onOpenProviders,
 }: ModelPickerProps) {
+  const [modelFilter, setModelFilter] = useState("");
+  const normalizedModelFilter = modelFilter.trim().toLowerCase();
+  // One machine reports hundreds of models; type to narrow, never render all.
+  const matchesFilter = (label: string) =>
+    !normalizedModelFilter || label.toLowerCase().includes(normalizedModelFilter);
+  const showFilter = models.length > 12;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -59,6 +67,16 @@ export default function ModelPicker({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
+        {showFilter ? (
+          <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+            <input
+              value={modelFilter}
+              onChange={(event) => setModelFilter(event.target.value)}
+              placeholder="Search models…"
+              className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        ) : null}
         {showConfigureApiKeysCta ? (
           <>
             <DropdownMenuItem
@@ -72,7 +90,10 @@ export default function ModelPicker({
           </>
         ) : null}
         {PROVIDER_ORDER.map((provider, index) => {
-          const providerModels = models.filter((model) => model.provider === provider);
+          const providerModels = models
+            .filter((model) => model.provider === provider)
+            .filter((model) => matchesFilter(model.label))
+            .slice(0, 60);
           if (providerModels.length === 0) return null;
 
           return (

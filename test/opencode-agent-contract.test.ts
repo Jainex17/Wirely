@@ -12,6 +12,7 @@ import {
 import { readBearerToken, hashApiToken, API_TOKEN_PREFIX } from "@/lib/auth/apiToken";
 import { isUsableConceptHtml, sanitizeConceptTitle } from "@/lib/opencode/persistConcepts";
 import { resolveInvocation } from "@/agent/invocation";
+import { parseOpencodeModelLines } from "@/lib/opencode/run";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput } from "@/lib/wireOutput";
 import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
@@ -273,11 +274,45 @@ describe("agent token handling", () => {
   });
 });
 
+describe("opencode model catalog", () => {
+  it("parses one id per line and skips anything else", () => {
+    const stdout = [
+      "opencode/glm-5",
+      "",
+      "zai-coding-plan/glm-5.3",
+      "openrouter/google/gemma-4:free",
+      "Here are your available models:",
+      "not an id",
+      "opencode/glm-5",
+    ].join("\n");
+
+    expect(parseOpencodeModelLines(stdout)).toEqual([
+      "opencode/glm-5",
+      "zai-coding-plan/glm-5.3",
+      "openrouter/google/gemma-4:free",
+    ]);
+  });
+
+  it("reports the catalog to Wirely once at startup", () => {
+    const agent = read("agent/wirely-agent.ts");
+
+    expect(agent).toContain("listOpencodeModels");
+    expect(agent).toContain("/api/agent/models");
+  });
+
+  it("revalidates the reported list at the boundary", () => {
+    const route = read("app/api/agent/models/route.ts");
+
+    expect(route).toContain("normalizeDiscoveredLocalModels");
+  });
+});
+
 describe("agent route guards", () => {
   it("authenticates every agent route with a bearer token, never a session", () => {
     const agentRoutes = [
       "app/api/agent/jobs/next/route.ts",
       "app/api/agent/jobs/[jobId]/result/route.ts",
+      "app/api/agent/models/route.ts",
     ];
 
     for (const path of agentRoutes) {
@@ -308,6 +343,7 @@ describe("agent route guards", () => {
     const routes = [
       "app/api/agent/jobs/next/route.ts",
       "app/api/agent/jobs/[jobId]/result/route.ts",
+      "app/api/agent/models/route.ts",
       "app/api/projects/[projectId]/concepts/route.ts",
       "app/api/projects/[projectId]/concepts/[jobId]/route.ts",
       "app/api/profile/agent-tokens/route.ts",

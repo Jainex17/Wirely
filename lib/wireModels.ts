@@ -63,8 +63,14 @@ export const CUSTOM_LOCAL_MODEL_PREFIX = "local/";
  * prefix. This is exactly what `opencode run --model` expects, so it is what
  * gets stored and what the agent receives.
  */
+/**
+ * Raw `provider/model` strings are whatever `opencode models` prints: ids
+ * routinely carry extra slashes (`openrouter/google/gemma-4:free`), colons and
+ * tildes. Bounded to that charset with at least one slash, so a stray paste
+ * cannot smuggle anything else in.
+ */
 export const RAW_CUSTOM_LOCAL_MODEL_PATTERN =
-  /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i;
+  /^[a-z0-9~][a-z0-9._~:/-]*\/[a-z0-9~][a-z0-9._~:/-]*$/i;
 
 /** User-typed models ride under one namespaced prefix in every wire id. */
 export const toCustomLocalModelId = (rawModel: string): `local/${string}` =>
@@ -84,6 +90,29 @@ export const isCustomLocalModelId = (value: string): boolean =>
 
 /** Most local agents allow per-user custom models; a sane cap keeps the picker honest. */
 export const MAX_CUSTOM_LOCAL_MODELS = 12;
+
+/** One machine can expose hundreds of models; the catalog is still bounded. */
+export const MAX_DISCOVERED_LOCAL_MODELS = 500;
+
+/**
+ * Normalizes the model list an agent reports from the user's machine. Same
+ * charset rules as the hand-added list, a much larger ceiling.
+ */
+export const normalizeDiscoveredLocalModels = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+
+  const unique = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const raw = entry.trim();
+    if (!raw || raw.length > 200 || !RAW_CUSTOM_LOCAL_MODEL_PATTERN.test(raw)) {
+      continue;
+    }
+    unique.add(raw);
+    if (unique.size >= MAX_DISCOVERED_LOCAL_MODELS) break;
+  }
+  return [...unique];
+};
 
 /**
  * Normalizes the stored custom model list. Invalid shapes are dropped rather

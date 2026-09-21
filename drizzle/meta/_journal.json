@@ -120,6 +120,13 @@
       "when": 1790000486659,
       "tag": "0016_thin_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790005098519,
+      "tag": "0017_outgoing_mysterio",
+      "breakpoints": true
     }
   ]
 }

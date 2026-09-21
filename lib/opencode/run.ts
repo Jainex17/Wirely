@@ -110,11 +110,34 @@ const capture = (
  * returned capabilities rather than by a version comparison, so a future
  * opencode that moves a flag around keeps working.
  */
+/**
+ * Reads the model ids the local opencode offers.
+ *
+ * `opencode models` prints one `provider/model` id per line and nothing else,
+ * so anything not shaped like an id is skipped. Pure parser split from the
+ * spawn so a fixture can be tested without a binary.
+ */
+export const parseOpencodeModelLines = (stdout: string): string[] => [
+  ...new Set(
+    stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^[a-z0-9~][a-z0-9._~:/-]*\/[a-z0-9~][a-z0-9._~:/-]*$/i.test(line)),
+  ),
+];
+
+export const listOpencodeModels = async (
+  binary: string,
+  timeoutMs = 60_000,
+): Promise<string[]> => {
+  const result = await capture(binary, ["models"], { timeoutMs });
+  return parseOpencodeModelLines(result.stdout);
+};
+
 export const probeOpencode = async (
   binary = "opencode",
   timeoutMs = 30_000,
-): Promise<OpencodeProbe> => {
-  const versionResult = await capture(binary, ["--version"], { timeoutMs });
+): Promise<OpencodeProbe> => {  const versionResult = await capture(binary, ["--version"], { timeoutMs });
   const version = parseOpencodeVersion(`${versionResult.stdout}${versionResult.stderr}`);
 
   if (!version) {

@@ -43,6 +43,7 @@ const toAiSettingsResponse = (settings: UserAiSettings) => ({
   hasUnsplashApiKey: settings.hasUnsplashApiKey,
   enabledModelIds: settings.enabledModelIds,
   customLocalModelIds: settings.customLocalModelIds,
+  discoveredLocalModelIds: settings.discoveredLocalModelIds,
   models: WIRE_MODEL_OPTIONS.map((model) => ({
     id: model.id,
     label: model.label,

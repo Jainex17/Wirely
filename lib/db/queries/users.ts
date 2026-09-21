@@ -9,6 +9,7 @@ import {
 import {
   normalizeEnabledWireModels,
   normalizeCustomLocalModels,
+  normalizeDiscoveredLocalModels,
   resolveEnabledWireModels,
   type WireModelName,
 } from "@/lib/wireModels";
@@ -83,6 +84,7 @@ export const getUserWithAiSettingsByAuthSub = async (
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
       customLocalModels: users.customLocalModels,
+      localModelCatalog: users.localModelCatalog,
     })
     .from(users)
     .where(eq(users.authSub, authSub))
@@ -110,6 +112,8 @@ export interface UserAiSettings {
   enabledModelIds: WireModelName[];
   /** Raw `provider/model` strings the user added for the local agent. */
   customLocalModelIds: string[];
+  /** Raw ids the user's own agent reported from `opencode models`. */
+  discoveredLocalModelIds: string[];
 }
 
 export interface UserAiSettingsForGeneration {
@@ -158,6 +162,7 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyKeyVersion,
   enabledGoogleModels,
   customLocalModels,
+  localModelCatalog,
 }: {
   googleApiKeyCiphertext: string | null | undefined;
   googleApiKeyIv: string | null | undefined;
@@ -177,6 +182,7 @@ export const toPublicUserAiSettings = ({
   unsplashApiKeyKeyVersion: number | null | undefined;
   enabledGoogleModels: UserEnabledGoogleModels;
   customLocalModels: string[] | null | undefined;
+  localModelCatalog: string[] | null | undefined;
 }): UserAiSettings => ({
   hasGoogleApiKey: hasEncryptedApiKeyMaterial({
     ciphertext: googleApiKeyCiphertext,
@@ -204,6 +210,7 @@ export const toPublicUserAiSettings = ({
   }),
   enabledModelIds: resolveEnabledWireModels(enabledGoogleModels),
   customLocalModelIds: normalizeCustomLocalModels(customLocalModels),
+  discoveredLocalModelIds: normalizeDiscoveredLocalModels(localModelCatalog),
 });
 
 export const upsertUserByAuthSub = async ({
@@ -261,6 +268,7 @@ export const getUserAiSettings = async (
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
       customLocalModels: users.customLocalModels,
+      localModelCatalog: users.localModelCatalog,
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -287,6 +295,7 @@ export const getUserAiSettings = async (
     unsplashApiKeyKeyVersion: user.unsplashApiKeyKeyVersion,
     enabledGoogleModels: user.enabledGoogleModels,
     customLocalModels: user.customLocalModels,
+    localModelCatalog: user.localModelCatalog,
   });
 };
 
@@ -315,6 +324,7 @@ export const getUserAiSettingsForGeneration = async (
       unsplashApiKeyKeyVersion: users.unsplashApiKeyKeyVersion,
       enabledGoogleModels: users.enabledGoogleModels,
       customLocalModels: users.customLocalModels,
+      localModelCatalog: users.localModelCatalog,
     })
     .from(users)
     .where(eq(users.id, userId))

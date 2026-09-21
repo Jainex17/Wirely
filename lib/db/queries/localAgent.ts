@@ -2,7 +2,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
-import { apiTokens } from "@/lib/db/schema";
+import { apiTokens, users } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 
 /**
@@ -67,5 +67,48 @@ export const isLocalAgentOnline = async (userId: string): Promise<boolean> => {
     if (!isMissingRelationError(error)) throw error;
     logMissingAgentTables(error);
     return false;
+  }
+};
+
+let loggedMissingCatalogColumn = false;
+
+/**
+ * Stores the model list an agent reported from the user's machine.
+ *
+ * Best-effort by design: the catalog is a convenience, so an unmigrated
+ * database or a race with a deploy is logged once and swallowed rather than
+ * failing the agent's startup report.
+ */
+export const saveLocalModelCatalog = async (
+  userId: string,
+  models: string[],
+): Promise<boolean> => {
+  try {
+    const db = getDb();
+    await db
+      .update(users)
+      .set({
+        localModelCatalog: models,
+        localModelCatalogAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+    return true;
+  } catch (error) {
+    const code =
+      error && typeof error === "object"
+        ? ((error as { code?: string }).code ?? "unknown")
+        : "unknown";
+    if (isMissingRelationError(error) || code === "42703") {
+      if (!loggedMissingCatalogColumn) {
+        loggedMissingCatalogColumn = true;
+        logger.warn("local_agent_catalog_unavailable", {
+          reason: "missing_catalog_storage",
+          code,
+        });
+      }
+      return false;
+    }
+    throw error;
   }
 };

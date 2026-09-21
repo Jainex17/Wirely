@@ -35,6 +35,7 @@ import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
+  OPENCODE_FREE_MODELS,
   WIRE_MODEL_OPTIONS,
   fromCustomLocalModelId,
   getWireModelProvider,
@@ -90,6 +91,7 @@ interface WirePromptSidebarProps {
 interface AiSettingsResponse {
   enabledModelIds: WireModelName[];
   customLocalModelIds?: string[];
+  discoveredLocalModelIds?: string[];
 }
 
 interface CompactHistoryMessage {
@@ -276,6 +278,9 @@ export default function WirePromptSidebar({
     ...DEFAULT_ENABLED_WIRE_MODELS,
   ]);
   const [customLocalModelIds, setCustomLocalModelIds] = useState<string[]>([]);
+  const [discoveredLocalModelIds, setDiscoveredLocalModelIds] = useState<
+    string[]
+  >([]);
   const [isAiSettingsLoaded, setIsAiSettingsLoaded] = useState(false);
   const [messageModelUsageById, setMessageModelUsageById] = useState<
     Record<string, WireConversationModelUsage>
@@ -1404,6 +1409,7 @@ export default function WirePromptSidebar({
         if (!isCancelled) {
           setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
           setCustomLocalModelIds(payload.customLocalModelIds ?? []);
+          setDiscoveredLocalModelIds(payload.discoveredLocalModelIds ?? []);
           setIsAiSettingsLoaded(true);
         }
       } catch {
@@ -1525,6 +1531,15 @@ export default function WirePromptSidebar({
   const handleModelSelection = useCallback((modelId: WireModelName) => {
     setActiveModelName(modelId);
   }, []);
+
+  const [modelFilter, setModelFilter] = useState("");
+  const normalizedModelFilter = modelFilter.trim().toLowerCase();
+  /** One machine reports hundreds of models; type to narrow, never render all. */
+  const matchesModelFilter = useCallback(
+    (label: string) =>
+      !normalizedModelFilter || label.toLowerCase().includes(normalizedModelFilter),
+    [normalizedModelFilter],
+  );
 
   const containerClassName =
     variant === "panel"
@@ -1762,7 +1777,9 @@ export default function WirePromptSidebar({
     });
 
     // User-added models are not catalog entries; they render as their own
-    // group and carry the raw id the agent will run.
+    // group and carry the raw id the agent will run. Models the agent itself
+    // reported join them — except the curated free ones, which already live
+    // in the opencode group, and anything the user added by hand.
     customLocalModelIds.forEach((rawModel) => {
       grouped.local.push({
         id: toCustomLocalModelId(rawModel),
@@ -1772,9 +1789,21 @@ export default function WirePromptSidebar({
         provider: "local",
       });
     });
+    const handAdded = new Set(customLocalModelIds);
+    const curatedFree = new Set<string>(OPENCODE_FREE_MODELS);
+    discoveredLocalModelIds.forEach((rawModel) => {
+      if (handAdded.has(rawModel) || curatedFree.has(rawModel)) return;
+      grouped.local.push({
+        id: toCustomLocalModelId(rawModel),
+        label: rawModel,
+        description: "Reported by your local agent.",
+        tier: "paid",
+        provider: "local",
+      });
+    });
 
     return grouped;
-  }, [enabledModelIds, customLocalModelIds]);
+  }, [enabledModelIds, customLocalModelIds, discoveredLocalModelIds]);
   const activeModelLabel =
     fromCustomLocalModelId(activeModelName) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
@@ -1910,8 +1939,25 @@ export default function WirePromptSidebar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className={dropdownContentClassName}>
+                  {groupedEnabledModels.local.length +
+                    groupedEnabledModels.google.length +
+                    groupedEnabledModels.openrouter.length +
+                    groupedEnabledModels.zai.length +
+                    groupedEnabledModels.opencode.length >
+                  12 ? (
+                    <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+                      <input
+                        value={modelFilter}
+                        onChange={(event) => setModelFilter(event.target.value)}
+                        placeholder="Search models…"
+                        className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                  ) : null}
                   {(["opencode", "local", "google", "openrouter", "zai"] as const).map((provider, index) => {
-                    const providerModels = groupedEnabledModels[provider];
+                    const providerModels = groupedEnabledModels[provider]
+                      .filter((model) => matchesModelFilter(model.label))
+                      .slice(0, 60);
                     if (providerModels.length === 0) return null;
 
                     return (

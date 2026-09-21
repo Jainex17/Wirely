@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAutoGrowTextarea } from "@/hooks/useAutoGrowTextarea";
 import {
   DEFAULT_WIRE_MODEL,
+  OPENCODE_FREE_MODELS,
   WIRE_MODEL_OPTIONS,
   WIRE_MODEL_PROVIDER_LABEL,
   fromCustomLocalModelId,
@@ -66,6 +67,7 @@ export interface HomeClientInitialData {
   initialPrompt: string;
   enabledModelIds: WireModelName[];
   customLocalModelIds: string[];
+  discoveredLocalModelIds: string[];
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
@@ -238,7 +240,22 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       })),
     [customLocalModelIds],
   );
-  const pickerModels = [...enabledModelOptions, ...customModelOptions];
+  // Models the agent itself reported join the hand-added ones — except the
+  // curated free opencode models, which already have their own group.
+  const discoveredModelOptions = useMemo<WireModelOption[]>(() => {
+    const handAdded = new Set(customLocalModelIds);
+    const curatedFree = new Set<string>(OPENCODE_FREE_MODELS);
+    return initialData.discoveredLocalModelIds
+      .filter((rawModel) => !handAdded.has(rawModel) && !curatedFree.has(rawModel))
+      .map((rawModel) => ({
+        id: toCustomLocalModelId(rawModel),
+        label: rawModel,
+        description: "Reported by your local agent.",
+        tier: "paid" as const,
+        provider: "local" as const,
+      }));
+  }, [initialData.discoveredLocalModelIds, customLocalModelIds]);
+  const pickerModels = [...enabledModelOptions, ...customModelOptions, ...discoveredModelOptions];
 
   const activeSelectedModel =
     state.enabledModelIds.includes(state.selectedModel) ||
@@ -253,7 +270,8 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const hasNoEnabledModels =
     Boolean(state.user) &&
     state.enabledModelIds.length === 0 &&
-    customLocalModelIds.length === 0;
+    customLocalModelIds.length === 0 &&
+    discoveredModelOptions.length === 0;
   const activeSelectedModelProvider = getWireModelProvider(activeSelectedModel);
   const selectedModelRequiresMissingKey = modelRequiresMissingKey({
     modelName: activeSelectedModel,
@@ -291,7 +309,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       return;
     }
 
-    if (state.enabledModelIds.length === 0 && customLocalModelIds.length === 0) {
+    if (state.enabledModelIds.length === 0 && pickerModels.length === 0) {
       dispatch({
         type: "patch",
         payload: { errorMessage: "No models are enabled. Enable at least one model in Models." },
