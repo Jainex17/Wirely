@@ -1,6 +1,6 @@
 {
   "name": "wirely-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run Wirely design generation through the opencode on your own machine.",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "url": "git+https://github.com/Jainex17/Wirely.git",
     "directory": "agent"
   },
-  "homepage": "https://wirely.app",
+  "homepage": "https://wirely.vercel.app",
   "bugs": {
     "url": "https://github.com/Jainex17/Wirely/issues"
   },

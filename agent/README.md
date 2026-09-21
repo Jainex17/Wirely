@@ -1,6 +1,6 @@
 # wirely-agent
 
-Run [Wirely](https://wirely.app) design generation through the opencode already installed on your
+Run [Wirely](https://wirely.vercel.app) design generation through the opencode already installed on your
 own machine.
 
 Wirely normally generates screens with an API key you paste into settings. This agent is the other
@@ -49,7 +49,7 @@ instead of on Wirely's servers.
 
 | variable | default | purpose |
 | --- | --- | --- |
-| `WIRELY_URL` | `https://wirely.app` | Which Wirely to connect to. Set this to run against a local dev server. |
+| `WIRELY_URL` | `https://wirely.vercel.app` | Which Wirely to connect to. Set this to run against a local dev server. |
 | `WIRELY_TOKEN` | — | Token, overriding the saved one. Useful in CI or a container. |
 | `OPENCODE_BIN` | `opencode` | Path to the opencode binary. |
 | `WIRELY_MODEL` | — | `provider/model` to use when a job does not name one. |

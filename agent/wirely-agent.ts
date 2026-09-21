@@ -13,7 +13,7 @@
  *   bun run agent -- login <token>  from this repo, for development
  *
  * Environment:
- *   WIRELY_URL     Wirely base URL (default https://wirely.app)
+ *   WIRELY_URL     Wirely base URL (default https://wirely.vercel.app)
  *   WIRELY_TOKEN   token, overriding the saved one
  *   OPENCODE_BIN   path to the opencode binary (default `opencode`)
  *   WIRELY_MODEL   default `provider/model` when a job does not name one
@@ -31,10 +31,10 @@ import { INVOCATION } from "./invocation";
  * Sent on every claim so Wirely can tell a paced agent from one that expects
  * the server to hold the request open. Keep in step with agent/package.json.
  */
-const AGENT_VERSION = "0.1.0";
+const AGENT_VERSION = "0.1.1";
 
 const CONFIG_PATH = join(homedir(), ".config", "wirely", "agent.json");
-const DEFAULT_BASE_URL = "https://wirely.app";
+const DEFAULT_BASE_URL = "https://wirely.vercel.app";
 
 /** Backoff bounds for a Wirely that is unreachable or erroring. */
 const MIN_BACKOFF_MS = 2_000;

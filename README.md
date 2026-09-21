@@ -201,7 +201,7 @@ Agent environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `WIRELY_URL` | `https://wirely.app` | Wirely base URL the agent polls. |
+| `WIRELY_URL` | `https://wirely.vercel.app` | Wirely base URL the agent polls. |
 | `WIRELY_TOKEN` | unset | Token, overriding the one saved in `~/.config/wirely/agent.json`. |
 | `OPENCODE_BIN` | `opencode` | Path to the opencode binary. |
 | `WIRELY_MODEL` | unset | Default `provider/model` when a job does not name one. |
