@@ -46,11 +46,72 @@ export interface ConceptPromptOptions {
  * styling — a direction that names a product shape ("data-forward panels")
  * makes the model ship that product instead of the one requested.
  */
-export const CONCEPT_DIRECTIONS = [
-  "Editorial and typographic: generous whitespace, large display type, a restrained palette, content-led hierarchy.",
-  "Dense and instrumental: compact spacing on a strong grid, tightly packed information-rich sections, engineered precision.",
-  "Bold and expressive: high-contrast color blocking, oversized imagery blocks, dramatic typographic scale.",
-] as const;
+export interface ConceptDirection {
+  label: string;
+  keywords: string[];
+}
+
+export const CONCEPT_DIRECTION_POOL: ReadonlyArray<ConceptDirection> = [
+  {
+    label:
+      "Editorial and typographic: generous whitespace, large display type, a restrained palette, content-led hierarchy.",
+    keywords: ["editorial", "typographic", "magazine", "premium", "elegant", "luxury"],
+  },
+  {
+    label:
+      "Minimal and airy: a single focal point per screen, muted surfaces, thin rules, effortless calm.",
+    keywords: ["minimal", "minimalist", "clean", "simple", "airy", "calm"],
+  },
+  {
+    label:
+      "Dense and instrumental: compact spacing on a strong grid, tightly packed information-rich sections, engineered precision.",
+    keywords: ["dashboard", "data", "dense", "analytics", "grid", "tool", "console"],
+  },
+  {
+    label:
+      "Bold and expressive: high-contrast color blocking, oversized imagery blocks, dramatic typographic scale.",
+    keywords: ["bold", "expressive", "vibrant", "colorful", "striking", "dramatic"],
+  },
+  {
+    label:
+      "Playful and warm: rounded forms, friendly pastels, bouncy accents, approachable and human.",
+    keywords: ["playful", "fun", "friendly", "warm", "casual", "community", "welcoming"],
+  },
+  {
+    label:
+      "Luxury and dark: a near-black canvas, metallic or jewel-tone accents, fine borders, exclusive atmosphere.",
+    keywords: ["luxury", "dark", "exclusive", "high-end", "sophisticated", "elite"],
+  },
+  {
+    label:
+      "Retro and crafted: vintage type pairings, textured surfaces, era-inspired ornament, handmade character.",
+    keywords: ["retro", "vintage", "classic", "heritage", "crafted", "nostalgic"],
+  },
+  {
+    label:
+      "Organic and natural: soft earth tones, flowing shapes, generous imagery rhythm, unhurried pacing.",
+    keywords: ["organic", "natural", "earthy", "soft", "wellness", "fresh", "green"],
+  },
+];
+
+/**
+ * Picks the directions for one generation. Prompt keywords pull matching
+ * flavors to the front (so "playful" or "premium" land the user's taste),
+ * the remaining slots fill in pool order, and the result is always distinct.
+ */
+export const selectConceptDirections = (
+  prompt: string,
+  count: number,
+): ReadonlyArray<ConceptDirection> => {
+  const text = prompt.toLowerCase();
+  const matched = CONCEPT_DIRECTION_POOL.filter((direction) =>
+    direction.keywords.some((keyword) => text.includes(keyword)),
+  );
+  const rest = CONCEPT_DIRECTION_POOL.filter(
+    (direction) => !matched.includes(direction),
+  );
+  return [...matched, ...rest].slice(0, Math.max(1, count));
+};
 
 const CONCEPT_COUNT_PATTERN =
   /(\d+)\s*(?:genuinely\s+)?(?:different\s+)?(?:design\s+)?(?:concepts?|variants?|options?|designs?|screens?|versions?)/i;

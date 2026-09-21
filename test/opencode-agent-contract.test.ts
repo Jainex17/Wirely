@@ -5,7 +5,8 @@ import {
   clampConceptCount,
   composeConceptBatchPrompt,
   composeEditPrompt,
-  CONCEPT_DIRECTIONS,
+  CONCEPT_DIRECTION_POOL,
+  selectConceptDirections,
   MAX_CONCEPTS_PER_JOB,
   resolveRequestedConceptCount,
 } from "@/lib/opencode/conceptPrompt";
@@ -15,6 +16,7 @@ import { resolveInvocation } from "@/agent/invocation";
 import { parseOpencodeModelLines } from "@/lib/opencode/run";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { parseBatchWireOutput, normalizeGeneratedHtml } from "@/lib/wireOutput";
+import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { WIRE_MODEL_OPTIONS, isOpencodeWireModel } from "@/lib/wireModels";
 import { DEFAULT_OPENCODE_MODEL, isFreeOpencodeModel } from "@/lib/opencode/models";
 import { fallbackTitleFromPrompt } from "@/app/api/projects/route";
@@ -72,7 +74,7 @@ describe("concept prompt", () => {
     const prompt = composeConceptBatchPrompt({
       userPrompt: "A landing page",
       conceptCount: 1,
-      direction: CONCEPT_DIRECTIONS[0],
+      direction: CONCEPT_DIRECTION_POOL[0].label,
     });
 
     expect(prompt).toContain("Design direction for this concept: Editorial and typographic");
@@ -87,9 +89,39 @@ describe("concept prompt", () => {
     expect(prompt).not.toContain("Design direction for this concept");
   });
 
-  it("rotates distinct directions across the rungs", () => {
-    const directions = new Set(CONCEPT_DIRECTIONS);
-    expect(directions.size).toBe(CONCEPT_DIRECTIONS.length);
+  it("pulls prompt-matched directions forward and never repeats one", () => {
+    const directions = selectConceptDirections(
+      "A playful community app for dog owners",
+      3,
+    );
+
+    expect(directions[0].keywords).toContain("playful");
+    const labels = new Set(directions.map((direction) => direction.label));
+    expect(labels.size).toBe(directions.length);
+  });
+
+  it("fills unmatched prompts in stable pool order", () => {
+    const directions = selectConceptDirections("a dashboard", 2);
+
+    expect(directions).toHaveLength(2);
+    expect(directions[0].keywords).toContain("dashboard");
+  });
+
+  it("keeps imagery as styled placeholder blocks", () => {
+    const prompt = composeConceptBatchPrompt({ userPrompt: "x", conceptCount: 1 });
+
+    expect(prompt).toContain("styled placeholder blocks");
+    expect(prompt).not.toContain("inline SVG shapes");
+  });
+
+  it("keeps inline svg art through the sandbox sanitizer", () => {
+    const html = sanitizeIframeHtml(
+      '<body class="bg-stone-950 text-stone-100"><svg viewBox="0 0 10 10" aria-label="wave"><path d="M0 5 Q5 0 10 5"/></svg><img src="https://evil.example/x.png" alt="x"></body>',
+    );
+
+    expect(html).toContain("<svg");
+    expect(html).toContain("<path");
+    expect(html).not.toContain("evil.example");
   });
 
   it("asks for one marker block per requested concept", () => {
@@ -703,9 +735,10 @@ describe("editing an existing page", () => {
     const route = read("app/api/projects/[projectId]/concepts/route.ts");
 
     // The count falls through body, prose, then the default, and each concept
-    // becomes its own job carrying a single direction hint.
+    // becomes its own job carrying a single direction hint sampled from the
+    // pool (prompt keywords pull matching flavors forward).
     expect(route).toContain("resolveRequestedConceptCount");
-    expect(route).toContain("CONCEPT_DIRECTIONS");
+    expect(route).toContain("selectConceptDirections");
     expect(route).toContain("variantCount: 1");
     expect(route).toContain("conceptCount: 1");
     // A prompt asking for a phone screen frames the pages as mobile, same as

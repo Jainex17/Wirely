@@ -17,7 +17,7 @@ import {
   clampConceptCount,
   composeConceptBatchPrompt,
   composeEditPrompt,
-  CONCEPT_DIRECTIONS,
+  selectConceptDirections,
   resolveRequestedConceptCount,
 } from "@/lib/opencode/conceptPrompt";
 import { DEFAULT_OPENCODE_MODEL } from "@/lib/opencode/models";
@@ -141,6 +141,12 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    // One job per concept. The agent claims them oldest-first and reports each
+    // separately, so pages land on the canvas as they finish instead of in one
+    // batch, and a failed concept costs one job rather than the whole reply.
+    // Directions are sampled per run: prompt keywords pull matching flavors
+    // forward, so consecutive runs do not all look the same.
+    const directions = selectConceptDirections(userPrompt, conceptCount);
     const jobs: Array<{ id: string }> = [];
     for (let index = 0; index < conceptCount; index += 1) {
       const job = await queueAgentJob({
@@ -154,9 +160,7 @@ export async function POST(request: Request, context: RouteContext) {
               userPrompt,
               conceptCount: 1,
               ...(deviceType === "mobile" ? { device: "mobile" as const } : {}),
-              ...(conceptCount > 1
-                ? { direction: CONCEPT_DIRECTIONS[index % CONCEPT_DIRECTIONS.length] }
-                : {}),
+              ...(conceptCount > 1 ? { direction: directions[index]?.label } : {}),
             }),
         // Pinned to a free model rather than left null, which would fall through
         // to whatever the user set as their opencode default, possibly a paid one.
