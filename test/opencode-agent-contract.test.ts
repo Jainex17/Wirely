@@ -76,6 +76,7 @@ describe("concept prompt", () => {
     });
 
     expect(prompt).toContain("Design direction for this concept: Editorial and typographic");
+    expect(prompt).toContain("the screen itself must still be exactly what the design request describes");
     expect(prompt).not.toContain("Each concept must be a distinct design direction");
   });
 

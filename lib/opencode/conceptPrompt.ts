@@ -42,12 +42,14 @@ export interface ConceptPromptOptions {
 /**
  * Design directions a multi-concept generation rotates through, one per job.
  * Deterministic diversity: a three-concept request becomes three different
- * briefs rather than three samples of one reply.
+ * briefs rather than three samples of one reply. Kept strictly about visual
+ * styling — a direction that names a product shape ("data-forward panels")
+ * makes the model ship that product instead of the one requested.
  */
 export const CONCEPT_DIRECTIONS = [
   "Editorial and typographic: generous whitespace, large display type, a restrained palette, content-led hierarchy.",
-  "Dense and instrumental: compact spacing on a strong grid, data-forward panels, product-like efficiency.",
-  "Bold and expressive: high-contrast color blocking, oversized imagery blocks, marketing-page energy.",
+  "Dense and instrumental: compact spacing on a strong grid, tightly packed information-rich sections, engineered precision.",
+  "Bold and expressive: high-contrast color blocking, oversized imagery blocks, dramatic typographic scale.",
 ] as const;
 
 const CONCEPT_COUNT_PATTERN =
@@ -143,7 +145,7 @@ export const composeConceptBatchPrompt = ({
       : `You are an expert product designer. Produce ${count} genuinely different design concepts for the screen described below.`;
 
   const differentiation = direction
-    ? `Design direction for this concept: ${direction}`
+    ? `Design direction for this concept: ${direction}\nThe direction shapes the styling only — the screen itself must still be exactly what the design request describes.`
     : `Each concept must be a distinct design direction, not a recolour of the same layout. Vary the
 layout structure, the typographic scale, the density, and the visual tone between them.`;
 
