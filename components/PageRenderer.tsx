@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -1081,12 +1080,23 @@ export default React.memo(function PageRenderer({
               <span className="rounded-md bg-muted/60 px-2 py-1 text-xs tabular-nums text-muted-foreground">
                 {previewWidth} x {previewFrameHeight}
               </span>
-              <DialogClose
+              {/* A plain button writing state directly, not DialogClose: after
+                  clicking inside the preview frame, Radix's focus bookkeeping
+                  has already eaten close clicks once, and the controlled state
+                  is the source of truth anyway. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 aria-label="Close preview"
                 className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96]"
+                onClick={() => {
+                  setIsPreviewOpen(false);
+                  setPreviewWidthOverride(null);
+                }}
               >
                 <X className="size-4" />
-              </DialogClose>
+              </Button>
             </div>
           </div>
 

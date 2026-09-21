@@ -707,6 +707,9 @@ describe("editing an existing page", () => {
     expect(route).toContain("CONCEPT_DIRECTIONS");
     expect(route).toContain("variantCount: 1");
     expect(route).toContain("conceptCount: 1");
+    // A prompt asking for a phone screen frames the pages as mobile, same as
+    // the hosted path.
+    expect(route).toContain("resolveDeviceIntent");
     // Custom `local/...` ids are accepted, but the wire prefix is stripped
     // before the raw model string reaches the agent's argv.
     expect(route).toContain("fromCustomLocalModelId");

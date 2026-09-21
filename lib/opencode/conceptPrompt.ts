@@ -35,6 +35,8 @@ export interface ConceptPromptOptions {
    * stronger than hope to diverge, so each queued concept carries its own.
    */
   direction?: string;
+  /** Marks a run as a phone-viewport design, which changes the layout rules. */
+  device?: "mobile" | "desktop";
 }
 
 /**
@@ -127,6 +129,7 @@ export const composeConceptBatchPrompt = ({
   conceptCount,
   allowImages = false,
   direction,
+  device,
 }: ConceptPromptOptions): string => {
   const count = clampConceptCount(conceptCount);
   const blocks = Array.from({ length: count }, (_, index) => {
@@ -144,9 +147,15 @@ export const composeConceptBatchPrompt = ({
     : `Each concept must be a distinct design direction, not a recolour of the same layout. Vary the
 layout structure, the typographic scale, the density, and the visual tone between them.`;
 
+  const deviceRule =
+    device === "mobile"
+      ? `- The screen is a phone viewport (about 375px wide): design a mobile layout — single column, stacked sections, large touch targets, no wide desktop grids.`
+      : null;
+
   return `${brief}
 
 ${differentiation}
+${deviceRule ? `\n${deviceRule}` : ""}
 
 Design request:
 ${userPrompt}

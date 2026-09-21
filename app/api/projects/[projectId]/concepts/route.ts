@@ -27,6 +27,7 @@ import {
   isWireModelName,
   type WireModelName,
 } from "@/lib/wireModels";
+import { resolveDeviceIntent } from "@/lib/wireFallbackPlan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,8 +90,6 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const deviceType = parsed.data.deviceType === "mobile" ? "mobile" : "desktop";
-
     // A target page turns this into an edit: one revision of that page rather
     // than a batch of new concepts.
     const targetPageValue = parsed.data.targetPageId;
@@ -112,6 +111,14 @@ export async function POST(request: Request, context: RouteContext) {
         return NextResponse.json({ error: "Page not found." }, { status: 404 });
       }
     }
+
+    // The body's device is a stale always-desktop default, so a prompt that
+    // asks for a phone screen decides instead — same rule as the hosted path.
+    const deviceType = targetPage
+      ? "desktop"
+      : parsed.data.deviceType === "mobile"
+        ? "mobile"
+        : resolveDeviceIntent(userPrompt);
 
     const conceptCount = targetPage ? 1 : clampConceptCount(
       parsed.data.conceptCount ?? resolveRequestedConceptCount(userPrompt) ?? 3,
@@ -146,6 +153,7 @@ export async function POST(request: Request, context: RouteContext) {
           : composeConceptBatchPrompt({
               userPrompt,
               conceptCount: 1,
+              ...(deviceType === "mobile" ? { device: "mobile" as const } : {}),
               ...(conceptCount > 1
                 ? { direction: CONCEPT_DIRECTIONS[index % CONCEPT_DIRECTIONS.length] }
                 : {}),
