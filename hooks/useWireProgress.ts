@@ -14,6 +14,7 @@ export interface WireProgressState {
   pageStatusById: Record<string, WireProgressPageStatus>;
   planningSummary: string | null;
   suggestions: string[];
+  notice: string | null;
 }
 
 const EMPTY_PROGRESS: WireProgressState = {
@@ -22,6 +23,7 @@ const EMPTY_PROGRESS: WireProgressState = {
   pageStatusById: {},
   planningSummary: null,
   suggestions: [],
+  notice: null,
 };
 
 export const useWireProgress = (data: unknown[] | undefined): WireProgressState =>
@@ -34,6 +36,7 @@ export const useWireProgress = (data: unknown[] | undefined): WireProgressState 
       pageStatusById: {},
       planningSummary: null,
       suggestions: [],
+      notice: null,
     };
 
     for (const entry of data) {
@@ -53,6 +56,9 @@ export const useWireProgress = (data: unknown[] | undefined): WireProgressState 
           break;
         case "suggestions":
           next.suggestions = entry.chips;
+          break;
+        case "notice":
+          next.notice = entry.message;
           break;
         case "page":
           break;

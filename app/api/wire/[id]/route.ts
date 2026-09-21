@@ -36,6 +36,7 @@ import { buildFallbackDesignPlan, resolveDeviceIntent } from "@/lib/wireFallback
 import { validateDesignPlan } from "@/lib/wireGenerationTypes";
 import { mapPlanOutputsToTargets, runWithConcurrency } from "@/lib/wireGenerationOrchestrator";
 import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
+import { resolveSourceSiteContext } from "@/lib/urlContext";
 import { buildWireSuggestions } from "@/lib/wireSuggestions";
 import { type WireProgressEvent } from "@/lib/wireProgressEvents";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
@@ -637,6 +638,7 @@ const generateDesignBrief = async ({
   requestedGenerationMode,
   allowPlannerOutputCount = false,
   projectId,
+  sourceSiteContext = null,
 }: {
   modelName: WireModelName;
   googleApiKey?: string | null;
@@ -650,6 +652,7 @@ const generateDesignBrief = async ({
   requestedGenerationMode?: GenerationMode;
   allowPlannerOutputCount?: boolean;
   projectId: string;
+  sourceSiteContext?: string | null;
 }) => {
   const suggestedPreset = selectWireStylePreset({
     wireId: projectId,
@@ -684,6 +687,7 @@ const generateDesignBrief = async ({
         forceSinglePage,
         suggestedPreset,
         allowPlannerOutputCount,
+        sourceSiteContext,
       }),
     });
     plan = validateDesignPlan({
@@ -717,6 +721,7 @@ const generateDesignBrief = async ({
         targetPages,
         plan,
         suggestedPreset,
+        sourceSiteContext,
       }),
     });
 
@@ -1097,6 +1102,23 @@ export async function POST(request: Request, context: RouteContext) {
 
     emitProgress({ type: "stage", stage: "thinking" });
 
+    // A URL in the brief means a redesign of an existing site, so read what is
+    // on it before planning. Failure is not fatal: the run continues on the
+    // prompt alone and the user is told the site could not be read.
+    const sourceSite = await resolveSourceSiteContext({
+      projectId: id,
+      prompt: latestUserPrompt,
+    });
+    if (sourceSite.status !== "unused") {
+      emitProgress({ type: "stage", stage: "researching" });
+    }
+    if (sourceSite.status === "unavailable") {
+      emitProgress({
+        type: "notice",
+        message: `Couldn't load ${sourceSite.host} — designing from your description instead.`,
+      });
+    }
+
     const plannerTargetPages =
       resolvedTargetPages.length > 0
         ? resolvedTargetPages.map((page) => ({
@@ -1134,6 +1156,7 @@ export async function POST(request: Request, context: RouteContext) {
       requestedGenerationMode,
       allowPlannerOutputCount,
       projectId: id,
+      sourceSiteContext: sourceSite.status === "ready" ? sourceSite.contextText : null,
     });
 
     emitProgress({ type: "stage", stage: "planning" });

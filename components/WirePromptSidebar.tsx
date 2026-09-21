@@ -112,6 +112,7 @@ const LOCAL_AGENT_TIMEOUT_MS = 10 * 60_000;
 
 const STAGE_LABELS: Record<WireProgressStage, string> = {
   processing: "Processing your request…",
+  researching: "Reading the site you linked…",
   thinking: "Thinking about your request…",
   planning: "Planning the design…",
   generating: "Generating screens…",
@@ -1583,6 +1584,11 @@ export default function WirePromptSidebar({
               <Loader2 className="h-3 w-3 animate-spin" />
               {progress.stage ? STAGE_LABELS[progress.stage] : "Processing your request…"}
             </div>
+            {progress.notice ? (
+              <div className="mt-1 text-[11px] text-muted-foreground/80">
+                {progress.notice}
+              </div>
+            ) : null}
             {progress.planItems.length > 0 ? (
               <ul className="mt-2 space-y-1.5">
                 {progress.planItems.map((item) => {

@@ -1,5 +1,6 @@
 export type WireProgressStage =
   | "processing"
+  | "researching"
   | "thinking"
   | "planning"
   | "generating"
@@ -36,7 +37,8 @@ export type WireProgressEvent =
       detail?: string;
     }
   | { type: "planning-summary"; summary: string }
-  | { type: "suggestions"; chips: string[] };
+  | { type: "suggestions"; chips: string[] }
+  | { type: "notice"; message: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -46,6 +48,7 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 const STAGES: WireProgressStage[] = [
   "processing",
+  "researching",
   "thinking",
   "planning",
   "generating",
@@ -83,6 +86,8 @@ export const isWireProgressEvent = (value: unknown): value is WireProgressEvent 
       return isNonEmptyString(value.summary);
     case "suggestions":
       return Array.isArray(value.chips);
+    case "notice":
+      return isNonEmptyString(value.message);
     default:
       return false;
   }
