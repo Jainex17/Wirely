@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
@@ -26,6 +26,7 @@ import {
   RAW_CUSTOM_LOCAL_MODEL_PATTERN,
   WIRE_MODEL_OPTIONS,
   WIRE_MODEL_PROVIDER_LABEL,
+  fromCustomLocalModelId,
   isCustomLocalModelId,
   toCustomLocalModelId,
   type WireModelName,
@@ -166,7 +167,11 @@ export default function SettingsClient({
     const previousIds = enabledModelIds;
     setEnabledModelIds(nextIds);
     const snapshot = await patchSettings({ enabledModelIds: nextIds });
-    if (!snapshot) setEnabledModelIds(previousIds);
+    if (!snapshot) {
+      // A silent revert reads as "the toggle is broken" — say so.
+      setEnabledModelIds(previousIds);
+      toast.error("Could not save that change. Try again.");
+    }
   };
 
   const toggleModel = (modelId: WireModelName) =>
@@ -557,6 +562,47 @@ function ProvidersPanel({
   );
 }
 
+function ModelRow({
+  modelId,
+  label,
+  hint,
+  enabled,
+  onToggle,
+}: {
+  modelId: WireModelName;
+  label: string;
+  hint?: string;
+  enabled: boolean;
+  onToggle: (modelId: WireModelName) => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-accent/40 ${
+        enabled ? "bg-primary/5" : ""
+      }`}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {label}
+        </span>
+        {hint ? (
+          <span className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
+      </span>
+      <Switch
+        checked={enabled}
+        onCheckedChange={() => onToggle(modelId)}
+        aria-label={`${enabled ? "Disable" : "Enable"} ${label}`}
+      />
+    </label>
+  );
+}
+
+/** Rows shown before a "show more" button takes over; the search matches everything. */
+const VISIBLE_DISCOVERED_LIMIT = 10;
+
 function ModelsPanel({
   keys,
   enabledModelIds,
@@ -578,20 +624,48 @@ function ModelsPanel({
   onAddKey: (provider: ApiKeyProvider) => void;
   onOpenAgentTab: () => void;
 }) {
-  // One provider expanded at a time, all collapsed on arrival, so the tab opens
-  // as a short list of providers rather than every model at once.
-  const [openProvider, setOpenProvider] = useState<WireModelProvider | null>(null);
-  const [discoveredFilter, setDiscoveredFilter] = useState("");
+  // opencode starts open: it is the reason most people visit this tab, and a
+  // running agent means its section carries hundreds of searchable models.
+  const [openProvider, setOpenProvider] = useState<WireModelProvider | null>(
+    "opencode",
+  );
+  const [modelFilter, setModelFilter] = useState("");
+  const [showAllDiscovered, setShowAllDiscovered] = useState(false);
   const [modelInput, setModelInput] = useState("");
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [addModelError, setAddModelError] = useState<string | null>(null);
 
-  const normalizedDiscoveredFilter = discoveredFilter.trim().toLowerCase();
-  const visibleDiscoveredModels = normalizedDiscoveredFilter
-    ? discoveredLocalModelIds.filter((rawModel) =>
-        rawModel.toLowerCase().includes(normalizedDiscoveredFilter),
-      )
-    : discoveredLocalModelIds;
+  const normalizedFilter = modelFilter.trim().toLowerCase();
+  const isSearching = normalizedFilter.length > 0;
+  const matches = (text: string) =>
+    !isSearching || text.toLowerCase().includes(normalizedFilter);
+
+  const curatedLocalModels = WIRE_MODEL_OPTIONS.filter(
+    (model) => model.provider === "opencode",
+  );
+  // Enabled models float to the top: the point of this tab is picking the
+  // two or three you use, and they should not sink under hundreds of rows.
+  const discoveredRows = useMemo(() => {
+    const enabledIdSet = new Set(enabledModelIds);
+    return [...discoveredLocalModelIds].sort((a, b) => {
+      const aOn = enabledIdSet.has(toCustomLocalModelId(a)) ? 0 : 1;
+      const bOn = enabledIdSet.has(toCustomLocalModelId(b)) ? 0 : 1;
+      return aOn - bOn || a.localeCompare(b);
+    });
+  }, [discoveredLocalModelIds, enabledModelIds]);
+
+  const visibleCuratedModels = curatedLocalModels.filter(
+    (model) => matches(model.label) || matches(model.id),
+  );
+  const filteredDiscoveredModels = discoveredRows.filter(matches);
+  const visibleDiscoveredModels = isSearching
+    ? filteredDiscoveredModels
+    : filteredDiscoveredModels.slice(
+        0,
+        showAllDiscovered ? undefined : VISIBLE_DISCOVERED_LIMIT,
+      );
+  const hiddenDiscoveredCount =
+    filteredDiscoveredModels.length - visibleDiscoveredModels.length;
 
   const addLocalModel = async () => {
     const raw = modelInput.trim();
@@ -604,6 +678,7 @@ function ModelsPanel({
       setAddModelError(error);
       return;
     }
+    toast.success(`Added ${fromCustomLocalModelId(toCustomLocalModelId(raw))}.`);
     setModelInput("");
   };
 
@@ -635,6 +710,7 @@ function ModelsPanel({
             provider === "opencode" ? agentOnline : keys[provider as ApiKeyProvider];
 
           const expanded = openProvider === provider;
+          const isLocal = provider === "opencode";
 
           return (
             <div key={provider}>
@@ -659,7 +735,31 @@ function ModelsPanel({
                     </span>
                   </span>
                 </button>
-                {hasKey ? (
+                {!hasKey ? (
+                  provider === "opencode" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-foreground"
+                      onClick={onOpenAgentTab}
+                    >
+                      Connect agent
+                      <ArrowUpRight className="size-3.5" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-foreground"
+                      onClick={() => onAddKey(provider as ApiKeyProvider)}
+                    >
+                      Add key
+                      <ArrowUpRight className="size-3.5" />
+                    </Button>
+                  )
+                ) : provider === "opencode" ? null : (
                   <Button
                     type="button"
                     variant="ghost"
@@ -669,154 +769,140 @@ function ModelsPanel({
                   >
                     {allEnabled ? "Turn all off" : "Turn all on"}
                   </Button>
-                ) : provider === "opencode" ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-foreground"
-                    onClick={onOpenAgentTab}
-                  >
-                    Connect agent
-                    <ArrowUpRight className="size-3.5" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-foreground"
-                    onClick={() => onAddKey(provider as ApiKeyProvider)}
-                  >
-                    Add key
-                    <ArrowUpRight className="size-3.5" />
-                  </Button>
                 )}
               </div>
 
               {expanded ? (
-              <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card">
-                {models.map((model) => {
-                  const enabled = enabledModelIds.includes(model.id);
+                <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+                  {isLocal ? (
+                    <>
+                      <div className="border-b border-border/60 px-5 py-3">
+                        <input
+                          value={modelFilter}
+                          onChange={(event) => setModelFilter(event.target.value)}
+                          placeholder={
+                            discoveredLocalModelIds.length > 0
+                              ? `Search ${totalCount} models…`
+                              : "Search models…"
+                          }
+                          className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                      </div>
 
-                  return (
-                    <label
-                      key={model.id}
-                      className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/40"
-                    >
-                      <span className="min-w-0">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {model.label}
-                          </span>
-                          {model.tier === "paid" ? (
-                            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                              Billed
-                            </Badge>
-                          ) : null}
-                        </span>
-                        <span className="mt-1 block truncate font-mono text-[11px] text-muted-foreground">
-                          {model.id}
-                        </span>
-                      </span>
-                      <Switch
-                        checked={enabled}
-                        onCheckedChange={() => onToggleModel(model.id)}
-                        aria-label={`${enabled ? "Disable" : "Enable"} ${model.label}`}
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-              ) : null}
+                      {visibleCuratedModels.length > 0 ? (
+                        <>
+                          <p className="px-5 pb-1 pt-4 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Built-in · free
+                          </p>
+                          <div className="divide-y divide-border/60">
+                            {visibleCuratedModels.map((model) => (
+                              <ModelRow
+                                key={model.id}
+                                modelId={model.id}
+                                label={model.label}
+                                hint={model.id}
+                                enabled={enabledModelIds.includes(model.id)}
+                                onToggle={onToggleModel}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
 
-              {expanded && provider === "opencode" ? (
-                <div className="mt-4 rounded-xl border border-border/70 bg-card">
-                  <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4">
-                    <p className="text-sm font-medium text-foreground">
-                      Models from your machine
-                      <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                        {discoveredLocalModelIds.length}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="space-y-3 px-5 py-4">
-                    {discoveredLocalModelIds.length === 0 ? (
-                      <p className="text-sm leading-relaxed text-muted-foreground">
-                        Nothing reported yet. Start the agent once — it sends
-                        every model your opencode offers, and you switch on the
-                        few you want here.
-                      </p>
-                    ) : (
-                      <>
-                        {discoveredLocalModelIds.length > 8 ? (
-                          <input
-                            value={discoveredFilter}
-                            onChange={(event) => setDiscoveredFilter(event.target.value)}
-                            placeholder={`Search ${discoveredLocalModelIds.length} models…`}
-                            className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-                          />
-                        ) : null}
-                        <div className="max-h-80 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60">
-                          {visibleDiscoveredModels.map((rawModel) => {
-                            const modelId = toCustomLocalModelId(rawModel);
-                            const enabled = enabledModelIds.includes(modelId);
-
-                            return (
-                              <label
-                                key={rawModel}
-                                className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-accent/40"
-                              >
-                                <span className="truncate font-mono text-xs text-foreground">
-                                  {rawModel}
-                                </span>
-                                <Switch
-                                  checked={enabled}
-                                  onCheckedChange={() => onToggleModel(modelId)}
-                                  aria-label={`${enabled ? "Disable" : "Enable"} ${rawModel}`}
-                                />
-                              </label>
-                            );
-                          })}
-                          {visibleDiscoveredModels.length === 0 ? (
-                            <p className="px-4 py-3 text-sm text-muted-foreground">
-                              No models match that search.
+                      <div className="px-5 pb-1 pt-4 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                        {discoveredLocalModelIds.length > 0
+                          ? `From your machine · ${discoveredLocalModelIds.length} reported`
+                          : "From your machine"}
+                      </div>
+                      {discoveredLocalModelIds.length === 0 ? (
+                        <p className="px-5 pb-4 text-sm leading-relaxed text-muted-foreground">
+                          Start the agent once — it reports every model your
+                          opencode offers, and you switch on the few you want.
+                        </p>
+                      ) : (
+                        <div className="divide-y divide-border/60">
+                          {visibleDiscoveredModels.map((rawModel: string) => (
+                            <ModelRow
+                              key={rawModel}
+                              modelId={toCustomLocalModelId(rawModel)}
+                              label={rawModel}
+                              enabled={enabledModelIds.includes(
+                                toCustomLocalModelId(rawModel),
+                              )}
+                              onToggle={onToggleModel}
+                            />
+                          ))}
+                          {filteredDiscoveredModels.length === 0 ? (
+                            <p className="px-5 py-4 text-sm text-muted-foreground">
+                              {isSearching
+                                ? "No models match that search."
+                                : "No models reported yet."}
                             </p>
                           ) : null}
                         </div>
-                      </>
-                    )}
+                      )}
 
-                    <form
-                      className="space-y-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void addLocalModel();
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          value={modelInput}
-                          onChange={(event) => setModelInput(event.target.value)}
-                          placeholder="Can't find it? Add provider/model by name"
-                          spellCheck={false}
-                          className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-                        />
-                        <Button type="submit" size="sm" disabled={isAddingModel || !modelInput.trim()}>
-                          {isAddingModel ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Plus className="size-3.5" />
-                          )}
-                          Add
-                        </Button>
-                      </div>
-                      {addModelError ? (
-                        <p className="text-xs text-destructive">{addModelError}</p>
+                      {hiddenDiscoveredCount > 0 ? (
+                        <div className="border-t border-border/60 px-5 py-3">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => setShowAllDiscovered(true)}
+                          >
+                            Show {hiddenDiscoveredCount} more models
+                          </Button>
+                        </div>
                       ) : null}
-                    </form>
-                  </div>
+
+                      <form
+                        className="space-y-2 border-t border-border/60 px-5 py-4"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void addLocalModel();
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={modelInput}
+                            onChange={(event) => setModelInput(event.target.value)}
+                            placeholder="Missing one? Add provider/model by name"
+                            spellCheck={false}
+                            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={isAddingModel || !modelInput.trim()}
+                          >
+                            {isAddingModel ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="size-3.5" />
+                            )}
+                            Add
+                          </Button>
+                        </div>
+                        {addModelError ? (
+                          <p className="text-xs text-destructive">{addModelError}</p>
+                        ) : null}
+                      </form>
+                    </>
+                  ) : (
+                    <div className="divide-y divide-border/60">
+                      {models.map((model) => (
+                        <ModelRow
+                          key={model.id}
+                          modelId={model.id}
+                          label={model.label}
+                          hint={model.id}
+                          enabled={enabledModelIds.includes(model.id)}
+                          onToggle={onToggleModel}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : null}
 
