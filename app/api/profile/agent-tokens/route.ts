@@ -15,6 +15,9 @@ export async function GET() {
   try {
     const sessionUser = await getRequestSessionUser();
     if (!sessionUser) {
+      // The 401 itself is normal for an expired session; the log line is what
+      // makes an unexpected spike of these findable in production logs.
+      logger.warn("profile.agent_tokens.unauthenticated");
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
@@ -38,6 +41,7 @@ export async function POST(request: Request) {
   try {
     const sessionUser = await getRequestSessionUser();
     if (!sessionUser) {
+      logger.warn("profile.agent_tokens.unauthenticated");
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
@@ -64,6 +68,7 @@ export async function DELETE(request: Request) {
   try {
     const sessionUser = await getRequestSessionUser();
     if (!sessionUser) {
+      logger.warn("profile.agent_tokens.unauthenticated");
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
