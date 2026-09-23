@@ -29,7 +29,7 @@ Needs Node 18 or newer, and [opencode](https://opencode.ai) on your `PATH`. Chec
 
 ## Use
 
-Mint a token in Wirely under **Settings → Local agent**, then:
+Mint a token in Wirely under **Settings → MCP**, then:
 
 ```sh
 wirely-agent login <token>

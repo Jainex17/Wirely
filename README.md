@@ -173,6 +173,21 @@ Local agent routes (see "Local agent" below):
 - `DELETE /api/profile/agent-tokens` - revoke an agent token.
 - `GET /api/agent/jobs/next` - long-poll claim endpoint, bearer auth only.
 - `POST /api/agent/jobs/[jobId]/result` - agent reports back, bearer auth only.
+- `POST /api/mcp` - MCP server (stateless streamable HTTP), bearer auth only; see "MCP server" below.
+
+## MCP server (drive Wirely from an agent)
+
+`POST /api/mcp` is a stateless MCP endpoint: clients POST JSON-RPC messages and read one JSON
+body back — no SSE session, nothing stored between requests, so it runs as an ordinary
+serverless function. It authenticates with the same personal bearer tokens as the local agent
+(minted in Settings → MCP), and never with a Clerk session.
+
+The client's own model does the designing; Wirely stores the results and shows them on the
+canvas. Tools: `list_projects`, `create_project`, `list_pages`, `add_page`, `update_page`,
+`get_page`, `get_page_png`, `delete_page`. Screen HTML passes through the same sandbox
+sanitizer as generated pages, and `get_page_png` renders the stored document with headless
+Chromium (`CHROME_PATH` picks the local browser in development; deployments use
+`@sparticuz/chromium`).
 
 ## Local agent (bring your own subscription)
 
@@ -187,7 +202,7 @@ and nothing else.
 Setup:
 
 1. Install opencode (1.18.0 or newer) and sign in with `opencode auth login`.
-2. Mint a token in Wirely settings, under Local agent.
+2. Mint a token in Wirely settings, under MCP.
 3. `npm install -g wirely-agent`.
 4. `wirely-agent login <token>`, then `wirely-agent`.
 

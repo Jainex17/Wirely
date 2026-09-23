@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   description: "Account, provider keys, and model access for Wirely.",
 };
 
-const TABS: SettingsTab[] = ["account", "providers", "models", "agent"];
+const TABS: SettingsTab[] = ["account", "providers", "models", "mcp"];
 
 const toTab = (value: string | undefined): SettingsTab =>
   TABS.find((tab) => tab === value) ?? "account";

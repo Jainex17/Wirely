@@ -36,9 +36,9 @@ import ApiKeyDialog, {
   PROVIDERS,
   type ApiKeyProvider,
 } from "./ApiKeyDialog";
-import LocalAgentPanel, { type AgentTokenSummary } from "./LocalAgentPanel";
+import McpPanel, { type AgentTokenSummary } from "./McpPanel";
 
-export type SettingsTab = "account" | "providers" | "models" | "agent";
+export type SettingsTab = "account" | "providers" | "models" | "mcp";
 export type ProviderKeys = Record<ApiKeyProvider, boolean>;
 
 interface SettingsClientProps {
@@ -247,11 +247,7 @@ export default function SettingsClient({
               label="Models"
               meta={`${enabledModelIds.length}/${WIRE_MODEL_OPTIONS.length}`}
             />
-            <SettingsTabTrigger
-              value="agent"
-              label="Local agent"
-              meta={initialAgentOnline ? "on" : undefined}
-            />
+            <SettingsTabTrigger value="mcp" label="MCP" />
           </TabsList>
 
           <TabsContent value="account" className="pt-10">
@@ -272,15 +268,12 @@ export default function SettingsClient({
               onToggleProvider={setProviderModels}
               onAddLocalModel={addLocalModel}
               onAddKey={setDialogProvider}
-              onOpenAgentTab={() => setTab("agent")}
+              onOpenMcpTab={() => setTab("mcp")}
             />
           </TabsContent>
 
-          <TabsContent value="agent" className="pt-10">
-            <LocalAgentPanel
-              initialTokens={initialAgentTokens}
-              initialOnline={initialAgentOnline}
-            />
+          <TabsContent value="mcp" className="pt-10">
+            <McpPanel initialTokens={initialAgentTokens} />
           </TabsContent>
         </Tabs>
       </div>
@@ -612,7 +605,7 @@ function ModelsPanel({
   onToggleProvider,
   onAddLocalModel,
   onAddKey,
-  onOpenAgentTab,
+  onOpenMcpTab,
 }: {
   keys: ProviderKeys;
   enabledModelIds: WireModelName[];
@@ -622,7 +615,7 @@ function ModelsPanel({
   onToggleProvider: (provider: WireModelProvider, enabled: boolean) => void;
   onAddLocalModel: (rawModel: string) => Promise<string | null>;
   onAddKey: (provider: ApiKeyProvider) => void;
-  onOpenAgentTab: () => void;
+  onOpenMcpTab: () => void;
 }) {
   // opencode starts open: it is the reason most people visit this tab, and a
   // running agent means its section carries hundreds of searchable models.
@@ -742,9 +735,9 @@ function ModelsPanel({
                       variant="ghost"
                       size="sm"
                       className="text-foreground"
-                      onClick={onOpenAgentTab}
+                      onClick={onOpenMcpTab}
                     >
-                      Connect agent
+                      Set up MCP
                       <ArrowUpRight className="size-3.5" />
                     </Button>
                   ) : (

@@ -24,6 +24,8 @@ const securityHeaders = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Both ship native or binary assets that the bundler must not trace apart.
+  serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium"],
   async headers() {
     return [
       {

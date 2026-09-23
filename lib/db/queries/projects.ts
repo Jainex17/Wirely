@@ -193,11 +193,14 @@ export const createProjectPageForUser = async ({
   userId,
   title,
   deviceType,
+  htmlContent,
 }: {
   projectId: string;
   userId: string;
   title: string;
   deviceType?: PageDeviceType;
+  /** Pre-sanitized HTML. Callers must run `sanitizeIframeHtml` first. */
+  htmlContent?: string;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
@@ -216,7 +219,7 @@ export const createProjectPageForUser = async ({
       projectId,
       title,
       sortOrder: (lastPage?.sortOrder ?? -1) + 1,
-      htmlContent: "",
+      htmlContent: htmlContent ?? "",
       ...(deviceType ? { deviceType } : {}),
     })
     .returning();
