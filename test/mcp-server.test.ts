@@ -205,6 +205,19 @@ describe("mcp route boundary", () => {
   });
 });
 
+describe("screenshot deploy config", () => {
+  const config = read("next.config.ts");
+
+  it("ships the chromium binaries the file tracer cannot see", () => {
+    // @sparticuz/chromium resolves bin/ at runtime from import.meta.url, so
+    // Vercel's tracer skips the .br archives and get_page_png fails only in
+    // production without this entry.
+    expect(config.includes("outputFileTracingIncludes")).toBe(true);
+    expect(config.includes("@sparticuz/chromium/bin")).toBe(true);
+    expect(config.includes('"/api/mcp"')).toBe(true);
+  });
+});
+
 describe("html sanitizer boundary", () => {
   it("sanitizes before either write path persists", () => {
     const tools = read("lib/mcp/tools.ts");
