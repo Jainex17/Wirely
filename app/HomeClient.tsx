@@ -409,7 +409,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
           <div className="hero-foot pointer-events-none absolute inset-x-0 bottom-0 h-16 -z-10" />
 
-          <div className="mx-auto w-full max-w-3xl px-4 py-14 text-center sm:px-6">
+          <div className="mx-auto w-full max-w-3xl -translate-y-12 px-4 py-14 text-center sm:px-6">
           <h1 className="enter enter-1 font-display text-[clamp(1.9rem,4vw,2.9rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-foreground">
             What are we building{firstName ? `, ${firstName}` : ""}?
           </h1>
