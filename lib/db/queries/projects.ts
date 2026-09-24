@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import {
   conversationMessages,
@@ -9,7 +9,6 @@ import {
   type ProjectStatus,
 } from "@/lib/db/schema";
 import type { PageDeviceType } from "@/lib/types";
-import { getLatestGenerationRunWithOutputsForProject } from "@/lib/db/queries/generationRuns";
 
 export const createProject = async (userId: string, title: string) => {
   const db = getDb();
@@ -81,37 +80,51 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
   const project = await getProjectForUser(projectId, userId);
   if (!project) return null;
 
-  const [pages, conversationResult, latestGeneration] = await Promise.all([
+  // Pages and messages are independent once the ownership gate passes. The
+  // messages query joins its conversation directly, so the conversation row is
+  // never read on its own and the whole detail loads in two round trips.
+  const [pages, messages] = await Promise.all([
     db
       .select()
       .from(projectPages)
       .where(eq(projectPages.projectId, projectId))
       .orderBy(asc(projectPages.sortOrder)),
     db
-      .select()
-      .from(conversations)
+      .select({ ...getTableColumns(conversationMessages) })
+      .from(conversationMessages)
+      .innerJoin(conversations, eq(conversationMessages.conversationId, conversations.id))
       .where(eq(conversations.projectId, projectId))
-      .limit(1),
-    getLatestGenerationRunWithOutputsForProject(projectId),
+      .orderBy(desc(conversationMessages.createdAt))
+      .limit(80),
   ]);
-  const [conversation] = conversationResult;
-
-  const messages = conversation
-    ? await db
-        .select()
-        .from(conversationMessages)
-        .where(eq(conversationMessages.conversationId, conversation.id))
-        .orderBy(desc(conversationMessages.createdAt))
-        .limit(80)
-    : [];
 
   return {
     project,
     pages,
-    conversation,
     messages: [...messages].reverse(),
-    latestGeneration,
   };
+};
+
+// The prototype viewer needs page HTML and the project title only. The full
+// project detail would drag the conversation history into a route that never
+// reads it, so playback loads through this narrower path.
+export const getProjectPlaybackForUser = async (projectId: string, userId: string) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const pages = await db
+    .select({
+      id: projectPages.id,
+      title: projectPages.title,
+      htmlContent: projectPages.htmlContent,
+      deviceType: projectPages.deviceType,
+    })
+    .from(projectPages)
+    .where(eq(projectPages.projectId, projectId))
+    .orderBy(asc(projectPages.sortOrder));
+
+  return { projectTitle: project.title, pages };
 };
 
 export const createProjectPage = async ({

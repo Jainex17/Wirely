@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import {
   generationOutputs,
@@ -230,55 +230,6 @@ export const updateGenerationOutput = async ({
     logMissingGenerationTables("update_output", error);
     return null;
   }
-};
-
-export const getLatestGenerationRunForProject = async (projectId: string) => {
-  const db = getDb();
-  try {
-    const [run] = await db
-      .select()
-      .from(generationRuns)
-      .where(eq(generationRuns.projectId, projectId))
-      .orderBy(desc(generationRuns.createdAt))
-      .limit(1);
-
-    return run ?? null;
-  } catch (error) {
-    if (!isMissingRelationError(error)) {
-      throw error;
-    }
-
-    logMissingGenerationTables("read_run", error);
-    return null;
-  }
-};
-
-export const listGenerationOutputsForRun = async (generationRunId: string) => {
-  const db = getDb();
-  try {
-    return await db
-      .select()
-      .from(generationOutputs)
-      .where(eq(generationOutputs.generationRunId, generationRunId))
-      .orderBy(asc(generationOutputs.outputIndex));
-  } catch (error) {
-    if (!isMissingRelationError(error)) {
-      throw error;
-    }
-
-    logMissingGenerationTables("read_outputs", error);
-    return [];
-  }
-};
-
-export const getLatestGenerationRunWithOutputsForProject = async (projectId: string) => {
-  const run = await getLatestGenerationRunForProject(projectId);
-  if (!run) {
-    return { run: null, outputs: [] };
-  }
-
-  const outputs = await listGenerationOutputsForRun(run.id);
-  return { run, outputs };
 };
 
 export const getGenerationOutputForRunAndPage = async ({
