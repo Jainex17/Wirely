@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUser } from "@/lib/auth/session";
-import { getProjectDetailForUser } from "@/lib/db/queries/projects";
+import { getProjectPlaybackForUser } from "@/lib/db/queries/projects";
 import { getPrototypeFlowForProject } from "@/lib/db/queries/prototypeFlows";
 import PrototypeViewer from "@/components/PrototypeViewer";
 
@@ -23,17 +23,17 @@ export default async function WirePrototypePage({
     redirect(`/login?next=/wire/${resolvedParams.id}/prototype`);
   }
 
-  const [projectDetail, flow] = await Promise.all([
-    getProjectDetailForUser(resolvedParams.id, sessionUser.id),
+  const [playback, flow] = await Promise.all([
+    getProjectPlaybackForUser(resolvedParams.id, sessionUser.id),
     getPrototypeFlowForProject(resolvedParams.id, sessionUser.id),
   ]);
 
-  if (!projectDetail || !flow || flow.pageIds.length === 0) {
+  if (!playback || !flow || flow.pageIds.length === 0) {
     notFound();
   }
 
   const pageById = new Map(
-    projectDetail.pages.map((page) => [
+    playback.pages.map((page) => [
       page.id,
       {
         id: page.id,
@@ -63,7 +63,7 @@ export default async function WirePrototypePage({
   return (
     <PrototypeViewer
       wireId={resolvedParams.id}
-      projectTitle={projectDetail.project.title}
+      projectTitle={playback.projectTitle}
       pages={flowPages}
       initialPageIndex={startPageIndex}
     />

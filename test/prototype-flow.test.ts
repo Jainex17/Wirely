@@ -28,7 +28,7 @@ describe("prototype flow wiring", () => {
     const source = read("app/wire/[id]/prototype/page.tsx");
 
     expect(source.includes("getPrototypeFlowForProject")).toBe(true);
-    expect(source.includes("getProjectDetailForUser")).toBe(true);
+    expect(source.includes("getProjectPlaybackForUser")).toBe(true);
     expect(source.includes("getServerSessionUser")).toBe(true);
     expect(source.includes("initialPageIndex")).toBe(true);
   });
