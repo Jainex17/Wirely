@@ -74,13 +74,6 @@ export type HomeGenerationMode =
   | "concept_variants"
   | "information_architecture";
 
-const EXAMPLE_PROMPT_CHIPS = [
-  "A landing page for a plant care subscription",
-  "A crypto portfolio dashboard with live charts",
-  "A mobile app for tracking hiking trails",
-  "A multi-page site for a design studio",
-] as const;
-
 interface HomeState {
   prompt: string;
   isSubmitting: boolean;
@@ -475,46 +468,16 @@ export default function HomeClient({ initialData }: HomeClientProps) {
             </div>
           </form>
 
-          {state.prompt.trim().length === 0 ? (
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {EXAMPLE_PROMPT_CHIPS.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => dispatch({ type: "patch", payload: { prompt: chip } })}
-                  className="rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur transition-colors hover:border-foreground/25 hover:text-foreground"
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          {hasNoEnabledModels || hasNoRunnableModels ? (
+          {hasNoEnabledModels ? (
             <p className="mt-6 text-sm text-muted-foreground">
-              {hasNoEnabledModels ? (
-                <>
-                  No models are switched on. Turn one on in{" "}
-                  <Link
-                    href="/setting?tab=models"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    Models
-                  </Link>
-                  .
-                </>
-              ) : (
-                <>
-                  The models you enabled need a provider key. Connect one in{" "}
-                  <Link
-                    href="/setting?tab=providers"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    Providers
-                  </Link>
-                  .
-                </>
-              )}
+              No models are switched on. Turn one on in{" "}
+              <Link
+                href="/setting?tab=models"
+                className="text-primary underline underline-offset-2"
+              >
+                Models
+              </Link>
+              .
             </p>
           ) : null}
 
