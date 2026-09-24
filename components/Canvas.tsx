@@ -174,9 +174,13 @@ export default function Canvas({
       });
       return {
         page,
-        device,
-        deviceWidth,
-        deviceHeight,
+        // Stable identity per layout, so the memoized PageRenderer does not
+        // re-render on camera-only changes like pan and zoom.
+        currentDevice: {
+          width: deviceWidth,
+          height: deviceHeight,
+          label: DEVICE_LABELS[device],
+        },
         position,
         frameHeight,
         bounds,
@@ -314,6 +318,11 @@ export default function Canvas({
 
       event.preventDefault();
 
+      // The camera is read fresh per event rather than closed over, so this
+      // callback stays stable and the listener effect subscribes once instead
+      // of re-subscribing on every camera tick.
+      const { camera, viewportSize } = useEditorStore.getState();
+
       if (event.ctrlKey || event.metaKey) {
         const isLikelyMouseWheel =
           event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL ||
@@ -344,7 +353,7 @@ export default function Canvas({
         y: -event.deltaY * 0.6,
       });
     },
-    [camera, canvasRef, panBy, setCamera, viewportSize],
+    [canvasRef, panBy, setCamera],
   );
 
   React.useEffect(() => {
@@ -554,7 +563,7 @@ export default function Canvas({
         movingPageId: pageId,
         position: candidatePosition,
         width:
-          draggedLayout?.deviceWidth ??
+          draggedLayout?.currentDevice.width ??
           pageBoundsById[pageId]?.width ??
           getPageFrameWidth(resolvePageFrameDevice(undefined, activeDevice)),
         height:
@@ -640,6 +649,9 @@ export default function Canvas({
           transformOrigin: "0 0",
           left: "50%",
           top: `${CANVAS_TOP_OFFSET}px`,
+          // Promote the scene to its own layer so pan and zoom composite on
+          // the GPU instead of repainting every frame on the main thread.
+          willChange: "transform",
         }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -677,11 +689,7 @@ export default function Canvas({
                   onEditPage={handlePageContextEdit}
                   onFocusPage={handlePageFocus}
                   onMeasuredHeightChange={handleMeasuredHeightChange}
-                  currentDevice={{
-                    width: pageLayout.deviceWidth,
-                    height: pageLayout.deviceHeight,
-                    label: DEVICE_LABELS[pageLayout.device],
-                  }}
+                  currentDevice={pageLayout.currentDevice}
                   status={pageStatuses[pageLayout.page.id] ?? null}
                   isOnlyPage={pages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
