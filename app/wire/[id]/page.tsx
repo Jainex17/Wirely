@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { getServerSessionUser } from "@/lib/auth/session";
+import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
-import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel } from "@/lib/wireModels";
 import WireEditor from "./WireEditor";
 
@@ -17,15 +16,17 @@ interface WirePageProps {
 
 export default async function WirePage({ params }: WirePageProps) {
   const resolvedParams = await params;
-  const sessionUser = await getServerSessionUser();
-  if (!sessionUser) {
+  // Identity and AI settings share one users row, so read them together.
+  const session = await getServerSessionUserWithAiSettings();
+  if (!session) {
     redirect(`/login?next=/wire/${resolvedParams.id}`);
   }
+  const { user: sessionUser, aiSettings } = session;
 
-  const [projectDetail, userAiSettings] = await Promise.all([
-    getProjectDetailForUser(resolvedParams.id, sessionUser.id),
-    getUserAiSettingsForGeneration(sessionUser.id),
-  ]);
+  const projectDetail = await getProjectDetailForUser(
+    resolvedParams.id,
+    sessionUser.id,
+  );
 
   if (!projectDetail) {
     notFound();
@@ -49,13 +50,12 @@ export default async function WirePage({ params }: WirePageProps) {
           },
         ];
   const projectTitle = projectDetail.project.title;
-  const initialModelName = userAiSettings
-    ? resolveRunnableWireModel(userAiSettings.enabledModelIds, {
-        google: Boolean(userAiSettings.googleApiKey),
-        openrouter: Boolean(userAiSettings.openRouterApiKey),
-        zai: Boolean(userAiSettings.zaiApiKey),
-      }) ?? DEFAULT_WIRE_MODEL
-    : DEFAULT_WIRE_MODEL;
+  const initialModelName =
+    resolveRunnableWireModel(aiSettings.enabledModelIds, {
+      google: aiSettings.hasGoogleApiKey,
+      openrouter: aiSettings.hasOpenRouterApiKey,
+      zai: aiSettings.hasZaiApiKey,
+    }) ?? DEFAULT_WIRE_MODEL;
 
   return (
     <WireEditor
