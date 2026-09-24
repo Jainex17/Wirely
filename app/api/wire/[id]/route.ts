@@ -1,4 +1,9 @@
-import { createDataStreamResponse, generateText, type DataStreamWriter } from "ai";
+import {
+  createDataStreamResponse,
+  generateText,
+  streamText,
+  type DataStreamWriter,
+} from "ai";
 import { getLanguageModel } from "@/lib/wireProviderClient";
 import {
   buildFallbackCritiqueReport,
@@ -39,6 +44,7 @@ import { buildWirePlanningSummary } from "@/lib/wirePlanningSummary";
 import { resolveSourceSiteContext } from "@/lib/urlContext";
 import { buildWireSuggestions } from "@/lib/wireSuggestions";
 import { type WireProgressEvent } from "@/lib/wireProgressEvents";
+import { buildStreamingPreviewHtml, collectStreamedText } from "@/lib/wireStreamPreview";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
@@ -1309,7 +1315,11 @@ export async function POST(request: Request, context: RouteContext) {
           title: item.output.title,
         });
 
-        const initialGeneration = await generateText({
+        // Streamed so the canvas can draw the page while the model writes it.
+        // The repair pass below stays non-streaming on purpose: the page keeps
+        // this first draft on screen under a repairing badge until the repaired
+        // page lands, instead of wiping back to an empty partial.
+        const initialStream = streamText({
           model: getLanguageModel({
             modelName: effectiveModelName,
             googleApiKey: userAiSettings.googleApiKey,
@@ -1338,8 +1348,17 @@ export async function POST(request: Request, context: RouteContext) {
               }),
           prompt: latestUserPrompt,
         });
+        const targetPageId = item.targetPageId;
+        const initialText = await collectStreamedText(
+          initialStream.fullStream,
+          (textSoFar) => {
+            if (!targetPageId) return;
+            const html = buildStreamingPreviewHtml(textSoFar);
+            if (html) emitProgress({ type: "page-preview", pageId: targetPageId, html });
+          },
+        );
 
-        const initialParsed = parseWireOutput(initialGeneration.text);
+        const initialParsed = parseWireOutput(initialText);
         const normalizedInitial = normalizeGeneratedHtml(initialParsed.html, {
           allowImages: outputAllowsImages,
         });

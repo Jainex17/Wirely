@@ -160,9 +160,14 @@ Notes:
 - `POST /api/wire/[id]` - main planning/generation/repair pipeline.
 - `GET /api/profile/ai-settings` - read provider-key/model settings flags.
 - `PATCH /api/profile/ai-settings` - update encrypted provider keys and enabled models.
+- `GET /api/projects/[projectId]/pages` - list pages. With `?since=<ISO time>` it returns only
+  pages written after that time, every page id, and the next cursor. The open editor polls it
+  every 2.5s while the tab is visible, so MCP edits show without a reload.
 - `POST /api/projects/[projectId]/pages` - create page.
 - `PATCH /api/projects/[projectId]/pages/[pageId]` - update page.
 - `DELETE /api/projects/[projectId]/pages/[pageId]` - delete page.
+- `GET /api/projects/[projectId]/pages/[pageId]/png` - render the saved page to a PNG with headless
+  Chromium, for the frame's "Copy image" button. Rate limited per user.
 
 Local agent routes (see "Local agent" below):
 
@@ -184,10 +189,13 @@ serverless function. It authenticates with the same personal bearer tokens as th
 
 The client's own model does the designing; Wirely stores the results and shows them on the
 canvas. Tools: `list_projects`, `create_project`, `list_pages`, `add_page`, `update_page`,
-`get_page`, `get_page_png`, `delete_page`. Screen HTML passes through the same sandbox
-sanitizer as generated pages, and `get_page_png` renders the stored document with headless
-Chromium (`CHROME_PATH` picks the local browser in development; deployments use
-`@sparticuz/chromium`).
+`patch_page`, `get_page`, `get_page_png`, `delete_page`. `patch_page` replaces one exact
+snippet, so an agent can write a page in chunks while the user watches. Screen HTML passes
+through the same sandbox sanitizer as generated pages. Every HTML write returns the
+`lib/wireQuality.ts` score and violation ids for the saved page. `get_page_png` renders the
+stored document with headless Chromium (`CHROME_PATH` picks the local browser in development,
+deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,
+clipped text, and low contrast text from the same render.
 
 ## Local agent (bring your own subscription)
 

@@ -103,6 +103,7 @@ export default function Canvas({
     pageStackOrder,
     pageFrameHeights,
     pageStatuses,
+    agentEdits,
     focusedPageId,
     beginSaving,
     endSaving,
@@ -122,6 +123,7 @@ export default function Canvas({
       pageStackOrder: state.pageStackOrder,
       pageFrameHeights: state.pageFrameHeights,
       pageStatuses: state.pageStatuses,
+      agentEdits: state.agentEdits,
       focusedPageId: state.focusedPageId,
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
@@ -690,7 +692,9 @@ export default function Canvas({
                   onFocusPage={handlePageFocus}
                   onMeasuredHeightChange={handleMeasuredHeightChange}
                   currentDevice={pageLayout.currentDevice}
+                  projectId={projectId}
                   status={pageStatuses[pageLayout.page.id] ?? null}
+                  agentEdit={agentEdits[pageLayout.page.id] ?? null}
                   isOnlyPage={pages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
                   frameHeight={pageLayout.frameHeight}

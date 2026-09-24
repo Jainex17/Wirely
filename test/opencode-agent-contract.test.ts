@@ -760,9 +760,9 @@ describe("editing an existing page", () => {
     expect(persist).toContain("...(isEdit ? {} : { title })");
   });
 
-  it("sends no target for the all-pages and new-page sentinels", () => {
+  it("sends a target only when the prompt resolves to one page", () => {
     const sidebar = read("components/WirePromptSidebar.tsx");
-    expect(sidebar).toContain("isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)");
+    expect(sidebar).toContain('target.kind === "page" ? target.pageId : null');
   });
 });
 

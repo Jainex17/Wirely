@@ -37,6 +37,18 @@ export interface PageStatusRecord {
   detail?: string;
 }
 
+/**
+ * The last HTML an agent wrote to a page, so the canvas can point a cursor at
+ * what changed. It applies only while the page still holds exactly `html`; any
+ * later write, including a user's, makes it stale without extra bookkeeping.
+ */
+export interface AgentEdit {
+  label: string;
+  html: string;
+  previousHtml: string;
+  at: number;
+}
+
 export interface CanvasState {
   camera: CameraState;
   activeDevice: DeviceType;
@@ -55,6 +67,7 @@ export interface ProjectState {
   selectedSectionId: string | null;
   draggingSectionId: string | null;
   pageStatuses: Record<string, PageStatusRecord>;
+  agentEdits: Record<string, AgentEdit>;
 }
 
 export interface EditorState extends CanvasState, ProjectState {
@@ -91,24 +104,44 @@ export interface EditorState extends CanvasState, ProjectState {
     deviceType?: PageDeviceType,
   ) => string;
   renamePage: (pageId: string, newTitle: string) => void;
-  setPageHtml: (pageId: string, html: string, title?: string) => void;
+  /** Pass `agentLabel` only when an agent, not the user, wrote the HTML. */
+  setPageHtml: (pageId: string, html: string, title?: string, agentLabel?: string) => void;
   setPageDeviceType: (pageId: string, deviceType: PageDeviceType) => void;
   setPageStatus: (pageId: string, status: PageGenerationStatus, detail?: string) => void;
   clearPageStatuses: () => void;
-  hydrateProject: (pages: PageRecord[]) => void;
+  hydrateProject: (pages: PageRecord[], agentLabel?: string) => void;
+  applyServerPageChanges: (changes: ServerPageChanges) => void;
   deletePage: (pageId: string) => void;
   resetProject: () => void;
 }
 
+/** One poll of `GET /api/projects/[projectId]/pages?since=`. */
+export interface ServerPageChanges {
+  pageIds: string[];
+  changed: Array<{
+    id: string;
+    title: string;
+    htmlContent: string;
+    deviceType: string;
+  }>;
+}
+
+const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
+  "queued",
+  "generating",
+  "repairing",
+]);
+
 const generateEmptyState = (): Pick<
   ProjectState,
-  "pages" | "sections" | "selectedSectionId" | "draggingSectionId" | "pageStatuses"
+  "pages" | "sections" | "selectedSectionId" | "draggingSectionId" | "pageStatuses" | "agentEdits"
 > => ({
   pages: [{ id: "page-home", title: "Page 1", sections: [] }],
   sections: {},
   selectedSectionId: null,
   draggingSectionId: null,
   pageStatuses: {},
+  agentEdits: {},
 });
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
@@ -576,11 +609,12 @@ export const useEditorStore = create<EditorState>()(
           return { pages: newPages };
         }),
 
-      setPageHtml: (pageId, html, title) =>
+      setPageHtml: (pageId, html, title, agentLabel) =>
         set((state) => {
           const pageIndex = state.pages.findIndex((p) => p.id === pageId);
           if (pageIndex === -1) return state;
 
+          const previousHtml = state.pages[pageIndex].iframeHtml ?? "";
           const newPages = [...state.pages];
           newPages[pageIndex] = {
             ...newPages[pageIndex],
@@ -591,6 +625,14 @@ export const useEditorStore = create<EditorState>()(
 
           return {
             pages: newPages,
+            ...(agentLabel && html !== previousHtml
+              ? {
+                  agentEdits: {
+                    ...state.agentEdits,
+                    [pageId]: { label: agentLabel, html, previousHtml, at: Date.now() },
+                  },
+                }
+              : {}),
           };
         }),
 
@@ -623,16 +665,30 @@ export const useEditorStore = create<EditorState>()(
 
       clearPageStatuses: () => set({ pageStatuses: {} }),
 
-      hydrateProject: (pages) =>
+      hydrateProject: (pages, agentLabel) =>
         set((state) => {
           const nextPages =
             pages.length > 0
               ? pages
               : [{ id: "page-home", title: "Page 1", sections: [] }];
           const nextPageIds = nextPages.map((page) => page.id);
+          const previousHtmlById = new Map(
+            state.pages.map((page) => [page.id, page.iframeHtml ?? ""]),
+          );
+          const agentEdits: Record<string, AgentEdit> = {};
+          if (agentLabel) {
+            for (const page of nextPages) {
+              const html = page.iframeHtml ?? "";
+              const previousHtml = previousHtmlById.get(page.id) ?? "";
+              if (html && html !== previousHtml) {
+                agentEdits[page.id] = { label: agentLabel, html, previousHtml, at: Date.now() };
+              }
+            }
+          }
 
           return {
             ...generateEmptyState(),
+            agentEdits,
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
@@ -640,6 +696,112 @@ export const useEditorStore = create<EditorState>()(
               state.pageFrameHeights,
               nextPageIds,
             ),
+            focusedPageId:
+              state.focusedPageId && nextPageIds.includes(state.focusedPageId)
+                ? state.focusedPageId
+                : nextPageIds[0] ?? null,
+          };
+        }),
+
+      applyServerPageChanges: ({ pageIds, changed }) =>
+        set((state) => {
+          // An in-flight save means the store is ahead of the server, and a
+          // poll that read the old row would roll the user's edit back. The
+          // next poll after the save lands carries the settled value.
+          if (state.pendingSaveCount > 0) return state;
+
+          // Pages mid-generation belong to the chat run, which writes them
+          // itself when it finishes.
+          const isBusy = (pageId: string) => {
+            const status = state.pageStatuses[pageId]?.status;
+            return status !== undefined && ACTIVE_GENERATION_STATUSES.has(status);
+          };
+
+          const serverIds = new Set(pageIds);
+          // An empty list means the project has no rows yet and the store holds
+          // its placeholder page, which must not be removed.
+          let pages =
+            serverIds.size > 0
+              ? state.pages.filter((page) => serverIds.has(page.id) || isBusy(page.id))
+              : state.pages;
+          let didChange = pages.length !== state.pages.length;
+          const addedPositions: PagePositionMap = {};
+          let agentEdits = state.agentEdits;
+          // The poll cannot tell which tool wrote a page, only that it was not
+          // this tab, so the cursor carries a generic label.
+          const recordAgentEdit = (pageId: string, previousHtml: string, html: string) => {
+            if (html === previousHtml) return;
+            agentEdits = {
+              ...agentEdits,
+              [pageId]: { label: "Agent", html, previousHtml, at: Date.now() },
+            };
+          };
+
+          for (const incoming of changed) {
+            if (isBusy(incoming.id)) continue;
+            const deviceType: PageDeviceType =
+              incoming.deviceType === "mobile" ? "mobile" : "desktop";
+            const index = pages.findIndex((page) => page.id === incoming.id);
+
+            if (index === -1) {
+              addedPositions[incoming.id] = getNextCreatedPagePosition(
+                {
+                  ...state,
+                  pages,
+                  pagePositions: { ...state.pagePositions, ...addedPositions },
+                },
+                deviceType,
+              );
+              recordAgentEdit(incoming.id, "", incoming.htmlContent);
+              pages = [
+                ...pages,
+                {
+                  id: incoming.id,
+                  title: incoming.title,
+                  iframeHtml: incoming.htmlContent,
+                  deviceType,
+                  sections: [],
+                },
+              ];
+              didChange = true;
+              continue;
+            }
+
+            const current = pages[index];
+            if (
+              current.title === incoming.title &&
+              (current.iframeHtml ?? "") === incoming.htmlContent &&
+              (current.deviceType ?? "desktop") === deviceType
+            ) {
+              continue;
+            }
+            recordAgentEdit(incoming.id, current.iframeHtml ?? "", incoming.htmlContent);
+            pages = pages.map((page, pageIndex) =>
+              pageIndex === index
+                ? {
+                    ...page,
+                    title: incoming.title,
+                    iframeHtml: incoming.htmlContent,
+                    iframeUrl: undefined,
+                    deviceType,
+                  }
+                : page,
+            );
+            didChange = true;
+          }
+
+          if (!didChange) return state;
+
+          const nextPageIds = pages.map((page) => page.id);
+          return {
+            pages,
+            agentEdits,
+            pagePositions: filterPagePositions(
+              { ...state.pagePositions, ...addedPositions },
+              nextPageIds,
+            ),
+            pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
+            pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId

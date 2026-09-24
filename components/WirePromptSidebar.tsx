@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
+  type SyntheticEvent,
 } from "react";
 import { useChat } from "ai/react";
 import type { Message } from "ai";
@@ -51,12 +53,13 @@ import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
 import GeminiIcon from "@/components/icons/GeminiIcon";
 import {
-  ALL_PAGES_PROMPT_TARGET_ID,
-  isAllPagesPromptTarget,
-  isNewPagePromptTarget,
-  NEW_PAGE_PROMPT_TARGET_ID,
-  resolvePromptTargetPageId,
-  resolvePromptTargetPageTitle,
+  filterMentionPages,
+  findMentionQuery,
+  inferPromptTarget,
+  MAX_PROMPT_TARGET_PAGES,
+  mentionLabel,
+  pruneMentions,
+  type PromptMention,
 } from "@/lib/wirePromptTarget";
 import {
   getWireConversationModelUsage,
@@ -73,7 +76,6 @@ import type {
 
 interface WirePromptSidebarProps {
   wireId: string;
-  variant?: "floating" | "panel";
   initialModelName?: WireModelName;
   initialMessages?: Array<
     Message &
@@ -81,8 +83,6 @@ interface WirePromptSidebarProps {
         planningSummary?: string | null;
       }
   >;
-  selectedPageId: string | null;
-  onSelectedPageIdChange: (pageId: string | null) => void;
   focusRequestKey?: number;
 }
 
@@ -148,6 +148,13 @@ const GENERATION_FAILURE_PREVIEW_HTML = [
   "</body>",
   "</html>",
 ].join("");
+
+// Local models are discovered at runtime and may be missing from the catalog,
+// so the raw id is the fallback label.
+const getModelLabel = (modelName: string) =>
+  fromCustomLocalModelId(modelName) ??
+  WIRE_MODEL_OPTIONS.find((option) => option.id === modelName)?.label ??
+  modelName;
 
 const hasChartIconQualityViolation = (violations: string[]) =>
   violations.some((violation) =>
@@ -258,14 +265,18 @@ const compactHistoryFromMessages = (
 
 export default function WirePromptSidebar({
   wireId,
-  variant = "floating",
   initialModelName = DEFAULT_WIRE_MODEL,
   initialMessages = [],
-  selectedPageId,
-  onSelectedPageIdChange,
   focusRequestKey = 0,
 }: WirePromptSidebarProps) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPromptText] = useState("");
+  const [mentions, setMentions] = useState<PromptMention[]>([]);
+  // Every prompt write goes through here so a mention whose text is gone,
+  // including after a send clears the box, never targets a page.
+  const setPrompt = useCallback((nextPrompt: string) => {
+    setPromptText(nextPrompt);
+    setMentions((current) => pruneMentions(nextPrompt, current));
+  }, []);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [qualityNotice, setQualityNotice] = useState<string | null>(null);
   const [activeModelName, setActiveModelName] =
@@ -307,7 +318,7 @@ export default function WirePromptSidebar({
 
   const autoRunRef = useRef(false);
   const { ref: promptTextareaRef, resize: resizePromptTextarea } =
-    useAutoGrowTextarea({ value: prompt });
+    useAutoGrowTextarea({ value: prompt, minRows: 4 });
   const latestPromptRef = useRef("");
   const pendingTargetPageIdRef = useRef<string | null>(null);
   const pendingCreatedPageIdRef = useRef<string | null>(null);
@@ -534,16 +545,17 @@ export default function WirePromptSidebar({
         typeof variationCount === "number" &&
         variationCount > 1 &&
         body.variationIndex === undefined;
-      const storePages = useEditorStore.getState().pages;
-      const effectiveTargetPageId = resolvePromptTargetPageId(
-        storePages,
-        selectedPageId,
-      );
+      const { pages: storePages, focusedPageId } = useEditorStore.getState();
+      const fallbackTarget = inferPromptTarget({
+        prompt: "",
+        mentionedPageIds: [],
+        pages: storePages,
+        focusedPageId,
+      });
       const targetPageId = isBatchRequest
         ? undefined
         : (pendingTargetPageIdRef.current ??
-          effectiveTargetPageId ??
-          undefined);
+          (fallbackTarget.kind === "page" ? fallbackTarget.pageId : undefined));
       const targetPage = targetPageId
         ? storePages.find((page) => page.id === targetPageId)
         : undefined;
@@ -853,6 +865,32 @@ export default function WirePromptSidebar({
     }
   }, [createPageLocal, data, renamePageLocal, setPageDeviceType, setPageStatus]);
 
+  // Streamed partial HTML goes into the page itself, so the existing sandboxed
+  // preview renders it. Once a page completes it keeps its last draft until the
+  // run's accepted HTML replaces it; a page that fails drops the draft for the
+  // HTML it had before the run.
+  useEffect(() => {
+    const pagesById = new Map(
+      useEditorStore.getState().pages.map((page) => [page.id, page.iframeHtml ?? ""]),
+    );
+    for (const [pageId, html] of Object.entries(progress.previewHtmlById)) {
+      const status = progress.pageStatusById[pageId];
+      const currentHtml = pagesById.get(pageId);
+      if (status === "generating" || status === "repairing") {
+        if (currentHtml !== html) {
+          setPageHtml(pageId, html, undefined, getModelLabel(pendingModelNameRef.current));
+        }
+      } else if (status === "failed" && currentHtml === html) {
+        restorePageAfterFailedGeneration(pageId);
+      }
+    }
+  }, [
+    progress.pageStatusById,
+    progress.previewHtmlById,
+    restorePageAfterFailedGeneration,
+    setPageHtml,
+  ]);
+
   useEffect(() => {
     const pendingUserMessageId = pendingUserMessageIdRef.current;
     const summary = progress.planningSummary;
@@ -884,7 +922,7 @@ export default function WirePromptSidebar({
         textarea.setSelectionRange(cursorPosition, cursorPosition);
       });
     },
-    [promptTextareaRef],
+    [promptTextareaRef, setPrompt],
   );
 
   const startGenerationForPage = useCallback(
@@ -927,6 +965,9 @@ export default function WirePromptSidebar({
       hasShownErrorToastRef.current = false;
       latestPromptRef.current = trimmedPrompt;
       snapshotCurrentPageHtml([targetPageId]);
+      // Marked before the server's own queued event so the live page sync
+      // leaves this page alone while the run plans.
+      setPageStatus(targetPageId, "queued");
       setQualityNotice(null);
       setErrorMessage(null);
       setData([]);
@@ -983,6 +1024,7 @@ export default function WirePromptSidebar({
       isLoading,
       reportError,
       rollbackPendingCreatedPages,
+      setPageStatus,
       snapshotCurrentPageHtml,
       setData,
     ],
@@ -1026,6 +1068,7 @@ export default function WirePromptSidebar({
       setQualityNotice(null);
       setErrorMessage(null);
       markPagesAsLoading(targetPageIds);
+      for (const pageId of targetPageIds) setPageStatus(pageId, "queued");
       setData([]);
 
       const body = {
@@ -1083,6 +1126,7 @@ export default function WirePromptSidebar({
       markPagesAsLoading,
       reportError,
       rollbackPendingCreatedPages,
+      setPageStatus,
       snapshotCurrentPageHtml,
       setData,
     ],
@@ -1172,6 +1216,7 @@ export default function WirePromptSidebar({
               deviceType: page.deviceType ?? undefined,
               sections: [],
             })),
+            getModelLabel(runModel),
           );
         };
 
@@ -1252,16 +1297,30 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
+      const { pages: storePages, focusedPageId } = useEditorStore.getState();
+      const target = inferPromptTarget({
+        prompt,
+        mentionedPageIds: mentions.map((mention) => mention.pageId),
+        pages: storePages,
+        focusedPageId,
+      });
+      if (target.kind === "none") return;
+      if (target.kind === "pages" && target.droppedCount > 0) {
+        toast.message(
+          `A run can edit up to ${MAX_PROMPT_TARGET_PAGES} pages, so ${target.droppedCount} ` +
+            `${target.droppedCount === 1 ? "page was" : "pages were"} left out.`,
+        );
+      }
+
       // opencode models never reach the hosted route: they run on the user's
-      // machine. A selected page means revise that page; "all pages" means add
-      // a fresh batch of concepts to the project.
+      // machine, and the concepts route revises at most one page. A single
+      // target revises that page; a new page or several pages queue a fresh
+      // batch of concepts, which is what the old "All pages" choice did.
       if (isOpencodeWireModel(activeModelName)) {
         const generated = await startLocalAgentGeneration(
           prompt,
           undefined,
-          isAllPagesPromptTarget(selectedPageId) || isNewPagePromptTarget(selectedPageId)
-            ? null
-            : selectedPageId,
+          target.kind === "page" ? target.pageId : null,
         );
         if (generated) {
           setPrompt("");
@@ -1269,25 +1328,10 @@ export default function WirePromptSidebar({
         return;
       }
 
-      if (isAllPagesPromptTarget(selectedPageId)) {
-        const targetPageIds = useEditorStore.getState().pages.map((page) => page.id);
-        if (targetPageIds.length === 0) return;
-
-        if (targetPageIds.length === 1) {
-          const generated = await startGenerationForPage({
-            promptText: prompt,
-            targetPageId: targetPageIds[0],
-          });
-
-          if (generated) {
-            setPrompt("");
-          }
-          return;
-        }
-
+      if (target.kind === "pages") {
         const generated = await startBatchGeneration({
           promptText: prompt,
-          targetPageIds,
+          targetPageIds: target.pageIds,
           createdPageIds: [],
           modelName: activeModelName,
           generationMode: "information_architecture",
@@ -1299,9 +1343,9 @@ export default function WirePromptSidebar({
         return;
       }
 
-      if (isNewPagePromptTarget(selectedPageId)) {
+      if (target.kind === "new") {
         try {
-          const nextPageNumber = useEditorStore.getState().pages.length + 1;
+          const nextPageNumber = storePages.length + 1;
           const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
           createPageLocal(
             createdPage.title,
@@ -1309,7 +1353,6 @@ export default function WirePromptSidebar({
             createdPage.id,
             resolveDeviceIntent(prompt),
           );
-          onSelectedPageIdChange(createdPage.id);
 
           const generated = await startGenerationForPage({
             promptText: prompt,
@@ -1330,15 +1373,9 @@ export default function WirePromptSidebar({
         return;
       }
 
-      const targetPageId = resolvePromptTargetPageId(
-        useEditorStore.getState().pages,
-        selectedPageId,
-      );
-      if (!targetPageId) return;
-
       const generated = await startGenerationForPage({
         promptText: prompt,
-        targetPageId,
+        targetPageId: target.pageId,
       });
 
       if (generated) {
@@ -1349,10 +1386,10 @@ export default function WirePromptSidebar({
       createPageLocal,
       createPageOnServer,
       activeModelName,
-      onSelectedPageIdChange,
+      mentions,
       prompt,
       reportError,
-      selectedPageId,
+      setPrompt,
       startBatchGeneration,
       startGenerationForPage,
       startLocalAgentGeneration,
@@ -1360,13 +1397,7 @@ export default function WirePromptSidebar({
   );
 
   useEffect(() => {
-    const effectiveSelectedPageId = resolvePromptTargetPageId(
-      pages,
-      selectedPageId,
-    );
-    if (!focusRequestKey || (!effectiveSelectedPageId && !isAllPagesPromptTarget(selectedPageId))) {
-      return;
-    }
+    if (!focusRequestKey) return;
 
     const frameId = window.requestAnimationFrame(() => {
       const textarea = promptTextareaRef.current;
@@ -1379,7 +1410,7 @@ export default function WirePromptSidebar({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [focusRequestKey, pages, selectedPageId, promptTextareaRef]);
+  }, [focusRequestKey, promptTextareaRef]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1513,6 +1544,7 @@ export default function WirePromptSidebar({
     startGenerationForPage,
     startLocalAgentGeneration,
     reportError,
+    setPrompt,
     wireId,
   ]);
 
@@ -1529,18 +1561,17 @@ export default function WirePromptSidebar({
     [normalizedModelFilter],
   );
 
-  const containerClassName =
-    variant === "panel"
-      ? "h-full w-full p-4 flex flex-col gap-4 bg-transparent text-foreground"
-      : "fixed right-5 top-5 bottom-5 w-80 p-4 flex flex-col gap-4 bg-transparent text-sidebar-foreground";
-
   const renderedMessages = useMemo(() => {
     const lastUserMessageIndex = [...messages]
       .map((message, index) => ({ message, index }))
       .reverse()
       .find(({ message }) => message.role === "user")?.index;
 
-    const items = messages.flatMap((message, index) => {
+    const roleLabel = (label: string) => (
+      <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">{label}</div>
+    );
+
+    return messages.flatMap((message, index) => {
       const key = message.id ?? `${message.role}-${index}`;
       const modelUsage = getWireConversationModelUsage({
         selectedModelName:
@@ -1553,103 +1584,47 @@ export default function WirePromptSidebar({
           messageModelUsageById[key]?.criticModelName ??
           (message as SidebarMessage).criticModelName,
       });
-      const modelUsageUi = modelUsage ? (
-        <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] leading-4 opacity-70">
-          {modelUsage.selectedModelName ? (
-            <span>
-              {modelUsage.selectedModelName}
-            </span>
-          ) : null}
-          {modelUsage.hasSpecializedStages && modelUsage.plannerModelName ? (
-            <span>
-              Plan: {modelUsage.plannerModelName}
-            </span>
-          ) : null}
-          {modelUsage.hasSpecializedStages && modelUsage.criticModelName ? (
-            <span>
-              Critic: {modelUsage.criticModelName}
-            </span>
-          ) : null}
-        </div>
-      ) : null;
+
       if (message.role === "user") {
         const planningSummary =
           messagePlanningById[key] ??
           ((message as SidebarMessage).planningSummary?.trim() || "");
-        const userBubble = (
-          <div
-            key={key}
-            className={`ml-auto max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-primary text-primary-foreground"
-                : "bg-sidebar-accent text-sidebar-accent-foreground"
-            }`}
-          >
-            <div>{message.content}</div>
+        const userMessage = (
+          <div key={key} className="text-sm">
+            {roleLabel("You")}
+            <div className="whitespace-pre-wrap text-foreground">{message.content}</div>
           </div>
         );
 
         const isPendingLastUser = isLoading && index === lastUserMessageIndex;
 
         const progressPanel = isPendingLastUser ? (
-          <div
-            key={`${key}-progress`}
-            className={`mx-auto w-full max-w-[92%] rounded-xl border px-3 py-2.5 ${
-              variant === "panel"
-                ? "border-border bg-muted/30"
-                : "border-border/60 bg-sidebar/50"
-            }`}
-          >
-            <div
-              className={`flex items-center gap-2 text-[11px] font-medium ${
-                variant === "panel"
-                  ? "text-muted-foreground"
-                  : "text-sidebar-foreground/70"
-              }`}
-            >
+          <div key={`${key}-progress`} className="border-l border-border pl-3">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               {progress.stage ? STAGE_LABELS[progress.stage] : "Processing your request…"}
             </div>
             {progress.notice ? (
-              <div className="mt-1 text-[11px] text-muted-foreground/80">
-                {progress.notice}
-              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{progress.notice}</div>
             ) : null}
             {progress.planItems.length > 0 ? (
-              <ul className="mt-2 space-y-1.5">
+              <ul className="mt-1.5 space-y-1">
                 {progress.planItems.map((item) => {
                   const pageStatus = item.pageId
                     ? progress.pageStatusById[item.pageId]
                     : undefined;
                   return (
-                    <li
-                      key={item.id}
-                      className="flex items-center gap-2 text-xs"
-                    >
+                    <li key={item.id} className="flex items-center gap-2 text-xs">
                       {pageStatus === "completed" ? (
                         <Check className="h-3 w-3 shrink-0 text-primary" />
                       ) : pageStatus === "failed" ? (
                         <X className="h-3 w-3 shrink-0 text-destructive" />
                       ) : (
-                        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground/70" />
+                        <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
                       )}
-                      <span
-                        className={
-                          variant === "panel"
-                            ? "truncate text-foreground/85"
-                            : "truncate text-sidebar-foreground/85"
-                        }
-                      >
-                        {item.label}
-                      </span>
+                      <span className="truncate text-foreground">{item.label}</span>
                       {pageStatus ? (
-                        <span
-                          className={`ml-auto shrink-0 text-[10px] uppercase tracking-wide ${
-                            variant === "panel"
-                              ? "text-muted-foreground/70"
-                              : "text-sidebar-foreground/60"
-                          }`}
-                        >
+                        <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
                           {PAGE_STATUS_LABELS[pageStatus]}
                         </span>
                       ) : null}
@@ -1661,57 +1636,26 @@ export default function WirePromptSidebar({
           </div>
         ) : null;
 
-        const planningBubble =
+        const planningDetails =
           !isPendingLastUser && planningSummary ? (
-            <details
-              key={`${key}-planning`}
-              className="group mx-auto w-full max-w-[92%] py-1 text-center"
-            >
-              <summary
-                className={`flex cursor-pointer list-none items-center gap-4 text-[11px] font-medium transition-opacity hover:opacity-100 select-none marker:hidden ${
-                  variant === "panel"
-                    ? "text-muted-foreground opacity-80"
-                    : "text-sidebar-foreground/70 opacity-80"
-                }`}
-              >
+            <details key={`${key}-planning`} className="group text-[11px]">
+              <summary className="flex cursor-pointer list-none items-center gap-1 font-medium text-muted-foreground select-none marker:hidden hover:text-foreground">
+                Worked plan
                 <span
-                  className={`h-px flex-1 ${
-                    variant === "panel" ? "bg-border" : "bg-border/60"
-                  }`}
-                />
-                <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                  Worked plan
-                  <span
-                    aria-hidden="true"
-                    className="text-sm leading-none transition-transform duration-300 ease-out group-open:rotate-90"
-                  >
-                    ›
-                  </span>
+                  aria-hidden="true"
+                  className="text-sm leading-none transition-transform duration-200 group-open:rotate-90"
+                >
+                  ›
                 </span>
-                <span
-                  className={`h-px flex-1 ${
-                    variant === "panel" ? "bg-border" : "bg-border/60"
-                  }`}
-                />
               </summary>
-              <div className="grid grid-rows-[0fr] transition-[grid-template-rows,opacity,margin] duration-300 ease-out group-open:mt-2 group-open:grid-rows-[1fr]">
-                <div className="overflow-hidden">
-                  <div
-                    className={`whitespace-pre-wrap text-left text-[11px] leading-4 transition-transform duration-300 ease-out group-open:translate-y-0 translate-y-1 ${
-                      variant === "panel"
-                        ? "text-muted-foreground"
-                        : "text-sidebar-foreground/80"
-                    }`}
-                  >
-                    {planningSummary}
-                  </div>
-                </div>
+              <div className="mt-1 whitespace-pre-wrap leading-4 text-muted-foreground">
+                {planningSummary}
               </div>
             </details>
           ) : null;
 
-        const followUp = progressPanel ?? planningBubble;
-        return followUp ? [userBubble, followUp] : [userBubble];
+        const followUp = progressPanel ?? planningDetails;
+        return followUp ? [userMessage, followUp] : [userMessage];
       }
 
       if (message.role === "assistant") {
@@ -1719,32 +1663,28 @@ export default function WirePromptSidebar({
         if (!details) {
           return [];
         }
+        const selectedModelName = modelUsage?.selectedModelName;
         return [
-          <div
-            key={key}
-            className={`max-w-[90%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
-              variant === "panel"
-                ? "bg-muted text-foreground"
-                : "bg-sidebar/60 text-sidebar-foreground"
-            }`}
-          >
-            <div>{details}</div>
-            {modelUsageUi}
+          <div key={key} className="text-sm">
+            {roleLabel(selectedModelName ? getModelLabel(selectedModelName) : "Assistant")}
+            <div className="leading-relaxed text-foreground">{details}</div>
+            {modelUsage?.hasSpecializedStages ? (
+              <div className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+                {modelUsage.plannerModelName ? (
+                  <span>Plan: {getModelLabel(modelUsage.plannerModelName)}</span>
+                ) : null}
+                {modelUsage.criticModelName ? (
+                  <span>Critic: {getModelLabel(modelUsage.criticModelName)}</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>,
         ];
       }
 
       return [];
     });
-
-    return items;
-  }, [isLoading, messageModelUsageById, messagePlanningById, messages, progress, variant]);
-
-  const effectiveSelectedPageId = resolvePromptTargetPageId(pages, selectedPageId);
-  const selectedPageTitle = resolvePromptTargetPageTitle(
-    pages,
-    effectiveSelectedPageId,
-  );
+  }, [isLoading, messageModelUsageById, messagePlanningById, messages, progress]);
 
   const noModelsEnabled = enabledModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
@@ -1781,49 +1721,87 @@ export default function WirePromptSidebar({
     fromCustomLocalModelId(activeModelName) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
-  const dropdownContentClassName =
-    variant === "panel"
-      ? "border-border bg-card text-foreground shadow-xl"
-      : "border-border/70 bg-sidebar text-sidebar-foreground shadow-xl";
-  const dropdownItemClassName =
-    variant === "panel"
-      ? undefined
-      : "focus:bg-sidebar-accent focus:text-sidebar-accent-foreground";
+  // The @ popover. It is derived from the text and caret on every render, so
+  // there is no open flag to fall out of sync; Esc hides it until the caret
+  // moves to a different mention.
+  const [promptCaret, setPromptCaret] = useState(0);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [dismissedMentionStart, setDismissedMentionStart] = useState<number | null>(null);
+  const mentionQuery = findMentionQuery(
+    prompt,
+    promptCaret,
+    mentions.map((mention) => mention.label),
+  );
+  const mentionOptions =
+    mentionQuery && mentionQuery.start !== dismissedMentionStart
+      ? filterMentionPages(pages, mentionQuery.query)
+      : [];
+  const isMentionListOpen = mentionOptions.length > 0;
+  const activeMentionOption =
+    mentionOptions[Math.min(activeMentionIndex, mentionOptions.length - 1)];
+
+  const pickMention = (page: { id: string; title: string }) => {
+    const textarea = promptTextareaRef.current;
+    if (!mentionQuery || !textarea) return;
+    const label = mentionLabel(page);
+    const before = prompt.slice(0, mentionQuery.start);
+    const after = prompt.slice(promptCaret);
+    const inserted = `${label} `;
+    const nextPrompt = `${before}${inserted}${after}`;
+    setPromptText(nextPrompt);
+    setMentions((current) =>
+      pruneMentions(nextPrompt, [...current, { pageId: page.id, label }]),
+    );
+    const caret = before.length + inserted.length;
+    setPromptCaret(caret);
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+  };
+
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isMentionListOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setActiveMentionIndex(
+          (current) => (current + step + mentionOptions.length) % mentionOptions.length,
+        );
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && activeMentionOption) {
+        event.preventDefault();
+        pickMention(activeMentionOption);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissedMentionStart(mentionQuery?.start ?? null);
+        return;
+      }
+    }
+  };
+
+  const syncPromptCaret = (event: SyntheticEvent<HTMLTextAreaElement>) => {
+    setPromptCaret(event.currentTarget.selectionStart);
+  };
 
   return (
-    <aside className={containerClassName}>
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
+    <aside className="flex h-full w-full flex-col gap-3 bg-transparent p-4 text-foreground">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {renderedMessages}
         {errorMessage ? (
-          <div
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-destructive/10 text-destructive"
-                : "bg-sidebar/60 text-sidebar-foreground"
-            }`}
-          >
-            {errorMessage}
+          <div className="text-sm">
+            <div className="mb-0.5 text-[11px] font-medium text-destructive">Error</div>
+            <div className="text-destructive">{errorMessage}</div>
           </div>
         ) : null}
         {qualityNotice ? (
-          <div
-            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "bg-secondary text-secondary-foreground"
-                : "bg-sidebar/60 text-sidebar-foreground"
-            }`}
-          >
-            {qualityNotice}
-          </div>
+          <div className="text-sm text-muted-foreground">{qualityNotice}</div>
         ) : null}
         {noModelsEnabled ? (
-          <div
-            className={`max-w-[95%] rounded-xl px-4 py-3 text-sm ${
-              variant === "panel"
-                ? "border border-destructive/30 bg-destructive/5 text-destructive"
-                : "border border-border/60 bg-sidebar/60 text-sidebar-foreground"
-            }`}
-          >
+          <div className="text-sm text-destructive">
             No models are enabled. Open{" "}
             <Link href="/setting?tab=models" className="underline underline-offset-2">
               Models
@@ -1832,17 +1810,13 @@ export default function WirePromptSidebar({
           </div>
         ) : null}
         {!isLoading && !noModelsEnabled && progress.suggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-2 pr-1">
+          <div className="flex flex-wrap gap-1.5 pr-1">
             {progress.suggestions.map((chip) => (
               <button
                 key={chip}
                 type="button"
                 onClick={() => handleSuggestionClick(chip)}
-                className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                  variant === "panel"
-                    ? "border-border bg-muted/40 text-foreground/80 hover:bg-accent hover:text-accent-foreground"
-                    : "border-border/60 bg-sidebar/50 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
+                className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
               >
                 {chip}
               </button>
@@ -1851,205 +1825,158 @@ export default function WirePromptSidebar({
         ) : null}
       </div>
 
-      <form onSubmit={handleSubmit} className="shrink-0">
-        <div
-          className={`relative flex w-full flex-col overflow-hidden rounded-xl shadow-2xl transition-all ${
-            variant === "panel"
-              ? "border border-border bg-card"
-              : "border border-border/60 bg-sidebar/80"
-          }`}
-        >
-          {effectiveSelectedPageId ? (
-            <div className="px-2 pt-2">
-              <div
-                className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] ${
-                  variant === "panel"
-                    ? "border-border bg-muted/50 text-muted-foreground"
-                    : "border-border/60 bg-sidebar/50 text-sidebar-foreground/75"
+      <form onSubmit={handleSubmit} className="relative shrink-0">
+        {isMentionListOpen ? (
+          <ul
+            id="prompt-mention-list"
+            role="listbox"
+            aria-label="Pages"
+            className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-64 overflow-y-auto rounded-md border border-border bg-card p-1 text-sm shadow-lg"
+          >
+            {mentionOptions.map((page) => (
+              <li
+                key={page.id}
+                id={`prompt-mention-${page.id}`}
+                role="option"
+                aria-selected={page.id === activeMentionOption?.id}
+                className={`cursor-pointer truncate rounded px-2 py-1 ${
+                  page.id === activeMentionOption?.id
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground"
                 }`}
+                // Picking on mousedown keeps focus in the textarea.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  pickMention(page);
+                }}
               >
-                <span className="max-w-[180px] truncate normal-case tracking-normal text-foreground">
-                  {selectedPageTitle}
-                </span>
-              </div>
-            </div>
-          ) : null}
+                {page.title}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="flex w-full flex-col overflow-hidden rounded-lg border border-border bg-card">
           <textarea
             ref={promptTextareaRef}
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={(event) => {
+              setPrompt(event.target.value);
+              setPromptCaret(event.target.selectionStart);
+              setActiveMentionIndex(0);
+              setDismissedMentionStart(null);
+            }}
+            onKeyDown={handlePromptKeyDown}
+            onSelect={syncPromptCaret}
+            onClick={syncPromptCaret}
             onInput={resizePromptTextarea}
-            placeholder="Ask a follow-up..."
-            rows={3}
-            className={`mx-2 mt-2 w-[calc(100%-1rem)] resize-none rounded-md border px-3 pb-2 pt-3 text-sm leading-5 focus:outline-none focus-visible:outline-none focus:ring-0 ${
-              variant === "panel"
-                ? "border-border bg-muted/30 text-foreground placeholder:text-muted-foreground/60"
-                : "border-border/60 bg-sidebar/40 text-sidebar-foreground placeholder:text-sidebar-foreground/60"
-            }`}
+            placeholder="Describe a change, @ to pick a page"
+            rows={4}
+            role="combobox"
+            aria-expanded={isMentionListOpen}
+            aria-controls={isMentionListOpen ? "prompt-mention-list" : undefined}
+            aria-autocomplete="list"
+            aria-activedescendant={
+              isMentionListOpen && activeMentionOption
+                ? `prompt-mention-${activeMentionOption.id}`
+                : undefined
+            }
+            className="w-full resize-none bg-transparent px-3 pb-2 pt-3 text-sm leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
-          <div
-            className={`flex items-center justify-between gap-2 px-2 pb-2 pt-1 ${
-              variant === "panel" ? "border-t border-border/60" : "border-t border-border/60"
-            }`}
-          >
-            <div className="flex min-w-0 items-center gap-1.5">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={`flex h-8 items-center gap-1 rounded-md px-2 text-xs ${
-                      variant === "panel"
-                        ? "text-muted-foreground hover:bg-accent"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
-                    }`}
-                    disabled={noModelsEnabled}
-                  >
-                    <GeminiIcon className="h-3 w-3 text-primary" />
-                    {activeModelLabel}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className={dropdownContentClassName}>
-                  {groupedEnabledModels.local.length +
-                    groupedEnabledModels.google.length +
-                    groupedEnabledModels.openrouter.length +
-                    groupedEnabledModels.zai.length +
-                    groupedEnabledModels.opencode.length >
-                  12 ? (
-                    <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
-                      <input
-                        value={modelFilter}
-                        onChange={(event) => setModelFilter(event.target.value)}
-                        placeholder="Search models…"
-                        className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-                  ) : null}
-                  {(["opencode", "local", "google", "openrouter", "zai"] as const).map((provider, index) => {
-                    const providerModels = groupedEnabledModels[provider]
-                      .filter((model) => matchesModelFilter(model.label))
-                      .slice(0, 60);
-                    if (providerModels.length === 0) return null;
-
-                    return (
-                      <DropdownMenuGroup key={provider}>
-                        {index > 0 ? <DropdownMenuSeparator /> : null}
-                        <DropdownMenuLabel className="px-2 py-1.5 text-xs">
-                          {WIRE_MODEL_PROVIDER_LABEL[provider]}
-                        </DropdownMenuLabel>
-                        {providerModels.map((model) => (
-                          <DropdownMenuItem
-                            key={model.id}
-                            onClick={() => handleModelSelection(model.id)}
-                            className={dropdownItemClassName}
-                          >
-                            <div className="flex w-full items-start gap-2">
-                              <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
-                              <span>{model.label}</span>
-                              <span
-                                className={`ml-auto mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
-                                  model.tier === "paid"
-                                    ? "bg-secondary text-secondary-foreground"
-                                    : "bg-muted text-muted-foreground"
-                                }`}
-                              >
-                                {model.tier}
-                              </span>
-                            </div>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuGroup>
-                    );
-                  })}
-                  {enabledModelIds.length === 0 ? (
-                    <DropdownMenuItem disabled className={dropdownItemClassName}>
-                      No models enabled
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={`flex h-8 max-w-[170px] items-center gap-1 rounded-md px-2 text-xs ${
-                      variant === "panel"
-                        ? "text-muted-foreground hover:bg-accent"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
-                    }`}
-                  >
-                    <span className="truncate">Edit: {selectedPageTitle}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className={dropdownContentClassName}>
-                  <DropdownMenuItem
-                    onClick={() => onSelectedPageIdChange(ALL_PAGES_PROMPT_TARGET_ID)}
-                    className={dropdownItemClassName}
-                  >
-                    All pages
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => onSelectedPageIdChange(NEW_PAGE_PROMPT_TARGET_ID)}
-                    className={dropdownItemClassName}
-                  >
-                    New page
-                  </DropdownMenuItem>
-                  {pages.map((page) => (
-                    <DropdownMenuItem
-                      key={page.id}
-                      onClick={() => onSelectedPageIdChange(page.id)}
-                      className={dropdownItemClassName}
-                    >
-                      {page.title}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {isLoading ? (
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  className={`h-8 w-8 shrink-0 ${
-                    variant === "panel"
-                      ? "text-muted-foreground hover:bg-accent"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60"
-                  }`}
-                  onClick={handleStopGeneration}
-                  aria-label="Stop generating"
-                  title="Stop generating"
+                  size="sm"
+                  className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent"
+                  disabled={noModelsEnabled}
                 >
-                  <Square className="h-3.5 w-3.5" />
+                  <GeminiIcon className="h-3 w-3 shrink-0 text-primary" />
+                  <span className="truncate">{activeModelLabel}</span>
+                  <ChevronDown className="h-3 w-3 shrink-0" />
                 </Button>
-              ) : null}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="border-border bg-card text-foreground shadow-xl">
+                {groupedEnabledModels.local.length +
+                  groupedEnabledModels.google.length +
+                  groupedEnabledModels.openrouter.length +
+                  groupedEnabledModels.zai.length +
+                  groupedEnabledModels.opencode.length >
+                12 ? (
+                  <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
+                    <input
+                      value={modelFilter}
+                      onChange={(event) => setModelFilter(event.target.value)}
+                      placeholder="Search models…"
+                      className="h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                ) : null}
+                {(["opencode", "local", "google", "openrouter", "zai"] as const).map((provider, index) => {
+                  const providerModels = groupedEnabledModels[provider]
+                    .filter((model) => matchesModelFilter(model.label))
+                    .slice(0, 60);
+                  if (providerModels.length === 0) return null;
+
+                  return (
+                    <DropdownMenuGroup key={provider}>
+                      {index > 0 ? <DropdownMenuSeparator /> : null}
+                      <DropdownMenuLabel className="px-2 py-1.5 text-xs">
+                        {WIRE_MODEL_PROVIDER_LABEL[provider]}
+                      </DropdownMenuLabel>
+                      {providerModels.map((model) => (
+                        <DropdownMenuItem
+                          key={model.id}
+                          onClick={() => handleModelSelection(model.id)}
+                        >
+                          <div className="flex w-full items-start gap-2">
+                            <GeminiIcon className="mr-1 mt-0.5 size-4 text-primary" />
+                            <span>{model.label}</span>
+                            <span
+                              className={`ml-auto mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                                model.tier === "paid"
+                                  ? "bg-secondary text-secondary-foreground"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {model.tier}
+                            </span>
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  );
+                })}
+                {enabledModelIds.length === 0 ? (
+                  <DropdownMenuItem disabled>No models enabled</DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {isLoading ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-accent"
+                onClick={handleStopGeneration}
+                aria-label="Stop generating"
+                title="Stop generating"
+              >
+                <Square className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
               <Button
                 type="submit"
-                disabled={
-                  isLoading ||
-                  !prompt.trim() ||
-                  !effectiveSelectedPageId ||
-                  noModelsEnabled
-                }
+                disabled={!prompt.trim() || pages.length === 0 || noModelsEnabled}
                 size="icon"
-                className={`h-8 w-8 shrink-0 ${
-                  variant === "panel"
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
-                    : "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/80 disabled:opacity-20"
-                }`}
+                className="h-8 w-8 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
                 aria-label="Send message"
               >
                 <Send className="h-4 w-4" />
               </Button>
-            </div>
+            )}
           </div>
         </div>
       </form>
