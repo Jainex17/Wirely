@@ -222,6 +222,39 @@ export const parseWireOutput = (raw: string): WireParsedOutput => {
   };
 };
 
+/**
+ * Cuts the renderable prefix out of a model response that is still streaming.
+ *
+ * The response can open with DETAILS and TITLE sections, a markdown fence, or
+ * prose, and it stops at an arbitrary character. Returns "" until the body has
+ * started, because a head alone previews as a blank frame. A trailing tag that
+ * has not closed yet is dropped, and so is a script or style block still being
+ * written, since its tail would otherwise render as page text.
+ */
+export const extractStreamingHtml = (raw: string): string => {
+  const start = raw.search(/<!doctype html|<html[\s>]/i);
+  if (start === -1) return "";
+
+  let html = raw.slice(start);
+  const fenceIndex = html.indexOf("```");
+  if (fenceIndex !== -1) html = html.slice(0, fenceIndex);
+
+  if (html.lastIndexOf("<") > html.lastIndexOf(">")) {
+    html = html.slice(0, html.lastIndexOf("<"));
+  }
+
+  const lower = html.toLowerCase();
+  for (const tag of ["script", "style"]) {
+    const open = lower.lastIndexOf(`<${tag}`);
+    if (open > lower.lastIndexOf(`</${tag}>`)) {
+      html = html.slice(0, open);
+      break;
+    }
+  }
+
+  return /<body[\s>]/i.test(html) ? html.trim() : "";
+};
+
 export const parseBatchWireOutput = (
   raw: string,
   expectedCount?: number,

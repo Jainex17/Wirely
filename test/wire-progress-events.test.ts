@@ -119,3 +119,15 @@ describe("isWireProgressEvent", () => {
     }
   });
 });
+
+describe("page-preview events", () => {
+  test("accepts a preview with html and rejects one without", () => {
+    expect(
+      isWireProgressEvent({ type: "page-preview", pageId: "page-1", html: "<html>" }),
+    ).toBe(true);
+    expect(isWireProgressEvent({ type: "page-preview", pageId: "page-1", html: "" })).toBe(
+      false,
+    );
+    expect(isWireProgressEvent({ type: "page-preview", html: "<html>" })).toBe(false);
+  });
+});

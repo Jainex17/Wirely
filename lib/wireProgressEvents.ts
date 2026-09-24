@@ -36,6 +36,12 @@ export type WireProgressEvent =
       status: WireProgressPageStatus;
       detail?: string;
     }
+  | {
+      /** Sanitized partial HTML of a page still streaming. Never persisted. */
+      type: "page-preview";
+      pageId: string;
+      html: string;
+    }
   | { type: "planning-summary"; summary: string }
   | { type: "suggestions"; chips: string[] }
   | { type: "notice"; message: string };
@@ -82,6 +88,8 @@ export const isWireProgressEvent = (value: unknown): value is WireProgressEvent 
         isNonEmptyString(value.pageId) &&
         PAGE_STATUSES.includes(value.status as WireProgressPageStatus)
       );
+    case "page-preview":
+      return isNonEmptyString(value.pageId) && isNonEmptyString(value.html);
     case "planning-summary":
       return isNonEmptyString(value.summary);
     case "suggestions":

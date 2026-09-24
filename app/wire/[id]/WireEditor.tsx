@@ -14,11 +14,10 @@ import EditorWorkspace from "@/components/EditorWorkspace";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { Button } from "@/components/ui/button";
-import { useEditorStore } from "@/store/useEditorStore";
+import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 import type { PersistedWireLayout } from "@/lib/types";
-import { resolvePromptTargetPageId } from "@/lib/wirePromptTarget";
 import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
 interface WireEditorProps {
@@ -33,6 +32,8 @@ interface WireEditorProps {
       deviceType: "desktop" | "mobile";
     }>;
   };
+  /** Server time the initial pages were read, the first change cursor. */
+  pagesLoadedAt: string;
   initialModelName: WireModelName;
   initialMessages: Array<
     Message &
@@ -44,19 +45,19 @@ interface WireEditorProps {
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
 
+const PAGE_SYNC_INTERVAL_MS = 2_500;
+
 export default function WireEditor({
   wireId,
   sessionUser,
   initialProject,
+  pagesLoadedAt,
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
   const { signOut } = useClerk();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [selectedPromptPageId, setSelectedPromptPageId] = useState<string | null>(
-    null,
-  );
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
   // Collapsing the prompt panel gives the canvas the whole window width; the
   // header toggle is the only affordance back, so the icon doubles as the
@@ -66,9 +67,9 @@ export default function WireEditor({
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
   const setFocusedPage = useEditorStore((state) => state.setFocusedPage);
+  const applyServerPageChanges = useEditorStore((state) => state.applyServerPageChanges);
   // Saving indicator hidden for now — restore with the header cloud icon.
   // const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
-  const pages = useEditorStore((state) => state.pages);
 
   useEffect(() => {
     hydrateProject(
@@ -97,15 +98,43 @@ export default function WireEditor({
     }
   }, [hydratePageLayout, wireId]);
 
+  // An MCP agent writes pages from outside this tab. Polling while the tab is
+  // visible shows those writes live without a reload; a hidden tab skips its
+  // ticks so it costs no requests.
+  useEffect(() => {
+    let cursor = pagesLoadedAt;
+    let inFlight = false;
+
+    const poll = async () => {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const response = await fetch(
+          `/api/projects/${wireId}/pages?since=${encodeURIComponent(cursor)}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) return;
+        const payload = (await response.json()) as ServerPageChanges & { cursor: string };
+        cursor = payload.cursor;
+        applyServerPageChanges(payload);
+      } catch {
+        // A dropped poll is retried on the next tick.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(poll, PAGE_SYNC_INTERVAL_MS);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [applyServerPageChanges, pagesLoadedAt, wireId]);
+
   useEffect(() => {
     router.prefetch("/");
   }, [router]);
-
-  useEffect(() => {
-    setSelectedPromptPageId((currentPageId) =>
-      resolvePromptTargetPageId(pages, currentPageId),
-    );
-  }, [pages]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -121,8 +150,8 @@ export default function WireEditor({
   };
 
   const handleEditPage = (pageId: string) => {
+    // The sidebar targets the focused page when the prompt names no other.
     setFocusedPage(pageId);
-    setSelectedPromptPageId(pageId);
     setPromptFocusRequestKey((currentKey) => currentKey + 1);
   };
 
@@ -240,12 +269,9 @@ export default function WireEditor({
               }
             >
               <WirePromptSidebar
-                variant="panel"
                 wireId={wireId}
                 initialModelName={initialModelName}
                 initialMessages={initialMessages}
-                selectedPageId={selectedPromptPageId}
-                onSelectedPageIdChange={setSelectedPromptPageId}
                 focusRequestKey={promptFocusRequestKey}
               />
             </div>

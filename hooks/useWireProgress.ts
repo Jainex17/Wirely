@@ -12,6 +12,8 @@ export interface WireProgressState {
   stage: WireProgressStage | null;
   planItems: WireProgressPlanItem[];
   pageStatusById: Record<string, WireProgressPageStatus>;
+  /** Latest streamed partial HTML per page, already sanitized by the server. */
+  previewHtmlById: Record<string, string>;
   planningSummary: string | null;
   suggestions: string[];
   notice: string | null;
@@ -21,6 +23,7 @@ const EMPTY_PROGRESS: WireProgressState = {
   stage: null,
   planItems: [],
   pageStatusById: {},
+  previewHtmlById: {},
   planningSummary: null,
   suggestions: [],
   notice: null,
@@ -34,6 +37,7 @@ export const useWireProgress = (data: unknown[] | undefined): WireProgressState 
       stage: null,
       planItems: [],
       pageStatusById: {},
+      previewHtmlById: {},
       planningSummary: null,
       suggestions: [],
       notice: null,
@@ -50,6 +54,9 @@ export const useWireProgress = (data: unknown[] | undefined): WireProgressState 
           break;
         case "page-status":
           next.pageStatusById[entry.pageId] = entry.status;
+          break;
+        case "page-preview":
+          next.previewHtmlById[entry.pageId] = entry.html;
           break;
         case "planning-summary":
           next.planningSummary = entry.summary;

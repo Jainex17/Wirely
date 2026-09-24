@@ -194,6 +194,31 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: "patch_page",
+    description:
+      "Replace one exact snippet of a page's HTML. oldString must occur exactly once in the " +
+      "stored source. Use it to write a page in chunks so the user watches it change live on " +
+      "the canvas. Stored HTML is sanitized, so call get_page first and copy oldString from " +
+      "that exact text.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
+        oldString: {
+          type: "string",
+          description: "Text copied from get_page. Include enough context to match once.",
+        },
+        newString: {
+          type: "string",
+          description: "Replacement text. May be empty to delete oldString.",
+        },
+      },
+      required: ["projectId", "pageId", "oldString", "newString"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_page",
     description: "Return a page's full HTML source so it can be read or revised.",
     inputSchema: {
@@ -210,7 +235,15 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       "Use it to look at a screen and iterate on it visually.",
     inputSchema: {
       type: "object",
-      properties: { projectId: PROJECT_ID, pageId: PAGE_ID },
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
+        lint: {
+          type: "boolean",
+          description:
+            "Also report horizontal overflow, clipped text, and low contrast text found in the render.",
+        },
+      },
       required: ["projectId", "pageId"],
       additionalProperties: false,
     },

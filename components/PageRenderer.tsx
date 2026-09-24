@@ -1,18 +1,21 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
+  Bot,
   Check,
   Copy,
-  Download,
   Eye,
   FileCode2,
   FileIcon,
+  ImageIcon,
   Loader2,
   MoreHorizontal,
   PencilLine,
   Trash2,
   X,
 } from "lucide-react";
+import { markAgentCursor } from "@/lib/agentCursor";
+import { buildAgentPrompt } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
@@ -38,7 +41,10 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import type { PageRenderMode } from "@/lib/canvasScene";
-import type { PageStatusRecord } from "@/store/useEditorStore";
+import type { AgentEdit, PageStatusRecord } from "@/store/useEditorStore";
+
+/** How long the agent cursor stays after the last change it points at. */
+const AGENT_CURSOR_LINGER_MS = 3_000;
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -73,7 +79,7 @@ const stabilizeViewportHeightClasses = (
 const injectIframeHeightReporter = (html: string, reporterId: string) => {
   if (!html) return html;
 
-  const script = `<script>(function(){const reporterId=${JSON.stringify(reporterId)};let rafId=0;const measure=()=>{const root=document.documentElement;const body=document.body;if(!root||!body)return;const bodyRect=body.getBoundingClientRect();let maxHeight=Math.max(root.scrollHeight||0,root.offsetHeight||0,root.clientHeight||0,body.scrollHeight||0,body.offsetHeight||0,body.clientHeight||0);const allElements=body.querySelectorAll("*");for(const node of allElements){const element=node;const computed=window.getComputedStyle(element);if(computed.display==="none")continue;const rect=element.getBoundingClientRect();const relativeTop=rect.top-bodyRect.top;const visualBottom=rect.bottom-bodyRect.top;const scrollBottom=relativeTop+Math.max(element.scrollHeight||0,element.clientHeight||0,element.offsetHeight||0);maxHeight=Math.max(maxHeight,visualBottom,scrollBottom);}window.parent.postMessage({type:"wirely-iframe-height",id:reporterId,height:Math.ceil(maxHeight)},"*");};const queueMeasure=()=>{if(rafId)return;rafId=window.requestAnimationFrame(()=>{rafId=0;measure();});};if(typeof ResizeObserver==="function"){const resizeObserver=new ResizeObserver(queueMeasure);resizeObserver.observe(document.documentElement);resizeObserver.observe(document.body);}if(typeof MutationObserver==="function"){const mutationObserver=new MutationObserver(queueMeasure);mutationObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});}window.addEventListener("load",queueMeasure);document.addEventListener("DOMContentLoaded",queueMeasure);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(queueMeasure).catch(()=>{});}window.setTimeout(queueMeasure,40);window.setTimeout(queueMeasure,180);window.setTimeout(queueMeasure,500);window.setTimeout(queueMeasure,1200);queueMeasure();})();</script>`;
+  const script = `<script>(function(){const reporterId=${JSON.stringify(reporterId)};let rafId=0;const measure=()=>{const root=document.documentElement;const body=document.body;if(!root||!body)return;const bodyRect=body.getBoundingClientRect();let maxHeight=Math.max(root.scrollHeight||0,root.offsetHeight||0,root.clientHeight||0,body.scrollHeight||0,body.offsetHeight||0,body.clientHeight||0);const allElements=body.querySelectorAll("*");for(const node of allElements){const element=node;const computed=window.getComputedStyle(element);if(computed.display==="none")continue;const rect=element.getBoundingClientRect();const relativeTop=rect.top-bodyRect.top;const visualBottom=rect.bottom-bodyRect.top;const scrollBottom=relativeTop+Math.max(element.scrollHeight||0,element.clientHeight||0,element.offsetHeight||0);maxHeight=Math.max(maxHeight,visualBottom,scrollBottom);}window.parent.postMessage({type:"wirely-iframe-height",id:reporterId,height:Math.ceil(maxHeight)},"*");const cursorTarget=document.querySelector("[data-wirely-cursor]");if(cursorTarget){const cursorRect=cursorTarget.getBoundingClientRect();window.parent.postMessage({type:"wirely-iframe-cursor",id:reporterId,x:cursorRect.left+window.scrollX,y:cursorRect.top+window.scrollY},"*");}};const queueMeasure=()=>{if(rafId)return;rafId=window.requestAnimationFrame(()=>{rafId=0;measure();});};if(typeof ResizeObserver==="function"){const resizeObserver=new ResizeObserver(queueMeasure);resizeObserver.observe(document.documentElement);resizeObserver.observe(document.body);}if(typeof MutationObserver==="function"){const mutationObserver=new MutationObserver(queueMeasure);mutationObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});}window.addEventListener("load",queueMeasure);document.addEventListener("DOMContentLoaded",queueMeasure);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(queueMeasure).catch(()=>{});}window.setTimeout(queueMeasure,40);window.setTimeout(queueMeasure,180);window.setTimeout(queueMeasure,500);window.setTimeout(queueMeasure,1200);queueMeasure();})();</script>`;
 
   if (/<\/body>/i.test(html)) {
     return html.replace(/<\/body>/i, `${script}</body>`);
@@ -99,7 +105,10 @@ interface PageRendererProps {
     height: number;
     label: string;
   };
+  /** Present only for saved projects, where the server can render the page. */
+  projectId?: string;
   status?: PageStatusRecord | null;
+  agentEdit?: AgentEdit | null;
   isOnlyPage: boolean;
   isFocused: boolean;
   frameHeight: number;
@@ -190,7 +199,9 @@ export default React.memo(function PageRenderer({
   onFocusPage,
   onMeasuredHeightChange,
   currentDevice,
+  projectId,
   status,
+  agentEdit = null,
   isOnlyPage,
   isFocused,
   frameHeight,
@@ -244,11 +255,48 @@ export default React.memo(function PageRenderer({
         : "",
     [hasHtml, sanitizedHtml, currentDevice.height],
   );
+  // The cursor marker exists only in this srcdoc string. Stored page HTML,
+  // exports, and the preview dialog all read page.iframeHtml, which never
+  // carries it.
+  const cursorEdit = agentEdit && agentEdit.html === page.iframeHtml ? agentEdit : null;
+  const markedSrcDoc = React.useMemo(() => {
+    if (!hasHtml || !cursorEdit) return { html: canvasSrcDoc, found: false };
+    const previousSrcDoc = cursorEdit.previousHtml
+      ? stabilizeViewportHeightClasses(
+          sanitizeIframeHtml(cursorEdit.previousHtml),
+          currentDevice.height,
+        )
+      : "";
+    return markAgentCursor(previousSrcDoc, canvasSrcDoc);
+  }, [canvasSrcDoc, currentDevice.height, cursorEdit, hasHtml]);
   const measuredSrcDoc = React.useMemo(
     () =>
-      hasHtml ? injectIframeHeightReporter(canvasSrcDoc, iframeReporterId) : "",
-    [canvasSrcDoc, hasHtml, iframeReporterId],
+      hasHtml ? injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId) : "",
+    [hasHtml, iframeReporterId, markedSrcDoc.html],
   );
+  const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const [expiredCursorEdit, setExpiredCursorEdit] = React.useState<AgentEdit | null>(null);
+  React.useEffect(() => {
+    if (!cursorEdit) return;
+    // Measured from the edit's own timestamp, so a frame that remounts later
+    // does not bring back a cursor for an old change.
+    const remaining = AGENT_CURSOR_LINGER_MS - (Date.now() - cursorEdit.at);
+    const timeoutId = window.setTimeout(
+      () => setExpiredCursorEdit(cursorEdit),
+      Math.max(0, remaining),
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [cursorEdit]);
+  const isPageIdle = status?.status === "completed" || status?.status === "failed";
+  const showAgentCursor =
+    isLive &&
+    markedSrcDoc.found &&
+    cursorPoint !== null &&
+    cursorEdit !== null &&
+    expiredCursorEdit !== cursorEdit &&
+    !isPageIdle;
   const titleScale = React.useMemo(() => 100 / Math.max(20, zoom), [zoom]);
   const titleFontSizePx = React.useMemo(
     () => Math.min(40, Math.max(14, 16 * titleScale)),
@@ -357,24 +405,60 @@ export default React.memo(function PageRenderer({
     [page.title],
   );
 
-  const exportPageHtml = React.useCallback(() => {
-    const html = page.iframeHtml ?? "";
-    if (!html.trim()) {
-      toast.error("Nothing to export yet for this page.");
-      return;
+  const copyForAgent = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(
+        buildAgentPrompt({
+          title: page.title,
+          deviceType: page.deviceType === "mobile" ? "mobile" : "desktop",
+          html: page.iframeHtml ?? "",
+        }),
+      );
+      toast.success("Copied prompt for your agent");
+    } catch {
+      toast.error("Could not copy the prompt. Check clipboard permissions and try again.");
     }
+  }, [page.deviceType, page.iframeHtml, page.title]);
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${slugifiedTitle}.html`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast.success("Page HTML exported.");
-  }, [page.iframeHtml, slugifiedTitle]);
+  const [isCopyingImage, setIsCopyingImage] = React.useState(false);
+  const copyImage = React.useCallback(async () => {
+    if (!projectId || isCopyingImage) return;
+    setIsCopyingImage(true);
+    const fetchPng = async () => {
+      const response = await fetch(`/api/projects/${projectId}/pages/${page.id}/png`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || "Could not render the page image.");
+      }
+      return response.blob();
+    };
+
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        // Safari drops the user gesture across an await, so the clipboard
+        // write starts now and receives the render as a pending promise.
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": fetchPng() })]);
+        toast.success("Image copied.");
+        return;
+      }
+
+      const url = URL.createObjectURL(await fetchPng());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${slugifiedTitle}.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("This browser cannot copy images, so the PNG was downloaded instead.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not copy the image.");
+    } finally {
+      setIsCopyingImage(false);
+    }
+  }, [isCopyingImage, page.id, projectId, slugifiedTitle]);
 
   const previewSrcDoc = React.useMemo(
     () =>
@@ -547,17 +631,38 @@ export default React.memo(function PageRenderer({
       <button
         type="button"
         className={iconButtonClass}
-        aria-label={`Export ${page.title}`}
-        title="Export HTML"
+        aria-label="Copy for agent"
+        title="Copy for agent"
         disabled={!hasPageContent}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
-          exportPageHtml();
+          void copyForAgent();
         }}
       >
-        <Download className="h-3.5 w-3.5" />
+        <Bot className="h-3.5 w-3.5" />
       </button>
+      {projectId ? (
+        <button
+          type="button"
+          className={iconButtonClass}
+          aria-label="Copy image"
+          title="Copy image"
+          aria-busy={isCopyingImage}
+          disabled={!hasPageContent || isCopyingImage}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            void copyImage();
+          }}
+        >
+          {isCopyingImage ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ImageIcon className="h-3.5 w-3.5" />
+          )}
+        </button>
+      ) : null}
       <button
         type="button"
         className={iconButtonClass}
@@ -868,9 +973,20 @@ export default React.memo(function PageRenderer({
         type?: string;
         id?: string;
         height?: number;
+        x?: number;
+        y?: number;
       };
-      if (payload.type !== "wirely-iframe-height") return;
       if (payload.id !== iframeReporterId) return;
+      if (payload.type === "wirely-iframe-cursor") {
+        const { x, y } = payload;
+        if (typeof x !== "number" || !Number.isFinite(x)) return;
+        if (typeof y !== "number" || !Number.isFinite(y)) return;
+        setCursorPoint((previous) =>
+          previous && previous.x === x && previous.y === y ? previous : { x, y },
+        );
+        return;
+      }
+      if (payload.type !== "wirely-iframe-height") return;
       if (typeof payload.height !== "number" || !Number.isFinite(payload.height)) {
         return;
       }
@@ -913,45 +1029,75 @@ export default React.memo(function PageRenderer({
           {statusBadge}
           {isLive ? hoverToolbar : null}
         </div>
-        <div
-          className={cn(
-            "relative overflow-hidden rounded-[var(--radius)] border bg-transparent shadow-lg transition-all duration-150",
-            isFocused
-              ? "border-2 border-sky-500 ring-2 ring-sky-500/20"
-              : "border-border group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30",
-          )}
-          style={{
-            width: `${currentDevice.width}px`,
-            minHeight: `${currentDevice.height}px`,
-            height: `${pageHeight}px`,
-          }}
-        >
-          {hasHtml && isLive ? (
-            <iframe
-              ref={iframeRef}
-              title={page.title}
-              srcDoc={measuredSrcDoc}
-              onLoad={handleLoad}
-              className="h-full w-full border-0 pointer-events-none bg-background"
-              style={{ overflow: "hidden" }}
-              loading="eager"
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              scrolling="no"
-            />
-          ) : hasRawHtml ? (
-            <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
-              <p className="text-sm font-medium text-foreground">Preview offscreen</p>
-              <p className="mt-2 max-w-[280px] text-xs leading-5 text-muted-foreground">
-                This page stays lightweight until it returns to the active viewport.
-              </p>
-              <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                {currentDevice.label}
+        <div className="relative">
+          <div
+            className={cn(
+              "relative overflow-hidden rounded-[var(--radius)] border bg-transparent shadow-lg transition-all duration-150",
+              isFocused
+                ? "border-2 border-sky-500 ring-2 ring-sky-500/20"
+                : "border-border group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30",
+            )}
+            style={{
+              width: `${currentDevice.width}px`,
+              minHeight: `${currentDevice.height}px`,
+              height: `${pageHeight}px`,
+            }}
+          >
+            {hasHtml && isLive ? (
+              <iframe
+                ref={iframeRef}
+                title={page.title}
+                srcDoc={measuredSrcDoc}
+                onLoad={handleLoad}
+                className="h-full w-full border-0 pointer-events-none bg-background"
+                style={{ overflow: "hidden" }}
+                loading="eager"
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                scrolling="no"
+              />
+            ) : hasRawHtml ? (
+              <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
+                <p className="text-sm font-medium text-foreground">Preview offscreen</p>
+                <p className="mt-2 max-w-[280px] text-xs leading-5 text-muted-foreground">
+                  This page stays lightweight until it returns to the active viewport.
+                </p>
+                <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {currentDevice.label}
+                </div>
+              </div>
+            ) : (
+              <GeneratingPreviewPlaceholder />
+            )}
+          </div>
+          {showAgentCursor && cursorPoint && cursorEdit ? (
+            // Outside the clipped frame so a label near the right edge stays
+            // readable. The outer layer slides between targets; the inner one
+            // counter-scales with zoom and must not animate, or zooming would lag.
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 top-0 z-20 transition-transform duration-300 ease-out motion-reduce:transition-none"
+              style={{ transform: `translate(${cursorPoint.x}px, ${cursorPoint.y}px)` }}
+            >
+              <div
+                className="flex origin-top-left items-start"
+                style={{ transform: `scale(${titleScale})` }}
+              >
+                <svg width="18" height="20" viewBox="0 0 18 20" className="drop-shadow">
+                  <path
+                    d="M1 1 L1 17 L5.5 12.5 L8.5 19 L11 18 L8 11.5 L14.5 11.5 Z"
+                    fill="#f97316"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="mt-3 whitespace-nowrap rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white shadow">
+                  {cursorEdit.label}
+                </span>
               </div>
             </div>
-          ) : (
-            <GeneratingPreviewPlaceholder />
-          )}
+          ) : null}
         </div>
       </div>
 

@@ -14,6 +14,7 @@ import {
   CATALOG_TOOL_NAMES,
   TOOL_NAMES,
   callTool,
+  replaceExactlyOnce,
 } from "@/lib/mcp/tools";
 import { buildInstallPrompt, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
 
@@ -119,6 +120,7 @@ describe("tool catalog", () => {
       "get_page_png",
       "list_pages",
       "list_projects",
+      "patch_page",
       "update_page",
     ]);
   });
@@ -177,6 +179,50 @@ describe("tool dispatch", () => {
 
     expect(result.isError).toBe(true);
   });
+
+  it("rejects an empty oldString before reaching the database", async () => {
+    const result = await callTool("user", "patch_page", {
+      projectId: "p",
+      pageId: "q",
+      oldString: "",
+      newString: "x",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("oldString"),
+    });
+  });
+});
+
+describe("replaceExactlyOnce", () => {
+  it("reports zero matches", () => {
+    expect(replaceExactlyOnce("<p>Hi</p>", "Bye", "Yo")).toEqual({ ok: false, matches: 0 });
+  });
+
+  it("splices a single match", () => {
+    expect(replaceExactlyOnce("<p>Hi</p><p>Yo</p>", "Hi", "Hello")).toEqual({
+      ok: true,
+      html: "<p>Hello</p><p>Yo</p>",
+    });
+    expect(replaceExactlyOnce("<p>Hi</p>", "<p>Hi</p>", "")).toEqual({ ok: true, html: "" });
+  });
+
+  it("counts every match, overlapping ones included", () => {
+    expect(replaceExactlyOnce("<li>a</li><li>b</li><li>c</li>", "<li>", "<li class=x>")).toEqual({
+      ok: false,
+      matches: 3,
+    });
+    expect(replaceExactlyOnce("aaa", "aa", "b")).toEqual({ ok: false, matches: 2 });
+  });
+
+  it("inserts dollar patterns literally", () => {
+    expect(replaceExactlyOnce("<p>PRICE</p>", "PRICE", "$& $1 $$9")).toEqual({
+      ok: true,
+      html: "<p>$& $1 $$9</p>",
+    });
+  });
 });
 
 describe("mcp route boundary", () => {
@@ -228,6 +274,15 @@ describe("html sanitizer boundary", () => {
     expect(sanitized).toBeGreaterThan(-1);
     expect(created).toBeGreaterThan(sanitized);
     expect(updated).toBeGreaterThan(sanitized);
+  });
+
+  it("sanitizes a patched page before saving it", () => {
+    const tools = read("lib/mcp/tools.ts");
+    const sanitized = tools.indexOf("sanitizeIframeHtml(patch.html)");
+    const saved = tools.indexOf("updateProjectPageForUser({", sanitized);
+
+    expect(sanitized).toBeGreaterThan(-1);
+    expect(saved).toBeGreaterThan(sanitized);
   });
 });
 

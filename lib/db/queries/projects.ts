@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import {
   conversationMessages,
@@ -199,6 +199,46 @@ export const listProjectPagesForUser = async ({
     .from(projectPages)
     .where(eq(projectPages.projectId, projectId))
     .orderBy(asc(projectPages.sortOrder));
+};
+
+/**
+ * What the open editor polls to pick up page writes it did not make, such as an
+ * MCP agent editing the canvas. Only pages written after `since` carry their
+ * HTML; every id comes back so the client can drop pages deleted elsewhere,
+ * since a deleted row leaves nothing to find by timestamp.
+ */
+export const listProjectPageChangesForUser = async ({
+  projectId,
+  userId,
+  since,
+}: {
+  projectId: string;
+  userId: string;
+  since: Date;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const [idRows, changed] = await Promise.all([
+    db
+      .select({ id: projectPages.id })
+      .from(projectPages)
+      .where(eq(projectPages.projectId, projectId))
+      .orderBy(asc(projectPages.sortOrder)),
+    db
+      .select({
+        id: projectPages.id,
+        title: projectPages.title,
+        htmlContent: projectPages.htmlContent,
+        deviceType: projectPages.deviceType,
+      })
+      .from(projectPages)
+      .where(and(eq(projectPages.projectId, projectId), gt(projectPages.updatedAt, since)))
+      .orderBy(asc(projectPages.sortOrder)),
+  ]);
+
+  return { pageIds: idRows.map((row) => row.id), changed };
 };
 
 export const createProjectPageForUser = async ({

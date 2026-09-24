@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  extractStreamingHtml,
   normalizeGeneratedHtml,
   parseBatchWireOutput,
   parseWireOutput,
@@ -103,5 +104,43 @@ HTML:
       content: "<!doctype html><html><body><main>Page</main></body></html>",
     });
     expect(summary).toBe("");
+  });
+});
+
+describe("extractStreamingHtml", () => {
+  it("returns nothing until the body has started", () => {
+    expect(extractStreamingHtml("DETAILS:\nA calm finance dashboard.\nTITLE: Home\nHTML:\n")).toBe(
+      "",
+    );
+    expect(
+      extractStreamingHtml('HTML:\n<!doctype html>\n<html><head><script src="https://cdn.x/y.js">'),
+    ).toBe("");
+  });
+
+  it("strips markers, preamble, and an opening fence, and drops a half-written tag", () => {
+    const raw =
+      'DETAILS:\nWarm palette.\nTITLE: Home\nHTML:\n```html\n<!doctype html>\n<html><head></head><body class="bg-white"><h1>Hello</h1><p cla';
+
+    expect(extractStreamingHtml(raw)).toBe(
+      '<!doctype html>\n<html><head></head><body class="bg-white"><h1>Hello</h1>',
+    );
+  });
+
+  it("drops a script still being written so its source never renders as text", () => {
+    const raw =
+      "<!doctype html><html><head></head><body><main>Hi</main><script>const chart = new Chart(";
+
+    expect(extractStreamingHtml(raw)).toBe(
+      "<!doctype html><html><head></head><body><main>Hi</main>",
+    );
+  });
+
+  it("stops at the closing fence and ignores trailing prose", () => {
+    const raw =
+      "Here you go:\n```html\n<!doctype html><html><body><main>Done</main></body></html>\n```\nLet me know!";
+
+    expect(extractStreamingHtml(raw)).toBe(
+      "<!doctype html><html><body><main>Done</main></body></html>",
+    );
   });
 });

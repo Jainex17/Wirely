@@ -23,6 +23,9 @@ export default async function WirePage({ params }: WirePageProps) {
   }
   const { user: sessionUser, aiSettings } = session;
 
+  // Taken before the read so a write that races the page load is still newer
+  // than the editor's first change cursor.
+  const pagesLoadedAt = new Date().toISOString();
   const projectDetail = await getProjectDetailForUser(
     resolvedParams.id,
     sessionUser.id,
@@ -69,6 +72,7 @@ export default async function WirePage({ params }: WirePageProps) {
         projectTitle,
         pages: initialPages,
       }}
+      pagesLoadedAt={pagesLoadedAt}
       initialModelName={initialModelName}
       initialMessages={projectDetail.messages.map((message) => ({
         id: message.id,

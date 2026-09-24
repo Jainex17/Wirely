@@ -22,9 +22,11 @@ import {
 } from "@/lib/db/queries/projects";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
+import { buildVisualLintReport, formatQualityDiagnostics } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
+import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
 
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
@@ -37,6 +39,35 @@ const formatIssues = (issues: z.ZodError["issues"]) =>
   issues
     .map((issue) => `${issue.path.join(".") || "arguments"}: ${issue.message}`)
     .join("; ");
+
+/**
+ * Scores the HTML that was actually saved. The page title is the only intent
+ * signal an MCP write carries, so it stands in for the user prompt.
+ */
+const qualityLine = (html: string, title: string) =>
+  formatQualityDiagnostics(evaluateWireHtmlQuality({ html, allowImages: true, userPrompt: title }));
+
+export type ReplaceOnceResult = { ok: true; html: string } | { ok: false; matches: number };
+
+/**
+ * Replaces `oldString` only when it occurs exactly once, counting overlapping
+ * matches. Splices by index because String.prototype.replace would expand `$&`
+ * and `$1` patterns inside `newString`.
+ */
+export const replaceExactlyOnce = (
+  source: string,
+  oldString: string,
+  newString: string,
+): ReplaceOnceResult => {
+  const first = source.indexOf(oldString);
+  if (first === -1) return { ok: false, matches: 0 };
+  let matches = 1;
+  for (let at = source.indexOf(oldString, first + 1); at !== -1; at = source.indexOf(oldString, at + 1)) {
+    matches += 1;
+  }
+  if (matches > 1) return { ok: false, matches };
+  return { ok: true, html: source.slice(0, first) + newString + source.slice(first + oldString.length) };
+};
 
 type ToolArgs = Record<string, unknown>;
 type ToolHandler = (userId: string, args: ToolArgs) => Promise<ToolCallResult>;
@@ -114,7 +145,10 @@ const addPage: ToolHandler = async (userId, args) => {
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
 
-  return succeed(`Added page "${page.title}" (id: ${page.id}) to "${project.title}".`);
+  return succeed(
+    `Added page "${page.title}" (id: ${page.id}) to "${project.title}".\n` +
+      qualityLine(html, page.title),
+  );
 };
 
 const updatePage: ToolHandler = async (userId, args) => {
@@ -146,7 +180,57 @@ const updatePage: ToolHandler = async (userId, args) => {
   });
   if (!updated) return fail("Page not found. Use list_pages for valid ids.");
 
-  return succeed(`Updated page "${updated.title}".`);
+  const summary = `Updated page "${updated.title}".`;
+  return succeed(html === undefined ? summary : `${summary}\n${qualityLine(html, updated.title)}`);
+};
+
+const patchPage: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+      oldString: z.string().min(1),
+      newString: z.string(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const page = await getProjectPageForUser({
+    projectId: parsed.data.projectId,
+    pageId: parsed.data.pageId,
+    userId,
+  });
+  if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+  // ponytail: read-modify-write without a version check, so two concurrent
+  // patches can drop one. Upgrade to a conditional update on updatedAt if agents
+  // start patching one page in parallel.
+  const patch = replaceExactlyOnce(page.htmlContent ?? "", parsed.data.oldString, parsed.data.newString);
+  if (!patch.ok && patch.matches === 0) {
+    return fail(
+      "oldString was not found in the page. Stored HTML is sanitized and may differ from " +
+        "what you sent. Call get_page for the exact source.",
+    );
+  }
+  if (!patch.ok) {
+    return fail(
+      `oldString matched ${patch.matches} times. Include more surrounding text so it matches once.`,
+    );
+  }
+  if (patch.html.length > PAGE_HTML_MAX_CHARS) {
+    return fail(`The patched page would exceed ${PAGE_HTML_MAX_CHARS} characters.`);
+  }
+
+  const html = sanitizeIframeHtml(patch.html);
+  const updated = await updateProjectPageForUser({
+    projectId: parsed.data.projectId,
+    pageId: parsed.data.pageId,
+    userId,
+    htmlContent: html,
+  });
+  if (!updated) return fail("Page not found. Use list_pages for valid ids.");
+
+  return succeed(`Patched page "${updated.title}".\n${qualityLine(html, updated.title)}`);
 };
 
 const getPage: ToolHandler = async (userId, args) => {
@@ -172,7 +256,11 @@ const getPage: ToolHandler = async (userId, args) => {
 
 const getPagePng: ToolHandler = async (userId, args) => {
   const parsed = z
-    .object({ projectId: z.string().trim().min(1), pageId: z.string().trim().min(1) })
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+      lint: z.boolean().optional(),
+    })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
@@ -187,7 +275,11 @@ const getPagePng: ToolHandler = async (userId, args) => {
   }
 
   try {
-    const png = await renderPagePng(page.htmlContent, page.deviceType === "mobile" ? "mobile" : "desktop");
+    const png = await renderPagePng(
+      page.htmlContent,
+      page.deviceType === "mobile" ? "mobile" : "desktop",
+      parsed.data.lint ?? false,
+    );
     return {
       content: [
         {
@@ -198,6 +290,7 @@ const getPagePng: ToolHandler = async (userId, args) => {
         ...(png.fullPage
           ? []
           : [text("The page was too tall for one image; this captures the viewport only.")]),
+        ...(png.lint ? [text(buildVisualLintReport(png.lint))] : []),
       ],
     };
   } catch (error) {
@@ -232,6 +325,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_pages: listPages,
   add_page: addPage,
   update_page: updatePage,
+  patch_page: patchPage,
   get_page: getPage,
   get_page_png: getPagePng,
   delete_page: deletePage,
