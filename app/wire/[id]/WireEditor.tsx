@@ -8,7 +8,7 @@ import type { Message } from "ai";
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 // import { ArrowLeft, Cloud, Workflow } from "lucide-react";
 // import { ArrowLeft, Cloud } from "lucide-react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
@@ -58,6 +58,10 @@ export default function WireEditor({
     null,
   );
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
+  // Collapsing the prompt panel gives the canvas the whole window width; the
+  // header toggle is the only affordance back, so the icon doubles as the
+  // restore button.
+  const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -161,6 +165,22 @@ export default function WireEditor({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
+              aria-label={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
+              aria-expanded={!isPromptPanelCollapsed}
+              title={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
+            >
+              {isPromptPanelCollapsed ? (
+                <PanelRightOpen className="h-4 w-4" />
+              ) : (
+                <PanelRightClose className="h-4 w-4" />
+              )}
+            </Button>
             {/* Saving indicator hidden for now
             {isSaving ? (
               <div
@@ -195,7 +215,13 @@ export default function WireEditor({
         </header>
         <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
           <EditorErrorBoundary title="Workspace canvas crashed">
-            <div className="w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+            <div
+              className={
+                isPromptPanelCollapsed
+                  ? "flex-1 min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+                  : "w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+              }
+            >
               <EditorWorkspace
                 sidebarMode="wire"
                 projectId={wireId}
@@ -204,7 +230,15 @@ export default function WireEditor({
             </div>
           </EditorErrorBoundary>
           <EditorErrorBoundary title="Prompt panel crashed">
-            <div className="w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+            {/* Kept mounted while collapsed so an in-flight generation stream
+                in the sidebar survives the toggle. */}
+            <div
+              className={
+                isPromptPanelCollapsed
+                  ? "hidden w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+                  : "w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+              }
+            >
               <WirePromptSidebar
                 variant="panel"
                 wireId={wireId}
