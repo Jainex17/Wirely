@@ -14,8 +14,8 @@ describe("canvas workspace wiring", () => {
     const source = readFileSync("components/EditorWorkspace.tsx", "utf8");
 
     expect(source.includes('event.code === "Space"')).toBe(true);
-    expect(source.includes('event.shiftKey && event.key === "1"')).toBe(true);
-    expect(source.includes('event.key === "0"')).toBe(true);
+    expect(source.includes("Digit1: fitAllPages")).toBe(true);
+    expect(source.includes("Digit0: () => setZoom(100)")).toBe(true);
     expect(source.includes("setIsSpacePanning(true)")).toBe(true);
   });
 });

@@ -82,6 +82,9 @@ export const getPageFrameHeight = (device: PageFrameDevice) =>
 export const MIN_CANVAS_ZOOM = 2;
 export const MAX_CANVAS_ZOOM = 200;
 export const DEFAULT_CANVAS_ZOOM = 64;
+// Fitting stops at 100% so one small page does not blow up to fill the canvas.
+export const MAX_FIT_ZOOM = 100;
+export const ZOOM_STEPS = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 export const CANVAS_TOP_OFFSET = 100;
 export const PAGE_GAP = 120;
 export const LIVE_PAGE_OVERSCAN_SCENE_PX = 800;
@@ -332,6 +335,55 @@ export const fitBounds = ({
     viewport,
     zoom: clampedZoom,
   });
+};
+
+/** The next zoom preset above (1) or below (-1) the current zoom. */
+export const stepZoom = (zoom: number, direction: 1 | -1) =>
+  direction === 1
+    ? ZOOM_STEPS.find((step) => step > zoom) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]
+    : [...ZOOM_STEPS].reverse().find((step) => step < zoom) ?? ZOOM_STEPS[0];
+
+/**
+ * Fitting and focusing frame only the top screen of each page. A generated page
+ * can run thousands of pixels tall, and fitting its full height zooms out until
+ * nothing on the canvas is readable.
+ */
+export const clipToFirstScreen = (bounds: PageBounds, screenHeight: number) =>
+  getPageBounds({
+    pageId: bounds.pageId,
+    position: { x: bounds.left, y: bounds.top },
+    width: bounds.width,
+    height: Math.min(bounds.height, screenHeight),
+  });
+
+export type PageArrangement = "row" | "grid";
+
+/**
+ * Lines pages up in reading order, tops aligned: one row, or a near-square grid
+ * whose rows sit one tallest-page-plus-gap apart so tall pages never overlap.
+ */
+export const arrangePagePositions = (
+  pages: Array<{ id: string; x: number; y: number; width: number; height: number }>,
+  arrangement: PageArrangement,
+): Record<string, ScenePoint> => {
+  const ordered = [...pages].sort((a, b) =>
+    arrangement === "row" ? a.x - b.x : a.y - b.y || a.x - b.x,
+  );
+  const columns =
+    arrangement === "row" ? ordered.length : Math.ceil(Math.sqrt(ordered.length));
+  const originX = Math.min(...ordered.map((page) => page.x));
+  const positions: Record<string, ScenePoint> = {};
+  let y = 0;
+  for (let start = 0; start < ordered.length; start += columns) {
+    const rowPages = ordered.slice(start, start + columns);
+    let x = originX;
+    for (const page of rowPages) {
+      positions[page.id] = { x, y };
+      x += page.width + PAGE_GAP;
+    }
+    y += Math.max(...rowPages.map((page) => page.height)) + PAGE_GAP;
+  }
+  return positions;
 };
 
 export const zoomAtViewportPoint = ({

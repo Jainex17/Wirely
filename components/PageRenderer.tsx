@@ -111,6 +111,8 @@ interface PageRendererProps {
   agentEdit?: AgentEdit | null;
   isOnlyPage: boolean;
   isFocused: boolean;
+  /** The user has this page clicked right now, so its size badge shows. */
+  isSelected: boolean;
   frameHeight: number;
   renderMode: PageRenderMode;
 }
@@ -203,6 +205,7 @@ export default React.memo(function PageRenderer({
   agentEdit = null,
   isOnlyPage,
   isFocused,
+  isSelected,
   frameHeight,
   renderMode,
 }: PageRendererProps) {
@@ -1005,11 +1008,16 @@ export default React.memo(function PageRenderer({
       >
         <div className="flex h-[50px] w-full items-center gap-3 px-3 pb-1">
           <p
-            className="flex items-center gap-2 font-medium text-foreground"
-            style={{ fontSize: "clamp(14px, calc(16px * var(--canvas-inverse-zoom, 1)), 40px)" }}
+            className={cn(
+              "flex items-center gap-2 font-medium",
+              isFocused
+                ? "text-[color:var(--canvas-label-strong,var(--foreground))]"
+                : "text-[color:var(--canvas-label,var(--muted-foreground))]",
+            )}
+            style={{ fontSize: "clamp(12px, calc(12px * var(--canvas-inverse-zoom, 1)), 32px)" }}
           >
             <FileIcon
-              className="text-muted-foreground"
+              className="text-[color:var(--canvas-label,var(--muted-foreground))]"
               style={{
                 width: "clamp(12px, calc(14px * var(--canvas-inverse-zoom, 1)), 28px)",
                 height: "clamp(12px, calc(14px * var(--canvas-inverse-zoom, 1)), 28px)",
@@ -1023,12 +1031,13 @@ export default React.memo(function PageRenderer({
         <div className="relative">
           <div
             className={cn(
-              "relative overflow-hidden rounded-[var(--radius)] border bg-transparent shadow-lg transition-all duration-150",
-              isFocused
-                ? "border-2 border-sky-500 ring-2 ring-sky-500/20"
-                : "border-border group-hover:border-4 group-hover:border-blue-500 group-hover:ring-2 group-hover:ring-blue-500/30",
+              "relative overflow-hidden rounded-[var(--radius)] bg-transparent shadow-lg outline-solid transition-[outline-color] duration-150",
+              isFocused ? "outline-sky-500" : "outline-transparent group-hover:outline-sky-500/60",
             )}
             style={{
+              // Counter-scaled so the outline stays 1.5 screen pixels at any zoom
+              // and never covers the edge of the design.
+              outlineWidth: "calc(1.5px * var(--canvas-inverse-zoom, 1))",
               width: `${currentDevice.width}px`,
               minHeight: `${currentDevice.height}px`,
               height: `${pageHeight}px`,
@@ -1058,6 +1067,20 @@ export default React.memo(function PageRenderer({
               <GeneratingPreviewPlaceholder />
             )}
           </div>
+          {isSelected ? (
+            <div className="pointer-events-none absolute inset-x-0 top-full flex justify-center">
+              <span
+                className="whitespace-nowrap rounded bg-sky-500 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white"
+                style={{
+                  marginTop: "calc(8px * var(--canvas-inverse-zoom, 1))",
+                  transform: "scale(var(--canvas-inverse-zoom, 1))",
+                  transformOrigin: "top center",
+                }}
+              >
+                {currentDevice.width} × {Math.round(pageHeight)}
+              </span>
+            </div>
+          ) : null}
           {showAgentCursor && cursorPoint && cursorEdit ? (
             // Outside the clipped frame so a label near the right edge stays
             // readable. The outer layer slides between targets; the inner one

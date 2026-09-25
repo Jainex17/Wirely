@@ -11,13 +11,10 @@ import {
   getViewportBounds,
   isBoundsIntersecting,
   resolvePageFrameDevice,
-  zoomAtViewportPoint,
 } from "@/lib/canvasScene";
 import { logger } from "@/lib/logger";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
-
-const ZOOM_LEVELS = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
@@ -48,12 +45,14 @@ export default function EditorWorkspace({
     requestedGeneratedPageFocusIds,
     beginSaving,
     endSaving,
-    setCamera,
+    focusedPageId,
+    viewportWidth,
     setViewportSize,
-    resetView,
-    focusPage,
+    stepZoom,
+    setZoom,
     focusPages,
     fitAllPages,
+    fitPage,
     clearRequestedGeneratedPageFocusCheck,
     setSelectedSection,
     renamePage,
@@ -69,12 +68,14 @@ export default function EditorWorkspace({
       requestedGeneratedPageFocusIds: state.requestedGeneratedPageFocusIds,
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
-      setCamera: state.setCamera,
+      focusedPageId: state.focusedPageId,
+      viewportWidth: state.viewportSize.width,
       setViewportSize: state.setViewportSize,
-      resetView: state.resetView,
-      focusPage: state.focusPage,
+      stepZoom: state.stepZoom,
+      setZoom: state.setZoom,
       focusPages: state.focusPages,
       fitAllPages: state.fitAllPages,
+      fitPage: state.fitPage,
       clearRequestedGeneratedPageFocusCheck: state.clearRequestedGeneratedPageFocusCheck,
       setSelectedSection: state.setSelectedSection,
       renamePage: state.renamePage,
@@ -231,9 +232,11 @@ export default function EditorWorkspace({
     hasInitializedViewportRef.current = false;
   }, [projectId]);
 
+  // A project whose camera shows no page on open starts fitted to the top of
+  // every page.
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || pages.length === 0) return;
+    if (!canvas || pages.length === 0 || viewportWidth === 0) return;
     if (hasInitializedViewportRef.current) return;
 
     const viewportBounds = getViewportBounds(camera, {
@@ -247,9 +250,9 @@ export default function EditorWorkspace({
 
     hasInitializedViewportRef.current = true;
     if (!hasVisiblePage) {
-      focusPage(pages[0].id);
+      fitAllPages();
     }
-  }, [camera, focusPage, pageBoundsById, pages]);
+  }, [camera, fitAllPages, pageBoundsById, pages, viewportWidth]);
 
   useEffect(() => {
     if (!requestedGeneratedPageFocusIds || requestedGeneratedPageFocusIds.length === 0) {
@@ -284,6 +287,9 @@ export default function EditorWorkspace({
   ]);
 
   useEffect(() => {
+    // Figma's bindings: V and H pick a tool, Shift+1 fits every page, Shift+2
+    // the selected one, Shift+0 goes to 100%. Digits match on `code` because
+    // Shift turns the `key` for 1 into "!".
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
         return;
@@ -297,54 +303,32 @@ export default function EditorWorkspace({
         return;
       }
 
-      if (event.key === "0") {
-        resetView();
-        event.preventDefault();
+      // Leave Cmd and Ctrl chords, like browser zoom, to the browser.
+      if (event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
 
-      if (event.shiftKey && event.key === "1") {
-        fitAllPages();
-        event.preventDefault();
-        return;
-      }
-
-      if (event.key === "=" || event.key === "+") {
-        const nextZoom =
-          ZOOM_LEVELS.find((level) => level > camera.zoom) ??
-          ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
-        setCamera(
-          zoomAtViewportPoint({
-            camera,
-            viewportPoint: {
-              x: (canvasRef.current?.clientWidth ?? 0) / 2,
-              y: (canvasRef.current?.clientHeight ?? 0) / 2,
+      const action = event.shiftKey
+        ? {
+            Digit0: () => setZoom(100),
+            Equal: () => stepZoom(1),
+            Digit1: fitAllPages,
+            Digit2: () => {
+              if (focusedPageId) fitPage(focusedPageId);
             },
-            viewport: useEditorStore.getState().viewportSize,
-            nextZoom,
-          }),
-        );
-        event.preventDefault();
-        return;
-      }
+          }[event.code]
+        : {
+            KeyV: () => setActiveTool("select"),
+            KeyH: () => setActiveTool("grab"),
+            Equal: () => stepZoom(1),
+            NumpadAdd: () => stepZoom(1),
+            Minus: () => stepZoom(-1),
+            NumpadSubtract: () => stepZoom(-1),
+          }[event.code];
+      if (!action) return;
 
-      if (event.key === "-") {
-        const currentIndex = ZOOM_LEVELS.findIndex((level) => level >= camera.zoom);
-        const nextZoom =
-          currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : ZOOM_LEVELS[0];
-        setCamera(
-          zoomAtViewportPoint({
-            camera,
-            viewportPoint: {
-              x: (canvasRef.current?.clientWidth ?? 0) / 2,
-              y: (canvasRef.current?.clientHeight ?? 0) / 2,
-            },
-            viewport: useEditorStore.getState().viewportSize,
-            nextZoom,
-          }),
-        );
-        event.preventDefault();
-      }
+      action();
+      event.preventDefault();
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -366,7 +350,7 @@ export default function EditorWorkspace({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [camera, fitAllPages, resetView, setCamera]);
+  }, [fitAllPages, fitPage, focusedPageId, setZoom, stepZoom]);
 
   return (
     <div data-sidebar-mode={sidebarMode} className="relative h-full w-full">

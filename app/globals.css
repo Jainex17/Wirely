@@ -375,6 +375,23 @@
   border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
 }
 
+/* The editor keeps the app's blue-tinted hue and text colors but sits a few
+   steps lighter, so the side panels read apart from the darker canvas.
+   Portalled menus render outside this class and keep the app palette. */
+.editor-theme {
+  --background: #1a1c22;
+  --card: #25282f;
+  --popover: #25282f;
+  --secondary: #30333b;
+  --muted: #30333b;
+  --accent: #30333b;
+  --border: #34373f;
+  --input: #34373f;
+  --sidebar: #25282f;
+  --sidebar-accent: #30333b;
+  --sidebar-border: #34373f;
+}
+
 .canvas-dots {
   background-image: radial-gradient(
     circle,

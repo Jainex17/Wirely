@@ -9,8 +9,11 @@ import {
   getPageRenderMode,
   getSnappedPagePosition,
   getViewportBounds,
+  clipToFirstScreen,
   placeMissingPages,
   scaleFromZoom,
+  stepZoom,
+  arrangePagePositions,
   sceneToViewport,
   viewportToScene,
   zoomAtViewportPoint,
@@ -151,5 +154,53 @@ describe("placeMissingPages", () => {
     expect(assigned.a).toBeUndefined();
     expect(assigned.c).toBeUndefined();
     expect(assigned.b).toBeGreaterThanOrEqual(840 + W);
+  });
+});
+
+describe("canvas view helpers", () => {
+  it("steps zoom to the next preset in either direction", () => {
+    expect(stepZoom(64, 1)).toBe(75);
+    expect(stepZoom(64, -1)).toBe(50);
+    expect(stepZoom(200, 1)).toBe(200);
+    expect(stepZoom(2, -1)).toBe(2);
+  });
+
+  it("clips a tall page to its first screen and leaves a short one alone", () => {
+    const tall = getPageBounds({ pageId: "a", position: { x: 0, y: 0 }, width: 1440, height: 6000 });
+    const short = getPageBounds({ pageId: "b", position: { x: 0, y: 0 }, width: 1440, height: 600 });
+
+    expect(clipToFirstScreen(tall, 900).height).toBe(900);
+    expect(clipToFirstScreen(tall, 900).top).toBe(0);
+    expect(clipToFirstScreen(short, 900).height).toBe(600);
+  });
+
+  it("arranges pages into one top-aligned row in their left-to-right order", () => {
+    const positions = arrangePagePositions(
+      [
+        { id: "right", x: 3000, y: 400, width: 375, height: 812 },
+        { id: "left", x: -200, y: -50, width: 1440, height: 900 },
+      ],
+      "row",
+    );
+
+    expect(positions.left).toEqual({ x: -200, y: 0 });
+    expect(positions.right).toEqual({ x: -200 + 1440 + PAGE_GAP, y: 0 });
+  });
+
+  it("arranges pages into a grid whose rows clear the tallest page above", () => {
+    const pages = ["a", "b", "c", "d"].map((id, index) => ({
+      id,
+      x: index * 2000,
+      y: 0,
+      width: 1440,
+      height: id === "b" ? 5000 : 900,
+    }));
+
+    const positions = arrangePagePositions(pages, "grid");
+
+    expect(positions.a).toEqual({ x: 0, y: 0 });
+    expect(positions.b).toEqual({ x: 1440 + PAGE_GAP, y: 0 });
+    expect(positions.c).toEqual({ x: 0, y: 5000 + PAGE_GAP });
+    expect(positions.d.y).toBe(5000 + PAGE_GAP);
   });
 });
