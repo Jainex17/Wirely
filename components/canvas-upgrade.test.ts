@@ -6,7 +6,7 @@ describe("canvas workspace wiring", () => {
     const source = readFileSync("components/PageRenderer.tsx", "utf8");
 
     expect(source.includes('renderMode === "live"')).toBe(true);
-    expect(source.includes("Preview offscreen")).toBe(true);
+    expect(source.includes("hasHtml && isLive ? (")).toBe(true);
     expect(source.includes("onMeasuredHeightChange?.(page.id")).toBe(true);
   });
 

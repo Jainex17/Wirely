@@ -17,7 +17,7 @@ export default function CanvasToolbar({
   onZoomChange,
   onReset,
 }: CanvasToolbarProps) {
-  const zoomLevels = [5, 10, 25, 50, 75, 100, 125, 150, 200];
+  const zoomLevels = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 
   const handleZoomIn = () => {
     const currentIndex = zoomLevels.findIndex((level) => level > zoom);

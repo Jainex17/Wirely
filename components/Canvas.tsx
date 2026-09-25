@@ -35,6 +35,11 @@ const DEVICE_LABELS = {
 } as const;
 
 const DRAG_START_THRESHOLD_PX = 4;
+// Each live page is a sandboxed iframe that parses its HTML, runs its CDN
+// scripts, and measures itself on the main thread. Mounting them one at a time
+// lets the canvas paint and respond to input on first load instead of freezing
+// until every frame has loaded.
+const LIVE_PAGE_MOUNT_INTERVAL_MS = 120;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const LAYOUT_SAVE_ICON_MS = 350;
 
@@ -108,7 +113,6 @@ export default function Canvas({
     beginSaving,
     endSaving,
     setCamera,
-    panBy,
     setPagePosition,
     bringPageToFront,
     setFocusedPage,
@@ -128,7 +132,6 @@ export default function Canvas({
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
       setCamera: state.setCamera,
-      panBy: state.panBy,
       setPagePosition: state.setPagePosition,
       bringPageToFront: state.bringPageToFront,
       setFocusedPage: state.setFocusedPage,
@@ -152,6 +155,16 @@ export default function Canvas({
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
+  const [mountedPageIds, setMountedPageIds] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const pendingWheelRef = React.useRef<{
+    panX: number;
+    panY: number;
+    zoomFactor: number;
+    point: ScenePoint;
+    frame: number;
+  } | null>(null);
 
   const pageLayouts = React.useMemo(() => {
     const totalPages = pages.length;
@@ -210,6 +223,43 @@ export default function Canvas({
     () => getViewportBounds(camera, viewportSize),
     [camera, viewportSize],
   );
+
+  const pageRenderModes = React.useMemo(
+    () =>
+      new Map(
+        pageLayouts.map((pageLayout) => [
+          pageLayout.page.id,
+          getPageRenderMode(pageLayout.bounds, viewportBounds),
+        ]),
+      ),
+    [pageLayouts, viewportBounds],
+  );
+
+  // Admits the next in-view page, nearest the viewport centre first. Any camera
+  // move restarts the timer, so frames mount once the canvas settles rather
+  // than mid-gesture. A mounted page stays admitted.
+  React.useEffect(() => {
+    const centerX = (viewportBounds.left + viewportBounds.right) / 2;
+    const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
+    let next: { id: string; distance: number } | null = null;
+    for (const pageLayout of pageLayouts) {
+      const pageId = pageLayout.page.id;
+      if (mountedPageIds.has(pageId) || pageRenderModes.get(pageId) !== "live") continue;
+      const distance = Math.hypot(
+        pageLayout.bounds.centerX - centerX,
+        pageLayout.bounds.centerY - centerY,
+      );
+      if (!next || distance < next.distance) next = { id: pageId, distance };
+    }
+    if (!next) return;
+
+    const pageId = next.id;
+    const timeoutId = window.setTimeout(
+      () => setMountedPageIds((current) => new Set(current).add(pageId)),
+      mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_INTERVAL_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [mountedPageIds, pageLayouts, pageRenderModes, viewportBounds]);
 
   React.useEffect(() => {
     const assigned = placeMissingPages(
@@ -320,42 +370,55 @@ export default function Canvas({
 
       event.preventDefault();
 
-      // The camera is read fresh per event rather than closed over, so this
-      // callback stays stable and the listener effect subscribes once instead
-      // of re-subscribing on every camera tick.
-      const { camera, viewportSize } = useEditorStore.getState();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+
+      // A trackpad fires several wheel events per frame. Folding them into one
+      // camera update per animation frame keeps React to one render a frame.
+      const pending =
+        pendingWheelRef.current ??
+        (pendingWheelRef.current = {
+          panX: 0,
+          panY: 0,
+          zoomFactor: 1,
+          point: { x: 0, y: 0 },
+          frame: 0,
+        });
+      pending.point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 
       if (event.ctrlKey || event.metaKey) {
         const isLikelyMouseWheel =
           event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL ||
           Math.abs(event.deltaY) >= 40;
-        const sensitivity = isLikelyMouseWheel ? 0.0025 : 0.007;
-        const zoomFactor = Math.exp(-event.deltaY * sensitivity);
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) {
-          return;
-        }
-
-        setCamera(
-          zoomAtViewportPoint({
-            camera,
-            viewportPoint: {
-              x: event.clientX - rect.left,
-              y: event.clientY - rect.top,
-            },
-            viewport: viewportSize,
-            nextZoom: camera.zoom * zoomFactor,
-          }),
-        );
-        return;
+        const sensitivity = isLikelyMouseWheel ? 0.0025 : 0.01;
+        pending.zoomFactor *= Math.exp(-event.deltaY * sensitivity);
+      } else {
+        pending.panX -= event.deltaX;
+        pending.panY -= event.deltaY;
       }
 
-      panBy({
-        x: -event.deltaX * 0.6,
-        y: -event.deltaY * 0.6,
+      if (pending.frame) return;
+      pending.frame = window.requestAnimationFrame(() => {
+        const { panX, panY, zoomFactor, point } = pending;
+        pendingWheelRef.current = null;
+        // The camera is read fresh rather than closed over, so this callback
+        // stays stable and the listener subscribes once.
+        const { camera, viewportSize } = useEditorStore.getState();
+        const zoomed =
+          zoomFactor === 1
+            ? camera
+            : zoomAtViewportPoint({
+                camera,
+                viewportPoint: point,
+                viewport: viewportSize,
+                nextZoom: camera.zoom * zoomFactor,
+              });
+        setCamera({ ...zoomed, x: zoomed.x + panX, y: zoomed.y + panY });
       });
     },
-    [canvasRef, panBy, setCamera],
+    [canvasRef, setCamera],
   );
 
   React.useEffect(() => {
@@ -374,6 +437,10 @@ export default function Canvas({
     canvasElement.addEventListener("gestureend", preventGestureDefault);
 
     return () => {
+      if (pendingWheelRef.current?.frame) {
+        window.cancelAnimationFrame(pendingWheelRef.current.frame);
+        pendingWheelRef.current = null;
+      }
       canvasElement.removeEventListener("wheel", handleWheel);
       canvasElement.removeEventListener("gesturestart", preventGestureDefault);
       canvasElement.removeEventListener("gesturechange", preventGestureDefault);
@@ -649,6 +716,9 @@ export default function Canvas({
         style={{
           transform: `translate(${camera.x}px, ${camera.y}px) scale(${scale})`,
           transformOrigin: "0 0",
+          // Page titles and toolbars counter-scale off this variable, so a zoom
+          // tick restyles them without re-rendering any page.
+          ["--canvas-inverse-zoom" as string]: 100 / Math.max(20, camera.zoom),
           left: "50%",
           top: `${CANVAS_TOP_OFFSET}px`,
           // Promote the scene to its own layer so pan and zoom composite on
@@ -659,10 +729,11 @@ export default function Canvas({
       >
         <div className="relative">
           {pageLayouts.map((pageLayout) => {
-            const renderMode: PageRenderMode = getPageRenderMode(
-              pageLayout.bounds,
-              viewportBounds,
-            );
+            const renderMode: PageRenderMode =
+              pageRenderModes.get(pageLayout.page.id) === "live" &&
+              mountedPageIds.has(pageLayout.page.id)
+                ? "live"
+                : "shell";
 
             return (
               <div
@@ -699,7 +770,6 @@ export default function Canvas({
                   isFocused={focusedPageId === pageLayout.page.id}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
-                  zoom={camera.zoom}
                 />
               </div>
             );
