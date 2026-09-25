@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { createApiToken, listApiTokens, revokeApiToken } from "@/lib/auth/apiToken";
-import { isLocalAgentOnline } from "@/lib/db/queries/localAgent";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 
@@ -10,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Lists the user's agent tokens and whether an agent is currently connected. */
+/** Lists the user's MCP tokens. */
 export async function GET() {
   try {
     const sessionUser = await getRequestSessionUser();
@@ -21,12 +20,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const [tokens, online] = await Promise.all([
-      listApiTokens(sessionUser.id),
-      isLocalAgentOnline(sessionUser.id),
-    ]);
-
-    return NextResponse.json({ tokens, online }, { status: 200 });
+    const tokens = await listApiTokens(sessionUser.id);
+    return NextResponse.json({ tokens }, { status: 200 });
   } catch (error) {
     logger.error("profile.agent_tokens.list_failed", { error });
     return NextResponse.json({ error: "Failed to list tokens." }, { status: 500 });
@@ -54,7 +49,7 @@ export async function POST(request: Request) {
     const name =
       typeof nameValue === "string" && nameValue.trim()
         ? nameValue.trim().slice(0, 80)
-        : "Local agent";
+        : "MCP";
 
     const created = await createApiToken(sessionUser.id, name);
     return NextResponse.json({ token: created }, { status: 201 });

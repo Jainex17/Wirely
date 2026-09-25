@@ -251,7 +251,7 @@ export const generationOutputs = pgTable(
 );
 
 /**
- * Personal access tokens for the Wirely local agent.
+ * Personal access tokens for the Wirely MCP server.
  *
  * Only the SHA-256 hash is stored, so a database read cannot recover a usable
  * token. `prefix` is the first few characters of the plaintext, kept purely so
@@ -278,11 +278,9 @@ export const apiTokens = pgTable(
 );
 
 /**
- * Work queued for a user's local agent.
- *
- * The agent long-polls for `queued` rows, runs opencode, and posts the raw
- * assistant text back. No credential ever lands here: the row holds the prompt
- * going out and the model text coming back, and nothing else.
+ * Work queued for the removed local agent. Nothing reads or writes this table
+ * any more, and neither the `users.local_model_catalog` columns. They stay
+ * until a reviewed migration drops them from the live database.
  */
 export const agentJobs = pgTable(
   "agent_jobs",

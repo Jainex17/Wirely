@@ -40,7 +40,6 @@ const toAiSettingsResponse = (settings: UserAiSettings) => ({
   hasZaiApiKey: settings.hasZaiApiKey,
   hasUnsplashApiKey: settings.hasUnsplashApiKey,
   enabledModelIds: settings.enabledModelIds,
-  discoveredLocalModelIds: settings.discoveredLocalModelIds,
   models: WIRE_MODEL_OPTIONS.map((model) => ({
     id: model.id,
     label: model.label,

@@ -38,10 +38,7 @@ import {
   DEFAULT_ENABLED_WIRE_MODELS,
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
-  fromCustomLocalModelId,
   getWireModelProvider,
-  isCustomLocalModelId,
-  isOpencodeWireModel,
   WIRE_MODEL_PROVIDER_LABEL,
   type WireModelOption,
   type WireModelProvider,
@@ -107,13 +104,6 @@ type RequestedGenerationMode =
 const CHART_ICON_QUALITY_FAILURE_MESSAGE =
   "Generated dashboard output is missing real charts or SVG icons, or still contains chart placeholders. Regenerate with stricter chart output.";
 
-const LOCAL_AGENT_POLL_INTERVAL_MS = 2_500;
-/**
- * Generous: a slow free model can take several minutes for one screen, and a
- * multi-concept run finishes one job at a time.
- */
-const LOCAL_AGENT_TIMEOUT_MS = 10 * 60_000;
-
 const STAGE_LABELS: Record<WireProgressStage, string> = {
   processing: "Processing your request…",
   researching: "Reading the site you linked…",
@@ -149,10 +139,7 @@ const GENERATION_FAILURE_PREVIEW_HTML = [
   "</html>",
 ].join("");
 
-// Local models are discovered at runtime and may be missing from the catalog,
-// so the raw id is the fallback label.
 const getModelLabel = (modelName: string) =>
-  fromCustomLocalModelId(modelName) ??
   WIRE_MODEL_OPTIONS.find((option) => option.id === modelName)?.label ??
   modelName;
 
@@ -339,7 +326,6 @@ export default function WirePromptSidebar({
   const setPageDeviceType = useEditorStore((state) => state.setPageDeviceType);
   const setPageStatus = useEditorStore((state) => state.setPageStatus);
   const clearPageStatuses = useEditorStore((state) => state.clearPageStatuses);
-  const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const beginSaving = useEditorStore((state) => state.beginSaving);
   const endSaving = useEditorStore((state) => state.endSaving);
   const requestGeneratedPageFocusCheck = useEditorStore(
@@ -513,7 +499,6 @@ export default function WirePromptSidebar({
   const {
     messages,
     append,
-    setMessages,
     isLoading,
     stop,
     data,
@@ -1132,167 +1117,6 @@ export default function WirePromptSidebar({
     ],
   );
 
-  /**
-   * Runs a prompt through the user's local agent instead of the hosted route.
-   *
-   * opencode models execute on the user's own machine, so there is nothing to
-   * stream: the request is queued, the agent claims it on its next poll, and the
-   * pages appear when it reports back. Polling rather than streaming is why this
-   * does not go through useChat like every other model.
-   */
-  const startLocalAgentGeneration = useCallback(
-    async (
-      promptText: string,
-      modelName?: WireModelName,
-      targetPageId?: string | null,
-    ) => {
-      const trimmedPrompt = promptText.trim();
-      if (!trimmedPrompt) return false;
-      const runModel = modelName ?? activeModelName;
-
-      beginSaving();
-      setMessages((current) => [
-        ...current,
-        { id: crypto.randomUUID(), role: "user", content: trimmedPrompt },
-      ]);
-
-      try {
-        const queueResponse = await fetch(`/api/projects/${wireId}/concepts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: trimmedPrompt,
-            model: runModel,
-            // Present means "revise this page"; absent means "add concepts".
-            ...(targetPageId ? { targetPageId } : {}),
-            deviceType: useEditorStore.getState().activeDevice,
-          }),
-        });
-        const queued = (await queueResponse.json()) as {
-          error?: string;
-          jobs?: Array<{ id?: string }>;
-        };
-        if (!queueResponse.ok || !queued.jobs?.length) {
-          throw new Error(queued.error || "Could not queue the local run.");
-        }
-
-        // Each concept is its own job and finishes on its own clock. Pages are
-        // pulled in per completion, which is what makes the canvas fill one
-        // concept at a time instead of all at once at the end.
-        const jobIds = queued.jobs
-          .map((job) => job.id)
-          .filter((id): id is string => Boolean(id));
-        if (jobIds.length === 0) {
-          throw new Error("Could not queue the local run.");
-        }
-
-        const deadline = Date.now() + LOCAL_AGENT_TIMEOUT_MS;
-        const pending = new Set(jobIds);
-        const failures: string[] = [];
-        let completed = 0;
-
-        const pullPages = async () => {
-          const pagesResponse = await fetch(`/api/projects/${wireId}/pages`, {
-            cache: "no-store",
-          });
-          const pagesPayload = (await pagesResponse.json()) as {
-            error?: string;
-            pages?: Array<{
-              id: string;
-              title: string;
-              htmlContent: string | null;
-              deviceType: PageDeviceType | null;
-            }>;
-          };
-          if (!pagesResponse.ok || !pagesPayload.pages) {
-            throw new Error(pagesPayload.error || "Could not load the new concepts.");
-          }
-
-          hydrateProject(
-            pagesPayload.pages.map((page) => ({
-              id: page.id,
-              title: page.title,
-              iframeHtml: page.htmlContent ?? "",
-              deviceType: page.deviceType ?? undefined,
-              sections: [],
-            })),
-            getModelLabel(runModel),
-          );
-        };
-
-        while (pending.size > 0 && Date.now() < deadline) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, LOCAL_AGENT_POLL_INTERVAL_MS),
-          );
-
-          await Promise.all(
-            [...pending].map(async (jobId) => {
-              const statusResponse = await fetch(
-                `/api/projects/${wireId}/concepts/${jobId}`,
-                { cache: "no-store" },
-              );
-              // A blip on one poll should not sink the batch; the next tick
-              // retries and the deadline bounds a genuinely lost job.
-              if (!statusResponse.ok) return;
-              const payload = (await statusResponse.json()) as {
-                job?: { status?: string; error?: string | null };
-              };
-              const status = payload.job?.status;
-              if (status === "failed" || status === "cancelled") {
-                pending.delete(jobId);
-                failures.push(payload.job?.error || "A concept run failed.");
-                return;
-              }
-              if (status !== "completed") return;
-              pending.delete(jobId);
-              completed += 1;
-              await pullPages();
-            }),
-          );
-        }
-
-        if (completed === 0) {
-          throw new Error(
-            failures[0] ||
-              "The local agent did not finish in time. Check that it is still running.",
-          );
-        }
-
-        // The count is what actually landed, not what was asked for.
-        const requested = jobIds.length;
-        setMessages((current) => [
-          ...current,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: targetPageId
-              ? "Updated the page on your local agent."
-              : completed === requested
-                ? `Generated ${completed} concept${completed === 1 ? "" : "s"} on your local agent.`
-                : `Generated ${completed} of ${requested} concepts on your local agent.`,
-          },
-        ]);
-        return true;
-      } catch (error) {
-        reportError(
-          error instanceof Error ? error.message : "The local run failed.",
-        );
-        return false;
-      } finally {
-        endSaving();
-      }
-    },
-    [
-      activeModelName,
-      beginSaving,
-      endSaving,
-      hydrateProject,
-      reportError,
-      setMessages,
-      wireId,
-    ],
-  );
-
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -1310,22 +1134,6 @@ export default function WirePromptSidebar({
           `A run can edit up to ${MAX_PROMPT_TARGET_PAGES} pages, so ${target.droppedCount} ` +
             `${target.droppedCount === 1 ? "page was" : "pages were"} left out.`,
         );
-      }
-
-      // opencode models never reach the hosted route: they run on the user's
-      // machine, and the concepts route revises at most one page. A single
-      // target revises that page; a new page or several pages queue a fresh
-      // batch of concepts, which is what the old "All pages" choice did.
-      if (isOpencodeWireModel(activeModelName)) {
-        const generated = await startLocalAgentGeneration(
-          prompt,
-          undefined,
-          target.kind === "page" ? target.pageId : null,
-        );
-        if (generated) {
-          setPrompt("");
-        }
-        return;
       }
 
       if (target.kind === "pages") {
@@ -1392,7 +1200,6 @@ export default function WirePromptSidebar({
       setPrompt,
       startBatchGeneration,
       startGenerationForPage,
-      startLocalAgentGeneration,
     ],
   );
 
@@ -1491,11 +1298,6 @@ export default function WirePromptSidebar({
 
       setPrompt("");
 
-      if (isOpencodeWireModel(resolvedModel)) {
-        void startLocalAgentGeneration(storedPrompt, resolvedModel);
-        return;
-      }
-
       const runInitialBatch = async () => {
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
@@ -1542,7 +1344,6 @@ export default function WirePromptSidebar({
     markPagesAsLoading,
     startBatchGeneration,
     startGenerationForPage,
-    startLocalAgentGeneration,
     reportError,
     setPrompt,
     wireId,
@@ -1689,8 +1490,6 @@ export default function WirePromptSidebar({
   const noModelsEnabled = enabledModelIds.length === 0;
   const groupedEnabledModels = useMemo(() => {
     const grouped: Record<WireModelProvider, WireModelOption[]> = {
-      opencode: [],
-      local: [],
       google: [],
       openrouter: [],
       zai: [],
@@ -1698,27 +1497,12 @@ export default function WirePromptSidebar({
 
     enabledModelIds.forEach((modelId) => {
       const model = WIRE_MODEL_OPTIONS.find((option) => option.id === modelId);
-      if (model) {
-        grouped[model.provider].push(model);
-        return;
-      }
-      // Enabled local ids have no catalog entry: the label is the raw
-      // `provider/model` string the agent will run.
-      if (isCustomLocalModelId(modelId)) {
-        grouped.local.push({
-          id: modelId,
-          label: fromCustomLocalModelId(modelId) ?? modelId,
-          description: "From your local opencode setup.",
-          tier: "paid",
-          provider: "local",
-        });
-      }
+      if (model) grouped[model.provider].push(model);
     });
 
     return grouped;
   }, [enabledModelIds]);
   const activeModelLabel =
-    fromCustomLocalModelId(activeModelName) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeModelName)?.label ??
     activeModelName;
   // The @ popover. It is derived from the text and caret on every render, so
@@ -1898,11 +1682,9 @@ export default function WirePromptSidebar({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="border-border bg-card text-foreground shadow-xl">
-                {groupedEnabledModels.local.length +
-                  groupedEnabledModels.google.length +
+                {groupedEnabledModels.google.length +
                   groupedEnabledModels.openrouter.length +
-                  groupedEnabledModels.zai.length +
-                  groupedEnabledModels.opencode.length >
+                  groupedEnabledModels.zai.length >
                 12 ? (
                   <div className="p-2" onKeyDown={(event) => event.stopPropagation()}>
                     <input
@@ -1913,7 +1695,7 @@ export default function WirePromptSidebar({
                     />
                   </div>
                 ) : null}
-                {(["opencode", "local", "google", "openrouter", "zai"] as const).map((provider, index) => {
+                {(["google", "openrouter", "zai"] as const).map((provider, index) => {
                   const providerModels = groupedEnabledModels[provider]
                     .filter((model) => matchesModelFilter(model.label))
                     .slice(0, 60);

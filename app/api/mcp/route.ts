@@ -5,9 +5,8 @@
  * JSON body back. No SSE channel and no session survive between requests,
  * which is the only shape a serverless function can hold.
  *
- * Auth reuses the personal bearer tokens minted in settings — the same
- * credential the local agent logs in with. Tokens are accepted only here and
- * on `/api/agent/*`, never on the session-authenticated profile routes.
+ * Auth uses the personal bearer tokens minted in settings. Tokens are accepted
+ * only here, never on the session-authenticated profile routes.
  */
 import { authenticateAgentRequest } from "@/lib/auth/apiToken";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";

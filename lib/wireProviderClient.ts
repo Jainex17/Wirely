@@ -4,10 +4,6 @@
  * Shared so the generation route and the project-title route construct clients
  * the same way. Every call is paid for by a key the user saved: there is no
  * server-owned key in this path.
- *
- * opencode models are absent on purpose. They run on the user's machine through
- * the local agent and never resolve to a hosted client, so callers must handle
- * them before reaching here.
  */
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -68,8 +64,5 @@ export const getKeyForWireModel = (
       return keys.zaiApiKey ?? null;
     case "openrouter":
       return keys.openRouterApiKey ?? null;
-    // opencode runs locally and has no key to check.
-    default:
-      return null;
   }
 };

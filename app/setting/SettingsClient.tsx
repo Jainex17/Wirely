@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
@@ -23,12 +23,7 @@ import AppHeader from "@/components/AppHeader";
 import GeminiIcon from "@/components/icons/GeminiIcon";
 import { toast } from "@/components/ui/sonner";
 import {
-  RAW_CUSTOM_LOCAL_MODEL_PATTERN,
   WIRE_MODEL_OPTIONS,
-  WIRE_MODEL_PROVIDER_LABEL,
-  fromCustomLocalModelId,
-  isCustomLocalModelId,
-  toCustomLocalModelId,
   type WireModelName,
   type WireModelProvider,
 } from "@/lib/wireModels";
@@ -45,28 +40,11 @@ interface SettingsClientProps {
   user: { name: string | null; email: string | null; avatarUrl: string | null };
   initialKeys: ProviderKeys;
   initialEnabledModelIds: WireModelName[];
-  initialDiscoveredLocalModelIds: string[];
   initialTab: SettingsTab;
   initialAgentTokens: AgentTokenSummary[];
-  initialAgentOnline: boolean;
 }
 
-const MODEL_PROVIDERS: WireModelProvider[] = ["opencode", "google", "openrouter", "zai"];
-
-/**
- * opencode models run on the user's own machine, so they have no API key and no
- * entry in PROVIDERS. Their credential is a connected local agent instead.
- */
-const OPENCODE_PROVIDER = {
-  label: "opencode (local)",
-  summary: "Free models through the agent on your machine.",
-} as const;
-
-const providerLabel = (provider: WireModelProvider) => {
-  if (provider === "opencode") return OPENCODE_PROVIDER.label;
-  if (provider === "local") return WIRE_MODEL_PROVIDER_LABEL.local;
-  return PROVIDERS[provider].label;
-};
+const MODEL_PROVIDERS: WireModelProvider[] = ["google", "openrouter", "zai"];
 
 const KEY_FIELD: Record<ApiKeyProvider, string> = {
   google: "googleApiKey",
@@ -107,10 +85,8 @@ export default function SettingsClient({
   user,
   initialKeys,
   initialEnabledModelIds,
-  initialDiscoveredLocalModelIds,
   initialTab,
   initialAgentTokens,
-  initialAgentOnline,
 }: SettingsClientProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [keys, setKeys] = useState(initialKeys);
@@ -181,25 +157,6 @@ export default function SettingsClient({
         : [...enabledModelIds, modelId],
     );
 
-  /** Adds a hand-typed `provider/model` id as an enabled local model. */
-  const addLocalModel = (rawModel: string): Promise<string | null> => {
-    const trimmed = rawModel.trim();
-    if (!RAW_CUSTOM_LOCAL_MODEL_PATTERN.test(trimmed)) {
-      return Promise.resolve(
-        "Use the shape `provider/model`, like `zai-coding-plan/glm-4.6`.",
-      );
-    }
-    const modelId = toCustomLocalModelId(trimmed);
-    if (enabledModelIds.includes(modelId)) {
-      return Promise.resolve("That model is already enabled.");
-    }
-    return writeEnabledModels([...enabledModelIds, modelId]).then(
-      () => null,
-      (error: unknown) =>
-        error instanceof Error ? error.message : "Could not add the model.",
-    );
-  };
-
   const setProviderModels = (provider: WireModelProvider, enabled: boolean) => {
     const providerIds = WIRE_MODEL_OPTIONS.filter(
       (model) => model.provider === provider,
@@ -262,13 +219,9 @@ export default function SettingsClient({
             <ModelsPanel
               keys={keys}
               enabledModelIds={enabledModelIds}
-              discoveredLocalModelIds={initialDiscoveredLocalModelIds}
-              agentOnline={initialAgentOnline}
               onToggleModel={toggleModel}
               onToggleProvider={setProviderModels}
-              onAddLocalModel={addLocalModel}
               onAddKey={setDialogProvider}
-              onOpenMcpTab={() => setTab("mcp")}
             />
           </TabsContent>
 
@@ -593,87 +546,22 @@ function ModelRow({
   );
 }
 
-/** Rows shown before a "show more" button takes over; the search matches everything. */
-const VISIBLE_DISCOVERED_LIMIT = 10;
-
 function ModelsPanel({
   keys,
   enabledModelIds,
-  discoveredLocalModelIds,
-  agentOnline,
   onToggleModel,
   onToggleProvider,
-  onAddLocalModel,
   onAddKey,
-  onOpenMcpTab,
 }: {
   keys: ProviderKeys;
   enabledModelIds: WireModelName[];
-  discoveredLocalModelIds: string[];
-  agentOnline: boolean;
   onToggleModel: (modelId: WireModelName) => void;
   onToggleProvider: (provider: WireModelProvider, enabled: boolean) => void;
-  onAddLocalModel: (rawModel: string) => Promise<string | null>;
   onAddKey: (provider: ApiKeyProvider) => void;
-  onOpenMcpTab: () => void;
 }) {
-  // opencode starts open: it is the reason most people visit this tab, and a
-  // running agent means its section carries hundreds of searchable models.
   const [openProvider, setOpenProvider] = useState<WireModelProvider | null>(
-    "opencode",
+    "google",
   );
-  const [modelFilter, setModelFilter] = useState("");
-  const [showAllDiscovered, setShowAllDiscovered] = useState(false);
-  const [modelInput, setModelInput] = useState("");
-  const [isAddingModel, setIsAddingModel] = useState(false);
-  const [addModelError, setAddModelError] = useState<string | null>(null);
-
-  const normalizedFilter = modelFilter.trim().toLowerCase();
-  const isSearching = normalizedFilter.length > 0;
-  const matches = (text: string) =>
-    !isSearching || text.toLowerCase().includes(normalizedFilter);
-
-  const curatedLocalModels = WIRE_MODEL_OPTIONS.filter(
-    (model) => model.provider === "opencode",
-  );
-  // Enabled models float to the top: the point of this tab is picking the
-  // two or three you use, and they should not sink under hundreds of rows.
-  const discoveredRows = useMemo(() => {
-    const enabledIdSet = new Set(enabledModelIds);
-    return [...discoveredLocalModelIds].sort((a, b) => {
-      const aOn = enabledIdSet.has(toCustomLocalModelId(a)) ? 0 : 1;
-      const bOn = enabledIdSet.has(toCustomLocalModelId(b)) ? 0 : 1;
-      return aOn - bOn || a.localeCompare(b);
-    });
-  }, [discoveredLocalModelIds, enabledModelIds]);
-
-  const visibleCuratedModels = curatedLocalModels.filter(
-    (model) => matches(model.label) || matches(model.id),
-  );
-  const filteredDiscoveredModels = discoveredRows.filter(matches);
-  const visibleDiscoveredModels = isSearching
-    ? filteredDiscoveredModels
-    : filteredDiscoveredModels.slice(
-        0,
-        showAllDiscovered ? undefined : VISIBLE_DISCOVERED_LIMIT,
-      );
-  const hiddenDiscoveredCount =
-    filteredDiscoveredModels.length - visibleDiscoveredModels.length;
-
-  const addLocalModel = async () => {
-    const raw = modelInput.trim();
-    if (!raw || isAddingModel) return;
-    setIsAddingModel(true);
-    setAddModelError(null);
-    const error = await onAddLocalModel(raw);
-    setIsAddingModel(false);
-    if (error) {
-      setAddModelError(error);
-      return;
-    }
-    toast.success(`Added ${fromCustomLocalModelId(toCustomLocalModelId(raw))}.`);
-    setModelInput("");
-  };
 
   return (
     <Panel
@@ -685,25 +573,13 @@ function ModelsPanel({
           const models = WIRE_MODEL_OPTIONS.filter(
             (model) => model.provider === provider,
           );
-          // The opencode section also carries the models reported by the
-          // user's own machine, enabled or not under their local/... ids.
-          const localEnabledCount =
-            provider === "opencode"
-              ? enabledModelIds.filter((id) => isCustomLocalModelId(id)).length
-              : 0;
-          const totalCount =
-            models.length +
-            (provider === "opencode" ? discoveredLocalModelIds.length : 0);
-          const enabledCount =
-            models.filter((model) => enabledModelIds.includes(model.id)).length +
-            localEnabledCount;
+          const enabledCount = models.filter((model) =>
+            enabledModelIds.includes(model.id),
+          ).length;
           const allEnabled = enabledCount === models.length;
-          // For opencode the gate is a running agent, not a saved key.
-          const hasKey =
-            provider === "opencode" ? agentOnline : keys[provider as ApiKeyProvider];
+          const hasKey = keys[provider];
 
           const expanded = openProvider === provider;
-          const isLocal = provider === "opencode";
 
           return (
             <div key={provider}>
@@ -721,38 +597,25 @@ function ModelsPanel({
                   />
                   <span>
                     <span className="block text-sm font-medium text-foreground">
-                      {providerLabel(provider)}
+                      {PROVIDERS[provider].label}
                     </span>
                     <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
-                      {enabledCount} of {totalCount} on
+                      {enabledCount} of {models.length} on
                     </span>
                   </span>
                 </button>
                 {!hasKey ? (
-                  provider === "opencode" ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-foreground"
-                      onClick={onOpenMcpTab}
-                    >
-                      Set up MCP
-                      <ArrowUpRight className="size-3.5" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-foreground"
-                      onClick={() => onAddKey(provider as ApiKeyProvider)}
-                    >
-                      Add key
-                      <ArrowUpRight className="size-3.5" />
-                    </Button>
-                  )
-                ) : provider === "opencode" ? null : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-foreground"
+                    onClick={() => onAddKey(provider)}
+                  >
+                    Add key
+                    <ArrowUpRight className="size-3.5" />
+                  </Button>
+                ) : (
                   <Button
                     type="button"
                     variant="ghost"
@@ -767,143 +630,24 @@ function ModelsPanel({
 
               {expanded ? (
                 <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-                  {isLocal ? (
-                    <>
-                      <div className="border-b border-border/60 px-5 py-3">
-                        <input
-                          value={modelFilter}
-                          onChange={(event) => setModelFilter(event.target.value)}
-                          placeholder={
-                            discoveredLocalModelIds.length > 0
-                              ? `Search ${totalCount} models…`
-                              : "Search models…"
-                          }
-                          className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-                        />
-                      </div>
-
-                      {visibleCuratedModels.length > 0 ? (
-                        <>
-                          <p className="px-5 pb-1 pt-4 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                            Built-in · free
-                          </p>
-                          <div className="divide-y divide-border/60">
-                            {visibleCuratedModels.map((model) => (
-                              <ModelRow
-                                key={model.id}
-                                modelId={model.id}
-                                label={model.label}
-                                hint={model.id}
-                                enabled={enabledModelIds.includes(model.id)}
-                                onToggle={onToggleModel}
-                              />
-                            ))}
-                          </div>
-                        </>
-                      ) : null}
-
-                      <div className="px-5 pb-1 pt-4 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {discoveredLocalModelIds.length > 0
-                          ? `From your machine · ${discoveredLocalModelIds.length} reported`
-                          : "From your machine"}
-                      </div>
-                      {discoveredLocalModelIds.length === 0 ? (
-                        <p className="px-5 pb-4 text-sm leading-relaxed text-muted-foreground">
-                          Start the agent once — it reports every model your
-                          opencode offers, and you switch on the few you want.
-                        </p>
-                      ) : (
-                        <div className="divide-y divide-border/60">
-                          {visibleDiscoveredModels.map((rawModel: string) => (
-                            <ModelRow
-                              key={rawModel}
-                              modelId={toCustomLocalModelId(rawModel)}
-                              label={rawModel}
-                              enabled={enabledModelIds.includes(
-                                toCustomLocalModelId(rawModel),
-                              )}
-                              onToggle={onToggleModel}
-                            />
-                          ))}
-                          {filteredDiscoveredModels.length === 0 ? (
-                            <p className="px-5 py-4 text-sm text-muted-foreground">
-                              {isSearching
-                                ? "No models match that search."
-                                : "No models reported yet."}
-                            </p>
-                          ) : null}
-                        </div>
-                      )}
-
-                      {hiddenDiscoveredCount > 0 ? (
-                        <div className="border-t border-border/60 px-5 py-3">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowAllDiscovered(true)}
-                          >
-                            Show {hiddenDiscoveredCount} more models
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      <form
-                        className="space-y-2 border-t border-border/60 px-5 py-4"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          void addLocalModel();
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={modelInput}
-                            onChange={(event) => setModelInput(event.target.value)}
-                            placeholder="Missing one? Add provider/model by name"
-                            spellCheck={false}
-                            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <Button
-                            type="submit"
-                            size="sm"
-                            disabled={isAddingModel || !modelInput.trim()}
-                          >
-                            {isAddingModel ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Plus className="size-3.5" />
-                            )}
-                            Add
-                          </Button>
-                        </div>
-                        {addModelError ? (
-                          <p className="text-xs text-destructive">{addModelError}</p>
-                        ) : null}
-                      </form>
-                    </>
-                  ) : (
-                    <div className="divide-y divide-border/60">
-                      {models.map((model) => (
-                        <ModelRow
-                          key={model.id}
-                          modelId={model.id}
-                          label={model.label}
-                          hint={model.id}
-                          enabled={enabledModelIds.includes(model.id)}
-                          onToggle={onToggleModel}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  <div className="divide-y divide-border/60">
+                    {models.map((model) => (
+                      <ModelRow
+                        key={model.id}
+                        modelId={model.id}
+                        label={model.label}
+                        hint={model.id}
+                        enabled={enabledModelIds.includes(model.id)}
+                        onToggle={onToggleModel}
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
               {expanded && !hasKey && enabledCount > 0 ? (
                 <p className="mt-2.5 text-xs text-muted-foreground">
-                  {provider === "opencode"
-                    ? "These stay listed but cannot run until your local agent is running."
-                    : `These stay listed but cannot run until a ${providerLabel(provider)} key is connected.`}
+                  {`These stay listed but cannot run until a ${PROVIDERS[provider].label} key is connected.`}
                 </p>
               ) : null}
             </div>

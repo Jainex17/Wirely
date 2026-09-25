@@ -9,12 +9,9 @@ import {
   DEFAULT_WIRE_MODEL,
   WIRE_MODEL_OPTIONS,
   WIRE_MODEL_PROVIDER_LABEL,
-  fromCustomLocalModelId,
   getWireModelProvider,
-  isCustomLocalModelId,
   resolveRunnableWireModel,
   type WireModelName,
-  type WireModelOption,
 } from "@/lib/wireModels";
 import {
   DropdownMenu,
@@ -213,21 +210,9 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const { ref: promptTextareaRef, resize: resizePromptTextarea } =
     useAutoGrowTextarea({ value: state.prompt, minRows: 4 });
 
-  const enabledModelOptions = state.enabledModelIds
-    .map((modelId) => {
-      const catalogModel = WIRE_MODEL_OPTIONS.find((model) => model.id === modelId);
-      if (catalogModel) return catalogModel;
-      // Enabled local ids have no catalog entry; the raw id is the label.
-      if (!isCustomLocalModelId(modelId)) return undefined;
-      return {
-        id: modelId,
-        label: fromCustomLocalModelId(modelId) ?? modelId,
-        description: "From your local opencode setup.",
-        tier: "paid" as const,
-        provider: "local" as const,
-      };
-    })
-    .filter((model): model is WireModelOption => Boolean(model));
+  const enabledModelOptions = WIRE_MODEL_OPTIONS.filter((model) =>
+    state.enabledModelIds.includes(model.id),
+  );
   const pickerModels = enabledModelOptions;
 
   const activeSelectedModel = state.enabledModelIds.includes(state.selectedModel)
@@ -262,7 +247,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   // Only push users toward key setup when nothing they enabled can run.
   const showConfigureApiKeysCta = hasNoRunnableModels;
   const selectedModelLabel =
-    fromCustomLocalModelId(activeSelectedModel) ??
     WIRE_MODEL_OPTIONS.find((model) => model.id === activeSelectedModel)?.label ??
     activeSelectedModel;
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

@@ -146,7 +146,7 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
 
       setTokens((current) => current.filter((token) => token.id !== tokenId));
       // Only the prompt's own token closes the prompt; revoking an older one
-      // (say, a wirely-agent CLI token) must not.
+      // (say, one another client already uses) must not.
       if (tokenId === newTokenId) {
         setNewToken(null);
         setNewTokenId(null);
@@ -245,11 +245,8 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
                     </div>
                   ) : null}
                   <p className="mt-1.5 pl-7 text-xs leading-relaxed text-muted-foreground">
-                    The raw token is only needed for the{" "}
-                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
-                      wirely-agent
-                    </code>{" "}
-                    CLI. For everything else, use the prompt below.
+                    The raw token is only needed to configure a client by hand.
+                    Otherwise, use the prompt below.
                   </p>
                 </div>
 

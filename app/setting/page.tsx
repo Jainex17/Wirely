@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { listApiTokens } from "@/lib/auth/apiToken";
-import { isLocalAgentOnline } from "@/lib/db/queries/localAgent";
 import SettingsClient, { type SettingsTab } from "./SettingsClient";
 
 export const metadata: Metadata = {
@@ -31,10 +30,7 @@ export default async function SettingPage({
   }
   const { user: sessionUser, aiSettings } = session;
 
-  const [agentTokens, agentOnline] = await Promise.all([
-    listApiTokens(sessionUser.id),
-    isLocalAgentOnline(sessionUser.id),
-  ]);
+  const agentTokens = await listApiTokens(sessionUser.id);
 
   return (
     <SettingsClient
@@ -50,7 +46,6 @@ export default async function SettingPage({
         unsplash: aiSettings.hasUnsplashApiKey,
       }}
       initialEnabledModelIds={aiSettings.enabledModelIds}
-      initialDiscoveredLocalModelIds={aiSettings.discoveredLocalModelIds}
       initialTab={toTab(tab)}
       initialAgentTokens={agentTokens.map((token) => ({
         id: token.id,
@@ -59,7 +54,6 @@ export default async function SettingPage({
         lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
         createdAt: token.createdAt.toISOString(),
       }))}
-      initialAgentOnline={agentOnline}
     />
   );
 }

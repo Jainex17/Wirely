@@ -1,7 +1,7 @@
 /**
- * Personal access tokens for the Wirely local agent.
+ * Personal access tokens for the Wirely MCP server.
  *
- * The agent cannot carry a Clerk browser session, so it authenticates with a
+ * An MCP client cannot carry a Clerk browser session, so it authenticates with a
  * bearer token the user mints once in settings. Only the SHA-256 hash is
  * persisted, and the plaintext is shown exactly once at creation.
  */
@@ -38,7 +38,7 @@ export interface CreatedApiToken {
 
 export const createApiToken = async (
   userId: string,
-  name = "Local agent",
+  name = "MCP"
 ): Promise<CreatedApiToken> => {
   const token = `${API_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   const prefix = token.slice(0, PREFIX_DISPLAY_LENGTH);
@@ -89,14 +89,8 @@ export const revokeApiToken = async (userId: string, tokenId: string): Promise<b
 };
 
 /**
- * Resolves a bearer token to its owner, or null when the token is unknown,
- * revoked, or malformed.
- */
-/**
- * How stale `lastUsedAt` may get before a request refreshes it.
- *
- * Must stay well under the window `isLocalAgentOnline` treats as connected, and
- * well over the agent's fastest poll, so most polls cost no write at all.
+ * How stale `lastUsedAt` may get before a request refreshes it, so a burst of
+ * MCP calls costs one write instead of one per call.
  */
 const TOKEN_TOUCH_INTERVAL_MS = 30_000;
 
@@ -124,10 +118,6 @@ export const getUserForApiToken = async (token: string): Promise<SessionUser | n
 
   if (!row || !hashesMatch(row.tokenHash, tokenHash)) return null;
 
-  // The agent asks for work every couple of seconds, and this column only
-  // feeds a liveness window measured in tens of seconds. Writing on every poll
-  // turned a read-only request into a write, which on a database that suspends
-  // when idle is the difference between sleeping and running all night.
   const lastUsed = row.lastUsedAt?.getTime() ?? 0;
   if (Date.now() - lastUsed > TOKEN_TOUCH_INTERVAL_MS) {
     // Best effort: a failed touch must not fail the request it is annotating.
@@ -155,11 +145,11 @@ export const readBearerToken = (header: string | null): string | null => {
 };
 
 /**
- * Authenticates a local-agent request.
+ * Authenticates an MCP request.
  *
- * Deliberately separate from `getRequestSessionUser`: agent tokens are accepted
- * only on the `/api/agent/*` routes, so a leaked token cannot reach the profile
- * routes that read and write the user's encrypted provider keys.
+ * Deliberately separate from `getRequestSessionUser`: tokens are accepted only
+ * on `/api/mcp`, so a leaked token cannot reach the profile routes that read
+ * and write the user's encrypted provider keys.
  */
 export const authenticateAgentRequest = async (
   request: Request,

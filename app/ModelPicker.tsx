@@ -19,8 +19,7 @@ import {
   type WireModelOption,
 } from "@/lib/wireModels";
 
-// opencode first: it is free and needs no key, so it is the easiest to run.
-const PROVIDER_ORDER = ["opencode", "local", "google", "openrouter", "zai"] as const;
+const PROVIDER_ORDER = ["google", "openrouter", "zai"] as const;
 
 interface ModelPickerProps {
   label: string;

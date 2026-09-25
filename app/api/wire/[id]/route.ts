@@ -55,7 +55,6 @@ import {
 import type { ArtifactCategory } from "@/lib/wireIntent";
 import {
   isGoogleWireModel,
-  isOpencodeWireModel,
   isOpenRouterWireModel,
   isZaiWireModel,
   isWireModelName,
@@ -939,17 +938,6 @@ export async function POST(request: Request, context: RouteContext) {
       new Response(
         `Model ${effectiveModelName} is disabled. Enable it in Models first.`,
         { status: 403 },
-      ),
-    );
-  }
-  // opencode models run on the user's machine through the local agent, not
-  // here. Reject them explicitly rather than falling through to a provider
-  // client that would fail with a confusing credential error.
-  if (isOpencodeWireModel(effectiveModelName)) {
-    return applyRateHeaders(
-      new Response(
-        `${effectiveModelName} runs on your local agent. Generate concepts from the local agent instead.`,
-        { status: 400 },
       ),
     );
   }

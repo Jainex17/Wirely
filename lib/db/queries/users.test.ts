@@ -21,7 +21,6 @@ describe("toPublicUserAiSettings", () => {
       unsplashApiKeyHmac: "uns_hmac",
       unsplashApiKeyKeyVersion: 1,
       enabledGoogleModels: ["gemini-3.1-pro-preview", "gemini-3.5-flash-lite"],
-      localModelCatalog: [],
     });
 
     expect(publicSettings).toEqual({
@@ -30,7 +29,6 @@ describe("toPublicUserAiSettings", () => {
       hasZaiApiKey: true,
       hasUnsplashApiKey: true,
       enabledModelIds: ["gemini-3.5-flash-lite", "gemini-3.1-pro-preview"],
-      discoveredLocalModelIds: [],
     });
     expect(
       Object.prototype.hasOwnProperty.call(publicSettings, "googleApiKey"),
@@ -62,7 +60,6 @@ describe("toPublicUserAiSettings", () => {
       unsplashApiKeyHmac: "uns_hmac",
       unsplashApiKeyKeyVersion: 1,
       enabledGoogleModels: ["gemini-3.8-flash"],
-      localModelCatalog: [],
     });
 
     expect(publicSettings).toEqual({
@@ -71,7 +68,6 @@ describe("toPublicUserAiSettings", () => {
       hasZaiApiKey: false,
       hasUnsplashApiKey: false,
       enabledModelIds: ["gemini-3.8-flash"],
-      discoveredLocalModelIds: [],
     });
   });
 });

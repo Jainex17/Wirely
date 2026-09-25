@@ -1,14 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
-  fromCustomLocalModelId,
-  getWireModelProvider,
-  isCustomLocalModelId,
-  isOpencodeWireModel,
-  isWireModelName,
-  normalizeDiscoveredLocalModels,
-  RAW_CUSTOM_LOCAL_MODEL_PATTERN,
+  normalizeEnabledWireModels,
   resolveRunnableWireModel,
-  toCustomLocalModelId,
   type WireModelName,
 } from "@/lib/wireModels";
 
@@ -69,64 +62,14 @@ describe("resolveRunnableWireModel", () => {
   });
 });
 
-describe("custom local models", () => {
-  const CUSTOM_ID = "local/zai-coding-plan/glm-4.6";
-
-  it("treats a prefixed provider/model as a wire model routed to the agent", () => {
-    expect(isWireModelName(CUSTOM_ID)).toBe(true);
-    expect(getWireModelProvider(CUSTOM_ID)).toBe("local");
-    expect(isOpencodeWireModel(CUSTOM_ID)).toBe(true);
-  });
-
-  it("rejects malformed custom ids", () => {
-    expect(isWireModelName("local/nope")).toBe(false);
-    expect(isWireModelName("local//")).toBe(false);
-    expect(isWireModelName("locally/gemini")).toBe(false);
-    expect(isCustomLocalModelId("local/ok-model/name")).toBe(true);
-  });
-
-  it("round-trips between the wire id and the raw opencode string", () => {
-    expect(toCustomLocalModelId("zai-coding-plan/glm-4.6")).toBe(CUSTOM_ID);
-    expect(fromCustomLocalModelId(CUSTOM_ID)).toBe("zai-coding-plan/glm-4.6");
-    expect(fromCustomLocalModelId("gemini-3.8-flash")).toBeNull();
-  });
-
-  it("keeps the stored list valid, unique and bounded", () => {
-    const normalized = normalizeDiscoveredLocalModels([
-      "zai-coding-plan/glm-4.6",
-      "zai-coding-plan/glm-4.6",
-      " github-copilot/claude-opus-5 ",
-      "openrouter/google/gemma-4:free",
-      "not-a-model",
-      "",
-      42,
-      null,
-    ]);
-
-    expect(normalized).toEqual([
-      "zai-coding-plan/glm-4.6",
-      "github-copilot/claude-opus-5",
-      "openrouter/google/gemma-4:free",
-    ]);
-  });
-
-  it("caps the discovered catalog so one machine cannot flood the picker", () => {
-    const flood = Array.from(
-      { length: 600 },
-      (_, index) => `provider/model-${index}`,
-    );
-    expect(normalizeDiscoveredLocalModels(flood)).toHaveLength(500);
-  });
-
-  it("accepts the id shapes opencode models actually prints", () => {
-    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("zai-coding-plan/glm-4.6")).toBe(true);
+describe("saved model settings", () => {
+  it("drops opencode and local ids left over from the removed local agent", () => {
     expect(
-      RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("openrouter/google/gemma-4:free"),
-    ).toBe(true);
-    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("openrouter/~z-ai/glm-flash-latest")).toBe(
-      true,
-    );
-    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("not-a-model")).toBe(false);
-    expect(RAW_CUSTOM_LOCAL_MODEL_PATTERN.test("has spaces/in it")).toBe(false);
+      normalizeEnabledWireModels([
+        "opencode/mimo-v2.5-free",
+        "local/zai-coding-plan/glm-4.6",
+        "gemini-3.8-flash",
+      ]),
+    ).toEqual(["gemini-3.8-flash"]);
   });
 });

@@ -8,7 +8,6 @@ import { logger } from "@/lib/logger";
 import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import { getKeyForWireModel, getLanguageModel } from "@/lib/wireProviderClient";
 import {
-  isOpencodeWireModel,
   isWireModelName,
   resolveFastWireModelForStage,
   type WireModelName,
@@ -55,11 +54,8 @@ const TITLE_TRAILING_STOPWORDS = new Set([
 /**
  * Names a project from its prompt when no title model is available.
  *
- * Used whenever generation runs on a local opencode model, since those cannot
- * be called server-side, so this is the title most local-agent projects get
- * rather than a rare fallback. Drops the instruction lead-in ("Design a ...")
- * and refuses to end mid-phrase, which is what produced "A pricing page for a
- * note".
+ * Drops the instruction lead-in ("Design a ...") and refuses to end
+ * mid-phrase, which is what produced "A pricing page for a note".
  */
 export const fallbackTitleFromPrompt = (prompt: string) => {
   const cleaned = prompt
@@ -105,10 +101,6 @@ export const fallbackTitleFromPrompt = (prompt: string) => {
  * same as any other call and nothing to the maintainer. Falls back through:
  * their key, the server Google key, then a title derived from the prompt text.
  * A missing key is normal, not an error, so only a real failure is logged.
- *
- * opencode models are skipped deliberately. They run on the user's machine, and
- * queueing an agent job that takes tens of seconds to name a project would make
- * project creation feel broken.
  */
 const generateProjectTitle = async (
   prompt: string,
@@ -124,7 +116,7 @@ const generateProjectTitle = async (
   const readTitle = (text: string | undefined) =>
     cleanTitle((text ?? "").split("\n")[0] ?? "");
 
-  if (modelName && !isOpencodeWireModel(modelName)) {
+  if (modelName) {
     try {
       const keys = await getUserAiSettingsForGeneration(userId);
       // A cheap model from the same provider: a title does not need the good one.

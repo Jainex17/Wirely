@@ -25,92 +25,18 @@ export const OPENROUTER_FREE_MODELS = [
 ] as const;
 export const ZAI_FREE_MODELS = ["glm-4.7-flash", "glm-4.5-flash"] as const;
 
-/**
- * Models that run through the user's local agent rather than a hosted provider.
- *
- * Free on any opencode account, so they need no key at all: the "credential" is
- * a connected agent. Ordered fastest first, measured by running the concept
- * prompt for two screens against each one. See lib/opencode/models.ts.
- */
-export const OPENCODE_FREE_MODELS = [
-  "opencode/ling-3.0-flash-fin-free",
-  "opencode/muse-spark-1.3-contributor-free",
-  "opencode/mimo-v2.5-free",
-] as const;
-
 export type WireModelTier = "free" | "paid";
 export type WireModelProvider =
   | "google"
   | "openrouter"
-  | "zai"
-  | "opencode"
-  | "local";
+  | "zai";
 export type WireModelName =
   | (typeof GEMINI_FREE_MODELS)[number]
   | (typeof GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_FREE_MODELS)[number]
   | (typeof OPENROUTER_GEMINI_PAID_MODELS)[number]
   | (typeof OPENROUTER_FREE_MODELS)[number]
-  | (typeof OPENCODE_FREE_MODELS)[number]
-  | (typeof ZAI_FREE_MODELS)[number]
-  | `local/${string}`;
-
-/** Prefix marking a model id as user-added and resolved by the local agent. */
-export const CUSTOM_LOCAL_MODEL_PREFIX = "local/";
-
-/**
- * The raw `provider/model` string a user added in settings, before the wire
- * prefix. This is exactly what `opencode run --model` expects, so it is what
- * gets stored and what the agent receives.
- */
-/**
- * Raw `provider/model` strings are whatever `opencode models` prints: ids
- * routinely carry extra slashes (`openrouter/google/gemma-4:free`), colons and
- * tildes. Bounded to that charset with at least one slash, so a stray paste
- * cannot smuggle anything else in.
- */
-export const RAW_CUSTOM_LOCAL_MODEL_PATTERN =
-  /^[a-z0-9~][a-z0-9._~:/-]*\/[a-z0-9~][a-z0-9._~:/-]*$/i;
-
-/** User-typed models ride under one namespaced prefix in every wire id. */
-export const toCustomLocalModelId = (rawModel: string): `local/${string}` =>
-  `${CUSTOM_LOCAL_MODEL_PREFIX}${rawModel}`;
-
-/** Recovers the `provider/model` string the agent needs, or null for other ids. */
-export const fromCustomLocalModelId = (modelId: string): string | null =>
-  modelId.startsWith(CUSTOM_LOCAL_MODEL_PREFIX)
-    ? modelId.slice(CUSTOM_LOCAL_MODEL_PREFIX.length)
-    : null;
-
-export const isCustomLocalModelId = (value: string): boolean =>
-  value.startsWith(CUSTOM_LOCAL_MODEL_PREFIX) &&
-  RAW_CUSTOM_LOCAL_MODEL_PATTERN.test(
-    value.slice(CUSTOM_LOCAL_MODEL_PREFIX.length),
-  );
-
-/** One machine can expose hundreds of models; the catalog is still bounded. */
-export const MAX_DISCOVERED_LOCAL_MODELS = 500;
-
-/**
- * Normalizes the model list an agent reports from the user's machine, or that
- * a user hand-adds in the Models tab. Invalid shapes are dropped rather than
- * trusted: entries are echoed into the picker and sent to the agent as argv.
- */
-export const normalizeDiscoveredLocalModels = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-
-  const unique = new Set<string>();
-  for (const entry of value) {
-    if (typeof entry !== "string") continue;
-    const raw = entry.trim();
-    if (!raw || raw.length > 200 || !RAW_CUSTOM_LOCAL_MODEL_PATTERN.test(raw)) {
-      continue;
-    }
-    unique.add(raw);
-    if (unique.size >= MAX_DISCOVERED_LOCAL_MODELS) break;
-  }
-  return [...unique];
-};
+  | (typeof ZAI_FREE_MODELS)[number];
 
 export type WireModelOption = {
   id: WireModelName;
@@ -241,28 +167,6 @@ export const WIRE_MODEL_OPTIONS: WireModelOption[] = [
     tier: "free",
     provider: "zai",
   },
-  {
-    id: "opencode/ling-3.0-flash-fin-free",
-    label: "Ling 3.0 Flash (local)",
-    description:
-      "Fastest free model on your local agent. Around 20s for two concepts.",
-    tier: "free",
-    provider: "opencode",
-  },
-  {
-    id: "opencode/muse-spark-1.3-contributor-free",
-    label: "Muse Spark 1.3 (local)",
-    description: "Free model on your local agent, a little slower than Ling.",
-    tier: "free",
-    provider: "opencode",
-  },
-  {
-    id: "opencode/mimo-v2.5-free",
-    label: "MiMo v2.5 (local)",
-    description: "Free model on your local agent, a third option to compare against.",
-    tier: "free",
-    provider: "opencode",
-  },
 ];
 
 export const DISPLAY_ORDER_MODELS: readonly WireModelName[] = WIRE_MODEL_OPTIONS.map(
@@ -282,9 +186,7 @@ const WIRE_MODEL_ORDER_MAP = new Map<WireModelName, number>(
 );
 
 export const isWireModelName = (value: unknown): value is WireModelName =>
-  typeof value === "string" &&
-  (WIRE_MODEL_NAME_SET.has(value as WireModelName) ||
-    isCustomLocalModelId(value));
+  typeof value === "string" && WIRE_MODEL_NAME_SET.has(value as WireModelName);
 
 export const sortWireModelsFreeFirst = (modelNames: WireModelName[]) =>
   [...modelNames].sort((left, right) => {
@@ -300,7 +202,6 @@ const WIRE_MODEL_PROVIDER_MAP = new Map<WireModelName, WireModelProvider>(
 export const getWireModelProvider = (
   modelName: WireModelName,
 ): WireModelProvider => {
-  if (isCustomLocalModelId(modelName)) return "local";
   return WIRE_MODEL_PROVIDER_MAP.get(modelName) ?? "google";
 };
 
@@ -308,8 +209,6 @@ export const WIRE_MODEL_PROVIDER_LABEL: Record<WireModelProvider, string> = {
   google: "Google",
   openrouter: "OpenRouter",
   zai: "Z.ai",
-  local: "Your local models",
-  opencode: "opencode (local)",
 };
 
 export const isGoogleWireModel = (modelName: WireModelName) =>
@@ -320,17 +219,6 @@ export const isOpenRouterWireModel = (modelName: WireModelName) =>
 
 export const isZaiWireModel = (modelName: WireModelName) =>
   getWireModelProvider(modelName) === "zai";
-
-/**
- * True when this model runs on the user's machine.
- *
- * These take a different path entirely: the request is queued for the local
- * agent instead of going through the hosted wire route, and no provider key is
- * involved.
- */
-export const isOpencodeWireModel = (modelName: WireModelName) =>
-  getWireModelProvider(modelName) === "opencode" ||
-  getWireModelProvider(modelName) === "local";
 
 export const resolveFastWireModelForStage = (
   modelName: WireModelName,
@@ -377,17 +265,6 @@ export interface WireProviderKeyPresence {
   google: boolean;
   openrouter: boolean;
   zai: boolean;
-  /**
-   * opencode has no key: this is whether a local agent is connected. The same
-   * flag covers user-added `local/...` models, which also need the agent.
-   *
-   * Optional because most callers have no reason to know about the agent. When
-   * it is absent an opencode model is simply never auto-selected as runnable,
-   * which is the safe default: picking one without an agent would queue work
-   * nothing can claim.
-   */
-  opencode?: boolean;
-  local?: boolean;
 }
 
 /**
