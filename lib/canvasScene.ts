@@ -79,7 +79,7 @@ export const getPageFrameWidth = (device: PageFrameDevice) =>
 export const getPageFrameHeight = (device: PageFrameDevice) =>
   PAGE_DEVICE_HEIGHTS[device];
 
-export const MIN_CANVAS_ZOOM = 5;
+export const MIN_CANVAS_ZOOM = 2;
 export const MAX_CANVAS_ZOOM = 200;
 export const DEFAULT_CANVAS_ZOOM = 64;
 export const CANVAS_TOP_OFFSET = 100;

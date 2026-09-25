@@ -8,8 +8,9 @@ import type { Message } from "ai";
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 // import { ArrowLeft, Cloud, Workflow } from "lucide-react";
 // import { ArrowLeft, Cloud } from "lucide-react";
-import { ArrowLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
+import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
@@ -59,10 +60,10 @@ export default function WireEditor({
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
-  // Collapsing the prompt panel gives the canvas the whole window width; the
-  // header toggle is the only affordance back, so the icon doubles as the
-  // restore button.
+  // Collapsing either side panel gives the canvas that width. Each toggle stays
+  // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
+  const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(false);
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -149,6 +150,22 @@ export default function WireEditor({
     }
   };
 
+  const pagesPanel = (
+    <PagesPanel
+      projectTitle={initialProject.projectTitle}
+      isCollapsed={isPagesPanelCollapsed}
+      onToggle={() => setIsPagesPanelCollapsed((collapsed) => !collapsed)}
+      footer={
+        <UserAccountMenu
+          user={sessionUser}
+          isLoggingOut={isLoggingOut}
+          onLogout={handleLogout}
+          logoutDescription="You will need to sign in again to continue editing this wireframe."
+        />
+      }
+    />
+  );
+
   const handleEditPage = (pageId: string) => {
     // The sidebar targets the focused page when the prompt names no other.
     setFocusedPage(pageId);
@@ -171,34 +188,16 @@ export default function WireEditor({
         </div>
       </div>
 
-      <div className="h-screen w-full flex flex-col bg-muted p-3 gap-2 overflow-hidden max-[755px]:hidden">
-        <header className="h-14 bg-card border border-border rounded-lg shadow-sm px-5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => router.push("/")}
-                aria-label="Back to home"
-                title="Back to home"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </div>
-            <div>
-              <h1 className="text-base font-semibold text-foreground">
-                {initialProject.projectTitle}
-              </h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="h-screen w-full flex bg-muted p-3 gap-2 overflow-hidden max-[755px]:hidden">
+        {isPagesPanelCollapsed ? null : pagesPanel}
+        <EditorErrorBoundary title="Workspace canvas crashed">
+          <div className="relative flex-1 min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+            {isPagesPanelCollapsed ? pagesPanel : null}
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="absolute right-3 top-3 z-30 h-8 w-8 shadow-sm"
               onClick={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
               aria-label={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
               aria-expanded={!isPromptPanelCollapsed}
@@ -234,49 +233,31 @@ export default function WireEditor({
               Prototype
             </Button>
             */}
-            <UserAccountMenu
-              user={sessionUser}
-              isLoggingOut={isLoggingOut}
-              onLogout={handleLogout}
-              logoutDescription="You will need to sign in again to continue editing this wireframe."
+            <EditorWorkspace
+              sidebarMode="wire"
+              projectId={wireId}
+              onEditPage={handleEditPage}
             />
           </div>
-        </header>
-        <div className="w-full flex-1 h-[calc(100vh-5.75rem)] flex gap-2">
-          <EditorErrorBoundary title="Workspace canvas crashed">
-            <div
-              className={
-                isPromptPanelCollapsed
-                  ? "flex-1 min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-                  : "w-[75%] min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-              }
-            >
-              <EditorWorkspace
-                sidebarMode="wire"
-                projectId={wireId}
-                onEditPage={handleEditPage}
-              />
-            </div>
-          </EditorErrorBoundary>
-          <EditorErrorBoundary title="Prompt panel crashed">
-            {/* Kept mounted while collapsed so an in-flight generation stream
-                in the sidebar survives the toggle. */}
-            <div
-              className={
-                isPromptPanelCollapsed
-                  ? "hidden w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-                  : "w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-              }
-            >
-              <WirePromptSidebar
-                wireId={wireId}
-                initialModelName={initialModelName}
-                initialMessages={initialMessages}
-                focusRequestKey={promptFocusRequestKey}
-              />
-            </div>
-          </EditorErrorBoundary>
-        </div>
+        </EditorErrorBoundary>
+        <EditorErrorBoundary title="Prompt panel crashed">
+          {/* Kept mounted while collapsed so an in-flight generation stream
+              in the sidebar survives the toggle. */}
+          <div
+            className={
+              isPromptPanelCollapsed
+                ? "hidden w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+                : "w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+            }
+          >
+            <WirePromptSidebar
+              wireId={wireId}
+              initialModelName={initialModelName}
+              initialMessages={initialMessages}
+              focusRequestKey={promptFocusRequestKey}
+            />
+          </div>
+        </EditorErrorBoundary>
       </div>
 
       {/* Prototype flow hidden for now

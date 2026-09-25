@@ -17,7 +17,7 @@ import { logger } from "@/lib/logger";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
 
-const ZOOM_LEVELS = [5, 10, 25, 50, 75, 100, 125, 150, 200];
+const ZOOM_LEVELS = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";

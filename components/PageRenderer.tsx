@@ -113,7 +113,6 @@ interface PageRendererProps {
   isFocused: boolean;
   frameHeight: number;
   renderMode: PageRenderMode;
-  zoom: number;
 }
 
 interface ContextMenuAction {
@@ -206,7 +205,6 @@ export default React.memo(function PageRenderer({
   isFocused,
   frameHeight,
   renderMode,
-  zoom,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
   const CHART_CANVAS_HEIGHT = 320;
@@ -297,15 +295,6 @@ export default React.memo(function PageRenderer({
     cursorEdit !== null &&
     expiredCursorEdit !== cursorEdit &&
     !isPageIdle;
-  const titleScale = React.useMemo(() => 100 / Math.max(20, zoom), [zoom]);
-  const titleFontSizePx = React.useMemo(
-    () => Math.min(40, Math.max(14, 16 * titleScale)),
-    [titleScale],
-  );
-  const titleIconSizePx = React.useMemo(
-    () => Math.min(28, Math.max(12, 14 * titleScale)),
-    [titleScale],
-  );
   React.useEffect(() => {
     setNextPageTitle(page.title);
   }, [page.title]);
@@ -597,7 +586,6 @@ export default React.memo(function PageRenderer({
   );
 
   const hasPageContent = Boolean(page.iframeHtml?.trim());
-  const toolbarScale = Math.max(0.4, Math.min(1.6, 100 / Math.max(20, zoom)));
   const iconButtonClass =
     "flex h-7 w-7 items-center justify-center rounded-md bg-popover text-popover-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground";
 
@@ -608,7 +596,7 @@ export default React.memo(function PageRenderer({
         isFocused && "opacity-100",
       )}
       style={{
-        transform: `scale(${toolbarScale})`,
+        transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 1.6))",
         transformOrigin: "right center",
       }}
       onPointerDown={(event) => event.stopPropagation()}
@@ -1018,11 +1006,14 @@ export default React.memo(function PageRenderer({
         <div className="flex h-[50px] w-full items-center gap-3 px-3 pb-1">
           <p
             className="flex items-center gap-2 font-medium text-foreground"
-            style={{ fontSize: `${titleFontSizePx}px` }}
+            style={{ fontSize: "clamp(14px, calc(16px * var(--canvas-inverse-zoom, 1)), 40px)" }}
           >
             <FileIcon
               className="text-muted-foreground"
-              style={{ width: `${titleIconSizePx}px`, height: `${titleIconSizePx}px` }}
+              style={{
+                width: "clamp(12px, calc(14px * var(--canvas-inverse-zoom, 1)), 28px)",
+                height: "clamp(12px, calc(14px * var(--canvas-inverse-zoom, 1)), 28px)",
+              }}
             />
             {page.title}
           </p>
@@ -1057,11 +1048,8 @@ export default React.memo(function PageRenderer({
                 scrolling="no"
               />
             ) : hasRawHtml ? (
+              // Offscreen, or on screen and waiting its turn to mount.
               <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
-                <p className="text-sm font-medium text-foreground">Preview offscreen</p>
-                <p className="mt-2 max-w-[280px] text-xs leading-5 text-muted-foreground">
-                  This page stays lightweight until it returns to the active viewport.
-                </p>
                 <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   {currentDevice.label}
                 </div>
@@ -1081,7 +1069,7 @@ export default React.memo(function PageRenderer({
             >
               <div
                 className="flex origin-top-left items-start"
-                style={{ transform: `scale(${titleScale})` }}
+                style={{ transform: "scale(var(--canvas-inverse-zoom, 1))" }}
               >
                 <svg width="18" height="20" viewBox="0 0 18 20" className="drop-shadow">
                   <path
