@@ -1,8 +1,15 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Monitor, PanelLeftClose, PanelLeftOpen, Smartphone } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  Monitor,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Smartphone,
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,6 +35,7 @@ export default function PagesPanel({
   footer,
 }: PagesPanelProps) {
   const router = useRouter();
+  const [isPageListOpen, setIsPageListOpen] = useState(true);
   const { pages, focusedPageId, focusPage } = useEditorStore(
     useShallow((state) => ({
       pages: state.pages,
@@ -49,7 +57,7 @@ export default function PagesPanel({
       >
         <ArrowLeft className="h-4 w-4" />
       </Button>
-      <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+      <h1 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
         {projectTitle}
       </h1>
       <Button
@@ -73,38 +81,72 @@ export default function PagesPanel({
 
   if (isCollapsed) {
     return (
-      <div className="absolute left-3 top-3 z-30 w-64 rounded-lg border border-border bg-card shadow-lg">
+      <div className="absolute left-3 top-3 z-30 w-64 rounded-lg border border-sidebar-border bg-sidebar shadow-lg">
         {titleRow}
       </div>
     );
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg">
-      <div className="border-b border-border">{titleRow}</div>
-      <p className="px-4 pb-1 pt-3 text-xs font-medium text-muted-foreground">
-        Pages ({pages.length})
-      </p>
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {pages.map((page) => {
-          const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
-          return (
-            <button
-              key={page.id}
-              type="button"
-              onClick={() => focusPage(page.id)}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent",
-                focusedPageId === page.id && "bg-accent",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{page.title}</span>
-            </button>
-          );
-        })}
+    <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+      <div className="border-b border-sidebar-border">{titleRow}</div>
+      <button
+        type="button"
+        onClick={() => setIsPageListOpen((open) => !open)}
+        aria-expanded={isPageListOpen}
+        className="mt-2 flex h-7 w-full items-center gap-1.5 px-3 text-[11px] font-semibold text-foreground"
+      >
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 text-muted-foreground transition-transform",
+            !isPageListOpen && "-rotate-90",
+          )}
+        />
+        Pages
+        <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+          {pages.length}
+        </span>
+      </button>
+      {/* Full-width rows hanging off a guide line under the chevron, like a
+          file tree. */}
+      <nav
+        className={cn("min-h-0 flex-1 overflow-y-auto pb-2", !isPageListOpen && "invisible")}
+      >
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
+          {pages.map((page) => {
+            const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
+            const isCurrent = focusedPageId === page.id;
+            return (
+              <button
+                key={page.id}
+                type="button"
+                onClick={() => focusPage(page.id)}
+                className={cn(
+                  "flex h-7 w-full items-center gap-2 pl-8 pr-3 text-left text-xs transition-colors",
+                  isCurrent
+                    ? "bg-primary/15 text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+                )}
+              >
+                <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
+                <span className="truncate">{page.title}</span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
-      <div className="flex shrink-0 items-center border-t border-border p-2">{footer}</div>
+      <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
+        {footer}
+        <a
+          href="https://github.com/Jainex17/Wirely/issues"
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Feedback
+        </a>
+      </div>
     </aside>
   );
 }

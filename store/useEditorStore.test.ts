@@ -66,6 +66,30 @@ describe("useEditorStore canvas state", () => {
     expect(useEditorStore.getState().camera.zoom).toBeLessThan(64);
   });
 
+  it("fits the top screen of a very tall page instead of its full height", () => {
+    useEditorStore.getState().setPagePosition("page-1", { x: -1000, y: 0 });
+    useEditorStore.getState().setPagePosition("page-2", { x: 1400, y: 0 });
+    useEditorStore.getState().fitAllPages();
+    const shortPagesZoom = useEditorStore.getState().camera.zoom;
+
+    useEditorStore.getState().setPageFrameHeight("page-1", 12000);
+    useEditorStore.getState().fitAllPages();
+
+    expect(useEditorStore.getState().camera.zoom).toBe(shortPagesZoom);
+  });
+
+  it("tidies dragged pages back into one row", () => {
+    useEditorStore.getState().setPagePosition("page-1", { x: 500, y: 900 });
+    useEditorStore.getState().setPagePosition("page-2", { x: -800, y: -300 });
+
+    useEditorStore.getState().arrangePages("row");
+
+    const { pagePositions } = useEditorStore.getState();
+    expect(pagePositions["page-2"]).toEqual({ x: -800, y: 0 });
+    expect(pagePositions["page-1"].y).toBe(0);
+    expect(pagePositions["page-1"].x).toBeGreaterThan(-800);
+  });
+
   it("assigns a non-overlapping position when creating a page", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: -1560, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 0, y: 0 });

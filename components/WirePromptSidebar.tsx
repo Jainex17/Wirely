@@ -1391,9 +1391,11 @@ export default function WirePromptSidebar({
           messagePlanningById[key] ??
           ((message as SidebarMessage).planningSummary?.trim() || "");
         const userMessage = (
-          <div key={key} className="text-sm">
-            {roleLabel("You")}
-            <div className="whitespace-pre-wrap text-foreground">{message.content}</div>
+          <div
+            key={key}
+            className="whitespace-pre-wrap rounded-lg bg-accent px-3 py-2 text-[13px] leading-5 text-foreground"
+          >
+            {message.content}
           </div>
         );
 
@@ -1466,7 +1468,7 @@ export default function WirePromptSidebar({
         }
         const selectedModelName = modelUsage?.selectedModelName;
         return [
-          <div key={key} className="text-sm">
+          <div key={key} className="text-[13px] leading-5">
             {roleLabel(selectedModelName ? getModelLabel(selectedModelName) : "Assistant")}
             <div className="leading-relaxed text-foreground">{details}</div>
             {modelUsage?.hasSpecializedStages ? (
@@ -1575,17 +1577,18 @@ export default function WirePromptSidebar({
     <aside className="flex h-full w-full flex-col gap-3 bg-transparent p-4 text-foreground">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {renderedMessages}
-        {errorMessage ? (
-          <div className="text-sm">
+        {/* The no-models notice below carries the fix, so it replaces this line. */}
+        {errorMessage && !noModelsEnabled ? (
+          <div className="text-[13px] leading-5">
             <div className="mb-0.5 text-[11px] font-medium text-destructive">Error</div>
             <div className="text-destructive">{errorMessage}</div>
           </div>
         ) : null}
         {qualityNotice ? (
-          <div className="text-sm text-muted-foreground">{qualityNotice}</div>
+          <div className="text-[13px] leading-5 text-muted-foreground">{qualityNotice}</div>
         ) : null}
         {noModelsEnabled ? (
-          <div className="text-sm text-destructive">
+          <div className="text-[13px] leading-5 text-destructive">
             No models are enabled. Open{" "}
             <Link href="/setting?tab=models" className="underline underline-offset-2">
               Models
@@ -1664,7 +1667,7 @@ export default function WirePromptSidebar({
                 ? `prompt-mention-${activeMentionOption.id}`
                 : undefined
             }
-            className="w-full resize-none bg-transparent px-3 pb-2 pt-3 text-sm leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none"
+            className="w-full resize-none bg-transparent px-3 pb-2 pt-3 text-[13px] leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-2 pb-2">
             <DropdownMenu>

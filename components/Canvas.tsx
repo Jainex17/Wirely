@@ -3,7 +3,7 @@
 import React from "react";
 import { useShallow } from "zustand/react/shallow";
 import { logger } from "@/lib/logger";
-import { useEditorStore } from "@/store/useEditorStore";
+import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import PageRenderer from "./PageRenderer";
 import {
@@ -14,7 +14,6 @@ import {
   type SnapGuide,
   CANVAS_TOP_OFFSET,
   clampZoom,
-  createDefaultCamera,
   getDefaultPageX,
   getPageBounds,
   getPageFrameHeight,
@@ -33,6 +32,21 @@ const DEVICE_LABELS = {
   tablet: "Tablet",
   mobile: "Mobile",
 } as const;
+
+// Frame labels sit on the canvas, so light backgrounds swap them to dark text.
+const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = {
+  dark: {},
+  gray: {
+    backgroundColor: "#8e9097",
+    ["--canvas-label" as string]: "#26282e",
+    ["--canvas-label-strong" as string]: "#0e1014",
+  },
+  light: {
+    backgroundColor: "#eceef2",
+    ["--canvas-label" as string]: "#6b7180",
+    ["--canvas-label-strong" as string]: "#0e1014",
+  },
+};
 
 const DRAG_START_THRESHOLD_PX = 4;
 // Each live page is a sandboxed iframe that parses its HTML, runs its CDN
@@ -101,6 +115,7 @@ export default function Canvas({
 }: CanvasProps) {
   const {
     camera,
+    canvasBackground,
     activeDevice,
     viewportSize,
     pages,
@@ -120,6 +135,7 @@ export default function Canvas({
   } = useEditorStore(
     useShallow((state) => ({
       camera: state.camera,
+      canvasBackground: state.canvasBackground,
       activeDevice: state.activeDevice,
       viewportSize: state.viewportSize,
       pages: state.pages,
@@ -153,6 +169,10 @@ export default function Canvas({
   const layoutSaveActiveRef = React.useRef(false);
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
+  // Separate from the store's focused page, which always points at some page so
+  // the chat knows what to edit. This one exists only while the user has a page
+  // clicked, and drives the size badge.
+  const [selectedPageId, setSelectedPageId] = React.useState<string | null>(null);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
   const [mountedPageIds, setMountedPageIds] = React.useState<ReadonlySet<string>>(
@@ -576,6 +596,7 @@ export default function Canvas({
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
+      setSelectedPageId(pageId);
       bringPageToFront(pageId);
 
       pageDragStateRef.current = {
@@ -686,9 +707,18 @@ export default function Canvas({
   const handlePageFocus = React.useCallback(
     (pageId: string) => {
       setFocusedPage(pageId);
+      setSelectedPageId(pageId);
     },
     [setFocusedPage],
   );
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedPageId(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handlePageContextEdit = React.useCallback(
     (pageId: string) => {
@@ -704,11 +734,15 @@ export default function Canvas({
       className={`relative h-full w-full overflow-hidden select-none ${
         isPanModeActive ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
       }`}
-      onClick={onCanvasClick}
+      onClick={() => {
+        setSelectedPageId(null);
+        onCanvasClick();
+      }}
       onPointerDown={handleCanvasPointerDown}
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={stopCanvasInteraction}
       onPointerCancel={stopCanvasInteraction}
+      style={CANVAS_BACKGROUND_STYLES[canvasBackground]}
     >
       <div className="pointer-events-none absolute inset-0 canvas-dots" />
       <div
@@ -768,6 +802,7 @@ export default function Canvas({
                   agentEdit={agentEdits[pageLayout.page.id] ?? null}
                   isOnlyPage={pages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
+                  isSelected={selectedPageId === pageLayout.page.id}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
                 />
@@ -807,25 +842,7 @@ export default function Canvas({
         </div>
       </div>
 
-      <CanvasToolbar
-        activeTool={activeTool}
-        onToolChange={onToolChange}
-        zoom={camera.zoom}
-        onZoomChange={(zoom) => {
-          setCamera(
-            zoomAtViewportPoint({
-              camera,
-              viewportPoint: {
-                x: viewportSize.width / 2,
-                y: viewportSize.height / 2,
-              },
-              viewport: viewportSize,
-              nextZoom: zoom,
-            }),
-          );
-        }}
-        onReset={() => setCamera(createDefaultCamera())}
-      />
+      <CanvasToolbar activeTool={activeTool} onToolChange={onToolChange} />
     </div>
   );
 }

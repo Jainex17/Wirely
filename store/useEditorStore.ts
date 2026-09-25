@@ -14,8 +14,10 @@ import {
   type PageBounds,
   type ViewportSize,
   CANVAS_TOP_OFFSET,
+  MAX_FIT_ZOOM,
   PAGE_GAP,
   clampZoom,
+  clipToFirstScreen,
   createBounds,
   createDefaultCamera,
   fitBounds,
@@ -25,6 +27,9 @@ import {
   getPageFrameWidth,
   resolvePageFrameDevice,
   scaleFromZoom,
+  stepZoom as getSteppedZoom,
+  arrangePagePositions,
+  type PageArrangement,
   unionBounds,
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
@@ -49,8 +54,11 @@ export interface AgentEdit {
   at: number;
 }
 
+export type CanvasBackground = "dark" | "gray" | "light";
+
 export interface CanvasState {
   camera: CameraState;
+  canvasBackground: CanvasBackground;
   activeDevice: DeviceType;
   pendingSaveCount: number;
   pagePositions: PagePositionMap;
@@ -74,7 +82,10 @@ export interface EditorState extends CanvasState, ProjectState {
   setCamera: (camera: CameraState) => void;
   panBy: (delta: Point2D) => void;
   zoomAtViewportPoint: (viewportPoint: Point2D, zoom: number) => void;
-  resetView: () => void;
+  /** Zooms around the viewport centre, to a preset step or an exact value. */
+  stepZoom: (direction: 1 | -1) => void;
+  setZoom: (zoom: number) => void;
+  setCanvasBackground: (background: CanvasBackground) => void;
   setViewportSize: (viewportSize: ViewportSize) => void;
   setActiveDevice: (device: DeviceType) => void;
   beginSaving: () => void;
@@ -87,6 +98,8 @@ export interface EditorState extends CanvasState, ProjectState {
   focusPage: (pageId: string) => void;
   focusPages: (pageIds: string[]) => void;
   fitAllPages: () => void;
+  fitPage: (pageId: string) => void;
+  arrangePages: (arrangement: PageArrangement) => void;
   requestGeneratedPageFocusCheck: (pageIds: string[] | null) => void;
   clearRequestedGeneratedPageFocusCheck: () => void;
   setSelectedSection: (id: string | null) => void;
@@ -146,6 +159,7 @@ const generateEmptyState = (): Pick<
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
   camera: createDefaultCamera(),
+  canvasBackground: "dark",
   activeDevice: "desktop",
   pendingSaveCount: 0,
   pagePositions: {},
@@ -225,8 +239,16 @@ const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
   });
 };
 
-const getPageBoundsById = (state: EditorState, pageId: string) =>
-  getPageBoundsCollection(state).find((page) => page.pageId === pageId) ?? null;
+const getFitBoundsCollection = (state: EditorState) =>
+  getPageBoundsCollection(state).map((bounds, index) =>
+    clipToFirstScreen(
+      bounds,
+      getPageFrameHeight(resolvePageFrameDevice(state.pages[index].deviceType, state.activeDevice)),
+    ),
+  );
+
+const getFitBoundsById = (state: EditorState, pageId: string) =>
+  getFitBoundsCollection(state).find((page) => page.pageId === pageId) ?? null;
 
 const hasUsableViewport = (viewportSize: ViewportSize) =>
   viewportSize.width > 0 && viewportSize.height > 0;
@@ -239,7 +261,7 @@ const getFittedCamera = (state: EditorState) => {
 };
 
 const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
-  const boundsList = getPageBoundsCollection(state).filter((bounds) =>
+  const boundsList = getFitBoundsCollection(state).filter((bounds) =>
     pageIds.includes(bounds.pageId),
   );
   if (boundsList.length === 0 || !hasUsableViewport(state.viewportSize)) {
@@ -254,6 +276,7 @@ const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
   return fitBounds({
     bounds: union,
     viewport: state.viewportSize,
+    maxZoom: MAX_FIT_ZOOM,
   });
 };
 
@@ -313,10 +336,31 @@ export const useEditorStore = create<EditorState>()(
             nextZoom: zoom,
           }),
         })),
-      resetView: () =>
-        set({
-          camera: createDefaultCamera(),
-        }),
+      stepZoom: (direction) =>
+        set((state) => ({
+          camera: getZoomedCameraAtPoint({
+            camera: state.camera,
+            viewportPoint: {
+              x: state.viewportSize.width / 2,
+              y: state.viewportSize.height / 2,
+            },
+            viewport: state.viewportSize,
+            nextZoom: getSteppedZoom(state.camera.zoom, direction),
+          }),
+        })),
+      setZoom: (zoom) =>
+        set((state) => ({
+          camera: getZoomedCameraAtPoint({
+            camera: state.camera,
+            viewportPoint: {
+              x: state.viewportSize.width / 2,
+              y: state.viewportSize.height / 2,
+            },
+            viewport: state.viewportSize,
+            nextZoom: zoom,
+          }),
+        })),
+      setCanvasBackground: (canvasBackground) => set({ canvasBackground }),
       setViewportSize: (viewportSize) => set({ viewportSize }),
       setActiveDevice: (activeDevice) => set({ activeDevice }),
       beginSaving: () =>
@@ -383,7 +427,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       focusPage: (pageId) =>
         set((state) => {
-          const bounds = getPageBoundsById(state, pageId);
+          const bounds = getFitBoundsById(state, pageId);
           if (!bounds || !hasUsableViewport(state.viewportSize)) {
             return {
               focusedPageId: pageId,
@@ -411,7 +455,7 @@ export const useEditorStore = create<EditorState>()(
             return state;
           }
           if (uniquePageIds.length === 1) {
-            const bounds = getPageBoundsById(state, uniquePageIds[0]);
+            const bounds = getFitBoundsById(state, uniquePageIds[0]);
             if (!bounds || !hasUsableViewport(state.viewportSize)) {
               return {
                 focusedPageId: uniquePageIds[0],
@@ -444,6 +488,33 @@ export const useEditorStore = create<EditorState>()(
             camera: getFittedCamera(state),
           };
         }),
+      fitPage: (pageId) =>
+        set((state) => {
+          if (!hasUsableViewport(state.viewportSize)) {
+            return state;
+          }
+
+          return {
+            camera: getFittedCameraForPageIds(state, [pageId]),
+            focusedPageId: pageId,
+          };
+        }),
+      arrangePages: (arrangement) =>
+        set((state) => ({
+          pagePositions: {
+            ...state.pagePositions,
+            ...arrangePagePositions(
+              getPageBoundsCollection(state).map((bounds) => ({
+                id: bounds.pageId,
+                x: bounds.left,
+                y: bounds.top,
+                width: bounds.width,
+                height: bounds.height,
+              })),
+              arrangement,
+            ),
+          },
+        })),
       requestGeneratedPageFocusCheck: (pageIds) =>
         set({
           requestedGeneratedPageFocusIds:
@@ -864,6 +935,7 @@ export const useEditorStore = create<EditorState>()(
       storage: createJSONStorage(() => createSafeLocalStorage("wirely-editor-storage")),
       partialize: (state) => ({
         activeDevice: state.activeDevice,
+        canvasBackground: state.canvasBackground,
       }),
       migrate: (persistedState) => persistedState,
     },

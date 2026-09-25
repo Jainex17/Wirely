@@ -14,6 +14,7 @@ import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
+import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
@@ -172,6 +173,25 @@ export default function WireEditor({
     setPromptFocusRequestKey((currentKey) => currentKey + 1);
   };
 
+  const promptPanelToggle = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8"
+      onClick={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
+      aria-label={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
+      aria-expanded={!isPromptPanelCollapsed}
+      title={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
+    >
+      {isPromptPanelCollapsed ? (
+        <PanelRightOpen className="h-4 w-4" />
+      ) : (
+        <PanelRightClose className="h-4 w-4" />
+      )}
+    </Button>
+  );
+
   return (
     <>
       <div className="fixed inset-0 z-[200] hidden items-center justify-center bg-background/85 p-4 backdrop-blur-sm max-[755px]:flex">
@@ -188,27 +208,19 @@ export default function WireEditor({
         </div>
       </div>
 
-      <div className="h-screen w-full flex bg-muted p-3 gap-2 overflow-hidden max-[755px]:hidden">
+      <div className="editor-theme h-screen w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
         {isPagesPanelCollapsed ? null : pagesPanel}
         <EditorErrorBoundary title="Workspace canvas crashed">
-          <div className="relative flex-1 min-w-0 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+          <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="absolute right-3 top-3 z-30 h-8 w-8 shadow-sm"
-              onClick={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
-              aria-label={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
-              aria-expanded={!isPromptPanelCollapsed}
-              title={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
-            >
+            <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              <CanvasZoomControls />
               {isPromptPanelCollapsed ? (
-                <PanelRightOpen className="h-4 w-4" />
-              ) : (
-                <PanelRightClose className="h-4 w-4" />
-              )}
-            </Button>
+                <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">
+                  {promptPanelToggle}
+                </div>
+              ) : null}
+            </div>
             {/* Saving indicator hidden for now
             {isSaving ? (
               <div
@@ -246,16 +258,22 @@ export default function WireEditor({
           <div
             className={
               isPromptPanelCollapsed
-                ? "hidden w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-                : "w-[25%] min-w-[320px] bg-card border border-border rounded-lg shadow-lg overflow-hidden"
+                ? "hidden"
+                : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
             }
           >
-            <WirePromptSidebar
-              wireId={wireId}
-              initialModelName={initialModelName}
-              initialMessages={initialMessages}
-              focusRequestKey={promptFocusRequestKey}
-            />
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-4 pr-2">
+              <h2 className="text-[13px] font-semibold text-foreground">Chat</h2>
+              {promptPanelToggle}
+            </div>
+            <div className="min-h-0 flex-1">
+              <WirePromptSidebar
+                wireId={wireId}
+                initialModelName={initialModelName}
+                initialMessages={initialMessages}
+                focusRequestKey={promptFocusRequestKey}
+              />
+            </div>
           </div>
         </EditorErrorBoundary>
       </div>
