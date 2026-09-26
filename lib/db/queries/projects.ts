@@ -77,13 +77,11 @@ export const getProjectForUser = async (projectId: string, userId: string) => {
 export const getProjectDetailForUser = async (projectId: string, userId: string) => {
   const db = getDb();
 
-  const project = await getProjectForUser(projectId, userId);
-  if (!project) return null;
-
-  // Pages and messages are independent once the ownership gate passes. The
-  // messages query joins its conversation directly, so the conversation row is
-  // never read on its own and the whole detail loads in two round trips.
-  const [pages, messages] = await Promise.all([
+  // The editor waits on this before it can paint, so all three reads go out in
+  // one round trip. Pages and messages of a project the user does not own are
+  // read but dropped by the ownership check before anything is returned.
+  const [project, pages, messages] = await Promise.all([
+    getProjectForUser(projectId, userId),
     db
       .select()
       .from(projectPages)
@@ -97,6 +95,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
       .orderBy(desc(conversationMessages.createdAt))
       .limit(80),
   ]);
+  if (!project) return null;
 
   return {
     project,

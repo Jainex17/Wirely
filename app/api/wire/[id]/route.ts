@@ -1218,6 +1218,7 @@ export async function POST(request: Request, context: RouteContext) {
         pageId: item.targetPageId,
         title: item.output.title,
         deviceType: deviceIntent,
+        generationMode: plan.generationMode,
       });
       emitProgress({
         type: "page-status",

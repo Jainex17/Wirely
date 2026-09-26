@@ -100,6 +100,8 @@ export interface EditorState extends CanvasState, ProjectState {
   groupPages: (pageIds: string[]) => string | null;
   ungroupPages: (groupId: string) => void;
   renamePageGroup: (groupId: string, name: string) => void;
+  /** Moves a page into a group, or out of every group when `groupId` is null. */
+  movePageToGroup: (pageId: string, groupId: string | null) => void;
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
@@ -119,6 +121,11 @@ export interface EditorState extends CanvasState, ProjectState {
   removeSection: (pageId: string, sectionId: string) => void;
   moveSection: (pageId: string, sectionId: string, direction: "up" | "down") => void;
   reorderSection: (pageId: string, sectionId: string, newIndex: number) => void;
+  /**
+   * A page with `afterPageId` shares that page's design and goes right of it in
+   * the same row. Without it the page is a new design and starts a new row
+   * under everything on the canvas.
+   */
   createPage: (
     title?: string,
     afterPageId?: string,
@@ -321,6 +328,23 @@ const getNextCreatedPagePosition = (
   };
 };
 
+const getNewRowPosition = (state: EditorState, deviceType?: PageDeviceType) => {
+  const existingBounds = getPageBoundsCollection(state);
+  if (existingBounds.length === 0) {
+    return getNextCreatedPagePosition(state, deviceType);
+  }
+
+  return {
+    x: Math.min(...existingBounds.map((bounds) => bounds.left)),
+    y: Math.max(...existingBounds.map((bounds) => bounds.bottom)) + PAGE_GAP,
+  };
+};
+
+const getPositionRightOf = (bounds: PageBounds[]) => ({
+  x: Math.max(...bounds.map((item) => item.right)) + PAGE_GAP,
+  y: Math.min(...bounds.map((item) => item.top)),
+});
+
 export const useEditorStore = create<EditorState>()(
   persist(
     (set) => ({
@@ -426,6 +450,43 @@ export const useEditorStore = create<EditorState>()(
             group.id === groupId && name.trim() ? { ...group, name: name.trim() } : group,
           ),
         })),
+      movePageToGroup: (pageId, groupId) =>
+        set((state) => {
+          const currentGroup = state.pageGroups.find((group) => group.pageIds.includes(pageId));
+          if ((currentGroup?.id ?? null) === groupId) return state;
+          if (groupId && !state.pageGroups.some((group) => group.id === groupId)) return state;
+
+          const pageGroups = filterPageGroups(
+            state.pageGroups.map((group) => ({
+              ...group,
+              pageIds:
+                group.id === groupId
+                  ? [...group.pageIds, pageId]
+                  : group.pageIds.filter((id) => id !== pageId),
+            })),
+            state.pages.map((page) => page.id),
+          );
+          // The page lands just right of the group it joined or left, so its
+          // frame neither stretches across the canvas nor still covers the page.
+          const anchorGroupId = groupId ?? currentGroup?.id;
+          const anchorIds =
+            pageGroups.find((group) => group.id === anchorGroupId)?.pageIds ?? [];
+          const anchorBounds = getPageBoundsCollection(state).filter(
+            (bounds) => bounds.pageId !== pageId && anchorIds.includes(bounds.pageId),
+          );
+
+          return {
+            pageGroups,
+            ...(anchorBounds.length > 0
+              ? {
+                  pagePositions: {
+                    ...state.pagePositions,
+                    [pageId]: getPositionRightOf(anchorBounds),
+                  },
+                }
+              : {}),
+          };
+        }),
       bringPageToFront: (pageId) =>
         set((state) => {
           if (!state.pages.some((page) => page.id === pageId)) {
@@ -682,7 +743,13 @@ export const useEditorStore = create<EditorState>()(
         const newPageId = pageId ?? createPageId();
 
         set((state) => {
-          const nextPosition = getNextCreatedPagePosition(state, deviceType);
+          const afterBounds = getPageBoundsCollection(state).filter(
+            (bounds) => bounds.pageId === afterPageId,
+          );
+          const nextPosition =
+            afterBounds.length > 0
+              ? getPositionRightOf(afterBounds)
+              : getNewRowPosition(state, deviceType);
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
           const newPage: PageRecord = {
             id: newPageId,
