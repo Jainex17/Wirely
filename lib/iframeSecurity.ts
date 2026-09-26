@@ -24,7 +24,7 @@ const IFRAME_CSP = [
 
 const IFRAME_CSP_META_TAG = `<meta http-equiv="Content-Security-Policy" content="${IFRAME_CSP}">`;
 
-const DISALLOWED_CONTAINER_TAGS = [
+export const DISALLOWED_CONTAINER_TAGS = [
   "iframe",
   "object",
   "embed",

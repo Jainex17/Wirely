@@ -183,6 +183,16 @@ export const getProjectPageForUser = async ({
   return page ?? null;
 };
 
+/** No ownership check. Only for callers that verified access another way, like a signed share link. */
+export const getProjectPageById = async (pageId: string) => {
+  const [page] = await getDb()
+    .select()
+    .from(projectPages)
+    .where(eq(projectPages.id, pageId))
+    .limit(1);
+  return page ?? null;
+};
+
 export const listProjectPagesForUser = async ({
   projectId,
   userId,
@@ -289,6 +299,7 @@ export const updateProjectPageForUser = async ({
   title,
   htmlContent,
   deviceType,
+  expectedHtmlContent,
 }: {
   projectId: string;
   pageId: string;
@@ -296,6 +307,8 @@ export const updateProjectPageForUser = async ({
   title?: string;
   htmlContent?: string;
   deviceType?: PageDeviceType;
+  /** Writes only if the page still holds this HTML, for compare-and-swap edits. */
+  expectedHtmlContent?: string;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
@@ -309,7 +322,15 @@ export const updateProjectPageForUser = async ({
       ...(deviceType !== undefined ? { deviceType } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+    .where(
+      and(
+        eq(projectPages.projectId, projectId),
+        eq(projectPages.id, pageId),
+        expectedHtmlContent !== undefined
+          ? eq(projectPages.htmlContent, expectedHtmlContent)
+          : undefined,
+      ),
+    )
     .returning();
 
   if (!updated) return null;

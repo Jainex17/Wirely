@@ -166,6 +166,10 @@ Notes:
 - `DELETE /api/projects/[projectId]/pages/[pageId]` - delete page.
 - `GET /api/projects/[projectId]/pages/[pageId]/png` - render the saved page to a PNG with headless
   Chromium, for the frame's "Copy image" button. Rate limited per user.
+- `POST /api/projects/[projectId]/pages/[pageId]/share` - mint a signed read-only link to the page,
+  valid for 7 days, for the frame's "Copy for agent" prompt.
+- `GET /api/share/pages/[pageId]?exp=&sig=` - public end of that link. No session; the signature
+  is the access check. Serves the page's current HTML as `text/plain`, never rendered.
 
 MCP routes (see "MCP server" below):
 
@@ -185,8 +189,9 @@ The client's own model does the designing; Wirely stores the results and shows t
 canvas. Tools: `list_projects`, `create_project`, `list_pages`, `add_page`, `update_page`,
 `patch_page`, `get_page`, `get_page_png`, `delete_page`. `patch_page` replaces one exact
 snippet, so an agent can write a page in chunks while the user watches. Screen HTML passes
-through the same sandbox sanitizer as generated pages. Every HTML write returns the
-`lib/wireQuality.ts` score and violation ids for the saved page. `get_page_png` renders the
+through the same sandbox sanitizer as generated pages. An HTML write reports when the stored
+page will not render and which elements the sanitizer removed. `patch_page` is safe to call in
+parallel on one page. `get_page_png` renders the
 stored document with headless Chromium (`CHROME_PATH` picks the local browser in development,
 deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,
 clipped text, and low contrast text from the same render.

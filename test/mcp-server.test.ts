@@ -151,7 +151,7 @@ describe("tool catalog", () => {
 
 describe("tool dispatch", () => {
   it("rejects an unknown tool with a pointer to tools/list", async () => {
-    const result = await callTool("user", "deploy_to_production", {});
+    const result = await callTool("user", "deploy_to_production", {}, "https://wirely.test");
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
@@ -161,7 +161,7 @@ describe("tool dispatch", () => {
   });
 
   it("rejects arguments that name nothing to change", async () => {
-    const result = await callTool("user", "update_page", { projectId: "p", pageId: "q" });
+    const result = await callTool("user", "update_page", { projectId: "p", pageId: "q" }, "https://wirely.test");
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
@@ -175,7 +175,7 @@ describe("tool dispatch", () => {
       projectId: "p",
       title: "Too big",
       html: "x".repeat(600_000),
-    });
+    }, "https://wirely.test");
 
     expect(result.isError).toBe(true);
   });
@@ -186,7 +186,7 @@ describe("tool dispatch", () => {
       pageId: "q",
       oldString: "",
       newString: "x",
-    });
+    }, "https://wirely.test");
 
     expect(result.isError).toBe(true);
     expect(result.content[0]).toMatchObject({
@@ -267,13 +267,15 @@ describe("screenshot deploy config", () => {
 describe("html sanitizer boundary", () => {
   it("sanitizes before either write path persists", () => {
     const tools = read("lib/mcp/tools.ts");
-    const sanitized = tools.indexOf("sanitizeIframeHtml(parsed.data.html)");
-    const created = tools.indexOf("createProjectPageForUser({");
-    const updated = tools.indexOf("updateProjectPageForUser({");
+    const addSanitized = tools.indexOf("sanitizeIframeHtml(sentHtml)");
+    const created = tools.indexOf("createProjectPageForUser({", addSanitized);
+    const updateSanitized = tools.indexOf("sanitizeIframeHtml(parsed.data.html)");
+    const updated = tools.indexOf("updateProjectPageForUser({", updateSanitized);
 
-    expect(sanitized).toBeGreaterThan(-1);
-    expect(created).toBeGreaterThan(sanitized);
-    expect(updated).toBeGreaterThan(sanitized);
+    expect(addSanitized).toBeGreaterThan(-1);
+    expect(created).toBeGreaterThan(addSanitized);
+    expect(updateSanitized).toBeGreaterThan(-1);
+    expect(updated).toBeGreaterThan(updateSanitized);
   });
 
   it("sanitizes a patched page before saving it", () => {

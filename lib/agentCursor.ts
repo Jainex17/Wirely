@@ -40,13 +40,8 @@ const firstDifference = (previous: string, next: string) => {
  * usually opens with the outermost new element. A change with no new tag, such
  * as edited text or a class, falls back to the nearest opening tag before it.
  */
-export const markAgentCursor = (
-  previousHtml: string,
-  nextHtml: string,
-): { html: string; found: boolean } => {
-  const unchanged = { html: nextHtml, found: false };
-  if (previousHtml === nextHtml) return unchanged;
-
+/** The span of `nextHtml` that differs from `previousHtml`, snapped back to a tag start. */
+const changedRegion = (previousHtml: string, nextHtml: string) => {
   let changeStart = firstDifference(previousHtml, nextHtml);
   // A difference inside a tag belongs to that tag. Without this, "</body>"
   // becoming "<section>" would diff after the shared "<" and miss the section.
@@ -63,8 +58,17 @@ export const markAgentCursor = (
   ) {
     suffix += 1;
   }
-  const changeEnd = nextHtml.length - suffix;
+  return { changeStart, changeEnd: nextHtml.length - suffix };
+};
 
+export const markAgentCursor = (
+  previousHtml: string,
+  nextHtml: string,
+): { html: string; found: boolean } => {
+  const unchanged = { html: nextHtml, found: false };
+  if (previousHtml === nextHtml) return unchanged;
+
+  const { changeStart, changeEnd } = changedRegion(previousHtml, nextHtml);
   const bodyMatch = /<body\b[^>]*>/i.exec(nextHtml);
   if (!bodyMatch) return unchanged;
 
@@ -98,4 +102,49 @@ export const markAgentCursor = (
     html: `${nextHtml.slice(0, insertAt)} ${AGENT_CURSOR_ATTRIBUTE}${nextHtml.slice(insertAt)}`,
     found: true,
   };
+};
+
+/**
+ * Intermediate documents that grow `previousHtml` into `nextHtml` one element
+ * at a time, ending with `nextHtml`. An MCP write lands as one finished page,
+ * so the canvas replays it through these to show the agent building it. Each
+ * step cuts the changed region at a visible opening tag and keeps the
+ * unchanged tail, and the browser closes whatever the cut leaves open. Cut
+ * points are sampled evenly down to `maxSteps`.
+ */
+export const buildRevealSteps = (
+  previousHtml: string,
+  nextHtml: string,
+  maxSteps = 10,
+): string[] => {
+  if (previousHtml === nextHtml) return [nextHtml];
+
+  const { changeStart, changeEnd } = changedRegion(previousHtml, nextHtml);
+  const bodyMatch = /<body\b[^>]*>/i.exec(nextHtml);
+  if (!bodyMatch) return [nextHtml];
+
+  const cuts: number[] = [];
+  OPENING_TAG.lastIndex = bodyMatch.index + bodyMatch[0].length;
+  for (let match = OPENING_TAG.exec(nextHtml); match; match = OPENING_TAG.exec(nextHtml)) {
+    if (match.index >= changeEnd) break;
+    const name = match[1].toLowerCase();
+    if (name === "script" || name === "style") {
+      const close = nextHtml.toLowerCase().indexOf(`</${name}`, OPENING_TAG.lastIndex);
+      if (close === -1) break;
+      OPENING_TAG.lastIndex = close;
+      continue;
+    }
+    if (INVISIBLE_TAGS.has(name) || match.index <= changeStart) continue;
+    cuts.push(match.index);
+  }
+
+  const picked =
+    cuts.length < maxSteps
+      ? cuts
+      : Array.from(
+          { length: maxSteps - 1 },
+          (_, index) => cuts[Math.floor(((index + 1) * cuts.length) / maxSteps)],
+        );
+  const tail = nextHtml.slice(changeEnd);
+  return [...picked.map((cut) => nextHtml.slice(0, cut) + tail), nextHtml];
 };

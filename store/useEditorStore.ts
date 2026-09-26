@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { createSafeLocalStorage } from "@/lib/storage/safeLocalStorage";
 import {
   type DeviceType,
+  type PageGroup,
   type PagePositionMap,
   type PageRecord,
   type PersistedWireLayout,
@@ -52,6 +53,8 @@ export interface AgentEdit {
   html: string;
   previousHtml: string;
   at: number;
+  /** Set when the HTML arrived whole, so the canvas replays it element by element. */
+  replay?: boolean;
 }
 
 export type CanvasBackground = "dark" | "gray" | "light";
@@ -63,6 +66,7 @@ export interface CanvasState {
   pendingSaveCount: number;
   pagePositions: PagePositionMap;
   pageStackOrder: string[];
+  pageGroups: PageGroup[];
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
   requestedGeneratedPageFocusIds: string[] | null;
@@ -91,6 +95,11 @@ export interface EditorState extends CanvasState, ProjectState {
   beginSaving: () => void;
   endSaving: () => void;
   setPagePosition: (pageId: string, position: Point2D) => void;
+  setPagePositions: (positions: PagePositionMap) => void;
+  /** Groups the pages, pulling them out of any group they were in. Returns the new group id. */
+  groupPages: (pageIds: string[]) => string | null;
+  ungroupPages: (groupId: string) => void;
+  renamePageGroup: (groupId: string, name: string) => void;
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
@@ -164,6 +173,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pendingSaveCount: 0,
   pagePositions: {},
   pageStackOrder: [],
+  pageGroups: [],
   pageFrameHeights: {},
   focusedPageId: "page-home",
   requestedGeneratedPageFocusIds: null,
@@ -197,6 +207,12 @@ const filterPageFrameHeights = (
   Object.fromEntries(
     Object.entries(pageFrameHeights).filter(([pageId]) => pageIds.includes(pageId)),
   );
+
+/** Drops pages that no longer exist, then any group left empty. */
+const filterPageGroups = (pageGroups: PageGroup[], pageIds: string[]) =>
+  pageGroups
+    .map((group) => ({ ...group, pageIds: group.pageIds.filter((id) => pageIds.includes(id)) }))
+    .filter((group) => group.pageIds.length > 0);
 
 const mergePageStackOrder = (pageIds: string[], persistedStackOrder: string[]) => {
   const nextStackOrder = persistedStackOrder.filter((pageId) => pageIds.includes(pageId));
@@ -376,6 +392,40 @@ export const useEditorStore = create<EditorState>()(
             [pageId]: position,
           },
         })),
+      setPagePositions: (positions) =>
+        set((state) => ({ pagePositions: { ...state.pagePositions, ...positions } })),
+      groupPages: (pageIds) => {
+        const state = useEditorStore.getState();
+        const memberIds = state.pages.map((page) => page.id).filter((id) => pageIds.includes(id));
+        if (memberIds.length === 0) return null;
+
+        const names = new Set(state.pageGroups.map((group) => group.name));
+        let number = state.pageGroups.length + 1;
+        while (names.has(`Group ${number}`)) number += 1;
+        const id = createPageId();
+        set({
+          pageGroups: [
+            ...state.pageGroups
+              .map((group) => ({
+                ...group,
+                pageIds: group.pageIds.filter((pageId) => !memberIds.includes(pageId)),
+              }))
+              .filter((group) => group.pageIds.length > 0),
+            { id, name: `Group ${number}`, pageIds: memberIds },
+          ],
+        });
+        return id;
+      },
+      ungroupPages: (groupId) =>
+        set((state) => ({
+          pageGroups: state.pageGroups.filter((group) => group.id !== groupId),
+        })),
+      renamePageGroup: (groupId, name) =>
+        set((state) => ({
+          pageGroups: state.pageGroups.map((group) =>
+            group.id === groupId && name.trim() ? { ...group, name: name.trim() } : group,
+          ),
+        })),
       bringPageToFront: (pageId) =>
         set((state) => {
           if (!state.pages.some((page) => page.id === pageId)) {
@@ -391,7 +441,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       hydratePageLayout: (layout) =>
         set((state) => {
-          const { camera, pagePositions = {}, pageStackOrder = [] } = layout ?? {};
+          const { camera, pagePositions = {}, pageStackOrder = [], pageGroups = [] } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
 
           return {
@@ -404,6 +454,7 @@ export const useEditorStore = create<EditorState>()(
               : createDefaultCamera(),
             pagePositions: filterPagePositions(pagePositions, pageIds),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
+            pageGroups: filterPageGroups(pageGroups, pageIds),
             focusedPageId:
               state.focusedPageId && pageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -763,6 +814,7 @@ export const useEditorStore = create<EditorState>()(
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
+            pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             pageFrameHeights: filterPageFrameHeights(
               state.pageFrameHeights,
               nextPageIds,
@@ -804,7 +856,7 @@ export const useEditorStore = create<EditorState>()(
             if (html === previousHtml) return;
             agentEdits = {
               ...agentEdits,
-              [pageId]: { label: "Agent", html, previousHtml, at: Date.now() },
+              [pageId]: { label: "Agent", html, previousHtml, at: Date.now(), replay: true },
             };
           };
 
@@ -872,6 +924,7 @@ export const useEditorStore = create<EditorState>()(
               nextPageIds,
             ),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
+            pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
@@ -913,6 +966,7 @@ export const useEditorStore = create<EditorState>()(
             pageFrameHeights: nextPageFrameHeights,
             pageStatuses: nextPageStatuses,
             pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
+            pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             focusedPageId: nextFocusedPageId,
           };
         }),
@@ -923,6 +977,7 @@ export const useEditorStore = create<EditorState>()(
           camera: createDefaultCamera(),
           pagePositions: {},
           pageStackOrder: [],
+          pageGroups: [],
           pageFrameHeights: {},
           focusedPageId: "page-home",
           requestedGeneratedPageFocusIds: null,

@@ -22,11 +22,10 @@ import {
 } from "@/lib/db/queries/projects";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
-import { buildVisualLintReport, formatQualityDiagnostics } from "@/lib/mcp/diagnostics";
+import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
-import { evaluateWireHtmlQuality } from "@/lib/wireQuality";
 
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
@@ -40,12 +39,13 @@ const formatIssues = (issues: z.ZodError["issues"]) =>
     .map((issue) => `${issue.path.join(".") || "arguments"}: ${issue.message}`)
     .join("; ");
 
-/**
- * Scores the HTML that was actually saved. The page title is the only intent
- * signal an MCP write carries, so it stands in for the user prompt.
- */
-const qualityLine = (html: string, title: string) =>
-  formatQualityDiagnostics(evaluateWireHtmlQuality({ html, allowImages: true, userPrompt: title }));
+const PATCH_ATTEMPTS = 3;
+
+/** Appends the write diagnostics, when there are any, to a success line. */
+const withWriteNotes = (summary: string, sentHtml: string, storedHtml: string) => {
+  const notes = describeWrite(sentHtml, storedHtml);
+  return succeed(notes ? `${summary}\n${notes}` : summary);
+};
 
 export type ReplaceOnceResult = { ok: true; html: string } | { ok: false; matches: number };
 
@@ -70,7 +70,8 @@ export const replaceExactlyOnce = (
 };
 
 type ToolArgs = Record<string, unknown>;
-type ToolHandler = (userId: string, args: ToolArgs) => Promise<ToolCallResult>;
+/** `origin` is the app origin the request came in on, for building links back to the editor. */
+type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<ToolCallResult>;
 
 const listProjects: ToolHandler = async (userId) => {
   const projects = await listProjectsForUser(userId);
@@ -85,7 +86,7 @@ const listProjects: ToolHandler = async (userId) => {
   );
 };
 
-const createProjectHandler: ToolHandler = async (userId, args) => {
+const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const parsed = z
     .object({ title: z.string().trim().min(1).max(TITLE_MAX_CHARS) })
     .safeParse(args);
@@ -94,7 +95,9 @@ const createProjectHandler: ToolHandler = async (userId, args) => {
   const { project, page } = await createProject(userId, parsed.data.title);
   return succeed(
     `Created project "${project.title}" (id: ${project.id}). It starts with an ` +
-      `empty page "Page 1" (id: ${page.id}).`,
+      `empty page "Page 1" (id: ${page.id}).\n` +
+      `Open it in Wirely: ${origin}/wire/${project.id}\n` +
+      "Share this link with the user so they can watch the pages you write.",
   );
 };
 
@@ -125,8 +128,12 @@ const addPage: ToolHandler = async (userId, args) => {
     .object({
       projectId: z.string().trim().min(1),
       title: z.string().trim().min(1).max(TITLE_MAX_CHARS),
-      html: z.string().min(1).max(PAGE_HTML_MAX_CHARS),
+      html: z.string().min(1).max(PAGE_HTML_MAX_CHARS).optional(),
+      copyFromPageId: z.string().trim().min(1).optional(),
       deviceType: z.enum(["desktop", "mobile"]).optional(),
+    })
+    .refine((data) => (data.html === undefined) !== (data.copyFromPageId === undefined), {
+      message: "Provide exactly one of html or copyFromPageId.",
     })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
@@ -134,20 +141,35 @@ const addPage: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const html = sanitizeIframeHtml(parsed.data.html);
+  // A copy reuses HTML that was sanitized when it was stored, so the agent
+  // spends a few patches on a variant instead of the whole document.
+  const source = parsed.data.copyFromPageId
+    ? await getProjectPageForUser({
+        projectId: project.id,
+        pageId: parsed.data.copyFromPageId,
+        userId,
+      })
+    : null;
+  if (parsed.data.copyFromPageId && !source) {
+    return fail("copyFromPageId not found in this project. Use list_pages for valid ids.");
+  }
+
+  const sentHtml = parsed.data.html ?? source?.htmlContent ?? "";
+  const html = sanitizeIframeHtml(sentHtml);
 
   const page = await createProjectPageForUser({
     projectId: project.id,
     userId,
     title: parsed.data.title,
-    deviceType: parsed.data.deviceType,
+    deviceType: parsed.data.deviceType ?? (source?.deviceType === "mobile" ? "mobile" : undefined),
     htmlContent: html,
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
 
-  return succeed(
-    `Added page "${page.title}" (id: ${page.id}) to "${project.title}".\n` +
-      qualityLine(html, page.title),
+  return withWriteNotes(
+    `Added page "${page.title}" (id: ${page.id}) to "${project.title}".`,
+    sentHtml,
+    html,
   );
 };
 
@@ -181,7 +203,9 @@ const updatePage: ToolHandler = async (userId, args) => {
   if (!updated) return fail("Page not found. Use list_pages for valid ids.");
 
   const summary = `Updated page "${updated.title}".`;
-  return succeed(html === undefined ? summary : `${summary}\n${qualityLine(html, updated.title)}`);
+  return html === undefined || parsed.data.html === undefined
+    ? succeed(summary)
+    : withWriteNotes(summary, parsed.data.html, html);
 };
 
 const patchPage: ToolHandler = async (userId, args) => {
@@ -195,42 +219,45 @@ const patchPage: ToolHandler = async (userId, args) => {
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
-  const page = await getProjectPageForUser({
-    projectId: parsed.data.projectId,
-    pageId: parsed.data.pageId,
-    userId,
-  });
-  if (!page) return fail("Page not found. Use list_pages for valid ids.");
+  // Agents send several patches to one page in parallel. Each attempt writes
+  // only if the page still holds the HTML it read, and re-reads on a conflict,
+  // so concurrent patches all land instead of the last one erasing the rest.
+  for (let attempt = 0; attempt < PATCH_ATTEMPTS; attempt += 1) {
+    const page = await getProjectPageForUser({
+      projectId: parsed.data.projectId,
+      pageId: parsed.data.pageId,
+      userId,
+    });
+    if (!page) return fail("Page not found. Use list_pages for valid ids.");
 
-  // ponytail: read-modify-write without a version check, so two concurrent
-  // patches can drop one. Upgrade to a conditional update on updatedAt if agents
-  // start patching one page in parallel.
-  const patch = replaceExactlyOnce(page.htmlContent ?? "", parsed.data.oldString, parsed.data.newString);
-  if (!patch.ok && patch.matches === 0) {
-    return fail(
-      "oldString was not found in the page. Stored HTML is sanitized and may differ from " +
-        "what you sent. Call get_page for the exact source.",
-    );
-  }
-  if (!patch.ok) {
-    return fail(
-      `oldString matched ${patch.matches} times. Include more surrounding text so it matches once.`,
-    );
-  }
-  if (patch.html.length > PAGE_HTML_MAX_CHARS) {
-    return fail(`The patched page would exceed ${PAGE_HTML_MAX_CHARS} characters.`);
+    const patch = replaceExactlyOnce(page.htmlContent ?? "", parsed.data.oldString, parsed.data.newString);
+    if (!patch.ok && patch.matches === 0) {
+      return fail(
+        "oldString was not found in the page. Stored HTML is sanitized and may differ from " +
+          "what you sent. Call get_page for the exact source.",
+      );
+    }
+    if (!patch.ok) {
+      return fail(
+        `oldString matched ${patch.matches} times. Include more surrounding text so it matches once.`,
+      );
+    }
+    if (patch.html.length > PAGE_HTML_MAX_CHARS) {
+      return fail(`The patched page would exceed ${PAGE_HTML_MAX_CHARS} characters.`);
+    }
+
+    const html = sanitizeIframeHtml(patch.html);
+    const updated = await updateProjectPageForUser({
+      projectId: parsed.data.projectId,
+      pageId: parsed.data.pageId,
+      userId,
+      htmlContent: html,
+      expectedHtmlContent: page.htmlContent,
+    });
+    if (updated) return withWriteNotes(`Patched page "${updated.title}".`, patch.html, html);
   }
 
-  const html = sanitizeIframeHtml(patch.html);
-  const updated = await updateProjectPageForUser({
-    projectId: parsed.data.projectId,
-    pageId: parsed.data.pageId,
-    userId,
-    htmlContent: html,
-  });
-  if (!updated) return fail("Page not found. Use list_pages for valid ids.");
-
-  return succeed(`Patched page "${updated.title}".\n${qualityLine(html, updated.title)}`);
+  return fail("The page kept changing while patching. Call get_page and try again.");
 };
 
 const getPage: ToolHandler = async (userId, args) => {
@@ -338,6 +365,7 @@ export const callTool = async (
   userId: string,
   name: string,
   args: ToolArgs,
+  origin: string,
 ): Promise<ToolCallResult> => {
   const handler = TOOL_HANDLERS[name];
   if (!handler) {
@@ -345,7 +373,7 @@ export const callTool = async (
   }
 
   try {
-    return await handler(userId, args);
+    return await handler(userId, args, origin);
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });
     return fail("The tool failed on the server. It has been logged; try again.");
