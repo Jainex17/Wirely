@@ -18,15 +18,18 @@ describe("stripWirelyArtifacts", () => {
 });
 
 describe("buildAgentPrompt", () => {
-  it("names the screen, device, and width, and fences the cleaned html", () => {
+  it("names the screen, device, and width, and links the html instead of inlining it", () => {
     const prompt = buildAgentPrompt({
       title: "Pricing",
       deviceType: "mobile",
-      html: '<body data-wirely-cursor><main>Plans</main></body>',
+      shareUrl: "https://wirely.test/api/share/pages/p1?exp=1&sig=s",
+      expiresAt: Date.UTC(2026, 9, 3),
     });
 
     expect(prompt.startsWith("Implement this screen in the current project.")).toBe(true);
     expect(prompt).toContain("Screen: Pricing\nDevice: mobile, designed at 375px wide");
-    expect(prompt.endsWith("```html\n<body><main>Plans</main></body>\n```")).toBe(true);
+    expect(prompt).toContain("Reference HTML: https://wirely.test/api/share/pages/p1?exp=1&sig=s");
+    expect(prompt).toContain("expires on 2026-10-03.");
+    expect(prompt).not.toContain("```");
   });
 });

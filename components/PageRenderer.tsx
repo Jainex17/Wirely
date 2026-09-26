@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { markAgentCursor } from "@/lib/agentCursor";
+import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
@@ -45,6 +45,9 @@ import type { AgentEdit, PageStatusRecord } from "@/store/useEditorStore";
 
 /** How long the agent cursor stays after the last change it points at. */
 const AGENT_CURSOR_LINGER_MS = 3_000;
+// Each replay step reloads the frame, so steps come no faster than the frame
+// can repaint without flashing. Ten steps cap a replay near three seconds.
+const REVEAL_STEP_MS = 300;
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -240,9 +243,41 @@ export default React.memo(function PageRenderer({
   const isLive = renderMode === "live";
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
+  // The cursor marker exists only in the srcdoc string. Stored page HTML,
+  // exports, and the preview dialog all read page.iframeHtml, which never
+  // carries it or a replay step.
+  const cursorEdit = agentEdit && agentEdit.html === page.iframeHtml ? agentEdit : null;
+  const replayEdit = isLive && cursorEdit?.replay ? cursorEdit : null;
+  const revealSteps = React.useMemo(
+    () => (replayEdit ? buildRevealSteps(replayEdit.previousHtml, replayEdit.html) : []),
+    [replayEdit],
+  );
+  const replayMs = Math.max(0, revealSteps.length - 1) * REVEAL_STEP_MS;
+  // Derived from the edit's timestamp, so a frame that mounts mid-replay picks
+  // up where it should be and one that mounts later shows the finished page.
+  const [revealNow, setRevealNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!replayEdit || replayMs === 0) return;
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setRevealNow(now);
+      if (now >= replayEdit.at + replayMs) window.clearInterval(intervalId);
+    }, REVEAL_STEP_MS);
+    return () => window.clearInterval(intervalId);
+  }, [replayEdit, replayMs]);
+  const revealIndex =
+    replayEdit && revealSteps.length > 1
+      ? Math.min(
+          revealSteps.length - 1,
+          Math.max(0, Math.floor((revealNow - replayEdit.at) / REVEAL_STEP_MS)),
+        )
+      : -1;
+  const displayedHtml = revealIndex >= 0 ? revealSteps[revealIndex] : (page.iframeHtml ?? "");
+  const cursorPreviousHtml =
+    revealIndex > 0 ? revealSteps[revealIndex - 1] : (cursorEdit?.previousHtml ?? "");
   const sanitizedHtml = React.useMemo(
-    () => (hasRawHtml && isLive ? sanitizeIframeHtml(page.iframeHtml ?? "") : ""),
-    [hasRawHtml, isLive, page.iframeHtml],
+    () => (hasRawHtml && isLive ? sanitizeIframeHtml(displayedHtml) : ""),
+    [displayedHtml, hasRawHtml, isLive],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
   const iframeReporterId = React.useMemo(
@@ -256,20 +291,13 @@ export default React.memo(function PageRenderer({
         : "",
     [hasHtml, sanitizedHtml, currentDevice.height],
   );
-  // The cursor marker exists only in this srcdoc string. Stored page HTML,
-  // exports, and the preview dialog all read page.iframeHtml, which never
-  // carries it.
-  const cursorEdit = agentEdit && agentEdit.html === page.iframeHtml ? agentEdit : null;
   const markedSrcDoc = React.useMemo(() => {
     if (!hasHtml || !cursorEdit) return { html: canvasSrcDoc, found: false };
-    const previousSrcDoc = cursorEdit.previousHtml
-      ? stabilizeViewportHeightClasses(
-          sanitizeIframeHtml(cursorEdit.previousHtml),
-          currentDevice.height,
-        )
+    const previousSrcDoc = cursorPreviousHtml
+      ? stabilizeViewportHeightClasses(sanitizeIframeHtml(cursorPreviousHtml), currentDevice.height)
       : "";
     return markAgentCursor(previousSrcDoc, canvasSrcDoc);
-  }, [canvasSrcDoc, currentDevice.height, cursorEdit, hasHtml]);
+  }, [canvasSrcDoc, currentDevice.height, cursorEdit, cursorPreviousHtml, hasHtml]);
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml ? injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId) : "",
@@ -283,13 +311,13 @@ export default React.memo(function PageRenderer({
     if (!cursorEdit) return;
     // Measured from the edit's own timestamp, so a frame that remounts later
     // does not bring back a cursor for an old change.
-    const remaining = AGENT_CURSOR_LINGER_MS - (Date.now() - cursorEdit.at);
+    const remaining = AGENT_CURSOR_LINGER_MS + replayMs - (Date.now() - cursorEdit.at);
     const timeoutId = window.setTimeout(
       () => setExpiredCursorEdit(cursorEdit),
       Math.max(0, remaining),
     );
     return () => window.clearTimeout(timeoutId);
-  }, [cursorEdit]);
+  }, [cursorEdit, replayMs]);
   const isPageIdle = status?.status === "completed" || status?.status === "failed";
   const showAgentCursor =
     isLive &&
@@ -398,19 +426,47 @@ export default React.memo(function PageRenderer({
   );
 
   const copyForAgent = React.useCallback(async () => {
+    if (!projectId) return;
+    const buildPrompt = async () => {
+      const response = await fetch(`/api/projects/${projectId}/pages/${page.id}/share`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { url?: string; expiresAt?: number; error?: string }
+        | null;
+      if (!response.ok || !payload?.url || !payload.expiresAt) {
+        throw new Error(payload?.error || "Could not create a share link.");
+      }
+      return buildAgentPrompt({
+        title: page.title,
+        deviceType: page.deviceType === "mobile" ? "mobile" : "desktop",
+        shareUrl: payload.url,
+        expiresAt: payload.expiresAt,
+      });
+    };
+
     try {
-      await navigator.clipboard.writeText(
-        buildAgentPrompt({
-          title: page.title,
-          deviceType: page.deviceType === "mobile" ? "mobile" : "desktop",
-          html: page.iframeHtml ?? "",
-        }),
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        // Safari drops the user gesture across an await, so the clipboard
+        // write starts now and receives the prompt as a pending promise.
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": buildPrompt().then((prompt) => new Blob([prompt], { type: "text/plain" })),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(await buildPrompt());
+      }
+      toast.success("Copied prompt with a share link for your agent");
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Could not copy the prompt. Check clipboard permissions and try again.",
       );
-      toast.success("Copied prompt for your agent");
-    } catch {
-      toast.error("Could not copy the prompt. Check clipboard permissions and try again.");
     }
-  }, [page.deviceType, page.iframeHtml, page.title]);
+  }, [page.deviceType, page.id, page.title, projectId]);
 
   const [isCopyingImage, setIsCopyingImage] = React.useState(false);
   const copyImage = React.useCallback(async () => {

@@ -4,7 +4,7 @@ import {
   buildVisualLintReport,
   composite,
   contrastRatio,
-  formatQualityDiagnostics,
+  describeWrite,
   resolveBackground,
   type ContrastCandidate,
   type Rgba,
@@ -14,33 +14,26 @@ const BLACK: Rgba = [0, 0, 0, 255];
 const WHITE: Rgba = [255, 255, 255, 255];
 const GRAY_77: Rgba = [119, 119, 119, 255];
 
-describe("formatQualityDiagnostics", () => {
-  it("lists violation ids", () => {
-    expect(
-      formatQualityDiagnostics({
-        score: 74,
-        violations: ["missing_header_landmark", "weak_type_scale"],
-        isRenderable: true,
-      }),
-    ).toBe("Quality 74/100. Issues: missing_header_landmark, weak_type_scale.");
+describe("describeWrite", () => {
+  const page = (body: string) => `<html><body>${body}</body></html>`;
+
+  it("says nothing when the page was stored as sent", () => {
+    const html = page("<main><style>.a{}</style><h1 style=\"color:red\">Hi</h1></main>");
+    expect(describeWrite(html, html)).toBe("");
   });
 
-  it("says when there is nothing to fix", () => {
-    expect(formatQualityDiagnostics({ score: 100, violations: [], isRenderable: true })).toBe(
-      "Quality 100/100. No issues.",
-    );
+  it("names what the sanitizer removed", () => {
+    expect(
+      describeWrite(
+        page('<button>Save</button><button>Undo</button><form></form><script src="https://x.test/a.js"></script>'),
+        page(""),
+      ),
+    ).toStartWith("The sanitizer removed 1 <form>, 2 <button>, 1 <script> with their contents.");
   });
 
   it("flags a page that will not render", () => {
-    expect(
-      formatQualityDiagnostics({
-        score: 57,
-        violations: ["document_structure_incomplete"],
-        isRenderable: false,
-      }),
-    ).toBe(
-      "Quality 57/100. Issues: document_structure_incomplete.\n" +
-        "Not renderable: the page needs complete <html> and <body> tags.",
+    expect(describeWrite("<div>Hi</div>", "<div>Hi</div>")).toBe(
+      "Not renderable: the page needs complete <html> and <body> tags.",
     );
   });
 });

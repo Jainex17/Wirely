@@ -1,7 +1,8 @@
 /**
  * The prompt behind the page frame's "Copy for agent" button. A user pastes it
  * into a coding agent working in their own codebase, so it asks for the screen
- * rebuilt in that project's stack rather than the mock pasted in verbatim.
+ * rebuilt in that project's stack rather than the mock pasted in verbatim. The
+ * HTML itself stays behind a signed link, so the prompt stays short.
  */
 import { PAGE_DEVICE_WIDTHS } from "@/lib/canvasScene";
 import type { PageDeviceType } from "@/lib/types";
@@ -23,25 +24,25 @@ export const stripWirelyArtifacts = (html: string) =>
 export const buildAgentPrompt = ({
   title,
   deviceType,
-  html,
+  shareUrl,
+  expiresAt,
 }: {
   title: string;
   deviceType: PageDeviceType;
-  html: string;
+  shareUrl: string;
+  expiresAt: number;
 }) =>
   [
     "Implement this screen in the current project.",
     "",
+    "- Fetch the reference HTML from the link below. It is a mock to match, not code to paste.",
     "- Use the project's existing framework, components, styling system, and conventions.",
-    "- Do not paste the HTML below as is. It is a reference mock.",
     "- Match its layout, spacing, type scale, colors, and copy.",
     "- Treat images as placeholders to swap for real assets.",
     "- Ask before adding any dependency.",
     "",
     `Screen: ${title}`,
     `Device: ${deviceType}, designed at ${PAGE_DEVICE_WIDTHS[deviceType]}px wide`,
-    "",
-    "```html",
-    stripWirelyArtifacts(html),
-    "```",
+    `Reference HTML: ${shareUrl}`,
+    `The link is read-only and expires on ${new Date(expiresAt).toISOString().slice(0, 10)}.`,
   ].join("\n");

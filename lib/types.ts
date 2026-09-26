@@ -46,9 +46,17 @@ export interface SectionRecord {
 
 export type SectionData = SectionRecord;
 
+/** A named set of pages drawn as one frame on the canvas. A page is in at most one group. */
+export interface PageGroup {
+  id: string;
+  name: string;
+  pageIds: string[];
+}
+
 export interface PersistedWireLayout {
   version?: number;
   camera?: Partial<CameraState>;
   pagePositions?: PagePositionMap;
   pageStackOrder?: string[];
+  pageGroups?: PageGroup[];
 }

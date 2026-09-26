@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
+  Frame,
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
@@ -36,13 +37,38 @@ export default function PagesPanel({
 }: PagesPanelProps) {
   const router = useRouter();
   const [isPageListOpen, setIsPageListOpen] = useState(true);
-  const { pages, focusedPageId, focusPage } = useEditorStore(
+  const { pages, pageGroups, focusedPageId, focusPage, focusPages } = useEditorStore(
     useShallow((state) => ({
       pages: state.pages,
+      pageGroups: state.pageGroups,
       focusedPageId: state.focusedPageId,
       focusPage: state.focusPage,
+      focusPages: state.focusPages,
     })),
   );
+  const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
+
+  const renderPage = (page: (typeof pages)[number], indent: string) => {
+    const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
+    const isCurrent = focusedPageId === page.id;
+    return (
+      <button
+        key={page.id}
+        type="button"
+        onClick={() => focusPage(page.id)}
+        className={cn(
+          "flex h-7 w-full items-center gap-2 pr-3 text-left text-xs transition-colors",
+          indent,
+          isCurrent
+            ? "bg-primary/15 text-foreground"
+            : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+        )}
+      >
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
+        <span className="truncate">{page.title}</span>
+      </button>
+    );
+  };
 
   const titleRow = (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
@@ -114,26 +140,25 @@ export default function PagesPanel({
       >
         <div className="relative">
           <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
-          {pages.map((page) => {
-            const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
-            const isCurrent = focusedPageId === page.id;
-            return (
+          {pageGroups.map((group) => (
+            <div key={group.id}>
               <button
-                key={page.id}
                 type="button"
-                onClick={() => focusPage(page.id)}
-                className={cn(
-                  "flex h-7 w-full items-center gap-2 pl-8 pr-3 text-left text-xs transition-colors",
-                  isCurrent
-                    ? "bg-primary/15 text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-                )}
+                onClick={() => focusPages(group.pageIds)}
+                className="flex h-7 w-full items-center gap-2 pl-8 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
               >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
-                <span className="truncate">{page.title}</span>
+                <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{group.name}</span>
+                <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+                  {group.pageIds.length}
+                </span>
               </button>
-            );
-          })}
+              {pages
+                .filter((page) => group.pageIds.includes(page.id))
+                .map((page) => renderPage(page, "pl-12"))}
+            </div>
+          ))}
+          {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, "pl-8"))}
         </div>
       </nav>
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">

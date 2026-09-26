@@ -293,3 +293,38 @@ describe("agent edits", () => {
     expect(agentEdits["page-2"].label).toBe("MiMo v2.5 (local)");
   });
 });
+
+describe("useEditorStore page groups", () => {
+  it("moves a page between groups and drops the group it empties", () => {
+    const store = useEditorStore.getState();
+    const first = store.groupPages(["page-1"]);
+    const second = useEditorStore.getState().groupPages(["page-1", "page-2", "missing"]);
+
+    const { pageGroups } = useEditorStore.getState();
+    expect(pageGroups).toHaveLength(1);
+    expect(pageGroups[0].id).toBe(second as string);
+    expect(pageGroups[0].pageIds).toEqual(["page-1", "page-2"]);
+    expect(first).not.toBe(second);
+  });
+
+  it("forgets deleted pages and restores groups from a saved layout", () => {
+    useEditorStore.getState().hydratePageLayout({
+      pageGroups: [
+        { id: "g1", name: "Flow", pageIds: ["page-1", "page-2"] },
+        { id: "g2", name: "Stale", pageIds: ["gone"] },
+      ],
+    });
+    expect(useEditorStore.getState().pageGroups).toEqual([
+      { id: "g1", name: "Flow", pageIds: ["page-1", "page-2"] },
+    ]);
+
+    useEditorStore.getState().deletePage("page-2");
+    useEditorStore.getState().renamePageGroup("g1", "  Checkout  ");
+    expect(useEditorStore.getState().pageGroups).toEqual([
+      { id: "g1", name: "Checkout", pageIds: ["page-1"] },
+    ]);
+
+    useEditorStore.getState().ungroupPages("g1");
+    expect(useEditorStore.getState().pageGroups).toEqual([]);
+  });
+});

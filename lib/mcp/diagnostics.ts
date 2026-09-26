@@ -6,16 +6,35 @@
  * the headless page (a serialized `page.evaluate` cannot call imported code),
  * and the math that turns them into findings lives here.
  */
-import type { WireQualityReport } from "@/lib/wireQuality";
+import { DISALLOWED_CONTAINER_TAGS } from "@/lib/iframeSecurity";
 
-export const formatQualityDiagnostics = (report: WireQualityReport): string => {
-  const issues = report.violations.length
-    ? `Issues: ${report.violations.join(", ")}.`
-    : "No issues.";
-  const line = `Quality ${report.score}/100. ${issues}`;
-  return report.isRenderable
-    ? line
-    : `${line}\nNot renderable: the page needs complete <html> and <body> tags.`;
+const countTags = (html: string, tag: string) =>
+  (html.match(new RegExp(`<${tag}\\b`, "gi")) ?? []).length;
+
+/**
+ * What an agent needs to hear after a write: whether the stored page renders,
+ * and what the sanitizer took out of it. Removals are otherwise silent, and a
+ * stripped <button> takes its label with it. This deliberately skips the
+ * generation pipeline's quality score, which grades landing-page furniture and
+ * Tailwind-only styling and scored every agent-written dashboard 0/100.
+ */
+export const describeWrite = (sentHtml: string, storedHtml: string): string => {
+  const lines: string[] = [];
+  if (!/<html[\s>]/i.test(storedHtml) || !/<body[\s>]/i.test(storedHtml)) {
+    lines.push("Not renderable: the page needs complete <html> and <body> tags.");
+  }
+
+  const removed = [...DISALLOWED_CONTAINER_TAGS, "script"]
+    .map((tag) => ({ tag, count: countTags(sentHtml, tag) - countTags(storedHtml, tag) }))
+    .filter(({ count }) => count > 0);
+  if (removed.length > 0) {
+    lines.push(
+      `The sanitizer removed ${removed.map(({ tag, count }) => `${count} <${tag}>`).join(", ")} ` +
+        "with their contents. Draw controls as styled <a href=\"#\"> or <div role=\"button\"> " +
+        "elements, and use only the allowlisted CDN scripts.",
+    );
+  }
+  return lines.join("\n");
 };
 
 /** sRGB bytes with alpha in 0..255, as a canvas `getImageData` returns them. */

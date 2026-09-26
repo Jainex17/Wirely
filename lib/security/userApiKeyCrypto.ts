@@ -54,6 +54,9 @@ const readMasterSecret = (envName: string): Buffer => {
   return decoded;
 };
 
+/** The current master secret, for callers that derive their own purpose-bound key from it. */
+export const readCurrentMasterSecret = () => readMasterSecret(MASTER_SECRET_ENV);
+
 const readOptionalMasterSecret = (envName: string): Buffer | undefined => {
   const raw = process.env[envName];
   if (!raw) return undefined;

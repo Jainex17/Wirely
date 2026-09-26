@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Ungroup } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { logger } from "@/lib/logger";
 import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
@@ -22,6 +23,7 @@ import {
   getSnappedPagePosition,
   getViewportBounds,
   placeMissingPages,
+  unionBounds,
   resolvePageFrameDevice,
   scaleFromZoom,
   zoomAtViewportPoint,
@@ -56,6 +58,10 @@ const DRAG_START_THRESHOLD_PX = 4;
 const LIVE_PAGE_MOUNT_INTERVAL_MS = 120;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const LAYOUT_SAVE_ICON_MS = 350;
+// Scene pixels between a group's frame and its pages. The top leaves room for
+// the 50px page title row.
+const GROUP_PADDING = 32;
+const GROUP_TITLE_ROW = 50;
 
 interface PointerDragState {
   pageId: string;
@@ -64,6 +70,13 @@ interface PointerDragState {
   startClientY: number;
   initialPosition: ScenePoint;
   hasMoved: boolean;
+}
+
+interface GroupDragState {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  initialPositions: Record<string, ScenePoint>;
 }
 
 interface CanvasPanState {
@@ -121,6 +134,7 @@ export default function Canvas({
     pages,
     pagePositions,
     pageStackOrder,
+    pageGroups,
     pageFrameHeights,
     pageStatuses,
     agentEdits,
@@ -129,6 +143,10 @@ export default function Canvas({
     endSaving,
     setCamera,
     setPagePosition,
+    setPagePositions,
+    groupPages,
+    ungroupPages,
+    renamePageGroup,
     bringPageToFront,
     setFocusedPage,
     setPageFrameHeight,
@@ -141,6 +159,7 @@ export default function Canvas({
       pages: state.pages,
       pagePositions: state.pagePositions,
       pageStackOrder: state.pageStackOrder,
+      pageGroups: state.pageGroups,
       pageFrameHeights: state.pageFrameHeights,
       pageStatuses: state.pageStatuses,
       agentEdits: state.agentEdits,
@@ -149,6 +168,10 @@ export default function Canvas({
       endSaving: state.endSaving,
       setCamera: state.setCamera,
       setPagePosition: state.setPagePosition,
+      setPagePositions: state.setPagePositions,
+      groupPages: state.groupPages,
+      ungroupPages: state.ungroupPages,
+      renamePageGroup: state.renamePageGroup,
       bringPageToFront: state.bringPageToFront,
       setFocusedPage: state.setFocusedPage,
       setPageFrameHeight: state.setPageFrameHeight,
@@ -161,6 +184,7 @@ export default function Canvas({
     [projectId],
   );
   const pageDragStateRef = React.useRef<PointerDragState | null>(null);
+  const groupDragStateRef = React.useRef<GroupDragState | null>(null);
   const panStateRef = React.useRef<CanvasPanState | null>(null);
   const pointersRef = React.useRef<Map<number, ScenePoint>>(new Map());
   const pinchStateRef = React.useRef<PinchState | null>(null);
@@ -170,9 +194,9 @@ export default function Canvas({
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
-  // the chat knows what to edit. This one exists only while the user has a page
-  // clicked, and drives the size badge.
-  const [selectedPageId, setSelectedPageId] = React.useState<string | null>(null);
+  // the chat knows what to edit. This one exists only while the user has pages
+  // clicked, drives the size badge, and is what Cmd+G groups.
+  const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
   const [mountedPageIds, setMountedPageIds] = React.useState<ReadonlySet<string>>(
@@ -239,6 +263,17 @@ export default function Canvas({
     [pageLayouts],
   );
 
+  const groupFrames = React.useMemo(
+    () =>
+      pageGroups.flatMap((group) => {
+        const bounds = unionBounds(
+          group.pageIds.flatMap((pageId) => pageBoundsById[pageId] ?? []),
+        );
+        return bounds ? [{ group, bounds }] : [];
+      }),
+    [pageBoundsById, pageGroups],
+  );
+
   const viewportBounds = React.useMemo(
     () => getViewportBounds(camera, viewportSize),
     [camera, viewportSize],
@@ -257,7 +292,7 @@ export default function Canvas({
 
   // Admits the next in-view page, nearest the viewport centre first. Any camera
   // move restarts the timer, so frames mount once the canvas settles rather
-  // than mid-gesture. A mounted page stays admitted.
+  // than mid-gesture. A mounted page stays mounted.
   React.useEffect(() => {
     const centerX = (viewportBounds.left + viewportBounds.right) / 2;
     const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
@@ -351,6 +386,7 @@ export default function Canvas({
               camera,
               pagePositions,
               pageStackOrder,
+              pageGroups,
             }),
           );
         } catch (error) {
@@ -373,6 +409,7 @@ export default function Canvas({
     camera,
     endSaving,
     layoutStorageKey,
+    pageGroups,
     pagePositions,
     pageStackOrder,
     pages,
@@ -582,6 +619,21 @@ export default function Canvas({
     [],
   );
 
+  // Capture phase, so shift-click toggles the selection before the page's own
+  // focus handler replaces it with just this page.
+  const handlePagePointerDownCapture = React.useCallback(
+    (pageId: string) => (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!event.shiftKey || activeTool !== "select" || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setFocusedPage(pageId);
+      setSelectedPageIds((current) =>
+        current.includes(pageId) ? current.filter((id) => id !== pageId) : [...current, pageId],
+      );
+    },
+    [activeTool, setFocusedPage],
+  );
+
   const handlePagePointerDown = React.useCallback(
     (pageId: string) => (event: React.PointerEvent<HTMLDivElement>) => {
       if (
@@ -596,7 +648,7 @@ export default function Canvas({
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
-      setSelectedPageId(pageId);
+      setSelectedPageIds((current) => (current.includes(pageId) ? current : [pageId]));
       bringPageToFront(pageId);
 
       pageDragStateRef.current = {
@@ -707,17 +759,84 @@ export default function Canvas({
   const handlePageFocus = React.useCallback(
     (pageId: string) => {
       setFocusedPage(pageId);
-      setSelectedPageId(pageId);
+      setSelectedPageIds((current) => (current.includes(pageId) ? current : [pageId]));
     },
     [setFocusedPage],
   );
 
+  const groupSelection = React.useCallback(() => {
+    if (selectedPageIds.length < 2) return;
+    groupPages(selectedPageIds);
+    setSelectedPageIds([]);
+  }, [groupPages, selectedPageIds]);
+
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedPageId(null);
+      if (event.key === "Escape") setSelectedPageIds([]);
+      if (event.key.toLowerCase() !== "g" || !(event.metaKey || event.ctrlKey)) return;
+      if (isEditableTarget(event.target) || selectedPageIds.length === 0) return;
+      event.preventDefault();
+      if (!event.shiftKey) {
+        groupSelection();
+        return;
+      }
+      for (const group of pageGroups) {
+        if (group.pageIds.some((pageId) => selectedPageIds.includes(pageId))) {
+          ungroupPages(group.id);
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [groupSelection, pageGroups, selectedPageIds, ungroupPages]);
+
+  const handleGroupPointerDown = React.useCallback(
+    (pageIds: string[]) => (event: React.PointerEvent<HTMLDivElement>) => {
+      if (activeTool !== "select" || isSpacePanning || event.button !== 0) return;
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      groupDragStateRef.current = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        initialPositions: Object.fromEntries(
+          pageIds.flatMap((pageId) => {
+            const bounds = pageBoundsById[pageId];
+            return bounds ? [[pageId, { x: bounds.left, y: bounds.top }]] : [];
+          }),
+        ),
+      };
+      setSelectedPageIds(pageIds);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [activeTool, isSpacePanning, pageBoundsById],
+  );
+
+  const handleGroupPointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const dragState = groupDragStateRef.current;
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const deltaX = (event.clientX - dragState.startClientX) / scale;
+      const deltaY = (event.clientY - dragState.startClientY) / scale;
+      setPagePositions(
+        Object.fromEntries(
+          Object.entries(dragState.initialPositions).map(([pageId, position]) => [
+            pageId,
+            { x: position.x + deltaX, y: position.y + deltaY },
+          ]),
+        ),
+      );
+    },
+    [scale, setPagePositions],
+  );
+
+  const stopGroupDrag = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (groupDragStateRef.current?.pointerId !== event.pointerId) return;
+    groupDragStateRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   }, []);
 
   const handlePageContextEdit = React.useCallback(
@@ -735,7 +854,7 @@ export default function Canvas({
         isPanModeActive ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
       }`}
       onClick={() => {
-        setSelectedPageId(null);
+        setSelectedPageIds([]);
         onCanvasClick();
       }}
       onPointerDown={handleCanvasPointerDown}
@@ -762,12 +881,32 @@ export default function Canvas({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative">
+          {groupFrames.map(({ group, bounds }) => (
+            <PageGroupFrame
+              key={group.id}
+              name={group.name}
+              left={bounds.left - GROUP_PADDING}
+              top={bounds.top - GROUP_PADDING - GROUP_TITLE_ROW}
+              width={bounds.width + GROUP_PADDING * 2}
+              height={bounds.height + GROUP_PADDING * 2 + GROUP_TITLE_ROW}
+              isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
+              onRename={(name) => renamePageGroup(group.id, name)}
+              onUngroup={() => ungroupPages(group.id)}
+              onPointerDown={handleGroupPointerDown(group.pageIds)}
+              onPointerMove={handleGroupPointerMove}
+              onPointerUp={stopGroupDrag}
+            />
+          ))}
           {pageLayouts.map((pageLayout) => {
-            const renderMode: PageRenderMode =
-              pageRenderModes.get(pageLayout.page.id) === "live" &&
-              mountedPageIds.has(pageLayout.page.id)
-                ? "live"
-                : "shell";
+            // A mounted frame stays live after it scrolls away. Unmounting it
+            // meant zooming back out rebuilt every returning iframe in the same
+            // frame, mid-gesture, each re-parsing its HTML and re-running
+            // Tailwind. The browser already skips painting offscreen iframes.
+            // ponytail: memory grows with every page ever viewed; evict least
+            // recently visible frames if projects reach dozens of pages.
+            const renderMode: PageRenderMode = mountedPageIds.has(pageLayout.page.id)
+              ? "live"
+              : "shell";
 
             return (
               <div
@@ -784,6 +923,7 @@ export default function Canvas({
                   top: `${pageLayout.position.y}px`,
                   zIndex: pageLayout.zIndex,
                 }}
+                onPointerDownCapture={handlePagePointerDownCapture(pageLayout.page.id)}
                 onPointerDown={handlePagePointerDown(pageLayout.page.id)}
                 onPointerMove={handlePagePointerMove(pageLayout.page.id)}
                 onPointerUp={stopPageDrag(pageLayout.page.id)}
@@ -802,7 +942,7 @@ export default function Canvas({
                   agentEdit={agentEdits[pageLayout.page.id] ?? null}
                   isOnlyPage={pages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
-                  isSelected={selectedPageId === pageLayout.page.id}
+                  isSelected={selectedPageIds.includes(pageLayout.page.id)}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
                 />
@@ -842,7 +982,110 @@ export default function Canvas({
         </div>
       </div>
 
+      {selectedPageIds.length > 1 ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            groupSelection();
+          }}
+          title="Group selection (Ctrl+G)"
+          className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow-lg hover:bg-accent"
+        >
+          Group {selectedPageIds.length} pages
+        </button>
+      ) : null}
+
       <CanvasToolbar activeTool={activeTool} onToolChange={onToolChange} />
+    </div>
+  );
+}
+
+interface PageGroupFrameProps {
+  name: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  isSelected: boolean;
+  onRename: (name: string) => void;
+  onUngroup: () => void;
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
+}
+
+/**
+ * The frame behind a group's pages. It sizes itself from its pages, so moving a
+ * page stretches it. The title bar above it drags every page in the group;
+ * double-click the name to rename it.
+ */
+function PageGroupFrame({
+  name,
+  left,
+  top,
+  width,
+  height,
+  isSelected,
+  onRename,
+  onUngroup,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: PageGroupFrameProps) {
+  const [isRenaming, setIsRenaming] = React.useState(false);
+
+  return (
+    <div
+      className={`pointer-events-none absolute rounded-xl border bg-foreground/[0.03] ${
+        isSelected ? "border-sky-500" : "border-foreground/15"
+      }`}
+      style={{
+        left,
+        top,
+        width,
+        height,
+        zIndex: 0,
+        borderWidth: "calc(1px * var(--canvas-inverse-zoom, 1))",
+      }}
+    >
+      <div
+        className="pointer-events-auto absolute bottom-full left-0 flex origin-bottom-left cursor-grab items-center gap-1.5 pb-1.5 text-[color:var(--canvas-label-strong,var(--foreground))] active:cursor-grabbing"
+        style={{ transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 4))" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={() => setIsRenaming(true)}
+      >
+        {isRenaming ? (
+          <input
+            autoFocus
+            defaultValue={name}
+            aria-label="Group name"
+            className="h-6 w-40 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
+            onBlur={(event) => {
+              onRename(event.currentTarget.value);
+              setIsRenaming(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") setIsRenaming(false);
+            }}
+          />
+        ) : (
+          <span className="whitespace-nowrap text-sm font-semibold">{name}</span>
+        )}
+        <button
+          type="button"
+          onClick={onUngroup}
+          aria-label={`Ungroup ${name}`}
+          title="Ungroup (Ctrl+Shift+G)"
+          className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
+        >
+          <Ungroup className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

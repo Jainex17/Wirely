@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { markAgentCursor } from "@/lib/agentCursor";
+import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 
 const doc = (body: string) =>
   `<html><head><title>T</title></head><body class="bg-white">${body}</body></html>`;
@@ -47,5 +47,39 @@ describe("markAgentCursor", () => {
     expect(markAgentCursor("", doc("<nav>Menu</nav><main>Body</main>")).html).toBe(
       doc("<nav data-wirely-cursor>Menu</nav><main>Body</main>"),
     );
+  });
+});
+
+describe("buildRevealSteps", () => {
+  it("builds a new page one element at a time and ends on the full page", () => {
+    const next = doc("<header>A</header><main><h1>B</h1><p>C</p></main>");
+
+    expect(buildRevealSteps("", next)).toEqual([
+      '<html><head><title>T</title></head><body class="bg-white">',
+      '<html><head><title>T</title></head><body class="bg-white"><header>A</header>',
+      '<html><head><title>T</title></head><body class="bg-white"><header>A</header><main>',
+      '<html><head><title>T</title></head><body class="bg-white"><header>A</header><main><h1>B</h1>',
+      next,
+    ]);
+  });
+
+  it("grows only the patched region and keeps the unchanged tail", () => {
+    const previous = doc("<header>A</header><footer>Z</footer>");
+    const next = doc("<header>A</header><section><p>New</p></section><footer>Z</footer>");
+
+    expect(buildRevealSteps(previous, next)).toEqual([
+      doc("<header>A</header><section><footer>Z</footer>"),
+      next,
+    ]);
+  });
+
+  it("samples long pages down to the step budget and skips script bodies", () => {
+    const items = Array.from({ length: 40 }, (_, index) => `<li>${index}</li>`).join("");
+    const next = doc(`<script>const s = "<div>";</script><ul>${items}</ul>`);
+    const steps = buildRevealSteps("", next, 5);
+
+    expect(steps).toHaveLength(5);
+    expect(steps.at(-1)).toBe(next);
+    expect(steps.every((step) => !step.endsWith('"<div>'))).toBe(true);
   });
 });

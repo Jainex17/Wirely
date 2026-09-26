@@ -16,6 +16,23 @@ export const MCP_SERVER_VERSION = "1.0.0";
 
 export const LATEST_PROTOCOL_VERSION = "2025-06-18";
 
+/**
+ * Sent in the initialize result, which clients load into the agent's context.
+ * Each line answers a mistake seen in a real session: five states of one
+ * layout handed over as "designs to pick from", and a project the user was
+ * never given a link to.
+ */
+export const MCP_INSTRUCTIONS = [
+  "Wirely is a canvas the user watches live while you write pages.",
+  "After create_project, give the user the editor URL it returns.",
+  "When the user asks for several designs or options, make each one a different layout " +
+    "direction: a different structure, hierarchy, and way of showing the data. The same " +
+    "layout in different states is not a set of options. Say which kind you made in each " +
+    "page title.",
+  "When a page is finished, call get_page_png with lint: true once to check it. Each image " +
+    "costs about 1,500 tokens, so skip it after small text or color patches.",
+].join("\n");
+
 /** Versions a client may negotiate, including the two before the current spec. */
 const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"];
 
@@ -136,7 +153,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "create_project",
     description:
       "Create a Wirely project. It starts with one empty page named \"Page 1\". " +
-      "Returns both ids.",
+      "Returns both ids and the editor URL; give that URL to the user so they can open the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -160,33 +177,42 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: "add_page",
-    description: `Add a screen to a project. ${htmlDescription}`,
+    description:
+      "Add a screen to a project, from html or as a copy of an existing page. To make a " +
+      "variant of a page, copy it with copyFromPageId and change it with patch_page instead " +
+      `of writing the whole document again. ${htmlDescription}`,
     inputSchema: {
       type: "object",
       properties: {
         projectId: PROJECT_ID,
         title: { type: "string", description: "Screen name, shown above the canvas frame." },
-        html: { type: "string", description: htmlDescription },
+        html: { type: "string", description: "The page document. Omit when copying." },
+        copyFromPageId: {
+          type: "string",
+          description: "Start as a copy of this page in the same project. Omit when sending html.",
+        },
         deviceType: {
           type: "string",
           enum: ["desktop", "mobile"],
           description: "Defaults to desktop. Mobile frames render at 375px.",
         },
       },
-      required: ["projectId", "title", "html"],
+      required: ["projectId", "title"],
       additionalProperties: false,
     },
   },
   {
     name: "update_page",
-    description: `Replace a page's HTML and/or rename it or change its device type. ${htmlDescription}`,
+    description:
+      "Replace a page's whole HTML, rename it, or change its device type. For a change to " +
+      "part of a page, patch_page costs far less. HTML follows the add_page rules.",
     inputSchema: {
       type: "object",
       properties: {
         projectId: PROJECT_ID,
         pageId: PAGE_ID,
         title: { type: "string", description: "New screen name." },
-        html: { type: "string", description: htmlDescription },
+        html: { type: "string", description: "The new page document." },
         deviceType: { type: "string", enum: ["desktop", "mobile"] },
       },
       required: ["projectId", "pageId"],
@@ -198,8 +224,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Replace one exact snippet of a page's HTML. oldString must occur exactly once in the " +
       "stored source. Use it to write a page in chunks so the user watches it change live on " +
-      "the canvas. Stored HTML is sanitized, so call get_page first and copy oldString from " +
-      "that exact text.",
+      "the canvas. Copy oldString from the HTML you wrote. If it is not found, the sanitizer " +
+      "changed that part, so call get_page for the exact stored text.",
     inputSchema: {
       type: "object",
       properties: {
@@ -207,7 +233,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         pageId: PAGE_ID,
         oldString: {
           type: "string",
-          description: "Text copied from get_page. Include enough context to match once.",
+          description: "Exact text from the page. Include enough context to match once.",
         },
         newString: {
           type: "string",

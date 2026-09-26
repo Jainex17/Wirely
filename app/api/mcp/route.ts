@@ -12,6 +12,7 @@ import { authenticateAgentRequest } from "@/lib/auth/apiToken";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import {
+  MCP_INSTRUCTIONS,
   MCP_SERVER_NAME,
   MCP_SERVER_VERSION,
   MCP_TOOLS,
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
             protocolVersion: negotiateProtocolVersion(params.protocolVersion),
             capabilities: { tools: {} },
             serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+            instructions: MCP_INSTRUCTIONS,
           }),
         );
 
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
           return json(rpcError(id, RPC_INVALID_PARAMS, "tools/call requires a tool name."));
         }
         logger.info("mcp.tool_called", { tool: name });
-        return json(rpcResult(id, await callTool(user.id, name, args)));
+        return json(rpcResult(id, await callTool(user.id, name, args, new URL(request.url).origin)));
       }
 
       case "ping":
