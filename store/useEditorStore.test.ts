@@ -90,14 +90,25 @@ describe("useEditorStore canvas state", () => {
     expect(pagePositions["page-1"].x).toBeGreaterThan(-800);
   });
 
-  it("assigns a non-overlapping position when creating a page", () => {
+  it("starts a new design on a new row under every page", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: -1560, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 0, y: 0 });
+    useEditorStore.getState().setPageFrameHeight("page-2", 2000);
 
     const createdPageId = useEditorStore.getState().createPage("Page 3");
+
+    expect(useEditorStore.getState().pagePositions[createdPageId]).toEqual({ x: -1560, y: 2120 });
+  });
+
+  it("puts another page of the same design right of it in the same row", () => {
+    useEditorStore.getState().setPagePosition("page-1", { x: -1560, y: 0 });
+    useEditorStore.getState().setPagePosition("page-2", { x: 0, y: 1200 });
+
+    const createdPageId = useEditorStore.getState().createPage("Pricing", "page-2");
     const state = useEditorStore.getState();
 
-    expect(state.pagePositions[createdPageId]).toEqual({ x: 1560, y: 0 });
+    expect(state.pagePositions[createdPageId]).toEqual({ x: 1560, y: 1200 });
+    expect(state.pages.map((page) => page.id)).toEqual(["page-1", "page-2", createdPageId]);
   });
 
   it("focuses a generated batch as a group", () => {
@@ -326,5 +337,35 @@ describe("useEditorStore page groups", () => {
 
     useEditorStore.getState().ungroupPages("g1");
     expect(useEditorStore.getState().pageGroups).toEqual([]);
+  });
+
+  it("moves a page into a group beside its members and back out beside the rest", () => {
+    useEditorStore.setState({
+      pages: [
+        { id: "page-1", title: "Page 1", sections: [] },
+        { id: "page-2", title: "Page 2", sections: [] },
+        { id: "page-3", title: "Page 3", sections: [] },
+      ],
+      pagePositions: {
+        "page-1": { x: 0, y: 0 },
+        "page-2": { x: 1560, y: 0 },
+        "page-3": { x: 0, y: 5000 },
+      },
+      pageGroups: [{ id: "g1", name: "Group 1", pageIds: ["page-1", "page-2"] }],
+    });
+    const store = useEditorStore.getState();
+
+    store.movePageToGroup("page-3", "g1");
+    let state = useEditorStore.getState();
+    expect(state.pageGroups[0].pageIds).toEqual(["page-1", "page-2", "page-3"]);
+    expect(state.pagePositions["page-3"]).toEqual({ x: 3120, y: 0 });
+
+    store.movePageToGroup("page-1", null);
+    state = useEditorStore.getState();
+    expect(state.pageGroups[0].pageIds).toEqual(["page-2", "page-3"]);
+    expect(state.pagePositions["page-1"]).toEqual({ x: 4680, y: 0 });
+
+    store.movePageToGroup("page-1", "missing");
+    expect(useEditorStore.getState().pageGroups[0].pageIds).toEqual(["page-2", "page-3"]);
   });
 });

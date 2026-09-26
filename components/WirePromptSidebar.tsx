@@ -830,9 +830,13 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     if (!data || data.length === 0) return;
+    let previousRunPageId: string | undefined;
     for (const entry of data as unknown[]) {
       if (!isWireProgressEvent(entry)) continue;
       if (entry.type === "page") {
+        const afterPageId =
+          entry.generationMode === "information_architecture" ? previousRunPageId : undefined;
+        previousRunPageId = entry.pageId;
         // The planner can ask the server for more pages than the client created,
         // so a page id here may be one this canvas has never seen.
         const isKnownPage = useEditorStore
@@ -842,7 +846,7 @@ export default function WirePromptSidebar({
           setPageDeviceType(entry.pageId, entry.deviceType);
           renamePageLocal(entry.pageId, entry.title);
         } else {
-          createPageLocal(entry.title, undefined, entry.pageId, entry.deviceType);
+          createPageLocal(entry.title, afterPageId, entry.pageId, entry.deviceType);
         }
       } else if (entry.type === "page-status") {
         setPageStatus(entry.pageId, entry.status, entry.detail);

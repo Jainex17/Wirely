@@ -1,3 +1,5 @@
+import type { GenerationMode } from "@/lib/wireGenerationTypes";
+
 export type WireProgressStage =
   | "processing"
   | "researching"
@@ -29,6 +31,8 @@ export type WireProgressEvent =
       pageId: string;
       title: string;
       deviceType: WireProgressDeviceType;
+      /** Decides canvas placement: pages of one site share a row, variants get their own. */
+      generationMode?: GenerationMode;
     }
   | {
       type: "page-status";

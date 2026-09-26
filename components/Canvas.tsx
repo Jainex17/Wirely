@@ -51,11 +51,9 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 };
 
 const DRAG_START_THRESHOLD_PX = 4;
-// Each live page is a sandboxed iframe that parses its HTML, runs its CDN
-// scripts, and measures itself on the main thread. Mounting them one at a time
-// lets the canvas paint and respond to input on first load instead of freezing
-// until every frame has loaded.
-const LIVE_PAGE_MOUNT_INTERVAL_MS = 120;
+// Pages mount once the camera has been still this long, so a pan or zoom
+// never builds iframes mid-gesture. The first batch mounts without waiting.
+const LIVE_PAGE_MOUNT_DELAY_MS = 120;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const LAYOUT_SAVE_ICON_MS = 350;
 // Scene pixels between a group's frame and its pages. The top leaves room for
@@ -290,31 +288,21 @@ export default function Canvas({
     [pageLayouts, viewportBounds],
   );
 
-  // Admits the next in-view page, nearest the viewport centre first. Any camera
-  // move restarts the timer, so frames mount once the canvas settles rather
-  // than mid-gesture. A mounted page stays mounted.
+  // Mounts every in-view page together once the camera settles. Mounting one
+  // page per tick kept the main thread free but made a ten page project take
+  // seconds to fill in. A mounted page stays mounted.
   React.useEffect(() => {
-    const centerX = (viewportBounds.left + viewportBounds.right) / 2;
-    const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
-    let next: { id: string; distance: number } | null = null;
-    for (const pageLayout of pageLayouts) {
-      const pageId = pageLayout.page.id;
-      if (mountedPageIds.has(pageId) || pageRenderModes.get(pageId) !== "live") continue;
-      const distance = Math.hypot(
-        pageLayout.bounds.centerX - centerX,
-        pageLayout.bounds.centerY - centerY,
-      );
-      if (!next || distance < next.distance) next = { id: pageId, distance };
-    }
-    if (!next) return;
+    const pending = pageLayouts
+      .map((pageLayout) => pageLayout.page.id)
+      .filter((pageId) => !mountedPageIds.has(pageId) && pageRenderModes.get(pageId) === "live");
+    if (pending.length === 0) return;
 
-    const pageId = next.id;
     const timeoutId = window.setTimeout(
-      () => setMountedPageIds((current) => new Set(current).add(pageId)),
-      mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_INTERVAL_MS,
+      () => setMountedPageIds((current) => new Set([...current, ...pending])),
+      mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS,
     );
     return () => window.clearTimeout(timeoutId);
-  }, [mountedPageIds, pageLayouts, pageRenderModes, viewportBounds]);
+  }, [mountedPageIds, pageLayouts, pageRenderModes]);
 
   React.useEffect(() => {
     const assigned = placeMissingPages(
@@ -1017,8 +1005,8 @@ interface PageGroupFrameProps {
 
 /**
  * The frame behind a group's pages. It sizes itself from its pages, so moving a
- * page stretches it. The title bar above it drags every page in the group;
- * double-click the name to rename it.
+ * page stretches it. Dragging the frame or its title moves every page in the
+ * group; double-click the name to rename it.
  */
 function PageGroupFrame({
   name,
@@ -1037,7 +1025,7 @@ function PageGroupFrame({
 
   return (
     <div
-      className={`pointer-events-none absolute rounded-xl border bg-foreground/[0.03] ${
+      className={`absolute cursor-grab rounded-xl border bg-foreground/[0.03] active:cursor-grabbing ${
         isSelected ? "border-sky-500" : "border-foreground/15"
       }`}
       style={{
@@ -1048,14 +1036,14 @@ function PageGroupFrame({
         zIndex: 0,
         borderWidth: "calc(1px * var(--canvas-inverse-zoom, 1))",
       }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
       <div
-        className="pointer-events-auto absolute bottom-full left-0 flex origin-bottom-left cursor-grab items-center gap-1.5 pb-1.5 text-[color:var(--canvas-label-strong,var(--foreground))] active:cursor-grabbing"
+        className="absolute bottom-full left-0 flex origin-bottom-left items-center gap-1.5 pb-1.5 text-[color:var(--canvas-label-strong,var(--foreground))]"
         style={{ transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 4))" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
         onDoubleClick={() => setIsRenaming(true)}
       >
         {isRenaming ? (

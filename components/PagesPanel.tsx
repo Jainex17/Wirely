@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type DragEvent, type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorStore";
 
+const PAGE_DRAG_TYPE = "application/x-wirely-page";
+
 interface PagesPanelProps {
   projectTitle: string;
   isCollapsed: boolean;
@@ -26,7 +28,7 @@ interface PagesPanelProps {
 /**
  * The editor's left column: project title, the list of every page on the
  * canvas, and the account menu. Clicking a page pans the canvas to it at the
- * current zoom. Collapsed, it shrinks to a floating title card over the canvas
+ * current zoom; dragging it onto a group moves it in or out. Collapsed, it shrinks to a floating title card over the canvas
  * so the toggle back stays in the same corner.
  */
 export default function PagesPanel({
@@ -37,16 +39,42 @@ export default function PagesPanel({
 }: PagesPanelProps) {
   const router = useRouter();
   const [isPageListOpen, setIsPageListOpen] = useState(true);
-  const { pages, pageGroups, focusedPageId, focusPage, focusPages } = useEditorStore(
-    useShallow((state) => ({
-      pages: state.pages,
-      pageGroups: state.pageGroups,
-      focusedPageId: state.focusedPageId,
-      focusPage: state.focusPage,
-      focusPages: state.focusPages,
-    })),
-  );
+  const { pages, pageGroups, focusedPageId, focusPage, focusPages, movePageToGroup } =
+    useEditorStore(
+      useShallow((state) => ({
+        pages: state.pages,
+        pageGroups: state.pageGroups,
+        focusedPageId: state.focusedPageId,
+        focusPage: state.focusPage,
+        focusPages: state.focusPages,
+        movePageToGroup: state.movePageToGroup,
+      })),
+    );
   const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
+  // Rows drag with native drag and drop: drop a page on a group to move it in,
+  // or on the ungrouped list to move it out. `undefined` means no drop target.
+  const [dropGroupId, setDropGroupId] = useState<string | null | undefined>(undefined);
+
+  const dropTargetProps = (groupId: string | null) => ({
+    onDragOver: (event: DragEvent) => {
+      if (!event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDropGroupId(groupId);
+    },
+    onDragLeave: (event: DragEvent) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setDropGroupId(undefined);
+    },
+    onDrop: (event: DragEvent) => {
+      const pageId = event.dataTransfer.getData(PAGE_DRAG_TYPE);
+      if (!pageId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDropGroupId(undefined);
+      movePageToGroup(pageId, groupId);
+    },
+  });
 
   const renderPage = (page: (typeof pages)[number], indent: string) => {
     const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
@@ -55,6 +83,12 @@ export default function PagesPanel({
       <button
         key={page.id}
         type="button"
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+          event.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={() => setDropGroupId(undefined)}
         onClick={() => focusPage(page.id)}
         className={cn(
           "flex h-7 w-full items-center gap-2 pr-3 text-left text-xs transition-colors",
@@ -138,10 +172,14 @@ export default function PagesPanel({
       <nav
         className={cn("min-h-0 flex-1 overflow-y-auto pb-2", !isPageListOpen && "invisible")}
       >
-        <div className="relative">
+        <div className="relative flex min-h-full flex-col">
           <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
           {pageGroups.map((group) => (
-            <div key={group.id}>
+            <div
+              key={group.id}
+              {...dropTargetProps(group.id)}
+              className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
+            >
               <button
                 type="button"
                 onClick={() => focusPages(group.pageIds)}
@@ -158,7 +196,14 @@ export default function PagesPanel({
                 .map((page) => renderPage(page, "pl-12"))}
             </div>
           ))}
-          {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, "pl-8"))}
+          <div
+            {...dropTargetProps(null)}
+            className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
+          >
+            {pages
+              .filter((page) => !groupedPageIds.has(page.id))
+              .map((page) => renderPage(page, "pl-8"))}
+          </div>
         </div>
       </nav>
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
