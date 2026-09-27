@@ -50,6 +50,10 @@ interface WireEditorProps {
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
 
 const PAGE_SYNC_INTERVAL_MS = 2_500;
+// An open tab with no agent writing would otherwise keep the database awake
+// with a query every 2.5 seconds. Once pages stop changing, poll slower.
+const PAGE_SYNC_IDLE_INTERVAL_MS = 10_000;
+const PAGE_SYNC_IDLE_AFTER_MS = 2 * 60_000;
 // Review comments come from other people, slower than an agent writes pages.
 const COMMENT_SYNC_INTERVAL_MS = 20_000;
 
@@ -106,10 +110,17 @@ export default function WireEditor({
 
   // An MCP agent writes pages from outside this tab. Polling while the tab is
   // visible shows those writes live without a reload; a hidden tab skips its
-  // ticks so it costs no requests.
+  // ticks so it costs no requests. Coming back to the tab polls at once and
+  // resets the idle backoff, since the user was likely just prompting.
   useEffect(() => {
     let cursor = pagesLoadedAt;
     let inFlight = false;
+    let lastChangeAt = Date.now();
+    let timeoutId = 0;
+    let isStopped = false;
+    // Each schedule() starts a new chain. A tick that finishes after wake()
+    // started a newer one ends its own, so only one chain ever runs.
+    let chain = 0;
 
     const poll = async () => {
       if (inFlight || document.visibilityState !== "visible") return;
@@ -121,7 +132,11 @@ export default function WireEditor({
         );
         if (!response.ok) return;
         const payload = (await response.json()) as ServerPageChanges & { cursor: string };
+        // The store drops a poll while a save is in flight. Keep the old
+        // cursor then, so the next poll asks for these changes again.
+        if (useEditorStore.getState().pendingSaveCount > 0) return;
         cursor = payload.cursor;
+        if (payload.changed.length > 0) lastChangeAt = Date.now();
         applyServerPageChanges(payload);
       } catch {
         // A dropped poll is retried on the next tick.
@@ -130,11 +145,36 @@ export default function WireEditor({
       }
     };
 
-    const intervalId = window.setInterval(poll, PAGE_SYNC_INTERVAL_MS);
-    document.addEventListener("visibilitychange", poll);
+    const schedule = () => {
+      // A poll still in flight at unmount must not start another timer.
+      if (isStopped) return;
+      const isIdle = Date.now() - lastChangeAt > PAGE_SYNC_IDLE_AFTER_MS;
+      const thisChain = ++chain;
+      timeoutId = window.setTimeout(
+        async () => {
+          await poll();
+          if (thisChain === chain) schedule();
+        },
+        isIdle ? PAGE_SYNC_IDLE_INTERVAL_MS : PAGE_SYNC_INTERVAL_MS,
+      );
+    };
+
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      lastChangeAt = Date.now();
+      window.clearTimeout(timeoutId);
+      void poll();
+      schedule();
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
     return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", poll);
+      isStopped = true;
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
     };
   }, [applyServerPageChanges, pagesLoadedAt, wireId]);
 

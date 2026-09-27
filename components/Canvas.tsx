@@ -70,7 +70,6 @@ const DRAG_START_THRESHOLD_PX = 4;
 // never builds iframes mid-gesture. The first batch mounts without waiting.
 const LIVE_PAGE_MOUNT_DELAY_MS = 120;
 const LAYOUT_SAVE_IDLE_MS = 700;
-const LAYOUT_SAVE_ICON_MS = 350;
 // Scene pixels between a group's frame and its pages. The top leaves room for
 // the 50px page title row.
 const GROUP_PADDING = 32;
@@ -156,8 +155,6 @@ export default function Canvas({
     focusedPageId,
     selectedNode,
     setSelectedNode,
-    beginSaving,
-    endSaving,
     setCamera,
     setPagePosition,
     setPagePositions,
@@ -183,8 +180,6 @@ export default function Canvas({
       focusedPageId: state.focusedPageId,
       selectedNode: state.selectedNode,
       setSelectedNode: state.setSelectedNode,
-      beginSaving: state.beginSaving,
-      endSaving: state.endSaving,
       setCamera: state.setCamera,
       setPagePosition: state.setPagePosition,
       setPagePositions: state.setPagePositions,
@@ -208,8 +203,6 @@ export default function Canvas({
   const pointersRef = React.useRef<Map<number, ScenePoint>>(new Map());
   const pinchStateRef = React.useRef<PinchState | null>(null);
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
-  const layoutSaveIndicatorTimeoutRef = React.useRef<number | null>(null);
-  const layoutSaveActiveRef = React.useRef(false);
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
@@ -344,15 +337,8 @@ export default function Canvas({
       if (layoutSaveTimeoutRef.current !== null) {
         window.clearTimeout(layoutSaveTimeoutRef.current);
       }
-      if (layoutSaveIndicatorTimeoutRef.current !== null) {
-        window.clearTimeout(layoutSaveIndicatorTimeoutRef.current);
-      }
-      if (layoutSaveActiveRef.current) {
-        layoutSaveActiveRef.current = false;
-        endSaving();
-      }
     },
-    [endSaving],
+    [],
   );
 
   React.useEffect(() => {
@@ -375,42 +361,27 @@ export default function Canvas({
       window.clearTimeout(layoutSaveTimeoutRef.current);
     }
 
+    // Layout lives in local storage only, so it does not count as a pending
+    // save. Counting it would hold back agent edits polled from the server.
     layoutSaveTimeoutRef.current = window.setTimeout(() => {
       layoutSaveTimeoutRef.current = null;
-      beginSaving();
-      layoutSaveActiveRef.current = true;
-
       try {
-        try {
-          window.localStorage.setItem(
-            layoutStorageKey,
-            JSON.stringify({
-              version: 2,
-              camera,
-              pagePositions,
-              pageStackOrder,
-              pageGroups,
-            }),
-          );
-        } catch (error) {
-          logger.error("wire_layout_persist_failed", { error });
-        }
-      } finally {
-        if (layoutSaveIndicatorTimeoutRef.current !== null) {
-          window.clearTimeout(layoutSaveIndicatorTimeoutRef.current);
-        }
-
-        layoutSaveIndicatorTimeoutRef.current = window.setTimeout(() => {
-          layoutSaveIndicatorTimeoutRef.current = null;
-          layoutSaveActiveRef.current = false;
-          endSaving();
-        }, LAYOUT_SAVE_ICON_MS);
+        window.localStorage.setItem(
+          layoutStorageKey,
+          JSON.stringify({
+            version: 2,
+            camera,
+            pagePositions,
+            pageStackOrder,
+            pageGroups,
+          }),
+        );
+      } catch (error) {
+        logger.error("wire_layout_persist_failed", { error });
       }
     }, LAYOUT_SAVE_IDLE_MS);
   }, [
-    beginSaving,
     camera,
-    endSaving,
     layoutStorageKey,
     pageGroups,
     pagePositions,
