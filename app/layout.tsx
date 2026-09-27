@@ -22,8 +22,10 @@ const displayFont = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
+  // Resolves relative Open Graph and canonical URLs to the production domain.
+  metadataBase: new URL("https://wirely.site"),
   title: "Wirely",
-  description: "Wirely website builder",
+  description: "The design canvas for your coding agent.",
 };
 
 export default function RootLayout({
