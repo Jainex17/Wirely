@@ -20,8 +20,9 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * Sent in the initialize result, which clients load into the agent's context.
  * Each line answers a mistake seen in a real session: five states of one
  * layout handed over as "designs to pick from", and a project the user was
- * never given a link to. The last line covers the hand-off from canvas to
- * the user's repo, where a raw HTML paste ignores their stack.
+ * never given a link to. The motion line matches the canvas, which holds
+ * page animations still until Replay. The last line covers the hand-off from
+ * canvas to the user's repo, where a raw HTML paste ignores their stack.
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
@@ -35,6 +36,8 @@ export const MCP_INSTRUCTIONS = [
   "A link like /wire/<projectId>?page=<pageId>&node=<nodeId> points at one element the user " +
     "picked. Call get_page with that nodeId, edit only that element with patch_page using the " +
     "returned source as oldString, and keep its data-wirely-id attribute.",
+  "Give each page one short entrance animation that plays once. The canvas shows pages " +
+    "settled and plays their motion when the user clicks Replay. Never loop an animation.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
     "components, and styles instead of pasting the HTML in.",

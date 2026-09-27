@@ -11,6 +11,7 @@ import {
   Loader2,
   MoreHorizontal,
   PencilLine,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
+import { FRAME_MOTION_FOUND, FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
 import {
   injectNodePicker,
   NODE_PREVIEW_EVENT,
@@ -308,8 +310,11 @@ export default React.memo(function PageRenderer({
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml
-        ? injectNodePicker(
-            injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
+        ? injectFrameMotion(
+            injectNodePicker(
+              injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
+              iframeReporterId,
+            ),
             iframeReporterId,
           )
         : "",
@@ -318,6 +323,10 @@ export default React.memo(function PageRenderer({
   const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
     null,
   );
+  // The frame load that reported its own animations. Compared with the
+  // current id, so a rewritten page hides Replay until it reports again.
+  const [motionReporterId, setMotionReporterId] = React.useState<string | null>(null);
+  const hasMotion = isLive && motionReporterId === iframeReporterId;
   const [expiredCursorEdit, setExpiredCursorEdit] = React.useState<AgentEdit | null>(null);
   React.useEffect(() => {
     if (!cursorEdit) return;
@@ -687,6 +696,23 @@ export default React.memo(function PageRenderer({
       >
         <Eye className="h-3.5 w-3.5" />
       </button>
+      {hasMotion ? (
+        <button
+          type="button"
+          className={iconButtonClass}
+          aria-label={`Replay animations on ${page.title}`}
+          title="Replay animations"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            // A sandboxed frame has an opaque origin, so "*" is the only
+            // target that reaches it. The message carries nothing secret.
+            iframeRef.current?.contentWindow?.postMessage({ type: FRAME_MOTION_REPLAY }, "*");
+          }}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         className={iconButtonClass}
@@ -914,6 +940,10 @@ export default React.memo(function PageRenderer({
         y?: number;
       };
       if (payload.id !== iframeReporterId) return;
+      if (payload.type === FRAME_MOTION_FOUND) {
+        setMotionReporterId(iframeReporterId);
+        return;
+      }
       if (payload.type === "wirely-node") {
         const { intent, node: rawNode } = data as { intent?: unknown; node?: unknown };
         const node = parseReportedNode(rawNode);
