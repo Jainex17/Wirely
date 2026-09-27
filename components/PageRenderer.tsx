@@ -421,15 +421,17 @@ export default React.memo(function PageRenderer({
       closeContextMenu();
     };
 
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("contextmenu", handlePointerDown);
+    // Capture phase on pointerdown: the canvas prevents default on pointerdown,
+    // which suppresses mousedown, and stops propagation before document.
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("contextmenu", handlePointerDown, true);
     document.addEventListener("keydown", handleEscape);
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
 
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("contextmenu", handlePointerDown);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("contextmenu", handlePointerDown, true);
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
       document.removeEventListener("keydown", handleEscape);
