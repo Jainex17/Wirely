@@ -12,9 +12,10 @@ import {
   MousePointer2,
   Plus,
   Scan,
+  SquareDashedMousePointer,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { MAX_CANVAS_ZOOM, MIN_CANVAS_ZOOM } from "@/lib/canvasScene";
+import { type CanvasTool, MAX_CANVAS_ZOOM, MIN_CANVAS_ZOOM } from "@/lib/canvasScene";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,8 +70,8 @@ function RailButton({
 }
 
 interface CanvasToolbarProps {
-  activeTool: "select" | "grab";
-  onToolChange: (tool: "select" | "grab") => void;
+  activeTool: CanvasTool;
+  onToolChange: (tool: CanvasTool) => void;
 }
 
 /** The floating tool bar at the bottom centre of the canvas. */
@@ -112,6 +113,13 @@ export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolba
         onClick={() => onToolChange("grab")}
       >
         <Hand className="h-4 w-4" />
+      </RailButton>
+      <RailButton
+        label="Element (E)"
+        isActive={activeTool === "element"}
+        onClick={() => onToolChange("element")}
+      >
+        <SquareDashedMousePointer className="h-4 w-4" />
       </RailButton>
       <div className="mx-1 h-5 w-px bg-border" />
       <DropdownMenu>

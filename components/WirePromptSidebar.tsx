@@ -49,6 +49,8 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
 import GeminiIcon from "@/components/icons/GeminiIcon";
+import NodeInspector from "@/components/NodeInspector";
+import { stampNodeIds } from "@/lib/pageNodes";
 import {
   filterMentionPages,
   findMentionQuery,
@@ -57,6 +59,7 @@ import {
   mentionLabel,
   pruneMentions,
   type PromptMention,
+  type PromptTarget,
 } from "@/lib/wirePromptTarget";
 import {
   getWireConversationModelUsage,
@@ -530,7 +533,7 @@ export default function WirePromptSidebar({
         typeof variationCount === "number" &&
         variationCount > 1 &&
         body.variationIndex === undefined;
-      const { pages: storePages, focusedPageId } = useEditorStore.getState();
+      const { pages: storePages, focusedPageId, selectedNode } = useEditorStore.getState();
       const fallbackTarget = inferPromptTarget({
         prompt: "",
         mentionedPageIds: [],
@@ -553,6 +556,8 @@ export default function WirePromptSidebar({
       const promptText =
         (latestUserMessage?.content as string | undefined)?.trim() ??
         latestPromptRef.current;
+      const targetNodeId =
+        selectedNode && selectedNode.pageId === targetPageId ? selectedNode.nodeId : undefined;
 
       return {
         wireId,
@@ -560,9 +565,14 @@ export default function WirePromptSidebar({
         promptText,
         targetPageId,
         targetPageTitle: targetPage?.title,
+        // Stamped so the picked element's id is in the HTML the server scopes
+        // the edit with, even before the editor has saved the ids.
         targetPageHtml: isBatchRequest
           ? undefined
-          : (targetPage?.iframeHtml ?? ""),
+          : targetNodeId
+            ? stampNodeIds(targetPage?.iframeHtml ?? "")
+            : (targetPage?.iframeHtml ?? ""),
+        targetNodeId,
         compactHistory: compactHistoryFromMessages(
           outgoingMessages as Message[],
         ),
@@ -1121,13 +1131,17 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      const { pages: storePages, focusedPageId } = useEditorStore.getState();
-      const target = inferPromptTarget({
-        prompt,
-        mentionedPageIds: mentions.map((mention) => mention.pageId),
-        pages: storePages,
-        focusedPageId,
-      });
+      const { pages: storePages, focusedPageId, selectedNode } = useEditorStore.getState();
+      // A picked element pins the prompt to its page unless pages are @-mentioned.
+      const target: PromptTarget =
+        selectedNode && mentions.length === 0
+          ? { kind: "page", pageId: selectedNode.pageId }
+          : inferPromptTarget({
+              prompt,
+              mentionedPageIds: mentions.map((mention) => mention.pageId),
+              pages: storePages,
+              focusedPageId,
+            });
       if (target.kind === "none") return;
       if (target.kind === "pages" && target.droppedCount > 0) {
         toast.message(
@@ -1611,6 +1625,7 @@ export default function WirePromptSidebar({
         ) : null}
       </div>
 
+      <NodeInspector projectId={wireId} onSaveHtml={persistPageHtml} />
       <form onSubmit={handleSubmit} className="relative shrink-0">
         {isMentionListOpen ? (
           <ul

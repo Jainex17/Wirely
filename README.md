@@ -196,6 +196,11 @@ stored document with headless Chromium (`CHROME_PATH` picks the local browser in
 deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,
 clipped text, and low contrast text from the same render.
 
+The editor's element tool (E) copies links like `/wire/[projectId]?page=[pageId]&node=[nodeId]`.
+`get_page` with that `nodeId` returns just the element's stored source, ready for `patch_page`.
+Node ids are the `data-wirely-id` attributes the editor stamps into a page the first time an
+element on it is picked.
+
 ## Security and Reliability Notes
 
 - Rate limiting on `POST /api/wire/[id]`:

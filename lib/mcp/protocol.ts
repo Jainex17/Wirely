@@ -31,6 +31,9 @@ export const MCP_INSTRUCTIONS = [
     "page title.",
   "When a page is finished, call get_page_png with lint: true once to check it. Each image " +
     "costs about 1,500 tokens, so skip it after small text or color patches.",
+  "A link like /wire/<projectId>?page=<pageId>&node=<nodeId> points at one element the user " +
+    "picked. Call get_page with that nodeId, edit only that element with patch_page using the " +
+    "returned source as oldString, and keep its data-wirely-id attribute.",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -246,10 +249,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   },
   {
     name: "get_page",
-    description: "Return a page's full HTML source so it can be read or revised.",
+    description:
+      "Return a page's full HTML source so it can be read or revised, or with nodeId just " +
+      "one element's exact source, ready to use as patch_page's oldString.",
     inputSchema: {
       type: "object",
-      properties: { projectId: PROJECT_ID, pageId: PAGE_ID },
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
+        nodeId: {
+          type: "string",
+          description: "The node value from a Wirely element link. Returns only that element.",
+        },
+      },
       required: ["projectId", "pageId"],
       additionalProperties: false,
     },

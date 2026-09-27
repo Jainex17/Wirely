@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "@/components/ui/sonner";
 import {
+  type CanvasTool,
   getDefaultPageX,
   getPageBounds,
   getPageFrameHeight,
@@ -13,6 +14,8 @@ import {
   resolvePageFrameDevice,
 } from "@/lib/canvasScene";
 import { logger } from "@/lib/logger";
+import type { ReportedNode } from "@/lib/nodePicker";
+import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
 
@@ -33,7 +36,7 @@ export default function EditorWorkspace({
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const hasInitializedViewportRef = useRef(false);
-  const [activeTool, setActiveTool] = useState<"select" | "grab">("select");
+  const [activeTool, setActiveTool] = useState<CanvasTool>("select");
   const [isSpacePanning, setIsSpacePanning] = useState(false);
 
   const {
@@ -51,6 +54,8 @@ export default function EditorWorkspace({
     stepZoom,
     setZoom,
     focusPages,
+    focusPage,
+    setSelectedNode,
     fitAllPages,
     fitPage,
     clearRequestedGeneratedPageFocusCheck,
@@ -74,6 +79,8 @@ export default function EditorWorkspace({
       stepZoom: state.stepZoom,
       setZoom: state.setZoom,
       focusPages: state.focusPages,
+      focusPage: state.focusPage,
+      setSelectedNode: state.setSelectedNode,
       fitAllPages: state.fitAllPages,
       fitPage: state.fitPage,
       clearRequestedGeneratedPageFocusCheck: state.clearRequestedGeneratedPageFocusCheck,
@@ -249,10 +256,83 @@ export default function EditorWorkspace({
     });
 
     hasInitializedViewportRef.current = true;
+    // An element link opens on its page with the element picked.
+    const link = readNodeLink(window.location.search);
+    if (link && pages.some((page) => page.id === link.pageId)) {
+      focusPage(link.pageId);
+      if (link.nodeId) {
+        setSelectedNode({
+          pageId: link.pageId,
+          nodeId: link.nodeId,
+          tag: "",
+          color: null,
+          background: null,
+        });
+      }
+      return;
+    }
     if (!hasVisiblePage) {
       fitAllPages();
     }
-  }, [camera, fitAllPages, pageBoundsById, pages, viewportWidth]);
+  }, [camera, fitAllPages, focusPage, pageBoundsById, pages, setSelectedNode, viewportWidth]);
+
+  const handleNodeReport = useCallback(
+    (pageId: string, node: ReportedNode, intent: "pick" | "select") => {
+      const state = useEditorStore.getState();
+      const next = {
+        pageId,
+        nodeId: node.nodeId,
+        tag: node.tag,
+        color: node.color,
+        background: node.background,
+      };
+      const current = state.selectedNode;
+      if (intent === "select") {
+        // A re-measure of the picked element. Only its reported details change.
+        if (current?.pageId !== pageId || current.nodeId !== node.nodeId) return;
+        if (
+          current.tag === next.tag &&
+          current.color === next.color &&
+          current.background === next.background
+        ) {
+          return;
+        }
+        state.setSelectedNode(next);
+        return;
+      }
+
+      state.setFocusedPage(pageId);
+      state.setSelectedNode(next);
+
+      // The frame reported an id stamped into its srcdoc. Saving the stamped
+      // HTML the first time makes that id exist on the server too, so a
+      // sidebar edit or an MCP agent can find the element. A page mid-run is
+      // left alone: the run writes it.
+      const page = state.pages.find((candidate) => candidate.id === pageId);
+      const html = page?.iframeHtml ?? "";
+      const stamped = stampNodeIds(html);
+      const status = state.pageStatuses[pageId]?.status;
+      const isBusy = status === "queued" || status === "generating" || status === "repairing";
+      if (!projectId || stamped === html || isBusy) return;
+
+      state.setPageHtml(pageId, stamped);
+      state.beginSaving();
+      void fetch(`/api/projects/${projectId}/pages/${pageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ htmlContent: stamped }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Save failed with status ${response.status}`);
+        })
+        .catch((error: unknown) => {
+          logger.error("page_node_ids_save_failed", { pageId, projectId, error });
+          toast.error("Could not save the page, so element links to it may not work yet.");
+        })
+        .finally(() => state.endSaving());
+    },
+    [projectId],
+  );
 
   useEffect(() => {
     if (!requestedGeneratedPageFocusIds || requestedGeneratedPageFocusIds.length === 0) {
@@ -320,6 +400,7 @@ export default function EditorWorkspace({
         : {
             KeyV: () => setActiveTool("select"),
             KeyH: () => setActiveTool("grab"),
+            KeyE: () => setActiveTool("element"),
             Equal: () => stepZoom(1),
             NumpadAdd: () => stepZoom(1),
             Minus: () => stepZoom(-1),
@@ -364,6 +445,7 @@ export default function EditorWorkspace({
         onDeletePage={handleDeletePage}
         onEditPage={onEditPage}
         onToolChange={setActiveTool}
+        onNodeReport={handleNodeReport}
       />
     </div>
   );

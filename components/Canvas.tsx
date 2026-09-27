@@ -7,8 +7,10 @@ import { logger } from "@/lib/logger";
 import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import PageRenderer from "./PageRenderer";
+import type { ReportedNode } from "@/lib/nodePicker";
 import {
   type CameraState,
+  type CanvasTool,
   type PageBounds,
   type PageRenderMode,
   type ScenePoint,
@@ -105,13 +107,14 @@ interface PinchState {
 interface CanvasProps {
   canvasRef: React.RefObject<HTMLDivElement | null>;
   projectId?: string;
-  activeTool: "select" | "grab";
+  activeTool: CanvasTool;
   isSpacePanning: boolean;
   onCanvasClick: () => void;
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
   onEditPage?: (pageId: string) => void;
-  onToolChange: (tool: "select" | "grab") => void;
+  onToolChange: (tool: CanvasTool) => void;
+  onNodeReport: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
 }
 
 const getDistance = (a: ScenePoint, b: ScenePoint) =>
@@ -136,6 +139,7 @@ export default function Canvas({
   onDeletePage,
   onEditPage,
   onToolChange,
+  onNodeReport,
 }: CanvasProps) {
   const {
     camera,
@@ -150,6 +154,8 @@ export default function Canvas({
     pageStatuses,
     agentEdits,
     focusedPageId,
+    selectedNode,
+    setSelectedNode,
     beginSaving,
     endSaving,
     setCamera,
@@ -175,6 +181,8 @@ export default function Canvas({
       pageStatuses: state.pageStatuses,
       agentEdits: state.agentEdits,
       focusedPageId: state.focusedPageId,
+      selectedNode: state.selectedNode,
+      setSelectedNode: state.setSelectedNode,
       beginSaving: state.beginSaving,
       endSaving: state.endSaving,
       setCamera: state.setCamera,
@@ -767,7 +775,10 @@ export default function Canvas({
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedPageIds([]);
+      if (event.key === "Escape") {
+        setSelectedPageIds([]);
+        if (!isEditableTarget(event.target)) setSelectedNode(null);
+      }
       if (event.key.toLowerCase() !== "g" || !(event.metaKey || event.ctrlKey)) return;
       if (isEditableTarget(event.target) || selectedPageIds.length === 0) return;
       event.preventDefault();
@@ -783,7 +794,7 @@ export default function Canvas({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [groupSelection, pageGroups, selectedPageIds, ungroupPages]);
+  }, [groupSelection, pageGroups, selectedPageIds, setSelectedNode, ungroupPages]);
 
   const handleGroupPointerDown = React.useCallback(
     (pageIds: string[]) => (event: React.PointerEvent<HTMLDivElement>) => {
@@ -850,6 +861,7 @@ export default function Canvas({
       }`}
       onClick={() => {
         setSelectedPageIds([]);
+        setSelectedNode(null);
         onCanvasClick();
       }}
       onPointerDown={handleCanvasPointerDown}
@@ -940,6 +952,11 @@ export default function Canvas({
                   isSelected={selectedPageIds.includes(pageLayout.page.id)}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
+                  isElementMode={activeTool === "element" && !isSpacePanning}
+                  selectedNodeId={
+                    selectedNode?.pageId === pageLayout.page.id ? selectedNode.nodeId : null
+                  }
+                  onNodeReport={onNodeReport}
                 />
               </div>
             );

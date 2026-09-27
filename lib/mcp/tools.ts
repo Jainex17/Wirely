@@ -26,6 +26,7 @@ import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
+import { getNodeHtml } from "@/lib/pageNodes";
 
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
@@ -262,7 +263,11 @@ const patchPage: ToolHandler = async (userId, args) => {
 
 const getPage: ToolHandler = async (userId, args) => {
   const parsed = z
-    .object({ projectId: z.string().trim().min(1), pageId: z.string().trim().min(1) })
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+      nodeId: z.string().trim().min(1).max(16).optional(),
+    })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
@@ -272,6 +277,23 @@ const getPage: ToolHandler = async (userId, args) => {
     userId,
   });
   if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+  const { nodeId } = parsed.data;
+  if (nodeId) {
+    const nodeHtml = getNodeHtml(page.htmlContent ?? "", nodeId);
+    if (!nodeHtml) {
+      return fail(
+        `Element ${nodeId} is no longer on "${page.title}". The page was rewritten since the ` +
+          "link was copied. Ask the user to pick the element again, or call get_page without nodeId.",
+      );
+    }
+    return {
+      content: [
+        text(`Element ${nodeId} on "${page.title}" · ${page.deviceType} · page id ${page.id}`),
+        text(nodeHtml),
+      ],
+    };
+  }
 
   return {
     content: [

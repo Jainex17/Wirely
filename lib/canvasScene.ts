@@ -49,6 +49,9 @@ export interface SnapResult {
 
 export type PageRenderMode = "live" | "shell";
 
+/** Move drags pages, hand pans, and element picks an element inside a page. */
+export type CanvasTool = "select" | "grab" | "element";
+
 export type PageFrameDevice = "desktop" | "tablet" | "mobile";
 
 export const PAGE_DEVICE_WIDTHS: Record<PageFrameDevice, number> = {

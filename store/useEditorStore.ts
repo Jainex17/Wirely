@@ -59,6 +59,20 @@ export interface AgentEdit {
 
 export type CanvasBackground = "dark" | "gray" | "light";
 
+/**
+ * The element the user picked with the element tool. The id is the element's
+ * `data-wirely-id`; the rest is what the preview reported at pick time, for the
+ * inspector to show before any edit lands.
+ */
+export interface SelectedNode {
+  pageId: string;
+  nodeId: string;
+  tag: string;
+  /** Computed colors as #rrggbb, or null when transparent. */
+  color: string | null;
+  background: string | null;
+}
+
 export interface CanvasState {
   camera: CameraState;
   canvasBackground: CanvasBackground;
@@ -69,6 +83,7 @@ export interface CanvasState {
   pageGroups: PageGroup[];
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
+  selectedNode: SelectedNode | null;
   requestedGeneratedPageFocusIds: string[] | null;
   viewportSize: ViewportSize;
 }
@@ -105,6 +120,7 @@ export interface EditorState extends CanvasState, ProjectState {
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
+  setSelectedNode: (node: SelectedNode | null) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
   focusPages: (pageIds: string[]) => void;
@@ -183,6 +199,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageGroups: [],
   pageFrameHeights: {},
   focusedPageId: "page-home",
+  selectedNode: null,
   requestedGeneratedPageFocusIds: null,
   viewportSize: { width: 0, height: 0 },
 };
@@ -541,6 +558,7 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
+      setSelectedNode: (selectedNode) => set({ selectedNode }),
       setPageFrameHeight: (pageId, height) =>
         set((state) => {
           const nextHeight = Math.max(1, Math.round(height));
@@ -904,6 +922,10 @@ export const useEditorStore = create<EditorState>()(
               state.pageFrameHeights,
               nextPageIds,
             ),
+            selectedNode:
+              state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
+                ? state.selectedNode
+                : null,
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -1011,6 +1033,10 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
             pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
+            selectedNode:
+              state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
+                ? state.selectedNode
+                : null,
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -1053,6 +1079,7 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
             pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             focusedPageId: nextFocusedPageId,
+            selectedNode: state.selectedNode?.pageId === pageId ? null : state.selectedNode,
           };
         }),
 
@@ -1065,6 +1092,7 @@ export const useEditorStore = create<EditorState>()(
           pageGroups: [],
           pageFrameHeights: {},
           focusedPageId: "page-home",
+          selectedNode: null,
           requestedGeneratedPageFocusIds: null,
           viewportSize: { width: 0, height: 0 },
         })),

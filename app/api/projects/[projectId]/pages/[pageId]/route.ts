@@ -17,6 +17,11 @@ type UpdateProjectPageRequestBody = {
   deviceType?: string | null;
 };
 
+// A page save carries the whole document, element ids included, which passes
+// the shared 64 KB body limit on an ordinary generated page. Matches the MCP
+// write cap of 500,000 characters plus JSON overhead.
+const PAGE_UPDATE_MAX_BYTES = 600_000;
+
 const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
   value === "desktop" || value === "mobile";
 
@@ -28,7 +33,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const { projectId, pageId } = await context.params;
-    const parsed = await readJsonBodyWithLimit<UpdateProjectPageRequestBody>(request);
+    const parsed = await readJsonBodyWithLimit<UpdateProjectPageRequestBody>(
+      request,
+      PAGE_UPDATE_MAX_BYTES,
+    );
     if (!parsed.ok) {
       return parsed.response;
     }
