@@ -924,6 +924,7 @@ export default function Canvas({
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
                   isElementMode={activeTool === "element" && !isSpacePanning}
+                  isMoveMode={activeTool === "select" && !isSpacePanning}
                   selectedNodeId={
                     selectedNode?.pageId === pageLayout.page.id ? selectedNode.nodeId : null
                   }
