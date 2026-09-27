@@ -170,6 +170,15 @@ Notes:
   valid for 7 days, for the frame's "Copy for agent" prompt.
 - `GET /api/share/pages/[pageId]?exp=&sig=` - public end of that link. No session; the signature
   is the access check. Serves the page's current HTML as `text/plain`, never rendered.
+- `GET|POST|DELETE /api/projects/[projectId]/share` - read, turn on, or turn off the project's
+  review link, `/share/[token]`. The review page needs a signed-in Wirely user.
+- `GET /api/projects/[projectId]/comments` - review comments on the owner's project.
+- `PATCH|DELETE /api/projects/[projectId]/comments/[commentId]` - resolve, reopen, or delete a
+  comment. Owner only.
+- `GET|POST /api/share/projects/[token]/comments` - list or pin comments through a review link.
+  Posting is rate limited per user.
+- `DELETE /api/share/projects/[token]/comments/[commentId]` - delete a comment as its author or
+  the project owner.
 
 MCP routes (see "MCP server" below):
 

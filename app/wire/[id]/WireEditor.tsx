@@ -15,6 +15,8 @@ import PagesPanel from "@/components/PagesPanel";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
+import ShareProjectButton from "@/components/ShareProjectButton";
+import type { ProjectComment } from "@/lib/projectComments";
 import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
@@ -48,6 +50,8 @@ interface WireEditorProps {
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
 
 const PAGE_SYNC_INTERVAL_MS = 2_500;
+// Review comments come from other people, slower than an agent writes pages.
+const COMMENT_SYNC_INTERVAL_MS = 20_000;
 
 export default function WireEditor({
   wireId,
@@ -135,6 +139,28 @@ export default function WireEditor({
   }, [applyServerPageChanges, pagesLoadedAt, wireId]);
 
   useEffect(() => {
+    const load = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch(`/api/projects/${wireId}/comments`, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { comments?: ProjectComment[] };
+        if (payload.comments) useEditorStore.getState().setComments(payload.comments);
+      } catch {
+        // A dropped load is retried on the next tick.
+      }
+    };
+
+    void load();
+    const intervalId = window.setInterval(load, COMMENT_SYNC_INTERVAL_MS);
+    document.addEventListener("visibilitychange", load);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", load);
+    };
+  }, [wireId]);
+
+  useEffect(() => {
     router.prefetch("/");
   }, [router]);
 
@@ -214,6 +240,7 @@ export default function WireEditor({
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
               {isPromptPanelCollapsed ? (
                 <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">

@@ -35,6 +35,7 @@ import {
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 import type { PageDeviceType } from "@/lib/types";
+import type { ProjectComment } from "@/lib/projectComments";
 
 export type PageGenerationStatus = "queued" | "generating" | "repairing" | "completed" | "failed";
 
@@ -95,6 +96,8 @@ export interface ProjectState {
   draggingSectionId: string | null;
   pageStatuses: Record<string, PageStatusRecord>;
   agentEdits: Record<string, AgentEdit>;
+  /** Review comments left through the share link, loaded by the editor. */
+  comments: ProjectComment[];
 }
 
 export interface EditorState extends CanvasState, ProjectState {
@@ -121,6 +124,7 @@ export interface EditorState extends CanvasState, ProjectState {
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
   setSelectedNode: (node: SelectedNode | null) => void;
+  setComments: (comments: ProjectComment[]) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
   focusPages: (pageIds: string[]) => void;
@@ -179,7 +183,13 @@ const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
 
 const generateEmptyState = (): Pick<
   ProjectState,
-  "pages" | "sections" | "selectedSectionId" | "draggingSectionId" | "pageStatuses" | "agentEdits"
+  | "pages"
+  | "sections"
+  | "selectedSectionId"
+  | "draggingSectionId"
+  | "pageStatuses"
+  | "agentEdits"
+  | "comments"
 > => ({
   pages: [{ id: "page-home", title: "Page 1", sections: [] }],
   sections: {},
@@ -187,6 +197,7 @@ const generateEmptyState = (): Pick<
   draggingSectionId: null,
   pageStatuses: {},
   agentEdits: {},
+  comments: [],
 });
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
@@ -559,6 +570,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
+      setComments: (comments) => set({ comments }),
       setPageFrameHeight: (pageId, height) =>
         set((state) => {
           const nextHeight = Math.max(1, Math.round(height));
@@ -914,6 +926,7 @@ export const useEditorStore = create<EditorState>()(
           return {
             ...generateEmptyState(),
             agentEdits,
+            comments: state.comments,
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
