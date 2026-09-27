@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronRight,
   Frame,
   Monitor,
   PanelLeftClose,
@@ -13,6 +14,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import PageLayers from "@/components/PageLayers";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorStore";
@@ -55,6 +57,14 @@ export default function PagesPanel({
   // Rows drag with native drag and drop: drop a page on a group to move it in,
   // or on the ungrouped list to move it out. `undefined` means no drop target.
   const [dropGroupId, setDropGroupId] = useState<string | null | undefined>(undefined);
+  // Pages whose layer tree is open. Closed by default, since a page can have hundreds.
+  const [openLayerPageIds, setOpenLayerPageIds] = useState<Set<string>>(() => new Set());
+  const toggleLayers = (pageId: string) =>
+    setOpenLayerPageIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(pageId)) next.add(pageId);
+      return next;
+    });
 
   const dropTargetProps = (groupId: string | null) => ({
     onDragOver: (event: DragEvent) => {
@@ -77,32 +87,53 @@ export default function PagesPanel({
     },
   });
 
-  const renderPage = (page: (typeof pages)[number], indent: string) => {
+  const renderPage = (page: (typeof pages)[number], indentPx: number) => {
     const Icon =
       page.deviceType === "mobile" ? Smartphone : page.deviceType === "vector" ? PenTool : Monitor;
     const isCurrent = focusedPageId === page.id;
+    const isLayersOpen = openLayerPageIds.has(page.id);
     return (
-      <button
-        key={page.id}
-        type="button"
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
-          event.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={() => setDropGroupId(undefined)}
-        onClick={() => focusPage(page.id)}
-        className={cn(
-          "flex h-7 w-full items-center gap-2 pr-3 text-left text-xs transition-colors",
-          indent,
-          isCurrent
-            ? "bg-primary/15 text-foreground"
-            : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-        )}
-      >
-        <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
-        <span className="truncate">{page.title}</span>
-      </button>
+      <div key={page.id}>
+        <div className="relative">
+          <button
+            type="button"
+            aria-label={
+              isLayersOpen ? `Hide layers of ${page.title}` : `Show layers of ${page.title}`
+            }
+            aria-expanded={isLayersOpen}
+            onClick={() => toggleLayers(page.id)}
+            className="absolute top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            style={{ left: indentPx - 18 }}
+          >
+            <ChevronRight
+              className={cn("h-3 w-3 transition-transform", isLayersOpen && "rotate-90")}
+            />
+          </button>
+          <button
+            type="button"
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+              event.dataTransfer.effectAllowed = "move";
+            }}
+            onDragEnd={() => setDropGroupId(undefined)}
+            onClick={() => focusPage(page.id)}
+            className={cn(
+              "flex h-7 w-full items-center gap-2 pr-3 text-left text-xs transition-colors",
+              isCurrent
+                ? "bg-primary/15 text-foreground"
+                : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+            )}
+            style={{ paddingLeft: indentPx }}
+          >
+            <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
+            <span className="truncate">{page.title}</span>
+          </button>
+        </div>
+        {isLayersOpen ? (
+          <PageLayers pageId={page.id} html={page.iframeHtml ?? ""} baseIndentPx={indentPx - 18} />
+        ) : null}
+      </div>
     );
   };
 
@@ -171,16 +202,16 @@ export default function PagesPanel({
       </button>
       {/* Full-width rows hanging off a guide line under the chevron, like a
           file tree. */}
-      <nav
-        className={cn("min-h-0 flex-1 overflow-y-auto pb-2", !isPageListOpen && "invisible")}
-      >
+      <nav className={cn("min-h-0 flex-1 overflow-y-auto pb-2", !isPageListOpen && "invisible")}>
         <div className="relative flex min-h-full flex-col">
           <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
           {pageGroups.map((group) => (
             <div
               key={group.id}
               {...dropTargetProps(group.id)}
-              className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
+              className={cn(
+                dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40",
+              )}
             >
               <button
                 type="button"
@@ -195,7 +226,7 @@ export default function PagesPanel({
               </button>
               {pages
                 .filter((page) => group.pageIds.includes(page.id))
-                .map((page) => renderPage(page, "pl-12"))}
+                .map((page) => renderPage(page, 48))}
             </div>
           ))}
           <div
@@ -204,7 +235,7 @@ export default function PagesPanel({
           >
             {pages
               .filter((page) => !groupedPageIds.has(page.id))
-              .map((page) => renderPage(page, "pl-8"))}
+              .map((page) => renderPage(page, 32))}
           </div>
         </div>
       </nav>

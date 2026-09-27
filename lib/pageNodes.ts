@@ -419,3 +419,81 @@ export const getNodeAttribute = (html: string, nodeId: string, name: string) => 
   );
   return match ? (match[2] ?? match[3] ?? "") : null;
 };
+
+export interface NodeTreeItem {
+  nodeId: string;
+  tag: string;
+  /** A short name for the layer: its id, label, alt text, or opening text. */
+  label: string;
+  children: NodeTreeItem[];
+}
+
+const LABEL_MAX_CHARS = 40;
+
+// A new one of these closes an open sibling of the same name, as HTML parsing does.
+const SELF_ENDING_TAGS = new Set(["li", "p", "dt", "dd", "tr", "td", "th", "option"]);
+
+const readLayerLabel = (html: string, tag: Tag) => {
+  for (const name of ["aria-label", "alt", "title", "id"]) {
+    const match = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(tag.attributes);
+    const value = (match?.[2] ?? match?.[3] ?? "").trim();
+    if (value) return value.slice(0, LABEL_MAX_CHARS);
+  }
+  const textEnd = html.indexOf("<", tag.end);
+  const text = html.slice(tag.end, textEnd === -1 ? undefined : textEnd).replace(/\s+/g, " ").trim();
+  return (decodeText(text) ?? text).slice(0, LABEL_MAX_CHARS);
+};
+
+/**
+ * The page's stamped elements as a layer tree, in document order, for the
+ * sidebar. Walks the same visible elements `stampNodeIds` stamps, so every
+ * layer has an id the canvas can select.
+ */
+export const getNodeTree = (html: string) => {
+  const root: NodeTreeItem[] = [];
+  const stack: Array<{ name: string; item: NodeTreeItem | null }> = [];
+  const childrenOf = () => {
+    for (let index = stack.length - 1; index >= 0; index -= 1) {
+      const item = stack[index].item;
+      if (item) return item.children;
+    }
+    return root;
+  };
+  let inBody = !/<body\b/i.test(html);
+  let opaque: { name: string; depth: number } | null = null;
+
+  for (const tag of scanTags(html)) {
+    if (tag.name === "body") {
+      inBody = !tag.isClosing;
+      continue;
+    }
+    if (!inBody) continue;
+    if (opaque) {
+      if (tag.name === opaque.name && (tag.isClosing || !isSelfClosing(tag))) {
+        opaque.depth += tag.isClosing ? -1 : 1;
+      }
+      if (opaque.depth === 0) opaque = null;
+      continue;
+    }
+    if (tag.isClosing) {
+      const at = stack.map((entry) => entry.name).lastIndexOf(tag.name);
+      if (at !== -1) stack.length = at;
+      continue;
+    }
+    if (SKIPPED_TAGS.has(tag.name)) continue;
+    if (SELF_ENDING_TAGS.has(tag.name) && stack.at(-1)?.name === tag.name) stack.pop();
+
+    const nodeId = readNodeId(tag.attributes);
+    const item = nodeId
+      ? { nodeId, tag: tag.name, label: readLayerLabel(html, tag), children: [] }
+      : null;
+    if (item) childrenOf().push(item);
+    if (isSelfClosing(tag)) continue;
+    if (OPAQUE_TAGS.has(tag.name) && !ARTBOARD_MARKER.test(tag.attributes)) {
+      opaque = { name: tag.name, depth: 1 };
+      continue;
+    }
+    stack.push({ name: tag.name, item });
+  }
+  return root;
+};

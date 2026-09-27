@@ -331,26 +331,28 @@ export default function EditorWorkspace({
 
       state.setFocusedPage(pageId);
       state.setSelectedNode(next);
-
-      // The frame reported an id stamped into its srcdoc. Saving the stamped
-      // HTML the first time makes that id exist on the server too, so a
-      // sidebar edit or an MCP agent can find the element. A page mid-run is
-      // left alone: the run writes it.
-      const page = state.pages.find((candidate) => candidate.id === pageId);
-      const html = page?.iframeHtml ?? "";
-      const stamped = stampNodeIds(html);
-      const status = state.pageStatuses[pageId]?.status;
-      const isBusy = status === "queued" || status === "generating" || status === "repairing";
-      if (!projectId || stamped === html || isBusy) return;
-
-      savePageHtml(
-        pageId,
-        stamped,
-        "Could not save the page, so element links to it may not work yet.",
-      );
     },
-    [projectId, savePageHtml],
+    [],
   );
+
+  // A picked element, from the canvas or the layer tree, has an id stamped
+  // into the srcdoc. Saving the stamped HTML makes that id exist on the server
+  // too, so a sidebar edit or an MCP agent can find the element. A page mid-run
+  // is left alone: the run writes it.
+  const selectedNodeKey = useEditorStore((state) =>
+    state.selectedNode ? `${state.selectedNode.pageId}:${state.selectedNode.nodeId}` : null,
+  );
+  useEffect(() => {
+    const state = useEditorStore.getState();
+    const pageId = state.selectedNode?.pageId;
+    if (!pageId || !projectId) return;
+    const html = state.pages.find((candidate) => candidate.id === pageId)?.iframeHtml ?? "";
+    const stamped = stampNodeIds(html);
+    const status = state.pageStatuses[pageId]?.status;
+    const isBusy = status === "queued" || status === "generating" || status === "repairing";
+    if (stamped === html || isBusy) return;
+    savePageHtml(pageId, stamped, "Could not save the page, so element links to it may not work yet.");
+  }, [projectId, savePageHtml, selectedNodeKey]);
 
   useEffect(() => {
     if (!requestedGeneratedPageFocusIds || requestedGeneratedPageFocusIds.length === 0) {

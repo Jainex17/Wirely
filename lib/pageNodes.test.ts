@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildNodeLink,
+  getNodeTree,
   findNodeSpan,
   getNodeHtml,
   getNodeText,
@@ -150,5 +151,33 @@ describe("element links", () => {
     expect(readNodeLink(new URL(link).search)).toEqual({ pageId: "page-2", nodeId: "1x9k3fz" });
     expect(readNodeLink('?page=page-2&node="]x')).toEqual({ pageId: "page-2", nodeId: null });
     expect(readNodeLink("?node=14")).toBeNull();
+  });
+});
+
+describe("getNodeTree", () => {
+  const outline = (items: ReturnType<typeof getNodeTree>): unknown =>
+    items.map((item) => [item.tag, item.label, ...(item.children.length ? [outline(item.children)] : [])]);
+
+  it("nests stamped elements and names them from their text or labels", () => {
+    const html = stampNodeIds(
+      page(
+        '<header><h1>Hello  world</h1><img src="a.png" alt="Logo"></header><ul><li>One<li>Two</ul><svg aria-label="Icon"><path d="M0 0"/></svg><p>Last',
+      ),
+    );
+    expect(outline(getNodeTree(html))).toEqual([
+      ["header", "", [["h1", "Hello world"], ["img", "Logo"]]],
+      ["ul", "", [["li", "One"], ["li", "Two"]]],
+      ["svg", "Icon"],
+      ["p", "Last"],
+    ]);
+  });
+
+  it("opens a vector artboard so each path is a layer", () => {
+    const html = stampNodeIds(
+      '<body><svg data-wirely-artboard><g id="petals"><path d="M0 0"/><path d="M1 1"/></g></svg></body>',
+    );
+    expect(outline(getNodeTree(html))).toEqual([
+      ["svg", "", [["g", "petals", [["path", ""], ["path", ""]]]]],
+    ]);
   });
 });
