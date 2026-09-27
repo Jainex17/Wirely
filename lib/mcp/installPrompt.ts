@@ -1,6 +1,6 @@
 /**
  * Copy-paste prompts that let an MCP client install Wirely itself: the user
- * pastes the prompt into opencode, Cursor, or Claude Code, and that client's
+ * pastes the prompt into Claude Code, Cursor, Codex, or opencode, and that client's
  * own agent edits its config file. Nothing on the Wirely side needs to know
  * which client is calling later — only this prompt differs.
  *
@@ -9,7 +9,7 @@
  * the token over; the settings panel says so next to the copy button.
  */
 
-export type McpClientId = "opencode" | "cursor" | "claude-code";
+export type McpClientId = "claude-code" | "cursor" | "codex" | "opencode";
 
 export interface McpClientOption {
   id: McpClientId;
@@ -17,9 +17,10 @@ export interface McpClientOption {
 }
 
 export const MCP_CLIENTS: McpClientOption[] = [
-  { id: "opencode", label: "opencode" },
-  { id: "cursor", label: "Cursor" },
   { id: "claude-code", label: "Claude Code" },
+  { id: "cursor", label: "Cursor" },
+  { id: "codex", label: "Codex" },
+  { id: "opencode", label: "opencode" },
 ];
 
 const PURPOSE_LINE =
@@ -57,6 +58,21 @@ export const buildInstallPrompt = (
           `"url": "${serverUrl}", "headers": { "Authorization": "Bearer ${token}" } } }`,
         "3. Verify the file is still valid JSON when you are done.",
         "4. Tell me what you changed and that I should restart Cursor.",
+      ].join("\n");
+
+    // `codex mcp add --url` starts an OAuth login unless the token comes from an
+    // env var, so the prompt edits config.toml with a static header instead.
+    case "codex":
+      return [
+        `Install the Wirely MCP server into Codex. ${PURPOSE_LINE}`,
+        "",
+        "1. Open ~/.codex/config.toml (create it if it does not exist).",
+        "2. Add this table, keeping every existing setting:",
+        "   [mcp_servers.wirely]",
+        `   url = "${serverUrl}"`,
+        `   http_headers = { "Authorization" = "Bearer ${token}" }`,
+        "3. Verify the file is still valid TOML when you are done.",
+        "4. Tell me what you changed and that I should restart Codex.",
       ].join("\n");
 
     case "claude-code":

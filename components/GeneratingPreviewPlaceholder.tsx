@@ -29,7 +29,7 @@ export default function GeneratingPreviewPlaceholder({
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-border/70 bg-background/88 px-6 py-3 backdrop-blur-sm">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-border/70 bg-background px-6 py-3">
         <div className="flex items-center gap-3">
           <div className="relative h-2 w-28 overflow-hidden rounded-full bg-foreground/[0.08]">
             <div

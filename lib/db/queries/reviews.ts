@@ -105,6 +105,30 @@ export const listProjectComments = async (projectId: string) => {
   return rows.map(toProjectComment);
 };
 
+/**
+ * Comments with their page's title and device type, for an MCP agent that
+ * has no canvas to look at. The caller has already checked ownership.
+ */
+export const listProjectCommentsWithPages = async (projectId: string) => {
+  const db = getDb();
+  const rows = await db
+    .select({
+      ...commentColumns,
+      pageTitle: projectPages.title,
+      deviceType: projectPages.deviceType,
+    })
+    .from(projectComments)
+    .innerJoin(users, eq(users.id, projectComments.authorUserId))
+    .innerJoin(projectPages, eq(projectPages.id, projectComments.pageId))
+    .where(eq(projectComments.projectId, projectId))
+    .orderBy(asc(projectComments.createdAt));
+  return rows.map(({ pageTitle, deviceType, ...row }) => ({
+    ...toProjectComment(row),
+    pageTitle,
+    deviceType,
+  }));
+};
+
 /** Adds a comment. Null when the page is not in the project. */
 export const createProjectComment = async ({
   projectId,

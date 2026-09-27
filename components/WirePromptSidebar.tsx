@@ -1602,11 +1602,12 @@ export default function WirePromptSidebar({
         ) : null}
         {noModelsEnabled ? (
           <div className="text-[13px] leading-5 text-muted-foreground">
-            No models are enabled. Open{" "}
+            Ask your coding agent to edit this project, or send it a picked
+            element&apos;s link. To prompt here instead, turn on a model in{" "}
             <Link href="/setting?tab=models" className="underline underline-offset-2">
               Models
-            </Link>{" "}
-            to enable at least one model.
+            </Link>
+            .
           </div>
         ) : null}
         {!isLoading && !noModelsEnabled && progress.suggestions.length > 0 ? (

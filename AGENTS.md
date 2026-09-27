@@ -1,12 +1,17 @@
 # Wirely
 
-Wirely is a web UI ideation workspace. You describe a screen, pick a model, and get one to three
-generated HTML pages laid out on a pannable canvas. You keep prompting to refine them, and you can
-wire pages together into a clickable prototype.
+Wirely is the design canvas for a coding agent. The user connects Claude Code, Cursor, Codex, or
+another MCP client to the MCP server at `/api/mcp`, and that agent writes self-contained HTML pages
+onto a pannable canvas on the subscription the user already pays for. The user compares directions
+side by side, picks elements to change, wires pages into a clickable prototype, and hands the chosen
+page back to the agent to build in their codebase.
 
-You can think of Wirely as an open source, bring-your-own-key alternative to the paid AI design
-tools. It does not run your code. It generates self-contained HTML that renders in a sandboxed
-iframe, which is why it costs nothing to host.
+Wirely can also generate pages itself on a key the user saved (BYOK). That path still works and
+must keep working, but the MCP path is the primary one. Put new effort into the canvas and the MCP
+flow before the in-app generation pipeline.
+
+It is open source and free. It does not run the user's code. Pages render in a sandboxed iframe,
+which is why it costs nothing to host.
 
 ## What makes Wirely special?
 
@@ -14,7 +19,8 @@ These are the properties the product is built around. Do not trade them away for
 
 ### 1. It costs the maintainer nothing to run
 
-Every generation call uses a key the user saved in settings. There is no shared pool, no server-side
+MCP generation runs on the user's own agent subscription and costs Wirely only storage and the
+occasional `get_page_png` render. In-app generation uses a key the user saved in settings. There is no shared pool, no server-side
 billing, no credits. The default model is a free Gemini Flash tier, and the model catalog in
 `lib/wireModels.ts` marks every entry `free` or `paid` so the user always knows what a run costs
 them. Never add a code path that spends a server-owned key on user generation. The only server key
@@ -143,9 +149,9 @@ something done, walk this list and say which entries applied.
 - **Output counts.** One output and three outputs behave differently. Multi-output runs share a plan,
   run at concurrency 2, and map to existing target pages. Test both.
 - **Device types.** Pages are desktop or mobile, and the canvas frames and size presets differ.
-- **Entry points.** Generation starts from the home prompt box and from the editor sidebar. Settings
-  are reachable from the account menu and from the settings tabs. Fixing one entry point is not
-  fixing the feature.
+- **Entry points.** Generation starts from an MCP client, the home prompt box, and the editor
+  sidebar. Settings are reachable from the account menu and from the settings tabs. Fixing one
+  entry point is not fixing the feature.
 - **Server and client state.** Page HTML lives in Postgres and in the Zustand store, and the store
   persists canvas layout to local storage. A new page field usually needs the schema, the query, the
   API route, the store, and the hydration path.
@@ -179,7 +185,7 @@ something done, walk this list and say which entries applied.
 - Do not run a full build to check a small change unless I ask. It is slow and it is not the proof.
 - Do not open a browser or use computer control to verify unless I explicitly ask for it.
 
-## How generation works
+## How in-app generation works
 
 The client posts to `/api/wire/[id]` through the AI SDK `useChat` hook, which reads a streaming data
 response. The route validates and clamps the body, checks the rate limit, confirms the user owns the

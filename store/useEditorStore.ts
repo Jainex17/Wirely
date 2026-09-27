@@ -802,6 +802,7 @@ export const useEditorStore = create<EditorState>()(
           const newPage: PageRecord = {
             id: newPageId,
             title: resolvedTitle,
+            iframeHtml: "",
             sections: [],
             ...(deviceType ? { deviceType } : {}),
           };
@@ -835,7 +836,9 @@ export const useEditorStore = create<EditorState>()(
       renamePage: (pageId, newTitle) =>
         set((state) => {
           const pageIndex = state.pages.findIndex((p) => p.id === pageId);
-          if (pageIndex === -1) return state;
+          // Generation replays every progress event on each stream tick, so a
+          // no-op must keep the same array or every frame re-renders.
+          if (pageIndex === -1 || state.pages[pageIndex].title === newTitle) return state;
 
           const newPages = [...state.pages];
           newPages[pageIndex] = {
@@ -876,7 +879,9 @@ export const useEditorStore = create<EditorState>()(
       setPageDeviceType: (pageId, deviceType) =>
         set((state) => {
           const pageIndex = state.pages.findIndex((p) => p.id === pageId);
-          if (pageIndex === -1) return state;
+          if (pageIndex === -1 || state.pages[pageIndex].deviceType === deviceType) {
+            return state;
+          }
 
           const newPages = [...state.pages];
           newPages[pageIndex] = {
@@ -892,6 +897,8 @@ export const useEditorStore = create<EditorState>()(
           if (!state.pages.some((page) => page.id === pageId)) {
             return state;
           }
+          const current = state.pageStatuses[pageId];
+          if (current?.status === status && current.detail === detail) return state;
           return {
             pageStatuses: {
               ...state.pageStatuses,

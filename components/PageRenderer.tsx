@@ -11,6 +11,7 @@ import {
   Loader2,
   MoreHorizontal,
   PencilLine,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
+import { FRAME_MOTION_FOUND, FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
 import {
   injectNodePicker,
   NODE_PREVIEW_EVENT,
@@ -221,16 +223,10 @@ export default React.memo(function PageRenderer({
   onNodeReport,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
-  const CHART_CANVAS_HEIGHT = 320;
   const CONTEXT_MENU_WIDTH = 216;
   const CONTEXT_MENU_MARGIN = 12;
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const contextMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const resizeObserverRef = React.useRef<ResizeObserver | null>(null);
-  const mutationObserverRef = React.useRef<MutationObserver | null>(null);
-  const rafIdRef = React.useRef<number | null>(null);
-  const timeoutIdsRef = React.useRef<number[]>([]);
-  const imageListenerCleanupRef = React.useRef<(() => void) | null>(null);
   const [contextMenuPosition, setContextMenuPosition] = React.useState<{
     x: number;
     y: number;
@@ -314,8 +310,11 @@ export default React.memo(function PageRenderer({
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml
-        ? injectNodePicker(
-            injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
+        ? injectFrameMotion(
+            injectNodePicker(
+              injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
+              iframeReporterId,
+            ),
             iframeReporterId,
           )
         : "",
@@ -324,6 +323,10 @@ export default React.memo(function PageRenderer({
   const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
     null,
   );
+  // The frame load that reported its own animations. Compared with the
+  // current id, so a rewritten page hides Replay until it reports again.
+  const [motionReporterId, setMotionReporterId] = React.useState<string | null>(null);
+  const hasMotion = isLive && motionReporterId === iframeReporterId;
   const [expiredCursorEdit, setExpiredCursorEdit] = React.useState<AgentEdit | null>(null);
   React.useEffect(() => {
     if (!cursorEdit) return;
@@ -693,6 +696,23 @@ export default React.memo(function PageRenderer({
       >
         <Eye className="h-3.5 w-3.5" />
       </button>
+      {hasMotion ? (
+        <button
+          type="button"
+          className={iconButtonClass}
+          aria-label={`Replay animations on ${page.title}`}
+          title="Replay animations"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            // A sandboxed frame has an opaque origin, so "*" is the only
+            // target that reaches it. The message carries nothing secret.
+            iframeRef.current?.contentWindow?.postMessage({ type: FRAME_MOTION_REPLAY }, "*");
+          }}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         className={iconButtonClass}
@@ -823,183 +843,6 @@ export default React.memo(function PageRenderer({
     ],
   );
 
-  const disconnectAutoHeightSync = React.useCallback(() => {
-    if (resizeObserverRef.current) {
-      resizeObserverRef.current.disconnect();
-      resizeObserverRef.current = null;
-    }
-    if (mutationObserverRef.current) {
-      mutationObserverRef.current.disconnect();
-      mutationObserverRef.current = null;
-    }
-    if (rafIdRef.current !== null) {
-      window.cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-    for (const timeoutId of timeoutIdsRef.current) {
-      window.clearTimeout(timeoutId);
-    }
-    timeoutIdsRef.current = [];
-    if (imageListenerCleanupRef.current) {
-      imageListenerCleanupRef.current();
-      imageListenerCleanupRef.current = null;
-    }
-  }, []);
-
-  const stabilizeChartCanvases = React.useCallback(() => {
-    let doc: Document | null = null;
-    try {
-      doc = iframeRef.current?.contentDocument ?? null;
-    } catch {
-      doc = null;
-    }
-    if (!doc) return;
-
-    const canvases = Array.from(doc.querySelectorAll("canvas"));
-    for (const canvas of canvases) {
-      const element = canvas as HTMLCanvasElement;
-      // Keep responsive chart libraries from entering resize loops.
-      if (!element.style.height) {
-        element.style.height = `${CHART_CANVAS_HEIGHT}px`;
-      }
-      element.style.maxHeight = `${CHART_CANVAS_HEIGHT}px`;
-      element.style.minHeight = `${CHART_CANVAS_HEIGHT}px`;
-      element.style.width = "100%";
-      element.style.display = "block";
-      if (!element.hasAttribute("height")) {
-        element.setAttribute("height", String(CHART_CANVAS_HEIGHT));
-      }
-
-      const parent = element.parentElement;
-      if (parent) {
-        if (!parent.style.minHeight) {
-          parent.style.minHeight = `${CHART_CANVAS_HEIGHT}px`;
-        }
-        parent.style.overflow = "hidden";
-      }
-    }
-  }, []);
-
-  const syncIframeHeight = React.useCallback(() => {
-    let doc: Document | null = null;
-    try {
-      doc = iframeRef.current?.contentDocument ?? null;
-    } catch {
-      doc = null;
-    }
-    if (!doc) return;
-    stabilizeChartCanvases();
-    const bodyRect = doc.body.getBoundingClientRect();
-    const docWindow = doc.defaultView ?? window;
-    let farthestBottom = Math.max(
-      doc.documentElement?.getBoundingClientRect().bottom - bodyRect.top,
-      doc.body?.getBoundingClientRect().bottom - bodyRect.top,
-      0,
-    );
-
-    const allElements = doc.body.querySelectorAll("*");
-    for (const node of allElements) {
-      const element = node as HTMLElement;
-      const computed = docWindow.getComputedStyle(element);
-      if (computed.position === "fixed") continue;
-      if (computed.display === "none") continue;
-      const rect = element.getBoundingClientRect();
-      const relativeTop = rect.top - bodyRect.top;
-      const visualBottom = rect.bottom - bodyRect.top;
-      const scrollContainerBottom =
-        relativeTop +
-        Math.max(
-          element.scrollHeight || 0,
-          element.clientHeight || 0,
-          element.offsetHeight || 0,
-        );
-      farthestBottom = Math.max(
-        farthestBottom,
-        visualBottom,
-        scrollContainerBottom,
-      );
-    }
-
-    const measuredHeight = Math.max(
-      currentDevice.height,
-      doc.scrollingElement?.scrollHeight ?? 0,
-      doc.scrollingElement?.clientHeight ?? 0,
-      doc.documentElement?.scrollHeight ?? 0,
-      doc.documentElement?.offsetHeight ?? 0,
-      doc.documentElement?.clientHeight ?? 0,
-      doc.body?.scrollHeight ?? 0,
-      doc.body?.offsetHeight ?? 0,
-      doc.body?.clientHeight ?? 0,
-      Math.ceil(farthestBottom),
-    );
-    const boundedHeight = Math.min(
-      MAX_IFRAME_HEIGHT,
-      Math.max(currentDevice.height, measuredHeight),
-    );
-    setIframeHeight(boundedHeight);
-  }, [currentDevice.height, stabilizeChartCanvases]);
-
-  const queueIframeHeightSync = React.useCallback(() => {
-    if (rafIdRef.current !== null) return;
-    rafIdRef.current = window.requestAnimationFrame(() => {
-      rafIdRef.current = null;
-      syncIframeHeight();
-    });
-  }, [syncIframeHeight]);
-
-  const startAutoHeightSync = React.useCallback(() => {
-    if (!isLive) return;
-    disconnectAutoHeightSync();
-    let doc: Document | null = null;
-    try {
-      doc = iframeRef.current?.contentDocument ?? null;
-    } catch {
-      doc = null;
-    }
-    if (!doc) return;
-
-    queueIframeHeightSync();
-
-    const resizeObserver = new ResizeObserver(() => {
-      queueIframeHeightSync();
-    });
-    resizeObserverRef.current = resizeObserver;
-    resizeObserver.observe(doc.documentElement);
-    resizeObserver.observe(doc.body);
-
-    const mutationObserver = new MutationObserver(() => {
-      queueIframeHeightSync();
-    });
-    mutationObserverRef.current = mutationObserver;
-    mutationObserver.observe(doc.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true,
-    });
-
-    const images = Array.from(doc.images);
-    const onImageLoad = () => queueIframeHeightSync();
-    for (const image of images) {
-      image.addEventListener("load", onImageLoad);
-      image.addEventListener("error", onImageLoad);
-    }
-    imageListenerCleanupRef.current = () => {
-      for (const image of images) {
-        image.removeEventListener("load", onImageLoad);
-        image.removeEventListener("error", onImageLoad);
-      }
-    };
-
-    void doc.fonts?.ready?.then(() => {
-      queueIframeHeightSync();
-    });
-
-    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 250));
-    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 900));
-    timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 1800));
-  }, [disconnectAutoHeightSync, isLive, queueIframeHeightSync]);
-
   const [hoverBox, setHoverBox] = React.useState<ReportedNode | null>(null);
   const [selectedBox, setSelectedBox] = React.useState<ReportedNode | null>(null);
   const hoverPointRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -1065,24 +908,14 @@ export default React.memo(function PageRenderer({
   const handleLoad = React.useCallback(() => {
     // A reload drops any click the old document was answering.
     isPickPendingRef.current = false;
-    startAutoHeightSync();
     findSelectedNode();
-  }, [findSelectedNode, startAutoHeightSync]);
+  }, [findSelectedNode]);
 
   React.useEffect(() => {
-    if (!isLive) {
-      disconnectAutoHeightSync();
-      return;
-    }
-
+    if (!isLive) return;
     setIframeHeight(Math.max(currentDevice.height, frameHeight));
-    disconnectAutoHeightSync();
-    return () => {
-      disconnectAutoHeightSync();
-    };
   }, [
     currentDevice.height,
-    disconnectAutoHeightSync,
     frameHeight,
     isLive,
     page.id,
@@ -1107,6 +940,10 @@ export default React.memo(function PageRenderer({
         y?: number;
       };
       if (payload.id !== iframeReporterId) return;
+      if (payload.type === FRAME_MOTION_FOUND) {
+        setMotionReporterId(iframeReporterId);
+        return;
+      }
       if (payload.type === "wirely-node") {
         const { intent, node: rawNode } = data as { intent?: unknown; node?: unknown };
         const node = parseReportedNode(rawNode);
@@ -1223,8 +1060,20 @@ export default React.memo(function PageRenderer({
                   {currentDevice.label}
                 </div>
               </div>
-            ) : (
+            ) : status && !isPageIdle ? (
               <GeneratingPreviewPlaceholder />
+            ) : page.iframeHtml === undefined ? (
+              // The store's placeholder page before the project hydrates.
+              <div className="h-full w-full bg-background" />
+            ) : (
+              // An empty page nothing is writing to, such as the first page of a
+              // project an agent just created. A spinner here would never end.
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-background px-8 text-center">
+                <p className="text-sm font-medium text-muted-foreground">Empty page</p>
+                <p className="max-w-xs text-xs leading-relaxed text-muted-foreground/80">
+                  Ask your agent to write it, or prompt in the chat.
+                </p>
+              </div>
             )}
             {isElementMode && hasHtml && isLive ? (
               <div

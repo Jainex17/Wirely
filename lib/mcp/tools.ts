@@ -20,6 +20,8 @@ import {
   listProjectsForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import { isMissingRelationError } from "@/lib/db/missingRelation";
+import { listProjectCommentsWithPages } from "@/lib/db/queries/reviews";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
@@ -27,6 +29,7 @@ import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { getNodeHtml } from "@/lib/pageNodes";
+import { formatCommentsForAgent } from "@/lib/projectComments";
 
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
@@ -348,6 +351,41 @@ const getPagePng: ToolHandler = async (userId, args) => {
   }
 };
 
+const listComments: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1).optional(),
+      includeResolved: z.boolean().optional(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  let rows: Awaited<ReturnType<typeof listProjectCommentsWithPages>>;
+  try {
+    rows = await listProjectCommentsWithPages(project.id);
+  } catch (error) {
+    // A database without the review migration has no comments table yet.
+    if (!isMissingRelationError(error)) throw error;
+    return fail("Review comments are not set up on this Wirely server yet.");
+  }
+  const comments = formatCommentsForAgent(rows, {
+    pageId: parsed.data.pageId,
+    includeResolved: parsed.data.includeResolved,
+  });
+  if (comments.length === 0) {
+    return succeed(
+      parsed.data.includeResolved
+        ? `"${project.title}" has no review comments.`
+        : `"${project.title}" has no open review comments.`,
+    );
+  }
+  return succeed(JSON.stringify(comments));
+};
+
 const deletePage: ToolHandler = async (userId, args) => {
   const parsed = z
     .object({ projectId: z.string().trim().min(1), pageId: z.string().trim().min(1) })
@@ -377,6 +415,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   patch_page: patchPage,
   get_page: getPage,
   get_page_png: getPagePng,
+  list_comments: listComments,
   delete_page: deletePage,
 };
 

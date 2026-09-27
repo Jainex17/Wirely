@@ -183,12 +183,61 @@
   }
 }
 
+/* The landing hero replays an agent run: the prompt types into the canvas
+   bar and the example pages write themselves (their own CSS, in the iframes).
+   Under reduced motion only the end state shows. */
+.type-in {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .type-in {
+    width: 0;
+    overflow: hidden;
+    border-right: 1.5px solid currentColor;
+    animation:
+      type-in 1.2s steps(var(--chars)) 0.5s forwards,
+      caret-off 0s linear 2s forwards;
+  }
+}
+
+@keyframes type-in {
+  to {
+    width: calc(var(--chars) * 1ch + 2px);
+  }
+}
+
+@keyframes caret-off {
+  to {
+    border-right-color: transparent;
+  }
+}
+
+/* The landing canvas preview starts tipped back and lies flat as it scrolls
+   up, so the page's main visual answers the first scroll. */
+@keyframes tilt-flat {
+  from {
+    transform: perspective(1600px) rotateX(12deg) scale(0.97);
+  }
+  to {
+    transform: none;
+  }
+}
+
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .reveal {
       animation: reveal-rise linear both;
       animation-timeline: view();
       animation-range: entry 6% cover 26%;
+    }
+
+    .tilt-in {
+      transform-origin: 50% 0%;
+      animation: tilt-flat linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
     }
   }
 }
@@ -308,7 +357,7 @@
 .hero-dots {
   background-image: radial-gradient(
     circle,
-    rgb(255 255 255 / 0.07) 1px,
+    rgb(255 255 255 / 0.045) 1px,
     transparent 1.1px
   );
   background-size: 22px 22px;
@@ -400,7 +449,7 @@
   );
   background-size: 20px 20px;
   background-position: 0 0;
-  opacity: 0.55;
+  opacity: 0.3;
 }
 
 .glass-panel {
