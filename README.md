@@ -1,7 +1,12 @@
 # Wirely
 
-Wirely is an AI web UI ideation and editing workspace built with Next.js App Router.  
-Create a project, pick enabled models/providers, generate one or many page outputs, then iterate HTML in a canvas-style editor with safe previewing and persisted history.
+Wirely is the design canvas for your coding agent. Claude Code, Cursor, Codex, or any MCP
+client writes screens onto a pannable canvas over Wirely's MCP server, on the subscription you
+already pay for. You compare directions side by side, pick elements to change, link pages into a
+clickable prototype, and hand the chosen page back to the agent to build in your codebase.
+
+Wirely can also generate screens itself on your own provider key (BYOK), with a planner, quality
+gate, and repair pass.
 
 ## Features
 
@@ -108,9 +113,38 @@ Open [http://localhost:3000](http://localhost:3000).
 ### 6. First-run flow
 
 1. Sign in via `/login`.
-2. Add provider keys at `/setting/provider`.
-3. Enable models at `/setting/model`.
-4. Create a project from home and generate outputs.
+2. On home, create a token and copy the install prompt for your agent. Paste it into the agent,
+   restart it, and the card turns green on its first call.
+3. Ask the agent to design something. The project shows up on home.
+
+To generate inside Wirely instead, add provider keys at `/setting?tab=providers` and enable models
+at `/setting?tab=models`.
+
+## MCP server
+
+`POST /api/mcp` is a stateless streamable HTTP MCP endpoint. It authenticates with a personal
+bearer token minted on home or at `/setting?tab=mcp`. Only the token's SHA-256 hash is stored, and
+tokens are accepted on this route only.
+
+Manual setup, if you skip the install prompt:
+
+```bash
+# Claude Code
+claude mcp add --transport http wirely https://<your-host>/api/mcp \
+  --header "Authorization: Bearer <token>" --scope user
+```
+
+```toml
+# Codex, ~/.codex/config.toml
+[mcp_servers.wirely]
+url = "https://<your-host>/api/mcp"
+http_headers = { "Authorization" = "Bearer <token>" }
+```
+
+```json
+// Cursor, ~/.cursor/mcp.json
+{ "mcpServers": { "wirely": { "url": "https://<your-host>/api/mcp", "headers": { "Authorization": "Bearer <token>" } } } }
+```
 
 ## Environment Variables
 

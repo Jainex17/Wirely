@@ -329,6 +329,14 @@ describe("client install prompts", () => {
     expect(prompt).toContain("restart Cursor");
   });
 
+  it("tells Codex to edit config.toml with a static header", () => {
+    const prompt = buildInstallPrompt("codex", URL, TOKEN);
+
+    expect(prompt).toContain("~/.codex/config.toml");
+    expect(prompt).toContain("[mcp_servers.wirely]");
+    expect(prompt).toContain(`http_headers = { "Authorization" = "Bearer ${TOKEN}" }`);
+  });
+
   it("hands Claude Code one runnable command", () => {
     const prompt = buildInstallPrompt("claude-code", URL, TOKEN);
 

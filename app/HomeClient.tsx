@@ -42,6 +42,11 @@ const ModelPicker = dynamic(() => import("./ModelPicker"), {
 });
 
 const DeleteProjectDialog = dynamic(() => import("./DeleteProjectDialog"));
+const McpConnectCard = dynamic(() => import("@/components/McpConnectCard"));
+
+// Shown once an agent is connected, so the first thing to paste is obvious.
+const AGENT_EXAMPLE_PROMPT =
+  "Use Wirely to design three different layouts for a habit tracker dashboard.";
 
 export interface HomeClientInitialData {
   user: {
@@ -64,6 +69,8 @@ export interface HomeClientInitialData {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
+  // True once any MCP token has made a call, so the agent path works.
+  hasConnectedAgent: boolean;
 }
 
 export type HomeGenerationMode =
@@ -368,6 +375,19 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const firstName = (state.user?.name ?? "").trim().split(" ")[0] ?? "";
   const composerDisabled =
     state.isSubmitting || hasNoEnabledModels || hasNoRunnableModels;
+  // The composer spends a provider key. Without one, the agent is the only way
+  // to generate, so home leads with connecting it instead of a dead text box.
+  const showComposer = !hasNoRunnableModels;
+  const { hasConnectedAgent } = initialData;
+
+  const copyAgentExample = async () => {
+    try {
+      await navigator.clipboard.writeText(AGENT_EXAMPLE_PROMPT);
+      toast.success("Copied. Paste it into your agent.");
+    } catch {
+      toast.error("Could not copy. Select the text and copy it manually.");
+    }
+  };
 
   return (
     <div className="min-h-[100dvh] bg-background">
@@ -392,6 +412,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
             What are we building{firstName ? `, ${firstName}` : ""}?
           </h1>
 
+          {showComposer ? (
           <form onSubmit={handleSubmit} className="enter enter-2 mt-10 text-left">
             <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
               <span className="beam" aria-hidden>
@@ -445,19 +466,42 @@ export default function HomeClient({ initialData }: HomeClientProps) {
               </div>
             </div>
           </form>
+          ) : null}
 
-          {hasNoEnabledModels ? (
+          {hasConnectedAgent && !showComposer ? (
+            <div className="enter enter-2 mt-10 rounded-xl border border-border bg-card px-5 py-4 text-left">
+              <p className="text-sm text-muted-foreground">
+                Your agent is connected. Ask it to design something, and the
+                project shows up below.
+              </p>
+              <button
+                type="button"
+                onClick={copyAgentExample}
+                className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
+              >
+                {AGENT_EXAMPLE_PROMPT}
+              </button>
+            </div>
+          ) : null}
+
+          {hasConnectedAgent ? null : (
+            <div className="enter enter-3 mt-8">
+              <McpConnectCard />
+            </div>
+          )}
+
+          {showComposer ? null : (
             <p className="mt-6 text-sm text-muted-foreground">
-              No models are switched on. Turn one on in{" "}
+              To generate here instead, set up your own key in{" "}
               <Link
-                href="/setting?tab=models"
+                href={hasNoEnabledModels ? "/setting?tab=models" : "/setting?tab=providers"}
                 className="text-primary underline underline-offset-2"
               >
-                Models
+                {hasNoEnabledModels ? "Models" : "Providers"}
               </Link>
               .
             </p>
-          ) : null}
+          )}
 
           {state.errorMessage ? (
             <p className="mt-4 text-sm text-destructive">{state.errorMessage}</p>
@@ -477,7 +521,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           {state.historyItems.length === 0 ? (
             <div className="mt-6 border-t border-border py-12">
               <p className="text-sm text-muted-foreground">
-                Nothing generated yet. The brief above becomes your first page.
+                Nothing here yet. Projects you or your agent create show up here.
               </p>
             </div>
           ) : (

@@ -1,26 +1,41 @@
 import Link from "next/link";
 import { ArrowRight, MousePointerClick, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { WIRE_MODEL_OPTIONS } from "@/lib/wireModels";
+import { MCP_CLIENTS } from "@/lib/mcp/installPrompt";
 
 const MODES = [
   {
     value: "single_page",
-    name: "Single page",
-    body: "One brief becomes one finished page, sectioned and styled.",
+    name: "One screen",
+    body: "A single page, written straight onto the canvas.",
     shape: "one",
   },
   {
     value: "concept_variants",
-    name: "Concepts",
-    body: "Two or three takes on the same brief, side by side, in one run.",
+    name: "Directions",
+    body: "Two or three different layouts of the same screen, side by side.",
     shape: "row",
   },
   {
     value: "information_architecture",
-    name: "Website pages",
-    body: "Home, About, Pricing and Contact as one linked set sharing a layout.",
+    name: "A whole site",
+    body: "Home, About, Pricing and Contact as one linked set.",
     shape: "grid",
+  },
+] as const;
+
+const STEPS = [
+  {
+    title: "Connect once",
+    body: "Sign in, copy one prompt, and paste it into your agent. It installs Wirely itself.",
+  },
+  {
+    title: "Ask for screens",
+    body: "\"Design three layouts for a booking page.\" Your agent writes them onto the canvas while you watch.",
+  },
+  {
+    title: "Pick and hand back",
+    body: "Point at what to change, then ask the agent to build the one you picked in your codebase.",
   },
 ] as const;
 
@@ -31,11 +46,6 @@ const PROVIDERS = [
   { name: "Unsplash", unlocks: "Photography inside generated pages" },
 ] as const;
 
-const CHIPS = [
-  "A landing page for a plant care subscription",
-  "A pricing page with a yearly toggle",
-  "A multi-page site for a design studio",
-] as const;
 
 // A mode is easier to show than to describe: one page, three of it side by side,
 // or a linked set. The blocks are page shapes, not a preview of real output.
@@ -81,11 +91,11 @@ function Hero() {
 
       <div className="mx-auto w-full max-w-3xl px-6 py-16 text-center">
         <h1 className="enter enter-1 font-display text-[clamp(2.5rem,6vw,4.25rem)] font-semibold leading-[0.98] tracking-[-0.04em]">
-          Idea to design,
+          The design canvas
           <br />
-          in{" "}
+          for your{" "}
           <span className="lightspeed">
-            <span className="lightspeed-word">lightspeed.</span>
+            <span className="lightspeed-word">coding agent.</span>
             <span className="lightspeed-streaks" aria-hidden>
               <span />
               <span />
@@ -93,57 +103,31 @@ function Hero() {
             </span>
           </span>
         </h1>
-        <p className="enter enter-2 mx-auto mt-6 max-w-[48ch] text-base text-muted-foreground sm:text-lg">
-          Describe a screen and watch it build on the canvas. Explore a few looks at
-          once, refine the one you like, then click through it.
+        <p className="enter enter-2 mx-auto mt-6 max-w-[50ch] text-base text-muted-foreground sm:text-lg">
+          Your agent designs the screens on the plan you already pay for. Wirely
+          lays them out side by side, so you can pick one, point at what to change,
+          and hand it back to build.
         </p>
 
-        <form action="/login" method="get" className="enter enter-3 mx-auto mt-9 max-w-2xl text-left">
-          <input type="hidden" name="next" value="/" />
-
-          <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
-              <span className="beam" aria-hidden>
-                <span className="beam-spin" />
-              </span>
-            <label htmlFor="landing-prompt" className="sr-only">
-              Describe what you want to build
-            </label>
-            <textarea
-              id="landing-prompt"
-              name="prompt"
-              rows={3}
-              maxLength={500}
-              placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
-              className="max-h-56 w-full resize-none bg-transparent px-4 pt-4 text-base leading-relaxed text-foreground [field-sizing:content] placeholder:text-muted-foreground/80 focus:outline-none"
-            />
-
-            <div className="flex items-center justify-end gap-3 px-3 pb-3">
-              <Button type="submit" size="icon-sm" aria-label="Generate this page">
-                <ArrowRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-        </form>
-
-        <div className="enter enter-4 mt-6 flex flex-wrap justify-center gap-2">
-          {CHIPS.map((chip) => (
-            <Link
-              key={chip}
-              href={`/login?next=/&prompt=${encodeURIComponent(chip)}`}
-              className="rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs text-muted-foreground backdrop-blur transition-colors hover:border-foreground/25 hover:text-foreground"
-            >
-              {chip}
+        <div className="enter enter-3 mt-9 flex flex-wrap items-center justify-center gap-3">
+          <Button asChild size="lg" className="rounded-full px-6">
+            <Link href="/login">
+              Connect your agent
+              <ArrowRight className="size-4" />
             </Link>
-          ))}
+          </Button>
         </div>
+
+        <p className="enter enter-4 mt-6 text-xs text-muted-foreground">
+          Works with {MCP_CLIENTS.map((client) => client.label).join(", ")}, and any
+          MCP client.
+        </p>
       </div>
     </section>
   );
 }
 
 export default function Landing() {
-  const modelCount = WIRE_MODEL_OPTIONS.length;
-
   return (
     <div className="min-h-[100dvh] bg-background">
       <header className="sticky top-0 z-40">
@@ -156,7 +140,7 @@ export default function Landing() {
               <Link href="/login">Sign in</Link>
             </Button>
             <Button asChild size="sm" className="rounded-full px-4">
-              <Link href="/login">Start building</Link>
+              <Link href="/login">Get started</Link>
             </Button>
           </div>
         </nav>
@@ -165,15 +149,33 @@ export default function Landing() {
       <main>
         <Hero />
 
+        <section className="mx-auto max-w-6xl px-6 pt-20 sm:pt-24">
+          <ol className="grid gap-8 sm:grid-cols-3 sm:gap-6">
+            {STEPS.map((step, index) => (
+              <li key={step.title} className="reveal border-t border-border pt-5">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <h2 className="mt-2 font-display text-lg font-semibold tracking-tight">
+                  {step.title}
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {step.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
         <section className="mx-auto max-w-6xl px-6 py-20 sm:py-24">
           <div className="grid gap-4 lg:grid-cols-6">
             <article className="reveal pane rounded-2xl border border-border bg-card p-8 lg:col-span-4">
               <h2 className="font-display text-3xl font-semibold tracking-tight">
-                Explore several looks at once
+                See several directions at once
               </h2>
               <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-                Say how much you want back. Wirely plans the run and fills the canvas
-                as each page lands.
+                Ask for options and each one lands as its own layout on the canvas,
+                live, while the agent writes it.
               </p>
 
               <dl className="mt-7 grid gap-6 sm:grid-cols-3 sm:gap-5">
@@ -191,10 +193,11 @@ export default function Landing() {
 
             <article className="reveal pane flex flex-col justify-center rounded-2xl border border-border bg-card p-8 lg:col-span-2">
               <p className="font-display text-7xl font-semibold leading-none tracking-tighter">
-                {modelCount}
+                $0
               </p>
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                models across four providers, every run on your own key.
+                Wirely charges nothing. Your agent runs on the subscription you
+                already have.
               </p>
             </article>
 
@@ -204,8 +207,8 @@ export default function Landing() {
                 Change one thing, not the whole page
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Point at a heading, a section or a button and say what should change.
-                Wirely rewrites that piece and leaves the rest of the page alone.
+                Pick a heading, a section or a button on the canvas and send its link
+                to your agent. It edits that element and leaves the rest alone.
               </p>
             </article>
 
@@ -215,8 +218,8 @@ export default function Landing() {
                 Hand it off clickable
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Pages link to each other, so a multi-page brief is walkable the moment
-                it finishes. Share it and let people try it.
+                Link pages into a clickable prototype, then share a review link where
+                people pin comments on the screens.
               </p>
             </article>
           </div>
@@ -227,12 +230,12 @@ export default function Landing() {
             <div className="grid gap-12 lg:grid-cols-12 lg:gap-6">
               <div className="reveal lg:col-span-5">
                 <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Your keys, your models
+                  No agent? Bring a key
                 </h2>
                 <p className="mt-4 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
-                  Wirely does not resell inference. Connect a provider once and every
-                  run goes through your own quota, starting on a free tier. Keys are
-                  encrypted before they are stored and never sent back to the browser.
+                  Wirely can also generate screens itself on your own provider key,
+                  starting on a free Gemini tier. Keys are encrypted before they are
+                  stored and never sent back to the browser.
                 </p>
               </div>
 
@@ -260,11 +263,11 @@ export default function Landing() {
               Prototype. Polish. Ship.
             </h2>
             <p className="mx-auto mt-6 max-w-[42ch] text-base text-muted-foreground">
-              Your ideas get real in Wirely. Bring a key and start with the next one.
+              Connect your agent and start with the next screen.
             </p>
             <Button asChild size="lg" className="mt-10">
               <Link href="/login">
-                Start building
+                Connect your agent
                 <ArrowRight className="size-4" />
               </Link>
             </Button>

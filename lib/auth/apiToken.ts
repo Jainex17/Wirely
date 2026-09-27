@@ -120,8 +120,10 @@ export const getUserForApiToken = async (token: string): Promise<SessionUser | n
 
   const lastUsed = row.lastUsedAt?.getTime() ?? 0;
   if (Date.now() - lastUsed > TOKEN_TOUCH_INTERVAL_MS) {
-    // Best effort: a failed touch must not fail the request it is annotating.
-    void db
+    // Awaited because a serverless function can freeze once the response is
+    // sent, dropping an unawaited write. Settings and home read this to show
+    // that a client connected. A failed touch must not fail the request.
+    await db
       .update(apiTokens)
       .set({ lastUsedAt: new Date() })
       .where(eq(apiTokens.id, row.tokenId))
