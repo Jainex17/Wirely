@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, type FormEvent, type MouseEvent } from "react";
+import { useReducer, useState, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
+import ProjectThumbnail from "@/components/ProjectThumbnail";
 import { toast } from "@/components/ui/sonner";
 
 // The model picker and delete dialog only matter once the user interacts with
@@ -372,13 +373,33 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
-  const firstName = (state.user?.name ?? "").trim().split(" ")[0] ?? "";
   const composerDisabled =
     state.isSubmitting || hasNoEnabledModels || hasNoRunnableModels;
   // The composer spends a provider key. Without one, the agent is the only way
   // to generate, so home leads with connecting it instead of a dead text box.
   const showComposer = !hasNoRunnableModels;
   const { hasConnectedAgent } = initialData;
+
+  const [isCreatingBlank, setIsCreatingBlank] = useState(false);
+
+  // An explicit title skips the title model, so a blank canvas costs no call.
+  const createBlankProject = async () => {
+    if (isCreatingBlank) return;
+    setIsCreatingBlank(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Untitled project" }),
+      });
+      const payload = (await response.json()) as { project?: { id?: string } };
+      if (!response.ok || !payload.project?.id) throw new Error("Could not create a project.");
+      router.push(`/wire/${payload.project.id}`);
+    } catch {
+      toast.error("Could not create a project. Please try again.");
+      setIsCreatingBlank(false);
+    }
+  };
 
   const copyAgentExample = async () => {
     try {
@@ -389,9 +410,113 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
+  const leadWithSetup = state.historyItems.length === 0;
+
+  const setup = (
+    <section className="w-full max-w-2xl">
+      {showComposer ? (
+        <>
+          <h2 className="text-sm font-medium text-foreground">Generate with your own key</h2>
+              <form onSubmit={handleSubmit} className="mt-4 text-left">
+                <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
+                  <span className="beam" aria-hidden>
+                    <span className="beam-spin" />
+                  </span>
+                  <label htmlFor="home-prompt" className="sr-only">
+                    Describe what you want to build
+                  </label>
+                  <textarea
+                    id="home-prompt"
+                    value={state.prompt}
+                    onChange={(event) =>
+                      dispatch({ type: "patch", payload: { prompt: event.target.value } })
+                    }
+                    ref={promptTextareaRef}
+                    onInput={resizePromptTextarea}
+                    placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
+                    rows={4}
+                    className="w-full resize-none bg-transparent px-4 py-3.5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
+                  />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ModelPicker
+                        label={selectedModelLabel}
+                        disabled={hasNoEnabledModels}
+                        showApiKeyWarning={showApiKeyWarning}
+                        showConfigureApiKeysCta={showConfigureApiKeysCta}
+                        models={pickerModels}
+                        onSelectModel={(modelId) =>
+                          dispatch({
+                            type: "patch",
+                            payload: { selectedModel: modelId },
+                          })
+                        }
+                        onOpenProviders={() => router.push("/setting?tab=providers")}
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={composerDisabled || state.prompt.trim().length < 10}
+                    >
+                      {state.isSubmitting ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        "Generate"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </form>
+        </>
+      ) : null}
+
+      {hasConnectedAgent && !showComposer ? (
+        <div className="rounded-xl border border-border bg-card px-5 py-4 text-left">
+          <p className="text-sm text-muted-foreground">
+            Your agent is connected. Ask it to design something, and the project
+            shows up here.
+          </p>
+          <button
+            type="button"
+            onClick={copyAgentExample}
+            className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
+          >
+            {AGENT_EXAMPLE_PROMPT}
+          </button>
+        </div>
+      ) : null}
+
+      {hasConnectedAgent ? null : (
+        <div className={showComposer ? "mt-8" : undefined}>
+          <McpConnectCard />
+        </div>
+      )}
+
+      {showComposer ? null : (
+        <p className="mt-5 text-sm text-muted-foreground">
+          To generate here instead, set up your own key in{" "}
+          <Link
+            href={hasNoEnabledModels ? "/setting?tab=models" : "/setting?tab=providers"}
+            className="text-primary underline underline-offset-2"
+          >
+            {hasNoEnabledModels ? "Models" : "Providers"}
+          </Link>
+          .
+        </p>
+      )}
+
+      {state.errorMessage ? (
+        <p className="mt-4 text-sm text-destructive">{state.errorMessage}</p>
+      ) : null}
+    </section>
+  );
+
   return (
     <div className="min-h-[100dvh] bg-background">
-      <div className="mx-auto w-full max-w-5xl px-4 pt-3 sm:px-6">
+      <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6">
         <AppHeader
           user={state.user}
           onLogout={handleLogout}
@@ -399,179 +524,87 @@ export default function HomeClient({ initialData }: HomeClientProps) {
         />
       </div>
 
-      <main>
-        <section className="relative isolate -mt-[4.25rem] flex min-h-[100dvh] items-center overflow-hidden pt-[4.25rem]">
-          <div className="ribbon-field pointer-events-none -z-10">
-            <div className="ribbon ribbon-core rings-enter" />
-          </div>
-          <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
-          <div className="hero-foot pointer-events-none absolute inset-x-0 bottom-0 h-16 -z-10" />
+      <main className="mx-auto w-full max-w-6xl px-4 pb-28 sm:px-6">
+        {leadWithSetup ? <div className="pt-10">{setup}</div> : null}
 
-          <div className="mx-auto w-full max-w-3xl -translate-y-12 px-4 py-14 text-center sm:px-6">
-          <h1 className="enter enter-1 font-display text-[clamp(1.9rem,4vw,2.9rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-foreground">
-            What are we building{firstName ? `, ${firstName}` : ""}?
-          </h1>
-
-          {showComposer ? (
-          <form onSubmit={handleSubmit} className="enter enter-2 mt-10 text-left">
-            <div className="composer pane relative overflow-hidden rounded-2xl border border-border bg-card/70 backdrop-blur-xl transition-[border-color] duration-300">
-              <span className="beam" aria-hidden>
-                <span className="beam-spin" />
+        <section className="pt-10">
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="font-display text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
+              Projects
+            </h1>
+            {state.historyTotal > state.historyItems.length ? (
+              <span className="text-sm text-muted-foreground">
+                Latest {state.historyItems.length} of {state.historyTotal}
               </span>
-              <label htmlFor="home-prompt" className="sr-only">
-                Describe what you want to build
-              </label>
-              <textarea
-                id="home-prompt"
-                value={state.prompt}
-                onChange={(event) =>
-                  dispatch({ type: "patch", payload: { prompt: event.target.value } })
-                }
-                ref={promptTextareaRef}
-                onInput={resizePromptTextarea}
-                placeholder="A booking page for a two-chair barbershop, dark, with a weekly calendar..."
-                rows={4}
-                className="w-full resize-none bg-transparent px-4 py-3.5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
-              />
+            ) : null}
+          </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <ModelPicker
-                    label={selectedModelLabel}
-                    disabled={hasNoEnabledModels}
-                    showApiKeyWarning={showApiKeyWarning}
-                    showConfigureApiKeysCta={showConfigureApiKeysCta}
-                    models={pickerModels}
-                    onSelectModel={(modelId) =>
-                      dispatch({
-                        type: "patch",
-                        payload: { selectedModel: modelId },
-                      })
-                    }
-                    onOpenProviders={() => router.push("/setting?tab=providers")}
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={composerDisabled || state.prompt.trim().length < 10}
-                >
-                  {state.isSubmitting ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    "Generate"
-                  )}
-                </Button>
-              </div>
-            </div>
-          </form>
-          ) : null}
-
-          {hasConnectedAgent && !showComposer ? (
-            <div className="enter enter-2 mt-10 rounded-xl border border-border bg-card px-5 py-4 text-left">
-              <p className="text-sm text-muted-foreground">
-                Your agent is connected. Ask it to design something, and the
-                project shows up below.
-              </p>
+          <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <li>
               <button
                 type="button"
-                onClick={copyAgentExample}
-                className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
+                onClick={createBlankProject}
+                disabled={isCreatingBlank}
+                className="flex h-full min-h-40 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-muted-foreground transition-[border-color,color,transform] duration-200 hover:border-foreground/30 hover:text-foreground active:scale-[0.99] disabled:opacity-60"
               >
-                {AGENT_EXAMPLE_PROMPT}
+                <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card">
+                  {isCreatingBlank ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                </span>
+                <span className="text-[13px] font-medium">New project</span>
               </button>
-            </div>
-          ) : null}
+            </li>
 
-          {hasConnectedAgent ? null : (
-            <div className="enter enter-3 mt-8">
-              <McpConnectCard />
-            </div>
-          )}
-
-          {showComposer ? null : (
-            <p className="mt-6 text-sm text-muted-foreground">
-              To generate here instead, set up your own key in{" "}
-              <Link
-                href={hasNoEnabledModels ? "/setting?tab=models" : "/setting?tab=providers"}
-                className="text-primary underline underline-offset-2"
-              >
-                {hasNoEnabledModels ? "Models" : "Providers"}
-              </Link>
-              .
-            </p>
-          )}
-
-          {state.errorMessage ? (
-            <p className="mt-4 text-sm text-destructive">{state.errorMessage}</p>
-          ) : null}
-          </div>
-        </section>
-
-        <section className="mx-auto w-full max-w-5xl px-4 pb-28 sm:px-6">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-sm font-medium text-foreground">Pages you have made</h2>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {state.historyItems.length}
-              {state.historyTotal > state.historyItems.length ? "+" : ""}
-            </span>
-          </div>
-
-          {state.historyItems.length === 0 ? (
-            <div className="mt-6 border-t border-border py-12">
-              <p className="text-sm text-muted-foreground">
-                Nothing here yet. Projects you or your agent create show up here.
-              </p>
-            </div>
-          ) : (
-            <ul className="mt-6">
-              {state.historyItems.map((project) => (
-                <li key={project.id} className="group relative border-t border-border">
-                  <Link
-                    href={`/wire/${project.id}`}
-                    className="flex items-baseline gap-4 py-4 pr-12"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-base font-medium text-foreground transition-colors duration-300 group-hover:text-primary">
+            {state.historyItems.map((project) => (
+              <li key={project.id} className="group relative">
+                <Link
+                  href={`/wire/${project.id}`}
+                  className="block rounded-xl border border-border bg-card p-1 transition-[border-color,transform] duration-200 hover:border-white/15 active:scale-[0.99]"
+                >
+                  <div className="px-2.5 pb-2 pt-2">
+                    <p className="truncate pr-7 text-[13px] font-medium text-foreground">
                       {project.title}
-                    </span>
-                    <span className="hidden font-mono text-[11px] capitalize text-muted-foreground sm:block">
-                      {project.status}
-                    </span>
-                    <span className="w-28 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
-                      {timeAgo(project.updatedAt)}
-                    </span>
-                  </Link>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label={`Actions for ${project.title}`}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                      >
-                        <MoreHorizontal size={16} />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={(event) =>
-                          handleDeleteProject(
-                            project.id,
-                            event as unknown as MouseEvent<HTMLElement>,
-                          )
-                        }
-                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                      >
-                        <Trash2 size={16} />
-                        Delete project
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </li>
-              ))}
-            </ul>
-          )}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Edited {timeAgo(project.updatedAt)}
+                    </p>
+                  </div>
+                  <ProjectThumbnail projectId={project.id} />
+                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${project.title}`}
+                      className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={(event) =>
+                        handleDeleteProject(
+                          project.id,
+                          event as unknown as MouseEvent<HTMLElement>,
+                        )
+                      }
+                      className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    >
+                      <Trash2 size={16} />
+                      Delete project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </li>
+            ))}
+          </ul>
         </section>
+
+        {leadWithSetup ? null : <div className="pt-12">{setup}</div>}
       </main>
 
       {state.projectToDelete ? (

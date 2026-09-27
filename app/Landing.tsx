@@ -240,7 +240,7 @@ function ConnectSection({ origin }: { origin: string }) {
           --scope user
         </pre>
         <div className="border-t border-border px-5 py-4 font-mono text-xs text-muted-foreground">
-          Tools: create_project, add_page, patch_page, get_page, get_page_png, and 4 more
+          Tools: create_project, add_page, patch_page, get_page_png, list_comments, and 5 more
         </div>
       </div>
     </section>

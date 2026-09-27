@@ -122,22 +122,40 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
 
   return (
     <div className="rounded-xl border border-border bg-card text-left">
-      <div className="flex items-center gap-3.5 border-b border-border/60 px-5 py-4">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
+      <div
+        className={`flex items-center gap-3.5 px-4 py-3.5 ${
+          newToken ? "border-b border-border/60" : ""
+        }`}
+      >
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
           <Plug className="size-4" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            Claude Code, Cursor, Codex, or opencode designs the screens on your own
-            plan. Wirely lays them out here.
+          <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+            Claude Code, Cursor, Codex, or opencode, on your own plan.
           </p>
         </div>
+        {newToken ? null : (
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0 transition-transform active:scale-[0.97]"
+            onClick={createToken}
+            disabled={isCreating}
+          >
+            {isCreating ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
+            Connect
+          </Button>
+        )}
       </div>
 
-      <div className="space-y-4 px-5 py-5">
-        {newToken ? (
-          <>
+      {newToken ? (
+        <div className="space-y-4 px-5 py-5">
             <div>
               <p className="text-sm font-medium text-foreground">
                 1. Paste this prompt into your agent
@@ -238,30 +256,8 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
                 </>
               )}
             </div>
-          </>
-        ) : (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Create a token and Wirely writes a prompt your agent runs to install
-              itself. No config editing.
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              className="shrink-0"
-              onClick={createToken}
-              disabled={isCreating}
-            >
-              {isCreating ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Plus className="size-3.5" />
-              )}
-              Create a token
-            </Button>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

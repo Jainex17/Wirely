@@ -63,6 +63,34 @@ export const listProjectsForUser = async (
     .limit(limit);
 };
 
+/**
+ * The first few pages of a project, for its home page thumbnail. One query
+ * that checks ownership through the join, so a card costs one round trip.
+ */
+export const listProjectPreviewPages = async ({
+  projectId,
+  userId,
+  limit,
+}: {
+  projectId: string;
+  userId: string;
+  limit: number;
+}) => {
+  const db = getDb();
+  return db
+    .select({
+      id: projectPages.id,
+      title: projectPages.title,
+      deviceType: projectPages.deviceType,
+      htmlContent: projectPages.htmlContent,
+    })
+    .from(projectPages)
+    .innerJoin(projects, eq(projects.id, projectPages.projectId))
+    .where(and(eq(projectPages.projectId, projectId), eq(projects.userId, userId)))
+    .orderBy(asc(projectPages.sortOrder))
+    .limit(limit);
+};
+
 export const getProjectForUser = async (projectId: string, userId: string) => {
   const db = getDb();
   const [project] = await db

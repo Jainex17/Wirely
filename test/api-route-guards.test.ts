@@ -12,6 +12,7 @@ describe("api route guard coverage", () => {
       "app/api/projects/[projectId]/pages/[pageId]/route.ts",
       "app/api/projects/[projectId]/pages/[pageId]/png/route.ts",
       "app/api/projects/[projectId]/pages/[pageId]/share/route.ts",
+      "app/api/projects/[projectId]/preview/route.ts",
       "app/api/projects/[projectId]/prototype/route.ts",
       "app/api/projects/[projectId]/share/route.ts",
       "app/api/projects/[projectId]/comments/route.ts",
