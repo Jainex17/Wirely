@@ -158,7 +158,8 @@ const htmlDescription =
   "</script> in <head>. The page is a static design mock and is sanitized before " +
   "storage: <button>, <form>, <input>, <select>, and <textarea> are removed together " +
   "with their contents, so draw CTAs as styled <a href=\"#\"> or <div role=\"button\"> " +
-  "elements instead, and keep <img> sources on Unsplash hosts. Allowlisted CDN " +
+  "elements instead, and keep <img> sources on Unsplash hosts or project images from " +
+  "add_asset and list_assets. Allowlisted CDN " +
   "scripts (the Tailwind browser build, Tailwind Plus elements, Chart.js) are kept; " +
   "scripts are the page's only way to run code.";
 
@@ -323,6 +324,29 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           description: "Also return comments the owner already resolved.",
         },
       },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_asset",
+    description:
+      "Get a 15 minute link to upload an image from the user's disk into the project, for " +
+      "when they ask you to use a local image in a design. Returns a curl command; run it " +
+      "and use the src it prints.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_assets",
+    description: "List the project's uploaded images with the src to use in a page.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID },
       required: ["projectId"],
       additionalProperties: false,
     },

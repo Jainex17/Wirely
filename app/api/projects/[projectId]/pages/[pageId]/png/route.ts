@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getAssetData } from "@/lib/db/queries/assets";
+import { inlineAssets } from "@/lib/projectAssets";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { getProjectPageForUser } from "@/lib/db/queries/projects";
 import { logger } from "@/lib/logger";
@@ -57,7 +59,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
     }
 
-    const png = await renderPagePng(page.htmlContent, page.deviceType);
+    const png = await renderPagePng(await inlineAssets(page.htmlContent, getAssetData), page.deviceType);
     return new Response(Buffer.from(png.base64, "base64"), {
       status: 200,
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },

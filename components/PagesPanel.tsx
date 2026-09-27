@@ -14,6 +14,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import AssetsFolder from "@/components/AssetsFolder";
 import PageLayers from "@/components/PageLayers";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
 
 interface PagesPanelProps {
+  projectId: string;
   projectTitle: string;
   isCollapsed: boolean;
   onToggle: () => void;
@@ -35,6 +37,7 @@ interface PagesPanelProps {
  * so the toggle back stays in the same corner.
  */
 export default function PagesPanel({
+  projectId,
   projectTitle,
   isCollapsed,
   onToggle,
@@ -239,6 +242,7 @@ export default function PagesPanel({
           </div>
         </div>
       </nav>
+      <AssetsFolder projectId={projectId} />
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
         {footer}
         <a

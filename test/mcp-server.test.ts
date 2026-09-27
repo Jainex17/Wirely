@@ -113,11 +113,13 @@ describe("tool catalog", () => {
 
   it("carries every screen tool an agent needs", () => {
     expect(TOOL_NAMES).toEqual([
+      "add_asset",
       "add_page",
       "create_project",
       "delete_page",
       "get_page",
       "get_page_png",
+      "list_assets",
       "list_comments",
       "list_pages",
       "list_projects",

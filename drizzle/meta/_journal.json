@@ -141,6 +141,13 @@
       "when": 1790481770109,
       "tag": "0019_omniscient_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790524377550,
+      "tag": "0020_motionless_thunderbird",
+      "breakpoints": true
     }
   ]
 }
