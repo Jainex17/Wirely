@@ -933,7 +933,6 @@ export default function WirePromptSidebar({
       }
 
       if (enabledModelIds.length === 0) {
-        reportError("No models are enabled. Enable at least one model in Models.");
         return false;
       }
 
@@ -1011,7 +1010,6 @@ export default function WirePromptSidebar({
       append,
       enabledModelIds,
       isLoading,
-      reportError,
       rollbackPendingCreatedPages,
       setPageStatus,
       snapshotCurrentPageHtml,
@@ -1035,7 +1033,6 @@ export default function WirePromptSidebar({
     }) => {
       if (isLoading) return false;
       if (enabledModelIds.length === 0) {
-        reportError("No models are enabled. Enable at least one model in Models.");
         return false;
       }
       const trimmedPrompt = promptText.trim();
@@ -1113,7 +1110,6 @@ export default function WirePromptSidebar({
       enabledModelIds,
       isLoading,
       markPagesAsLoading,
-      reportError,
       rollbackPendingCreatedPages,
       setPageStatus,
       snapshotCurrentPageHtml,
@@ -1274,7 +1270,6 @@ export default function WirePromptSidebar({
 
       if (enabledModelIds.length === 0) {
         autoRunRef.current = true;
-        reportError("No models are enabled. Enable at least one model in Models.");
         return;
       }
 
@@ -1592,7 +1587,7 @@ export default function WirePromptSidebar({
           <div className="text-[13px] leading-5 text-muted-foreground">{qualityNotice}</div>
         ) : null}
         {noModelsEnabled ? (
-          <div className="text-[13px] leading-5 text-destructive">
+          <div className="text-[13px] leading-5 text-muted-foreground">
             No models are enabled. Open{" "}
             <Link href="/setting?tab=models" className="underline underline-offset-2">
               Models
