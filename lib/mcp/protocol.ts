@@ -294,6 +294,28 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: "list_comments",
+    description:
+      "List the review comments people pinned on a project's pages through its review link. " +
+      "Each has the page, author, text, and pin position in page pixels at the page's design " +
+      "width (desktop 1440, mobile 375), so call get_page_png to see what a pin points at. " +
+      "Use it when the user asks you to address feedback. Returns open comments unless " +
+      "includeResolved is true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: { ...PAGE_ID, description: "Only comments on this page. Omit for every page." },
+        includeResolved: {
+          type: "boolean",
+          description: "Also return comments the owner already resolved.",
+        },
+      },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "delete_page",
     description:
       "Delete a page from a project. The last remaining page cannot be deleted.",

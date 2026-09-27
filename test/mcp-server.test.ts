@@ -118,6 +118,7 @@ describe("tool catalog", () => {
       "delete_page",
       "get_page",
       "get_page_png",
+      "list_comments",
       "list_pages",
       "list_projects",
       "patch_page",

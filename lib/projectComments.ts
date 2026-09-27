@@ -59,3 +59,28 @@ export interface ProjectComment {
   resolvedAt: string | null;
   createdAt: string;
 }
+
+/**
+ * Shapes review comments for an MCP agent: open ones only unless asked,
+ * optionally one page, and without the author's user id or avatar, which an
+ * agent has no use for. Pins are page pixels at the page's design width, so
+ * the agent can match them against a get_page_png render.
+ */
+export const formatCommentsForAgent = (
+  comments: Array<ProjectComment & { pageTitle: string; deviceType: string }>,
+  { pageId, includeResolved = false }: { pageId?: string; includeResolved?: boolean },
+) =>
+  comments
+    .filter((comment) => includeResolved || comment.resolvedAt === null)
+    .filter((comment) => !pageId || comment.pageId === pageId)
+    .map((comment) => ({
+      id: comment.id,
+      pageId: comment.pageId,
+      pageTitle: comment.pageTitle,
+      deviceType: comment.deviceType === "mobile" ? "mobile" : "desktop",
+      author: comment.authorName,
+      body: comment.body,
+      pin: { x: comment.x, y: comment.y },
+      resolved: comment.resolvedAt !== null,
+      createdAt: comment.createdAt,
+    }));
