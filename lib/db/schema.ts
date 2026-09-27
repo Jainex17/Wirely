@@ -150,6 +150,56 @@ export const projectPrototypeFlows = pgTable(
   }),
 );
 
+/**
+ * A project's review link. One row means the link is on; deleting the row turns
+ * it off, and a new row gets a new token. The token is stored in plain text so
+ * the owner can copy the link again. It only grants read and comment access,
+ * and only to signed-in users. Its own table, so projects queries keep working
+ * on a database that has not run this migration yet.
+ */
+export const projectShares = pgTable(
+  "project_shares",
+  {
+    projectId: uuid("project_id")
+      .primaryKey()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tokenUnique: uniqueIndex("project_shares_token_idx").on(table.token),
+  }),
+);
+
+/** A comment pinned to a spot on a page, left through the review link. */
+export const projectComments = pgTable(
+  "project_comments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => projectPages.id, { onDelete: "cascade" }),
+    authorUserId: uuid("author_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    /** Page pixels from the top left of the page at its device width. */
+    x: integer("x").notNull(),
+    y: integer("y").notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectCreatedIdx: index("project_comments_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const conversations = pgTable(
   "conversations",
   {

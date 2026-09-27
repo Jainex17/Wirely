@@ -15,8 +15,19 @@ import {
   X,
 } from "lucide-react";
 import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
-import { buildAgentPrompt } from "@/lib/agentPrompt";
+import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
+import {
+  injectNodePicker,
+  NODE_PREVIEW_EVENT,
+  parseReportedNode,
+  type NodePreview,
+  type NodeReportIntent,
+  type ReportedNode,
+} from "@/lib/nodePicker";
+import { stampNodeIds } from "@/lib/pageNodes";
+import CanvasCommentPins from "./CanvasCommentPins";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,17 +90,6 @@ const stabilizeViewportHeightClasses = (
     );
 };
 
-const injectIframeHeightReporter = (html: string, reporterId: string) => {
-  if (!html) return html;
-
-  const script = `<script>(function(){const reporterId=${JSON.stringify(reporterId)};let rafId=0;const measure=()=>{const root=document.documentElement;const body=document.body;if(!root||!body)return;const bodyRect=body.getBoundingClientRect();let maxHeight=Math.max(root.scrollHeight||0,root.offsetHeight||0,root.clientHeight||0,body.scrollHeight||0,body.offsetHeight||0,body.clientHeight||0);const allElements=body.querySelectorAll("*");for(const node of allElements){const element=node;const computed=window.getComputedStyle(element);if(computed.display==="none")continue;const rect=element.getBoundingClientRect();const relativeTop=rect.top-bodyRect.top;const visualBottom=rect.bottom-bodyRect.top;const scrollBottom=relativeTop+Math.max(element.scrollHeight||0,element.clientHeight||0,element.offsetHeight||0);maxHeight=Math.max(maxHeight,visualBottom,scrollBottom);}window.parent.postMessage({type:"wirely-iframe-height",id:reporterId,height:Math.ceil(maxHeight)},"*");const cursorTarget=document.querySelector("[data-wirely-cursor]");if(cursorTarget){const cursorRect=cursorTarget.getBoundingClientRect();window.parent.postMessage({type:"wirely-iframe-cursor",id:reporterId,x:cursorRect.left+window.scrollX,y:cursorRect.top+window.scrollY},"*");}};const queueMeasure=()=>{if(rafId)return;rafId=window.requestAnimationFrame(()=>{rafId=0;measure();});};if(typeof ResizeObserver==="function"){const resizeObserver=new ResizeObserver(queueMeasure);resizeObserver.observe(document.documentElement);resizeObserver.observe(document.body);}if(typeof MutationObserver==="function"){const mutationObserver=new MutationObserver(queueMeasure);mutationObserver.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});}window.addEventListener("load",queueMeasure);document.addEventListener("DOMContentLoaded",queueMeasure);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(queueMeasure).catch(()=>{});}window.setTimeout(queueMeasure,40);window.setTimeout(queueMeasure,180);window.setTimeout(queueMeasure,500);window.setTimeout(queueMeasure,1200);queueMeasure();})();</script>`;
-
-  if (/<\/body>/i.test(html)) {
-    return html.replace(/<\/body>/i, `${script}</body>`);
-  }
-  return `${html}${script}`;
-};
-
 interface PageRendererProps {
   page: {
     id: string;
@@ -118,6 +118,11 @@ interface PageRendererProps {
   isSelected: boolean;
   frameHeight: number;
   renderMode: PageRenderMode;
+  /** The element tool is active, so pointer moves and clicks pick elements in this page. */
+  isElementMode: boolean;
+  /** The picked element when it is on this page. */
+  selectedNodeId: string | null;
+  onNodeReport?: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
 }
 
 interface ContextMenuAction {
@@ -211,6 +216,9 @@ export default React.memo(function PageRenderer({
   isSelected,
   frameHeight,
   renderMode,
+  isElementMode,
+  selectedNodeId,
+  onNodeReport,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
   const CHART_CANVAS_HEIGHT = 320;
@@ -275,8 +283,10 @@ export default React.memo(function PageRenderer({
   const displayedHtml = revealIndex >= 0 ? revealSteps[revealIndex] : (page.iframeHtml ?? "");
   const cursorPreviousHtml =
     revealIndex > 0 ? revealSteps[revealIndex - 1] : (cursorEdit?.previousHtml ?? "");
+  // Stamped before sanitizing, so the ids match the ones the editor saves
+  // when an element is picked, even where the sanitizer drops elements.
   const sanitizedHtml = React.useMemo(
-    () => (hasRawHtml && isLive ? sanitizeIframeHtml(displayedHtml) : ""),
+    () => (hasRawHtml && isLive ? sanitizeIframeHtml(stampNodeIds(displayedHtml)) : ""),
     [displayedHtml, hasRawHtml, isLive],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
@@ -294,13 +304,21 @@ export default React.memo(function PageRenderer({
   const markedSrcDoc = React.useMemo(() => {
     if (!hasHtml || !cursorEdit) return { html: canvasSrcDoc, found: false };
     const previousSrcDoc = cursorPreviousHtml
-      ? stabilizeViewportHeightClasses(sanitizeIframeHtml(cursorPreviousHtml), currentDevice.height)
+      ? stabilizeViewportHeightClasses(
+          sanitizeIframeHtml(stampNodeIds(cursorPreviousHtml)),
+          currentDevice.height,
+        )
       : "";
     return markAgentCursor(previousSrcDoc, canvasSrcDoc);
   }, [canvasSrcDoc, currentDevice.height, cursorEdit, cursorPreviousHtml, hasHtml]);
   const measuredSrcDoc = React.useMemo(
     () =>
-      hasHtml ? injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId) : "",
+      hasHtml
+        ? injectNodePicker(
+            injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
+            iframeReporterId,
+          )
+        : "",
     [hasHtml, iframeReporterId, markedSrcDoc.html],
   );
   const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
@@ -780,7 +798,7 @@ export default React.memo(function PageRenderer({
         label: "Copy HTML",
         icon: Copy,
         onClick: () => {
-          void copyToClipboard("Page HTML", page.iframeHtml ?? "");
+          void copyToClipboard("Page HTML", stripWirelyArtifacts(page.iframeHtml ?? ""));
         },
       },
       {
@@ -982,9 +1000,74 @@ export default React.memo(function PageRenderer({
     timeoutIdsRef.current.push(window.setTimeout(queueIframeHeightSync, 1800));
   }, [disconnectAutoHeightSync, isLive, queueIframeHeightSync]);
 
+  const [hoverBox, setHoverBox] = React.useState<ReportedNode | null>(null);
+  const [selectedBox, setSelectedBox] = React.useState<ReportedNode | null>(null);
+  const hoverPointRef = React.useRef<{ x: number; y: number } | null>(null);
+  // Set when this frame sent a click, so a page's own script cannot post a
+  // pick and change the selection on its own.
+  const isPickPendingRef = React.useRef(false);
+  const hoverFrameRef = React.useRef(0);
+
+  const postToFrame = React.useCallback((message: Record<string, unknown>) => {
+    // A sandboxed frame has an opaque origin, so "*" is the only target that
+    // reaches it. Nothing sent here is secret.
+    iframeRef.current?.contentWindow?.postMessage(message, "*");
+  }, []);
+
+  const findSelectedNode = React.useCallback(() => {
+    if (selectedNodeId) postToFrame({ type: "wirely-node-find", nodeId: selectedNodeId });
+  }, [postToFrame, selectedNodeId]);
+
+  // Re-measured when the page grows, since images and fonts move elements.
+  React.useEffect(() => {
+    if (isLive) findSelectedNode();
+  }, [findSelectedNode, iframeHeight, isLive]);
+
+  React.useEffect(() => () => window.cancelAnimationFrame(hoverFrameRef.current), []);
+
+  const sendPointToFrame = (
+    event: React.PointerEvent<HTMLDivElement>,
+    intent: Exclude<NodeReportIntent, "select">,
+  ) => {
+    // The frame is scaled with the canvas; the page inside works in its own px.
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = rect.width > 0 ? currentDevice.width / rect.width : 1;
+    const point = {
+      x: (event.clientX - rect.left) * ratio,
+      y: (event.clientY - rect.top) * ratio,
+    };
+    if (intent === "pick") {
+      isPickPendingRef.current = true;
+      postToFrame({ type: "wirely-node-at", intent, ...point });
+      return;
+    }
+    hoverPointRef.current = point;
+    if (hoverFrameRef.current) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = 0;
+      if (hoverPointRef.current) {
+        postToFrame({ type: "wirely-node-at", intent: "hover", ...hoverPointRef.current });
+      }
+    });
+  };
+
+  React.useEffect(() => {
+    if (!isLive) return;
+    const handlePreview = (event: Event) => {
+      const { detail } = event as CustomEvent<NodePreview>;
+      if (detail.pageId !== page.id) return;
+      postToFrame({ ...detail, type: "wirely-node-preview" });
+    };
+    window.addEventListener(NODE_PREVIEW_EVENT, handlePreview);
+    return () => window.removeEventListener(NODE_PREVIEW_EVENT, handlePreview);
+  }, [isLive, page.id, postToFrame]);
+
   const handleLoad = React.useCallback(() => {
+    // A reload drops any click the old document was answering.
+    isPickPendingRef.current = false;
     startAutoHeightSync();
-  }, [startAutoHeightSync]);
+    findSelectedNode();
+  }, [findSelectedNode, startAutoHeightSync]);
 
   React.useEffect(() => {
     if (!isLive) {
@@ -1024,6 +1107,27 @@ export default React.memo(function PageRenderer({
         y?: number;
       };
       if (payload.id !== iframeReporterId) return;
+      if (payload.type === "wirely-node") {
+        const { intent, node: rawNode } = data as { intent?: unknown; node?: unknown };
+        const node = parseReportedNode(rawNode);
+        if (intent === "hover") {
+          setHoverBox(node);
+        } else if (intent === "pick" && isPickPendingRef.current) {
+          isPickPendingRef.current = false;
+          if (!node) return;
+          setSelectedBox(node);
+          onNodeReport?.(page.id, node, "pick");
+        } else if (intent === "select") {
+          // Null when a rewrite removed the element, so its outline goes too.
+          if (!node || node.nodeId !== selectedNodeId) {
+            setSelectedBox(null);
+            return;
+          }
+          setSelectedBox(node);
+          onNodeReport?.(page.id, node, "select");
+        }
+        return;
+      }
       if (payload.type === "wirely-iframe-cursor") {
         const { x, y } = payload;
         if (typeof x !== "number" || !Number.isFinite(x)) return;
@@ -1051,7 +1155,7 @@ export default React.memo(function PageRenderer({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [currentDevice.height, iframeReporterId, isLive]);
+  }, [currentDevice.height, iframeReporterId, isLive, onNodeReport, page.id, selectedNodeId]);
 
   const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
 
@@ -1122,6 +1226,24 @@ export default React.memo(function PageRenderer({
             ) : (
               <GeneratingPreviewPlaceholder />
             )}
+            {isElementMode && hasHtml && isLive ? (
+              <div
+                className="absolute inset-0 z-10 cursor-crosshair"
+                onPointerMove={(event) => sendPointToFrame(event, "hover")}
+                onPointerLeave={() => setHoverBox(null)}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.stopPropagation();
+                  sendPointToFrame(event, "pick");
+                }}
+              />
+            ) : null}
+            {isElementMode && hoverBox && hoverBox.nodeId !== selectedNodeId ? (
+              <NodeBox node={hoverBox} variant="hover" />
+            ) : null}
+            {selectedBox && selectedBox.nodeId === selectedNodeId ? (
+              <NodeBox node={selectedBox} variant="selected" />
+            ) : null}
           </div>
           {isSelected ? (
             <div className="pointer-events-none absolute inset-x-0 top-full flex justify-center">
@@ -1137,6 +1259,7 @@ export default React.memo(function PageRenderer({
               </span>
             </div>
           ) : null}
+          {projectId ? <CanvasCommentPins pageId={page.id} projectId={projectId} /> : null}
           {showAgentCursor && cursorPoint && cursorEdit ? (
             // Outside the clipped frame so a label near the right edge stays
             // readable. The outer layer slides between targets; the inner one
@@ -1411,3 +1534,32 @@ export default React.memo(function PageRenderer({
     </>
   );
 });
+
+/** The outline drawn over a hovered or picked element, in page pixels. */
+function NodeBox({ node, variant }: { node: ReportedNode; variant: "hover" | "selected" }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute z-20 outline-sky-500",
+        variant === "hover" ? "outline-dashed" : "outline-solid",
+      )}
+      style={{
+        left: node.x,
+        top: node.y,
+        width: node.width,
+        height: node.height,
+        outlineWidth: `calc(${variant === "hover" ? 1 : 2}px * var(--canvas-inverse-zoom, 1))`,
+      }}
+    >
+      {variant === "selected" ? (
+        <span
+          className="absolute bottom-full left-0 origin-bottom-left whitespace-nowrap rounded-sm bg-sky-500 px-1 text-[11px] font-medium text-white"
+          style={{ transform: "scale(var(--canvas-inverse-zoom, 1))" }}
+        >
+          {node.tag}
+        </span>
+      ) : null}
+    </div>
+  );
+}

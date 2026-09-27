@@ -170,6 +170,15 @@ Notes:
   valid for 7 days, for the frame's "Copy for agent" prompt.
 - `GET /api/share/pages/[pageId]?exp=&sig=` - public end of that link. No session; the signature
   is the access check. Serves the page's current HTML as `text/plain`, never rendered.
+- `GET|POST|DELETE /api/projects/[projectId]/share` - read, turn on, or turn off the project's
+  review link, `/share/[token]`. The review page needs a signed-in Wirely user.
+- `GET /api/projects/[projectId]/comments` - review comments on the owner's project.
+- `PATCH|DELETE /api/projects/[projectId]/comments/[commentId]` - resolve, reopen, or delete a
+  comment. Owner only.
+- `GET|POST /api/share/projects/[token]/comments` - list or pin comments through a review link.
+  Posting is rate limited per user.
+- `DELETE /api/share/projects/[token]/comments/[commentId]` - delete a comment as its author or
+  the project owner.
 
 MCP routes (see "MCP server" below):
 
@@ -195,6 +204,11 @@ parallel on one page. `get_page_png` renders the
 stored document with headless Chromium (`CHROME_PATH` picks the local browser in development,
 deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,
 clipped text, and low contrast text from the same render.
+
+The editor's element tool (E) copies links like `/wire/[projectId]?page=[pageId]&node=[nodeId]`.
+`get_page` with that `nodeId` returns just the element's stored source, ready for `patch_page`.
+Node ids are the `data-wirely-id` attributes the editor stamps into a page the first time an
+element on it is picked.
 
 ## Security and Reliability Notes
 

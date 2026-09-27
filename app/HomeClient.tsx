@@ -259,14 +259,8 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       return;
     }
 
-    if (state.enabledModelIds.length === 0) {
-      dispatch({
-        type: "patch",
-        payload: { errorMessage: "No models are enabled. Enable at least one model in Models." },
-      });
-      toast.error("No models are enabled. Open Models to enable one.");
-      return;
-    }
+    // The muted notice under the prompt already points to Models.
+    if (state.enabledModelIds.length === 0) return;
     if (selectedModelRequiresMissingKey) {
       const selectedModelProviderLabel =
         WIRE_MODEL_PROVIDER_LABEL[activeSelectedModelProvider];

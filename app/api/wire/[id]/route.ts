@@ -47,6 +47,7 @@ import { type WireProgressEvent } from "@/lib/wireProgressEvents";
 import { buildStreamingPreviewHtml, collectStreamedText } from "@/lib/wireStreamPreview";
 import { type GenerationMode } from "@/lib/wireGenerationTypes";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
+import { scopePromptToNode, stampNodeIds } from "@/lib/pageNodes";
 import { logger } from "@/lib/logger";
 import {
   evaluateWireHtmlQuality,
@@ -105,6 +106,7 @@ type WireRequestBody = {
   targetPageIds?: unknown;
   targetPageTitle?: unknown;
   targetPageHtml?: unknown;
+  targetNodeId?: unknown;
   compactHistory?: unknown;
   variationIndex?: unknown;
   variationCount?: unknown;
@@ -122,6 +124,7 @@ const MAX_COMPACT_HISTORY_COUNT = 24;
 const MAX_TARGET_PAGE_ID_LENGTH = 128;
 const MAX_TARGET_PAGE_TITLE_LENGTH = 200;
 const MAX_TARGET_PAGE_HTML_LENGTH = 250_000;
+const MAX_TARGET_NODE_ID_LENGTH = 16;
 const MAX_TARGET_PAGE_BATCH_COUNT = 3;
 const MAX_VARIATION_THEME_HINT_LENGTH = 2_000;
 const MIN_FALLBACK_ACCEPTANCE_SCORE = 68;
@@ -227,6 +230,14 @@ const validateRequestBody = (body: WireRequestBody) => {
     }
   }
 
+  if (body.targetNodeId !== undefined) {
+    if (typeof body.targetNodeId !== "string") {
+      return "targetNodeId must be a string.";
+    }
+    if (body.targetNodeId.length > MAX_TARGET_NODE_ID_LENGTH) {
+      return `targetNodeId is too long (max ${MAX_TARGET_NODE_ID_LENGTH} chars).`;
+    }
+  }
   if (body.messages !== undefined) {
     if (!Array.isArray(body.messages)) {
       return "messages must be an array.";
@@ -1007,6 +1018,18 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  // An element picked on the canvas narrows the edit to that element. The
+  // conversation, the run record, and keyword checks keep the user's own words.
+  const targetNodeId = parseOptionalString(body.targetNodeId, MAX_TARGET_NODE_ID_LENGTH);
+  const modelPrompt = scopePromptToNode(
+    latestUserPrompt,
+    rawTargetPageHtml || stampNodeIds(resolvedSingleTargetPage?.htmlContent ?? ""),
+    targetNodeId,
+  );
+  if (targetNodeId && modelPrompt === latestUserPrompt) {
+    logger.warn("wire_target_node_missing", { projectId: id, targetNodeId });
+  }
+
   const resolvedTargetPagesRaw =
     requestedTargetPageIds.length > 0
       ? requestedTargetPageIds.map((pageId) => pageById.get(pageId) ?? null)
@@ -1130,11 +1153,11 @@ export async function POST(request: Request, context: RouteContext) {
 
     const plannerPrompt = resolvedSingleTargetPage
       ? buildPageScopedPrompt({
-          userPrompt: latestUserPrompt,
+          userPrompt: modelPrompt,
           targetPageTitle: rawTargetPageTitle || resolvedSingleTargetPage.title,
           targetPageHtml: rawTargetPageHtml || resolvedSingleTargetPage.htmlContent,
         })
-      : latestUserPrompt;
+      : modelPrompt;
 
     const { plan, designBrief } = await generateDesignBrief({
       modelName: effectiveModelName,
@@ -1321,7 +1344,7 @@ export async function POST(request: Request, context: RouteContext) {
                 output: item.output,
                 stylePreset,
                 allowImages: outputAllowsImages,
-                userPrompt: latestUserPrompt,
+                userPrompt: modelPrompt,
                 designBrief,
                 currentHtml: currentPage?.htmlContent ?? "",
               })
@@ -1332,10 +1355,10 @@ export async function POST(request: Request, context: RouteContext) {
                 allOutputs: plan.outputs,
                 stylePreset,
                 allowImages: outputAllowsImages,
-                userPrompt: latestUserPrompt,
+                userPrompt: modelPrompt,
                 designBrief,
               }),
-          prompt: latestUserPrompt,
+          prompt: modelPrompt,
         });
         const targetPageId = item.targetPageId;
         const initialText = await collectStreamedText(
@@ -1434,7 +1457,7 @@ export async function POST(request: Request, context: RouteContext) {
               openRouterApiKey: userAiSettings.openRouterApiKey,
               zaiApiKey: userAiSettings.zaiApiKey,
             }),
-            prompt: latestUserPrompt,
+            prompt: modelPrompt,
             system: composeRepairPrompt({
               plan,
               output: item.output,
@@ -1442,7 +1465,7 @@ export async function POST(request: Request, context: RouteContext) {
               allOutputs: plan.outputs,
               stylePreset,
               allowImages: outputAllowsImages,
-              userPrompt: latestUserPrompt,
+              userPrompt: modelPrompt,
               critique,
               currentHtml: normalizedInitial.html,
               designBrief,

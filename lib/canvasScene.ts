@@ -49,6 +49,9 @@ export interface SnapResult {
 
 export type PageRenderMode = "live" | "shell";
 
+/** Move drags pages, hand pans, and element picks an element inside a page. */
+export type CanvasTool = "select" | "grab" | "element";
+
 export type PageFrameDevice = "desktop" | "tablet" | "mobile";
 
 export const PAGE_DEVICE_WIDTHS: Record<PageFrameDevice, number> = {
@@ -245,23 +248,15 @@ export const placeMissingPages = <T extends { id: string; width: number }>(
   pages: T[],
   positions: Record<string, { x: number } | undefined>,
 ): Record<string, number> => {
-  // Layouts saved before positions were collision-free can hold two pages at the
-  // same x. Treat the duplicate as unplaced so an existing canvas repairs itself
-  // instead of showing the frames stacked forever.
-  const takenX = new Set<number>();
-  const keeps = new Set<string>();
   let rightEdge = Number.NEGATIVE_INFINITY;
   for (const page of pages) {
     const placed = positions[page.id];
-    if (!placed || takenX.has(placed.x)) continue;
-    takenX.add(placed.x);
-    keeps.add(page.id);
-    rightEdge = Math.max(rightEdge, placed.x + page.width);
+    if (placed) rightEdge = Math.max(rightEdge, placed.x + page.width);
   }
 
   const assigned: Record<string, number> = {};
   pages.forEach((page, index) => {
-    if (keeps.has(page.id)) return;
+    if (positions[page.id]) return;
     const x =
       rightEdge === Number.NEGATIVE_INFINITY
         ? getDefaultPageX(index, pages.length, page.width)

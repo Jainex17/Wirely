@@ -35,6 +35,7 @@ import {
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 import type { PageDeviceType } from "@/lib/types";
+import type { ProjectComment } from "@/lib/projectComments";
 
 export type PageGenerationStatus = "queued" | "generating" | "repairing" | "completed" | "failed";
 
@@ -59,6 +60,20 @@ export interface AgentEdit {
 
 export type CanvasBackground = "dark" | "gray" | "light";
 
+/**
+ * The element the user picked with the element tool. The id is the element's
+ * `data-wirely-id`; the rest is what the preview reported at pick time, for the
+ * inspector to show before any edit lands.
+ */
+export interface SelectedNode {
+  pageId: string;
+  nodeId: string;
+  tag: string;
+  /** Computed colors as #rrggbb, or null when transparent. */
+  color: string | null;
+  background: string | null;
+}
+
 export interface CanvasState {
   camera: CameraState;
   canvasBackground: CanvasBackground;
@@ -69,6 +84,7 @@ export interface CanvasState {
   pageGroups: PageGroup[];
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
+  selectedNode: SelectedNode | null;
   requestedGeneratedPageFocusIds: string[] | null;
   viewportSize: ViewportSize;
 }
@@ -80,6 +96,8 @@ export interface ProjectState {
   draggingSectionId: string | null;
   pageStatuses: Record<string, PageStatusRecord>;
   agentEdits: Record<string, AgentEdit>;
+  /** Review comments left through the share link, loaded by the editor. */
+  comments: ProjectComment[];
 }
 
 export interface EditorState extends CanvasState, ProjectState {
@@ -105,6 +123,8 @@ export interface EditorState extends CanvasState, ProjectState {
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
+  setSelectedNode: (node: SelectedNode | null) => void;
+  setComments: (comments: ProjectComment[]) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
   focusPages: (pageIds: string[]) => void;
@@ -163,7 +183,13 @@ const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
 
 const generateEmptyState = (): Pick<
   ProjectState,
-  "pages" | "sections" | "selectedSectionId" | "draggingSectionId" | "pageStatuses" | "agentEdits"
+  | "pages"
+  | "sections"
+  | "selectedSectionId"
+  | "draggingSectionId"
+  | "pageStatuses"
+  | "agentEdits"
+  | "comments"
 > => ({
   pages: [{ id: "page-home", title: "Page 1", sections: [] }],
   sections: {},
@@ -171,6 +197,7 @@ const generateEmptyState = (): Pick<
   draggingSectionId: null,
   pageStatuses: {},
   agentEdits: {},
+  comments: [],
 });
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
@@ -183,6 +210,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageGroups: [],
   pageFrameHeights: {},
   focusedPageId: "page-home",
+  selectedNode: null,
   requestedGeneratedPageFocusIds: null,
   viewportSize: { width: 0, height: 0 },
 };
@@ -206,6 +234,24 @@ const filterPagePositions = (
   Object.fromEntries(
     Object.entries(pagePositions).filter(([pageId]) => pageIds.includes(pageId)),
   );
+
+/**
+ * Layouts saved before positions were collision-free can hold two pages at the
+ * same spot. Dropping the later one lets the canvas place it beside the rest.
+ * This runs only on load: two pages sharing an x (a column, or a snapped edge)
+ * is a normal layout, and repairing it live threw pages across the canvas.
+ */
+const dropStackedPositions = (pagePositions: PagePositionMap) => {
+  const taken = new Set<string>();
+  return Object.fromEntries(
+    Object.entries(pagePositions).filter(([, { x, y }]) => {
+      const key = `${x},${y}`;
+      if (taken.has(key)) return false;
+      taken.add(key);
+      return true;
+    }),
+  );
+};
 
 const filterPageFrameHeights = (
   pageFrameHeights: Record<string, number>,
@@ -513,7 +559,7 @@ export const useEditorStore = create<EditorState>()(
                   zoom: clampZoom(camera.zoom ?? DEFAULT_CANVAS_STATE.camera.zoom),
                 }
               : createDefaultCamera(),
-            pagePositions: filterPagePositions(pagePositions, pageIds),
+            pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
             focusedPageId:
@@ -523,6 +569,8 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
+      setSelectedNode: (selectedNode) => set({ selectedNode }),
+      setComments: (comments) => set({ comments }),
       setPageFrameHeight: (pageId, height) =>
         set((state) => {
           const nextHeight = Math.max(1, Math.round(height));
@@ -878,6 +926,7 @@ export const useEditorStore = create<EditorState>()(
           return {
             ...generateEmptyState(),
             agentEdits,
+            comments: state.comments,
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
@@ -886,6 +935,10 @@ export const useEditorStore = create<EditorState>()(
               state.pageFrameHeights,
               nextPageIds,
             ),
+            selectedNode:
+              state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
+                ? state.selectedNode
+                : null,
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -993,6 +1046,10 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
             pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
+            selectedNode:
+              state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
+                ? state.selectedNode
+                : null,
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -1035,6 +1092,7 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: state.pageStackOrder.filter((id) => id !== pageId),
             pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             focusedPageId: nextFocusedPageId,
+            selectedNode: state.selectedNode?.pageId === pageId ? null : state.selectedNode,
           };
         }),
 
@@ -1047,6 +1105,7 @@ export const useEditorStore = create<EditorState>()(
           pageGroups: [],
           pageFrameHeights: {},
           focusedPageId: "page-home",
+          selectedNode: null,
           requestedGeneratedPageFocusIds: null,
           viewportSize: { width: 0, height: 0 },
         })),

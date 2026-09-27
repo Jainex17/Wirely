@@ -134,6 +134,13 @@
       "when": 1790006246698,
       "tag": "0018_material_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790481770109,
+      "tag": "0019_omniscient_princess_powerful",
+      "breakpoints": true
     }
   ]
 }
