@@ -1,4 +1,5 @@
 import {
+  customType,
   index,
   integer,
   jsonb,
@@ -168,6 +169,34 @@ export const projectShares = pgTable(
   },
   (table) => ({
     tokenUnique: uniqueIndex("project_shares_token_idx").on(table.token),
+  }),
+);
+
+// pg returns bytea as a Buffer and takes one as a parameter.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/**
+ * An image the user or their agent uploaded to a project, for pages to use
+ * through /api/assets/<id>. Bytes live here because the app has no file
+ * storage; lib/projectAssets.ts caps their size and count.
+ */
+export const projectAssets = pgTable(
+  "project_assets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdx: index("project_assets_project_id_idx").on(table.projectId),
   }),
 );
 

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { useIsBrowser } from "@/hooks/useIsBrowser";
 
 type ViewerDevice = "desktop" | "mobile";
 
@@ -56,9 +57,10 @@ export default function PrototypeViewer({
   const iframeHeight =
     device === "mobile" ? 812 : Math.round((deviceWidth * 9) / 16);
 
+  const isBrowser = useIsBrowser();
   const srcDoc = React.useMemo(
-    () => sanitizeIframeHtml(currentPage.html ?? ""),
-    [currentPage.html],
+    () => (isBrowser ? sanitizeIframeHtml(currentPage.html ?? "") : ""),
+    [currentPage.html, isBrowser],
   );
 
   const goToIndex = React.useCallback(

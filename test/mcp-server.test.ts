@@ -116,6 +116,7 @@ describe("tool catalog", () => {
 
   it("carries every screen tool an agent needs", () => {
     expect(TOOL_NAMES).toEqual([
+      "add_asset",
       "add_page",
       "create_project",
       "delete_page",
@@ -127,6 +128,7 @@ describe("tool catalog", () => {
       "get_page_png",
       "get_selection",
       "import_url",
+      "list_assets",
       "list_comments",
       "list_pages",
       "list_projects",

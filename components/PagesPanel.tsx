@@ -15,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import AssetsFolder from "@/components/AssetsFolder";
 import LayerTree from "@/components/LayerTree";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -246,6 +247,7 @@ export default function PagesPanel({
           {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, 0))}
         </div>
       </nav>
+      <AssetsFolder projectId={projectId} />
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
         {footer}
         <a

@@ -11,6 +11,7 @@ import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
 import type { PageDeviceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useIsBrowser } from "@/hooks/useIsBrowser";
 
 // A review is live while people talk, so other reviewers' comments show up
 // without a reload. A hidden tab skips its ticks.
@@ -66,9 +67,11 @@ export default function ShareViewer({
   const height = Math.max(frameHeight, frame.height);
   const scale = stageWidth > 0 ? Math.min(1, (stageWidth - STAGE_PADDING) / deviceWidth) : 1;
   const reporterId = `wirely-share-${page.id}`;
+  const isBrowser = useIsBrowser();
   const srcDoc = React.useMemo(
-    () => injectIframeHeightReporter(sanitizeIframeHtml(page.html), reporterId),
-    [page.html, reporterId],
+    () =>
+      isBrowser ? injectIframeHeightReporter(sanitizeIframeHtml(page.html), reporterId) : "",
+    [isBrowser, page.html, reporterId],
   );
   const numbers = React.useMemo(() => numberCommentsByPage(comments), [comments]);
   const pageComments = comments.filter(
