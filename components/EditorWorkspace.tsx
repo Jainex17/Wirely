@@ -131,7 +131,11 @@ export default function EditorWorkspace({
 
   const handleRenamePage = useCallback(
     async (pageId: string, newTitle: string) => {
-      const existingPage = pages.find((page) => page.id === pageId);
+      // Read at call time so the handler does not change, and re-render every
+      // memoized page frame, whenever any page changes.
+      const existingPage = useEditorStore
+        .getState()
+        .pages.find((page) => page.id === pageId);
       if (!existingPage) return;
 
       renamePage(pageId, newTitle);
@@ -157,12 +161,14 @@ export default function EditorWorkspace({
         endSaving();
       }
     },
-    [beginSaving, endSaving, pages, projectId, renamePage],
+    [beginSaving, endSaving, projectId, renamePage],
   );
 
   const handleDeletePage = useCallback(
     async (pageId: string) => {
-      const page = pages.find((candidate) => candidate.id === pageId);
+      const page = useEditorStore
+        .getState()
+        .pages.find((candidate) => candidate.id === pageId);
       if (!page) return;
 
       deletePage(pageId);
@@ -213,7 +219,7 @@ export default function EditorWorkspace({
         endSaving();
       }
     },
-    [beginSaving, deletePage, endSaving, hydrateProject, pages, projectId],
+    [beginSaving, deletePage, endSaving, hydrateProject, projectId],
   );
 
   useEffect(() => {

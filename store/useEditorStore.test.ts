@@ -176,6 +176,23 @@ describe("useEditorStore generation status and device state", () => {
     expect(statuses["page-2"]).toBeUndefined();
   });
 
+  it("keeps the same pages and statuses when a replayed event changes nothing", () => {
+    const store = useEditorStore.getState();
+    store.renamePage("page-1", "Home");
+    store.setPageDeviceType("page-1", "mobile");
+    store.setPageStatus("page-1", "generating");
+    const { pages, pageStatuses } = useEditorStore.getState();
+
+    // Streaming replays every progress event on each tick. Unchanged values
+    // must not produce new references, or every page frame re-renders.
+    store.renamePage("page-1", "Home");
+    store.setPageDeviceType("page-1", "mobile");
+    store.setPageStatus("page-1", "generating");
+
+    expect(useEditorStore.getState().pages).toBe(pages);
+    expect(useEditorStore.getState().pageStatuses).toBe(pageStatuses);
+  });
+
   it("sets a page device type and sizes mobile frames accordingly", () => {
     useEditorStore.getState().setPageDeviceType("page-2", "mobile");
     const mobilePage = useEditorStore
