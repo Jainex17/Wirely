@@ -1185,6 +1185,10 @@ export default React.memo(function PageRenderer({
                 event.preventDefault();
                 event.stopPropagation();
               }}
+              // A portal still bubbles through the React tree. Without this, a
+              // press on an item reaches the page frame, which starts a drag and
+              // captures the pointer, so the item's click never fires.
+              onPointerDown={(event) => event.stopPropagation()}
             >
               <div className="px-2 py-1.5 text-sm font-medium">{page.title}</div>
               <div className="-mx-1 my-1 h-px bg-border" />
