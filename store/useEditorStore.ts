@@ -207,6 +207,24 @@ const filterPagePositions = (
     Object.entries(pagePositions).filter(([pageId]) => pageIds.includes(pageId)),
   );
 
+/**
+ * Layouts saved before positions were collision-free can hold two pages at the
+ * same spot. Dropping the later one lets the canvas place it beside the rest.
+ * This runs only on load: two pages sharing an x (a column, or a snapped edge)
+ * is a normal layout, and repairing it live threw pages across the canvas.
+ */
+const dropStackedPositions = (pagePositions: PagePositionMap) => {
+  const taken = new Set<string>();
+  return Object.fromEntries(
+    Object.entries(pagePositions).filter(([, { x, y }]) => {
+      const key = `${x},${y}`;
+      if (taken.has(key)) return false;
+      taken.add(key);
+      return true;
+    }),
+  );
+};
+
 const filterPageFrameHeights = (
   pageFrameHeights: Record<string, number>,
   pageIds: string[],
@@ -513,7 +531,7 @@ export const useEditorStore = create<EditorState>()(
                   zoom: clampZoom(camera.zoom ?? DEFAULT_CANVAS_STATE.camera.zoom),
                 }
               : createDefaultCamera(),
-            pagePositions: filterPagePositions(pagePositions, pageIds),
+            pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
             focusedPageId:

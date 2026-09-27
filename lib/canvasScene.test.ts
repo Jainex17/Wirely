@@ -144,16 +144,15 @@ describe("placeMissingPages", () => {
     expect(assigned.b).toBe(5000 + W + PAGE_GAP);
   });
 
-  it("repairs a saved layout that already has two pages stacked", () => {
-    // Exactly the state observed on a real project: two pages at x -720.
+  it("keeps pages that share an x, like a column or a snapped edge", () => {
     const assigned = placeMissingPages(
       [page("a"), page("b"), page("c")],
-      { a: { x: -720 }, b: { x: -720 }, c: { x: 840 } },
+      { a: { x: -720 }, b: { x: -720 } },
     );
 
     expect(assigned.a).toBeUndefined();
-    expect(assigned.c).toBeUndefined();
-    expect(assigned.b).toBeGreaterThanOrEqual(840 + W);
+    expect(assigned.b).toBeUndefined();
+    expect(assigned.c).toBe(-720 + W + PAGE_GAP);
   });
 });
 

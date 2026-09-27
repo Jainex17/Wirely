@@ -42,6 +42,24 @@ describe("useEditorStore canvas state", () => {
     expect(state.camera).toEqual(createDefaultCamera());
   });
 
+  it("drops a stacked saved position on load but keeps a shared column", () => {
+    useEditorStore.setState({
+      pages: ["page-1", "page-2", "page-3"].map((id) => ({ id, title: id, sections: [] })),
+    });
+    useEditorStore.getState().hydratePageLayout({
+      pagePositions: {
+        "page-1": { x: -720, y: 0 },
+        "page-2": { x: -720, y: 0 },
+        "page-3": { x: -720, y: 1200 },
+      },
+    });
+
+    expect(useEditorStore.getState().pagePositions).toEqual({
+      "page-1": { x: -720, y: 0 },
+      "page-3": { x: -720, y: 1200 },
+    });
+  });
+
   it("updates frame heights and focuses a page using the current zoom", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: 0, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 2200, y: 0 });

@@ -35,6 +35,19 @@ const DEVICE_LABELS = {
   mobile: "Mobile",
 } as const;
 
+// One object per device, so the memoized PageRenderer sees the same prop on
+// every drag move and pan instead of re-rendering every page.
+const DEVICE_FRAMES = Object.fromEntries(
+  (["desktop", "tablet", "mobile"] as const).map((device) => [
+    device,
+    {
+      width: getPageFrameWidth(device),
+      height: getPageFrameHeight(device),
+      label: DEVICE_LABELS[device],
+    },
+  ]),
+) as Record<keyof typeof DEVICE_LABELS, { width: number; height: number; label: string }>;
+
 // Frame labels sit on the canvas, so light backgrounds swap them to dark text.
 const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = {
   dark: {},
@@ -231,13 +244,7 @@ export default function Canvas({
       });
       return {
         page,
-        // Stable identity per layout, so the memoized PageRenderer does not
-        // re-render on camera-only changes like pan and zoom.
-        currentDevice: {
-          width: deviceWidth,
-          height: deviceHeight,
-          label: DEVICE_LABELS[device],
-        },
+        currentDevice: DEVICE_FRAMES[device],
         position,
         frameHeight,
         bounds,
