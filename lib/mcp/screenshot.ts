@@ -15,7 +15,7 @@ import { accessSync, constants } from "node:fs";
 
 import type { Browser } from "puppeteer-core";
 
-import { PAGE_DEVICE_HEIGHTS, PAGE_DEVICE_WIDTHS } from "@/lib/canvasScene";
+import { getPageFrameSize } from "@/lib/canvasScene";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import type { VisualLintData } from "@/lib/mcp/diagnostics";
 
@@ -228,17 +228,12 @@ const collectVisualLintData = (): VisualLintData => {
   };
 };
 
-const renderOnce = async (
-  html: string,
-  deviceType: "desktop" | "mobile",
-  lint: boolean,
-): Promise<RenderedPng> => {
+const renderOnce = async (html: string, deviceType: string, lint: boolean): Promise<RenderedPng> => {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
     await page.setViewport({
-      width: PAGE_DEVICE_WIDTHS[deviceType],
-      height: PAGE_DEVICE_HEIGHTS[deviceType],
+      ...getPageFrameSize({ deviceType, iframeHtml: html }, "desktop"),
       deviceScaleFactor: 1,
     });
 
@@ -272,7 +267,7 @@ const renderOnce = async (
  */
 export const renderPagePng = async (
   html: string,
-  deviceType: "desktop" | "mobile",
+  deviceType: string,
   lint = false,
 ): Promise<RenderedPng> => {
   try {

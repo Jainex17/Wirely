@@ -9,6 +9,7 @@ import {
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
+  PenTool,
   Smartphone,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -77,7 +78,8 @@ export default function PagesPanel({
   });
 
   const renderPage = (page: (typeof pages)[number], indent: string) => {
-    const Icon = page.deviceType === "mobile" ? Smartphone : Monitor;
+    const Icon =
+      page.deviceType === "mobile" ? Smartphone : page.deviceType === "vector" ? PenTool : Monitor;
     const isCurrent = focusedPageId === page.id;
     return (
       <button

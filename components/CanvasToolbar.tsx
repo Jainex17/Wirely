@@ -10,6 +10,7 @@ import {
   Maximize,
   Minus,
   MousePointer2,
+  PenTool,
   Plus,
   Scan,
   SquareDashedMousePointer,
@@ -120,6 +121,13 @@ export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolba
         onClick={() => onToolChange("element")}
       >
         <SquareDashedMousePointer className="h-4 w-4" />
+      </RailButton>
+      <RailButton
+        label="Pen (P), on vector pages"
+        isActive={activeTool === "pen"}
+        onClick={() => onToolChange("pen")}
+      >
+        <PenTool className="h-4 w-4" />
       </RailButton>
       <div className="mx-1 h-5 w-px bg-border" />
       <DropdownMenu>

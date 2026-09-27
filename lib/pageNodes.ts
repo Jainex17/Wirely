@@ -53,8 +53,10 @@ const VOID_TAGS = new Set([
 ]);
 
 // An SVG icon is one element to the user. Stamping its paths would bloat the
-// page and let a click pick a path instead of the icon.
+// page and let a click pick a path instead of the icon. A vector page's
+// artboard is the exception: its paths are what the user edits.
 const OPAQUE_TAGS = new Set(["svg"]);
+const ARTBOARD_MARKER = /\sdata-wirely-artboard\b/i;
 
 // Quote-aware, so a ">" inside an attribute value does not end the tag.
 const TAG_PATTERN = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>|<!--[\s\S]*?-->/g;
@@ -128,7 +130,7 @@ const forEachVisibleElement = (html: string, visit: (tag: Tag) => void) => {
     }
     if (tag.isClosing || SKIPPED_TAGS.has(tag.name)) continue;
     visit(tag);
-    if (OPAQUE_TAGS.has(tag.name) && !isSelfClosing(tag)) {
+    if (OPAQUE_TAGS.has(tag.name) && !isSelfClosing(tag) && !ARTBOARD_MARKER.test(tag.attributes)) {
       opaque = { name: tag.name, depth: 1 };
     }
   }
@@ -390,4 +392,30 @@ export const setNodeColor = (
       openTag.slice(classMatch.index + classMatch[0].length)
     : openTag.replace(/\s*\/?>$/, (end) => ` class="${nextClasses}"${end}`);
   return html.slice(0, span.start) + nextOpenTag + html.slice(span.openEnd);
+};
+
+const escapeAttribute = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+/** Sets one attribute on the element's opening tag, adding it when missing. Null when the element is gone. */
+export const setNodeAttribute = (html: string, nodeId: string, name: string, value: string) => {
+  const span = findNodeSpan(html, nodeId);
+  if (!span) return null;
+  const openTag = html.slice(span.start, span.openEnd);
+  const attribute = ` ${name}="${escapeAttribute(value)}"`;
+  const match = new RegExp(`\\s${name}\\s*=\\s*("[^"]*"|'[^']*'|[^\\s>]+)`, "i").exec(openTag);
+  const nextOpenTag = match
+    ? openTag.slice(0, match.index) + attribute + openTag.slice(match.index + match[0].length)
+    : openTag.replace(/\s*\/?>$/, (end) => `${attribute}${end}`);
+  return html.slice(0, span.start) + nextOpenTag + html.slice(span.openEnd);
+};
+
+/** One attribute's value on the element's opening tag, or null. */
+export const getNodeAttribute = (html: string, nodeId: string, name: string) => {
+  const span = findNodeSpan(html, nodeId);
+  if (!span) return null;
+  const match = new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(
+    html.slice(span.start, span.openEnd),
+  );
+  return match ? (match[2] ?? match[3] ?? "") : null;
 };

@@ -29,7 +29,9 @@ import {
   type ReportedNode,
 } from "@/lib/nodePicker";
 import { stampNodeIds } from "@/lib/pageNodes";
+import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import CanvasCommentPins from "./CanvasCommentPins";
+import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +56,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import type { PageRenderMode } from "@/lib/canvasScene";
+import type { PageDeviceType } from "@/lib/types";
 import type { AgentEdit, PageStatusRecord } from "@/store/useEditorStore";
 
 /** How long the agent cursor stays after the last change it points at. */
@@ -98,7 +101,7 @@ interface PageRendererProps {
     title: string;
     iframeUrl?: string;
     iframeHtml?: string;
-    deviceType?: "desktop" | "mobile";
+    deviceType?: PageDeviceType;
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
@@ -122,6 +125,10 @@ interface PageRendererProps {
   renderMode: PageRenderMode;
   /** The element tool is active, so pointer moves and clicks pick elements in this page. */
   isElementMode: boolean;
+  /** The pen tool is active. It draws only on vector pages. */
+  isPenMode: boolean;
+  /** Saves an edit made on the canvas, such as a moved path point. */
+  onSavePageHtml?: (pageId: string, html: string) => void;
   /** The picked element when it is on this page. */
   selectedNodeId: string | null;
   onNodeReport?: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
@@ -219,6 +226,8 @@ export default React.memo(function PageRenderer({
   frameHeight,
   renderMode,
   isElementMode,
+  isPenMode,
+  onSavePageHtml,
   selectedNodeId,
   onNodeReport,
 }: PageRendererProps) {
@@ -461,7 +470,7 @@ export default React.memo(function PageRenderer({
       }
       return buildAgentPrompt({
         title: page.title,
-        deviceType: page.deviceType === "mobile" ? "mobile" : "desktop",
+        deviceType: page.deviceType ?? "desktop",
         shareUrl: payload.url,
         expiresAt: payload.expiresAt,
       });
@@ -821,6 +830,17 @@ export default React.memo(function PageRenderer({
           void copyToClipboard("Page HTML", stripWirelyArtifacts(page.iframeHtml ?? ""));
         },
       },
+      ...(page.deviceType === "vector"
+        ? [
+            {
+              label: "Copy SVG",
+              icon: Copy,
+              onClick: () => {
+                void copyToClipboard("SVG", exportArtboardSvg(page.iframeHtml ?? "") ?? "");
+              },
+            },
+          ]
+        : []),
       {
         label: "Delete",
         icon: Trash2,
@@ -837,6 +857,7 @@ export default React.memo(function PageRenderer({
       isOnlyPage,
       onEditPage,
       onFocusPage,
+      page.deviceType,
       page.id,
       page.iframeHtml,
       page.title,
@@ -1092,6 +1113,17 @@ export default React.memo(function PageRenderer({
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (
               <NodeBox node={selectedBox} variant="selected" />
+            ) : null}
+            {page.deviceType === "vector" && hasHtml && isLive && (isPenMode || isElementMode) ? (
+              <VectorEditLayer
+                html={page.iframeHtml ?? ""}
+                width={currentDevice.width}
+                height={pageHeight}
+                isPenMode={isPenMode}
+                selected={selectedBox && selectedBox.nodeId === selectedNodeId ? selectedBox : null}
+                onPreviewPath={(nodeId, d) => postToFrame({ type: "wirely-node-preview", nodeId, d })}
+                onCommit={(html) => onSavePageHtml?.(page.id, html)}
+              />
             ) : null}
           </div>
           {isSelected ? (

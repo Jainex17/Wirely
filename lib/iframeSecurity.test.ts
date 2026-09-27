@@ -40,6 +40,19 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).not.toContain("fetch(");
   });
 
+  it("removes an SVG script that loads from href, and keeps inline code that sets href", () => {
+    const html = `
+      <svg><script href="https://cdn.jsdelivr.net/npm/evil/x.js"></script></svg>
+      <svg><script xlink:href="https://evil.example.com/x.js"></script></svg>
+      <script>document.querySelector("a").href = "#top";</script>
+    `;
+
+    const sanitized = sanitizeIframeHtml(html);
+    expect(sanitized).not.toContain("npm/evil");
+    expect(sanitized).not.toContain("evil.example.com");
+    expect(sanitized).toContain('.href = "#top"');
+  });
+
   it("removes scripts with websocket-style exfiltration patterns", () => {
     const html = `
       <script>

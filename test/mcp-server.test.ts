@@ -268,9 +268,13 @@ describe("screenshot deploy config", () => {
 describe("html sanitizer boundary", () => {
   it("sanitizes before either write path persists", () => {
     const tools = read("lib/mcp/tools.ts");
-    const addSanitized = tools.indexOf("sanitizeIframeHtml(sentHtml)");
+    // prepareHtml marks a vector artboard, then sanitizes, for both writes.
+    expect(tools).toContain(
+      'sanitizeIframeHtml(deviceType === "vector" ? prepareArtboardHtml(html) : html)',
+    );
+    const addSanitized = tools.indexOf("prepareHtml(sentHtml, deviceType)");
     const created = tools.indexOf("createProjectPageForUser({", addSanitized);
-    const updateSanitized = tools.indexOf("sanitizeIframeHtml(parsed.data.html)");
+    const updateSanitized = tools.indexOf("prepareHtml(parsed.data.html, deviceType)");
     const updated = tools.indexOf("updateProjectPageForUser({", updateSanitized);
 
     expect(addSanitized).toBeGreaterThan(-1);

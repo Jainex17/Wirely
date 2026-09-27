@@ -233,7 +233,9 @@ canvas. Tools: `list_projects`, `create_project`, `list_pages`, `add_page`, `upd
 `patch_page`, `get_page`, `get_page_png`, `delete_page`. `patch_page` replaces one exact
 snippet, so an agent can write a page in chunks while the user watches. Screen HTML passes
 through the same sandbox sanitizer as generated pages. An HTML write reports when the stored
-page will not render and which elements the sanitizer removed. `patch_page` is safe to call in
+page will not render and which elements the sanitizer removed. An SVG file sent as the html of
+`add_page` or `update_page` becomes a `vector` page: one artboard framed at the SVG's own width
+and height, which the user edits on the canvas with the pen tool (P). `patch_page` is safe to call in
 parallel on one page. `get_page_png` renders the
 stored document with headless Chromium (`CHROME_PATH` picks the local browser in development,
 deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,

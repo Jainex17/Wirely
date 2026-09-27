@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { PAGE_DEVICE_HEIGHTS, PAGE_DEVICE_WIDTHS } from "@/lib/canvasScene";
+import { getPageFrameSize } from "@/lib/canvasScene";
 import { injectFrameMotion } from "@/lib/frameMotion";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 
@@ -75,9 +75,10 @@ export default function ProjectThumbnail({ projectId }: { projectId: string }) {
       {pages.length > 0 ? (
         <div className="absolute inset-0 flex items-center justify-center gap-2 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]">
           {pages.map((page) => {
-            const device = page.deviceType === "mobile" ? "mobile" : "desktop";
-            const width = PAGE_DEVICE_WIDTHS[device];
-            const height = PAGE_DEVICE_HEIGHTS[device];
+            const { width, height } = getPageFrameSize(
+              { deviceType: page.deviceType, iframeHtml: page.htmlContent },
+              "desktop",
+            );
             return (
               <div
                 key={page.id}

@@ -7,11 +7,9 @@ import {
   type CanvasTool,
   getDefaultPageX,
   getPageBounds,
-  getPageFrameHeight,
-  getPageFrameWidth,
+  getPageFrameSize,
   getViewportBounds,
   isBoundsIntersecting,
-  resolvePageFrameDevice,
 } from "@/lib/canvasScene";
 import { logger } from "@/lib/logger";
 import type { ReportedNode } from "@/lib/nodePicker";
@@ -94,9 +92,7 @@ export default function EditorWorkspace({
   const pageBoundsById = useMemo(() => {
     const result = new Map<string, ReturnType<typeof getPageBounds>>();
     for (const [index, page] of pages.entries()) {
-      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
-      const deviceWidth = getPageFrameWidth(device);
-      const deviceHeight = getPageFrameHeight(device);
+      const { width: deviceWidth, height: deviceHeight } = getPageFrameSize(page, activeDevice);
       const position = pagePositions[page.id] ?? {
         x: getDefaultPageX(index, pages.length, deviceWidth),
         y: 0,
@@ -282,6 +278,32 @@ export default function EditorWorkspace({
     }
   }, [camera, fitAllPages, focusPage, pageBoundsById, pages, setSelectedNode, viewportWidth]);
 
+  /** Shows an edit made on the canvas at once and saves it, putting the old HTML back if the save fails. */
+  const savePageHtml = useCallback(
+    (pageId: string, html: string, failureMessage = "Could not save the change. Try again.") => {
+      const state = useEditorStore.getState();
+      const previous = state.pages.find((page) => page.id === pageId)?.iframeHtml ?? "";
+      state.setPageHtml(pageId, html);
+      if (!projectId) return;
+      state.beginSaving();
+      void fetch(`/api/projects/${projectId}/pages/${pageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ htmlContent: html }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Save failed with status ${response.status}`);
+        })
+        .catch((error: unknown) => {
+          logger.error("page_html_save_failed", { pageId, projectId, error });
+          useEditorStore.getState().setPageHtml(pageId, previous);
+          toast.error(failureMessage);
+        })
+        .finally(() => state.endSaving());
+    },
+    [projectId],
+  );
+
   const handleNodeReport = useCallback(
     (pageId: string, node: ReportedNode, intent: "pick" | "select") => {
       const state = useEditorStore.getState();
@@ -321,23 +343,13 @@ export default function EditorWorkspace({
       const isBusy = status === "queued" || status === "generating" || status === "repairing";
       if (!projectId || stamped === html || isBusy) return;
 
-      state.setPageHtml(pageId, stamped);
-      state.beginSaving();
-      void fetch(`/api/projects/${projectId}/pages/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ htmlContent: stamped }),
-      })
-        .then((response) => {
-          if (!response.ok) throw new Error(`Save failed with status ${response.status}`);
-        })
-        .catch((error: unknown) => {
-          logger.error("page_node_ids_save_failed", { pageId, projectId, error });
-          toast.error("Could not save the page, so element links to it may not work yet.");
-        })
-        .finally(() => state.endSaving());
+      savePageHtml(
+        pageId,
+        stamped,
+        "Could not save the page, so element links to it may not work yet.",
+      );
     },
-    [projectId],
+    [projectId, savePageHtml],
   );
 
   useEffect(() => {
@@ -373,7 +385,7 @@ export default function EditorWorkspace({
   ]);
 
   useEffect(() => {
-    // Figma's bindings: V and H pick a tool, Shift+1 fits every page, Shift+2
+    // Figma's bindings: V, H, E, and P pick a tool, Shift+1 fits every page, Shift+2
     // the selected one, Shift+0 goes to 100%. Digits match on `code` because
     // Shift turns the `key` for 1 into "!".
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -407,6 +419,7 @@ export default function EditorWorkspace({
             KeyV: () => setActiveTool("select"),
             KeyH: () => setActiveTool("grab"),
             KeyE: () => setActiveTool("element"),
+            KeyP: () => setActiveTool("pen"),
             Equal: () => stepZoom(1),
             NumpadAdd: () => stepZoom(1),
             Minus: () => stepZoom(-1),
@@ -452,6 +465,7 @@ export default function EditorWorkspace({
         onEditPage={onEditPage}
         onToolChange={setActiveTool}
         onNodeReport={handleNodeReport}
+        onSavePageHtml={savePageHtml}
       />
     </div>
   );

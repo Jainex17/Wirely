@@ -2,6 +2,8 @@
  * Input rules for review comments. Pure, so the API routes stay thin and the
  * rules are tested without a database.
  */
+import { isPageDeviceType } from "@/lib/types";
+
 export const MAX_COMMENT_CHARS = 2_000;
 // Matches the tallest frame the canvas renders, so a pin always lands on the page.
 const MAX_COMMENT_COORDINATE = 20_000;
@@ -77,7 +79,7 @@ export const formatCommentsForAgent = (
       id: comment.id,
       pageId: comment.pageId,
       pageTitle: comment.pageTitle,
-      deviceType: comment.deviceType === "mobile" ? "mobile" : "desktop",
+      deviceType: isPageDeviceType(comment.deviceType) ? comment.deviceType : "desktop",
       author: comment.authorName,
       body: comment.body,
       pin: { x: comment.x, y: comment.y },
