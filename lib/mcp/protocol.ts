@@ -41,7 +41,13 @@ export const MCP_INSTRUCTIONS = [
   "For an icon, logo, illustration, social card, or any artwork that is not a screen, send " +
     "one SVG file as the html of add_page: an <svg> root with xmlns, a viewBox, and width and " +
     "height in px for the artboard size. It becomes a vector page the user can edit with the " +
-    "pen tool. Draw with <path>, keep one shape per path, and put no scripts in it.",
+    "pen tool. Draw it like an illustrator: build back to front in named <g> groups " +
+    "(silhouette, shadow shapes, highlights, then linework); shape organic forms with cubic " +
+    "curves, anchors at the extremes, never polygons; give each hue a base, shadow, and " +
+    "highlight tone or a gradient; keep one outline weight with round joins and thinner " +
+    "detail lines; reuse repeated parts with <use>. Match the style asked for (flat, " +
+    "isometric, engraving with hatching, botanical). Use <path> for shapes, one decimal per " +
+    "coordinate, and no scripts. Check it with get_page_png.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
     "components, and styles instead of pasting the HTML in.",
