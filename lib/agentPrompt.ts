@@ -32,17 +32,29 @@ export const buildAgentPrompt = ({
   shareUrl: string;
   expiresAt: number;
 }) =>
-  [
-    "Implement this screen in the current project.",
-    "",
-    "- Fetch the reference HTML from the link below. It is a mock to match, not code to paste.",
-    "- Use the project's existing framework, components, styling system, and conventions.",
-    "- Match its layout, spacing, type scale, colors, and copy.",
-    "- Treat images as placeholders to swap for real assets.",
-    "- Ask before adding any dependency.",
-    "",
-    `Screen: ${title}`,
-    `Device: ${deviceType}, designed at ${PAGE_DEVICE_WIDTHS[deviceType]}px wide`,
-    `Reference HTML: ${shareUrl}`,
-    `The link is read-only and expires on ${new Date(expiresAt).toISOString().slice(0, 10)}.`,
-  ].join("\n");
+  deviceType === "vector"
+    ? [
+        "Add this vector artwork to the current project.",
+        "",
+        "- Fetch the page from the link below and take the <svg> element out of it.",
+        "- Store it the way the project already keeps icons and images, as a file or a component.",
+        "- Drop data-wirely-* attributes and keep every path, gradient, and viewBox as it is.",
+        "",
+        `Artwork: ${title}`,
+        `Reference: ${shareUrl}`,
+        `The link is read-only and expires on ${new Date(expiresAt).toISOString().slice(0, 10)}.`,
+      ].join("\n")
+    : [
+        "Implement this screen in the current project.",
+        "",
+        "- Fetch the reference HTML from the link below. It is a mock to match, not code to paste.",
+        "- Use the project's existing framework, components, styling system, and conventions.",
+        "- Match its layout, spacing, type scale, colors, and copy.",
+        "- Treat images as placeholders to swap for real assets.",
+        "- Ask before adding any dependency.",
+        "",
+        `Screen: ${title}`,
+        `Device: ${deviceType}, designed at ${PAGE_DEVICE_WIDTHS[deviceType]}px wide`,
+        `Reference HTML: ${shareUrl}`,
+        `The link is read-only and expires on ${new Date(expiresAt).toISOString().slice(0, 10)}.`,
+      ].join("\n");

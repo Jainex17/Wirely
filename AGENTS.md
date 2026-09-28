@@ -17,7 +17,7 @@ which is why it costs nothing to host.
 
 These are the properties the product is built around. Do not trade them away for a feature.
 
-### 1. It costs the maintainer nothing to run
+### 1. It costs nothing to run
 
 MCP generation runs on the user's own agent subscription and costs Wirely only storage and the
 occasional `get_page_png` render. In-app generation uses a key the user saved in settings. There is no shared pool, no server-side
@@ -54,7 +54,7 @@ versioned for rotation. See `lib/security/userApiKeyCrypto.ts`. The structured l
 `lib/logger.ts` redacts sensitive fields. Never log a raw key, a full prompt, generated HTML, or a
 message payload.
 
-## A note from the maintainer
+## Keep it small
 
 This is a solo, unfunded, open source project competing with tools that charge a lot. That means the
 budget for complexity is small. Do not preserve complexity because it already exists, and do not add
@@ -72,7 +72,7 @@ here. If a rule fights the task in front of you, say so plainly and ask before b
 The code uses two names for the same thing in places. Be precise when you talk to me.
 
 - **you** means the agent reading this file and changing Wirely.
-- **I, me, maintainer** means the person building Wirely. That is who you are talking to.
+- **I, me** means the person building Wirely. That is who you are talking to.
 - **user** means the person using Wirely to design screens.
 - **project** is the durable unit of work, one row in `projects`. The editor route is `/wire/[id]`
   and the generation route is `/api/wire/[id]`, so "wire" and "project" mean the same entity. The

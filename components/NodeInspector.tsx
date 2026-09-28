@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { previewNode } from "@/lib/nodePicker";
 import {
   buildNodeLink,
+  getNodeAttribute,
   getNodeText,
   findNodeSpan,
   type NodeColorProperty,
@@ -20,6 +21,20 @@ import { type SelectedNode, useEditorStore } from "@/store/useEditorStore";
 // Commits a color once the picker has been still this long, so dragging
 // through the palette saves once instead of on every step.
 const COLOR_COMMIT_DELAY_MS = 500;
+
+// Shapes on a vector artboard take fill and stroke, so the CSS color classes
+// the Text and Fill controls write would do nothing to them.
+const SVG_SHAPE_TAGS = new Set([
+  "path",
+  "rect",
+  "circle",
+  "ellipse",
+  "line",
+  "polyline",
+  "polygon",
+  "g",
+  "text",
+]);
 
 interface NodeInspectorProps {
   projectId: string;
@@ -48,6 +63,9 @@ export default function NodeInspector({ projectId, onSaveHtml }: NodeInspectorPr
   if (!selectedNode) return null;
   const exists = findNodeSpan(source, selectedNode.nodeId) !== null;
   const text = exists ? getNodeText(source, selectedNode.nodeId) : null;
+  // Reset only undoes a color set here, which is written as an arbitrary value class.
+  const classes = ` ${getNodeAttribute(source, selectedNode.nodeId, "class") ?? ""}`;
+  const overrides = { text: classes.includes(" text-[#"), bg: classes.includes(" bg-[#") };
 
   return (
     <NodeInspectorCard
@@ -57,6 +75,8 @@ export default function NodeInspector({ projectId, onSaveHtml }: NodeInspectorPr
       pageTitle={pageTitle}
       exists={exists}
       text={text}
+      overrides={overrides}
+      showColors={!SVG_SHAPE_TAGS.has(selectedNode.tag)}
       projectId={projectId}
       onSaveHtml={onSaveHtml}
     />
@@ -68,6 +88,8 @@ function NodeInspectorCard({
   pageTitle,
   exists,
   text,
+  overrides,
+  showColors,
   projectId,
   onSaveHtml,
 }: {
@@ -76,12 +98,15 @@ function NodeInspectorCard({
   exists: boolean;
   /** Null when the element holds other elements, so its text is not editable here. */
   text: string | null;
+  /** Which colors carry a value set here, so reset has something to undo. */
+  overrides: Record<NodeColorProperty, boolean>;
+  showColors: boolean;
 } & NodeInspectorProps) {
   const { pageId, nodeId } = node;
   const [draftText, setDraftText] = useState(text ?? "");
-  const [colors, setColors] = useState({
-    text: node.color ?? "#000000",
-    bg: node.background ?? "#ffffff",
+  const [colors, setColors] = useState<Record<NodeColorProperty, string | null>>({
+    text: node.color,
+    bg: node.background,
   });
 
   /** Applies an edit to the page's current HTML, then saves it. */
@@ -136,6 +161,10 @@ function NodeInspectorCard({
     window.clearTimeout(colorTimerRef.current);
     // Clears an unsaved preview too, which the saved HTML never had.
     previewNode({ pageId, nodeId, ...(property === "text" ? { color: "" } : { background: "" }) });
+    setColors((current) => ({
+      ...current,
+      [property]: property === "text" ? node.color : node.background,
+    }));
     void commit((html) => setNodeColor(html, nodeId, property, null));
   };
 
@@ -153,12 +182,11 @@ function NodeInspectorCard({
   };
 
   return (
-    <div className="mb-2 rounded-lg border border-sky-500/40 bg-card p-2.5 text-xs">
-      <div className="flex items-center gap-2">
-        <span className="rounded bg-sky-500 px-1.5 py-0.5 font-mono text-[11px] text-white">
-          {node.tag || "element"}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">{pageTitle}</span>
+    <div className="mb-2 rounded-lg border border-border bg-card text-xs">
+      <div className="flex items-center gap-1.5 py-1.5 pl-2.5 pr-1.5">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden />
+        <span className="shrink-0 font-mono text-foreground">&lt;{node.tag || "element"}&gt;</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">in {pageTitle}</span>
         <button
           type="button"
           onClick={() => void copyLink()}
@@ -181,11 +209,11 @@ function NodeInspectorCard({
       </div>
 
       {!exists ? (
-        <p className="mt-2 text-muted-foreground">
+        <p className="border-t border-border px-2.5 py-2 text-muted-foreground">
           This element is no longer on the page. Pick another one with the element tool (E).
         </p>
-      ) : (
-        <>
+      ) : text !== null || showColors ? (
+        <div className="space-y-2 border-t border-border p-2">
           {text !== null ? (
             <textarea
               value={draftText}
@@ -206,39 +234,60 @@ function NodeInspectorCard({
                   void commit((html) => setNodeText(html, nodeId, draftText));
                 }
               }}
-              className="mt-2 w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="block w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           ) : null}
-          <div className="mt-2 flex items-center gap-3">
-            {(
-              [
-                ["text", "Text"],
-                ["bg", "Fill"],
-              ] as const
-            ).map(([property, label]) => (
-              <label key={property} className="flex items-center gap-1.5 text-muted-foreground">
-                <input
-                  type="color"
-                  value={colors[property]}
-                  onChange={(event) => changeColor(property, event.target.value)}
-                  className="h-5 w-5 cursor-pointer rounded border border-border bg-transparent p-0"
-                />
-                {label}
-                <button
-                  type="button"
-                  onClick={() => resetColor(property)}
-                  title={`Remove the ${label.toLowerCase()} color set here`}
-                  aria-label={`Reset ${label.toLowerCase()} color`}
-                  className="rounded p-0.5 hover:bg-accent hover:text-foreground"
+          {showColors ? (
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["text", "Text"],
+                  ["bg", "Fill"],
+                ] as const
+              ).map(([property, label]) => (
+                <div
+                  key={property}
+                  className="flex h-8 items-center gap-2 rounded-md border border-border bg-background pl-1.5 pr-1"
                 >
-                  <RotateCcw className="h-3 w-3" />
-                </button>
-              </label>
-            ))}
-          </div>
-          <p className="mt-2 text-muted-foreground">The prompt below edits only this element.</p>
-        </>
-      )}
+                  <label
+                    className="relative h-5 w-5 shrink-0 cursor-pointer overflow-hidden rounded border border-border"
+                    style={{
+                      background:
+                        colors[property] ??
+                        "linear-gradient(to top right, transparent 45%, var(--destructive) 45% 55%, transparent 55%)",
+                    }}
+                  >
+                    <input
+                      type="color"
+                      value={colors[property] ?? (property === "text" ? "#000000" : "#ffffff")}
+                      onChange={(event) => changeColor(property, event.target.value)}
+                      aria-label={`${label} color`}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </label>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="text-muted-foreground">{label}</span>{" "}
+                    <span className="font-mono text-foreground">
+                      {colors[property]?.toUpperCase() ?? "None"}
+                    </span>
+                  </span>
+                  {overrides[property] ? (
+                    <button
+                      type="button"
+                      onClick={() => resetColor(property)}
+                      title={`Remove the ${label.toLowerCase()} color set here`}
+                      aria-label={`Reset ${label.toLowerCase()} color`}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

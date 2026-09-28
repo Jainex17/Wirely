@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
@@ -41,8 +42,7 @@ export default async function WirePage({ params }: WirePageProps) {
           id: page.id,
           title: page.title,
           pageHtml: page.htmlContent,
-          deviceType:
-            page.deviceType === "mobile" ? ("mobile" as const) : ("desktop" as const),
+          deviceType: isPageDeviceType(page.deviceType) ? page.deviceType : ("desktop" as const),
         }))
       : [
           {

@@ -8,6 +8,7 @@ import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import PageRenderer from "./PageRenderer";
 import type { ReportedNode } from "@/lib/nodePicker";
+import type { PageRecord } from "@/lib/types";
 import {
   type CameraState,
   type CanvasTool,
@@ -26,6 +27,8 @@ import {
   getViewportBounds,
   placeMissingPages,
   unionBounds,
+  getPageFrameSize,
+  type PageFrameDevice,
   resolvePageFrameDevice,
   scaleFromZoom,
   zoomAtViewportPoint,
@@ -49,6 +52,21 @@ const DEVICE_FRAMES = Object.fromEntries(
     },
   ]),
 ) as Record<keyof typeof DEVICE_LABELS, { width: number; height: number; label: string }>;
+
+// Vector frames take their artboard's size. Cached by size for the same
+// reason as DEVICE_FRAMES: a stable prop keeps the memoized frame still.
+const VECTOR_FRAMES = new Map<string, { width: number; height: number; label: string }>();
+
+const getCanvasFrame = (page: PageRecord, activeDevice: PageFrameDevice) => {
+  if (page.deviceType !== "vector") {
+    return DEVICE_FRAMES[resolvePageFrameDevice(page.deviceType, activeDevice)];
+  }
+  const { width, height } = getPageFrameSize(page, activeDevice);
+  const key = `${width}x${height}`;
+  const frame = VECTOR_FRAMES.get(key) ?? { width, height, label: "Vector" };
+  VECTOR_FRAMES.set(key, frame);
+  return frame;
+};
 
 // Frame labels sit on the canvas, so light backgrounds swap them to dark text.
 const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = {
@@ -114,6 +132,7 @@ interface CanvasProps {
   onEditPage?: (pageId: string) => void;
   onToolChange: (tool: CanvasTool) => void;
   onNodeReport: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
+  onSavePageHtml: (pageId: string, html: string) => void;
 }
 
 const getDistance = (a: ScenePoint, b: ScenePoint) =>
@@ -139,6 +158,7 @@ export default function Canvas({
   onEditPage,
   onToolChange,
   onNodeReport,
+  onSavePageHtml,
 }: CanvasProps) {
   const {
     camera,
@@ -226,9 +246,9 @@ export default function Canvas({
     const totalPages = pages.length;
 
     return pages.map((page, index) => {
-      const device = resolvePageFrameDevice(page.deviceType, activeDevice);
-      const deviceWidth = getPageFrameWidth(device);
-      const deviceHeight = getPageFrameHeight(device);
+      const currentDevice = getCanvasFrame(page, activeDevice);
+      const deviceWidth = currentDevice.width;
+      const deviceHeight = currentDevice.height;
       const position = pagePositions[page.id] ?? {
         x: getDefaultPageX(index, totalPages, deviceWidth),
         y: 0,
@@ -245,7 +265,7 @@ export default function Canvas({
       });
       return {
         page,
-        currentDevice: DEVICE_FRAMES[device],
+        currentDevice,
         position,
         frameHeight,
         bounds,
@@ -316,7 +336,7 @@ export default function Canvas({
     const assigned = placeMissingPages(
       pages.map((page) => ({
         id: page.id,
-        width: getPageFrameWidth(resolvePageFrameDevice(page.deviceType, activeDevice)),
+        width: getCanvasFrame(page, activeDevice).width,
       })),
       pagePositions,
     );
@@ -924,6 +944,8 @@ export default function Canvas({
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
                   isElementMode={activeTool === "element" && !isSpacePanning}
+                  isPenMode={activeTool === "pen" && !isSpacePanning}
+                  onSavePageHtml={onSavePageHtml}
                   isMoveMode={activeTool === "select" && !isSpacePanning}
                   selectedNodeId={
                     selectedNode?.pageId === pageLayout.page.id ? selectedNode.nodeId : null

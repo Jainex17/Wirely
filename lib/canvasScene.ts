@@ -1,3 +1,5 @@
+import { readArtboardSize } from "@/lib/vectorArtboard";
+
 export interface CameraState {
   x: number;
   y: number;
@@ -49,8 +51,11 @@ export interface SnapResult {
 
 export type PageRenderMode = "live" | "shell";
 
-/** Move drags pages, hand pans, and element picks an element inside a page. */
-export type CanvasTool = "select" | "grab" | "element";
+/**
+ * Move drags pages, hand pans, element picks an element inside a page, and pen
+ * draws paths on a vector page.
+ */
+export type CanvasTool = "select" | "grab" | "element" | "pen";
 
 export type PageFrameDevice = "desktop" | "tablet" | "mobile";
 
@@ -74,6 +79,19 @@ export const resolvePageFrameDevice = (
     return pageDeviceType;
   }
   return fallbackDevice;
+};
+
+/**
+ * The frame a page draws in on the canvas. Screens take their device's size;
+ * a vector page takes its artboard's.
+ */
+export const getPageFrameSize = (
+  page: { deviceType?: string | null; iframeHtml?: string | null },
+  fallbackDevice: PageFrameDevice,
+) => {
+  if (page.deviceType === "vector") return readArtboardSize(page.iframeHtml ?? "");
+  const device = resolvePageFrameDevice(page.deviceType, fallbackDevice);
+  return { width: PAGE_DEVICE_WIDTHS[device], height: PAGE_DEVICE_HEIGHTS[device] };
 };
 
 export const getPageFrameWidth = (device: PageFrameDevice) =>

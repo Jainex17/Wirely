@@ -57,10 +57,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
     }
 
-    const png = await renderPagePng(
-      page.htmlContent,
-      page.deviceType === "mobile" ? "mobile" : "desktop",
-    );
+    const png = await renderPagePng(page.htmlContent, page.deviceType);
     return new Response(Buffer.from(png.base64, "base64"), {
       status: 200,
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },

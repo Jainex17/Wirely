@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPageDeviceType } from "@/lib/types";
 import {
   createProjectPageForUser,
   listProjectPageChangesForUser,
@@ -16,9 +17,6 @@ type CreateProjectPageRequestBody = {
   title?: string | null;
   deviceType?: string | null;
 };
-
-const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
-  value === "desktop" || value === "mobile";
 
 /**
  * Page timestamps come from both the app server clock and the database clock,

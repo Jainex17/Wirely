@@ -36,9 +36,12 @@ export const DISALLOWED_CONTAINER_TAGS = [
   "base",
 ] as const;
 
+// Read from the opening tag only, so `link.href = "#"` in an inline script is
+// not mistaken for a source. An SVG <script> loads from href or xlink:href.
 const getScriptSrc = (scriptTag: string) => {
-  const srcMatch = scriptTag.match(
-    /\bsrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
+  const openTag = scriptTag.match(/^<script\b(?:"[^"]*"|'[^']*'|[^'">])*>/i)?.[0] ?? "";
+  const srcMatch = openTag.match(
+    /\b(?:src|href)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i,
   );
   return (srcMatch?.[2] ?? srcMatch?.[3] ?? srcMatch?.[4] ?? "").trim();
 };

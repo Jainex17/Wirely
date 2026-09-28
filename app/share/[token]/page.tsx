@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
 import ShareViewer from "@/components/ShareViewer";
 import { getServerSessionUser } from "@/lib/auth/session";
@@ -47,7 +48,7 @@ export default async function SharePage({ params }: SharePageProps) {
         id: page.id,
         title: page.title,
         html: page.htmlContent,
-        deviceType: page.deviceType === "mobile" ? "mobile" : "desktop",
+        deviceType: isPageDeviceType(page.deviceType) ? page.deviceType : "desktop",
       }))}
       initialComments={shared.comments}
       currentUserId={sessionUser.id}

@@ -30,6 +30,8 @@ import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { getNodeHtml } from "@/lib/pageNodes";
 import { formatCommentsForAgent } from "@/lib/projectComments";
+import { isPageDeviceType } from "@/lib/types";
+import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
@@ -44,6 +46,12 @@ const formatIssues = (issues: z.ZodError["issues"]) =>
     .join("; ");
 
 const PATCH_ATTEMPTS = 3;
+
+const DEVICE_TYPES = ["desktop", "mobile", "vector"] as const;
+
+/** A vector page's artboard gets its marker before sanitizing, so the frame sizes to it. */
+const prepareHtml = (html: string, deviceType: string | undefined) =>
+  sanitizeIframeHtml(deviceType === "vector" ? prepareArtboardHtml(html) : html);
 
 /** Appends the write diagnostics, when there are any, to a success line. */
 const withWriteNotes = (summary: string, sentHtml: string, storedHtml: string) => {
@@ -134,7 +142,7 @@ const addPage: ToolHandler = async (userId, args) => {
       title: z.string().trim().min(1).max(TITLE_MAX_CHARS),
       html: z.string().min(1).max(PAGE_HTML_MAX_CHARS).optional(),
       copyFromPageId: z.string().trim().min(1).optional(),
-      deviceType: z.enum(["desktop", "mobile"]).optional(),
+      deviceType: z.enum(DEVICE_TYPES).optional(),
     })
     .refine((data) => (data.html === undefined) !== (data.copyFromPageId === undefined), {
       message: "Provide exactly one of html or copyFromPageId.",
@@ -159,13 +167,22 @@ const addPage: ToolHandler = async (userId, args) => {
   }
 
   const sentHtml = parsed.data.html ?? source?.htmlContent ?? "";
-  const html = sanitizeIframeHtml(sentHtml);
+  // An SVG file is an artboard unless the agent said otherwise, and a copy
+  // keeps its source's type.
+  const deviceType =
+    parsed.data.deviceType ??
+    (isSvgDocument(sentHtml)
+      ? "vector"
+      : isPageDeviceType(source?.deviceType)
+        ? source.deviceType
+        : undefined);
+  const html = prepareHtml(sentHtml, deviceType);
 
   const page = await createProjectPageForUser({
     projectId: project.id,
     userId,
     title: parsed.data.title,
-    deviceType: parsed.data.deviceType ?? (source?.deviceType === "mobile" ? "mobile" : undefined),
+    deviceType,
     htmlContent: html,
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
@@ -184,7 +201,7 @@ const updatePage: ToolHandler = async (userId, args) => {
       pageId: z.string().trim().min(1),
       title: z.string().trim().min(1).max(TITLE_MAX_CHARS).optional(),
       html: z.string().min(1).max(PAGE_HTML_MAX_CHARS).optional(),
-      deviceType: z.enum(["desktop", "mobile"]).optional(),
+      deviceType: z.enum(DEVICE_TYPES).optional(),
     })
     .refine(
       (data) => data.title !== undefined || data.html !== undefined || data.deviceType !== undefined,
@@ -193,15 +210,18 @@ const updatePage: ToolHandler = async (userId, args) => {
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
+  const deviceType =
+    parsed.data.deviceType ??
+    (parsed.data.html !== undefined && isSvgDocument(parsed.data.html) ? "vector" : undefined);
   const html =
-    parsed.data.html !== undefined ? sanitizeIframeHtml(parsed.data.html) : undefined;
+    parsed.data.html !== undefined ? prepareHtml(parsed.data.html, deviceType) : undefined;
 
   const updated = await updateProjectPageForUser({
     projectId: parsed.data.projectId,
     pageId: parsed.data.pageId,
     userId,
     title: parsed.data.title,
-    deviceType: parsed.data.deviceType,
+    deviceType,
     htmlContent: html,
   });
   if (!updated) return fail("Page not found. Use list_pages for valid ids.");
@@ -327,11 +347,7 @@ const getPagePng: ToolHandler = async (userId, args) => {
   }
 
   try {
-    const png = await renderPagePng(
-      page.htmlContent,
-      page.deviceType === "mobile" ? "mobile" : "desktop",
-      parsed.data.lint ?? false,
-    );
+    const png = await renderPagePng(page.htmlContent, page.deviceType, parsed.data.lint ?? false);
     return {
       content: [
         {

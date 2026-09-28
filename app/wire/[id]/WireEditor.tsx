@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { PageDeviceType } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import type { Message } from "ai";
@@ -33,7 +34,7 @@ interface WireEditorProps {
       id: string;
       title: string;
       pageHtml: string;
-      deviceType: "desktop" | "mobile";
+      deviceType: PageDeviceType;
     }>;
   };
   /** Server time the initial pages were read, the first change cursor. */

@@ -38,6 +38,16 @@ export const MCP_INSTRUCTIONS = [
     "returned source as oldString, and keep its data-wirely-id attribute.",
   "Give each page one short entrance animation that plays once. The canvas shows pages " +
     "settled and plays their motion when the user clicks Replay. Never loop an animation.",
+  "For an icon, logo, illustration, social card, or any artwork that is not a screen, send " +
+    "one SVG file as the html of add_page: an <svg> root with xmlns, a viewBox, and width and " +
+    "height in px for the artboard size. It becomes a vector page the user can edit with the " +
+    "pen tool. Draw it like an illustrator: build back to front in named <g> groups " +
+    "(silhouette, shadow shapes, highlights, then linework); shape organic forms with cubic " +
+    "curves, anchors at the extremes, never polygons; give each hue a base, shadow, and " +
+    "highlight tone or a gradient; keep one outline weight with round joins and thinner " +
+    "detail lines; reuse repeated parts with <use>. Match the style asked for (flat, " +
+    "isometric, engraving with hatching, botanical). Use <path> for shapes, one decimal per " +
+    "coordinate, and no scripts. Check it with get_page_png.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
     "components, and styles instead of pasting the HTML in.",
@@ -203,8 +213,10 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         },
         deviceType: {
           type: "string",
-          enum: ["desktop", "mobile"],
-          description: "Defaults to desktop. Mobile frames render at 375px.",
+          enum: ["desktop", "mobile", "vector"],
+          description:
+            "Defaults to desktop. Mobile frames render at 375px. Vector is an SVG artboard " +
+            "framed at the SVG's own width and height, and is picked for you when html is an SVG file.",
         },
       },
       required: ["projectId", "title"],
@@ -223,7 +235,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         pageId: PAGE_ID,
         title: { type: "string", description: "New screen name." },
         html: { type: "string", description: "The new page document." },
-        deviceType: { type: "string", enum: ["desktop", "mobile"] },
+        deviceType: { type: "string", enum: ["desktop", "mobile", "vector"] },
       },
       required: ["projectId", "pageId"],
       additionalProperties: false,
@@ -298,7 +310,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "List the review comments people pinned on a project's pages through its review link. " +
       "Each has the page, author, text, and pin position in page pixels at the page's design " +
-      "width (desktop 1440, mobile 375), so call get_page_png to see what a pin points at. " +
+      "width (desktop 1440, mobile 375, vector the artboard's width), so call get_page_png to see what a pin points at. " +
       "Use it when the user asks you to address feedback. Returns open comments unless " +
       "includeResolved is true.",
     inputSchema: {

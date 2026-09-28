@@ -26,7 +26,11 @@ export interface PageTitle extends PageIdentity {
   title: string;
 }
 
-export type PageDeviceType = "desktop" | "mobile";
+/** Vector pages are one SVG artboard sized by the SVG itself. See lib/vectorArtboard.ts. */
+export type PageDeviceType = "desktop" | "mobile" | "vector";
+
+export const isPageDeviceType = (value: unknown): value is PageDeviceType =>
+  value === "desktop" || value === "mobile" || value === "vector";
 
 export interface PageRecord extends PageTitle {
   iframeUrl?: string;

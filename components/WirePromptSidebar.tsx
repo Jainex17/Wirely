@@ -322,6 +322,7 @@ export default function WirePromptSidebar({
   const hasShownErrorToastRef = useRef(false);
 
   const pages = useEditorStore((state) => state.pages);
+  const hasSelectedNode = useEditorStore((state) => state.selectedNode !== null);
   const setPageHtml = useEditorStore((state) => state.setPageHtml);
   const createPageLocal = useEditorStore((state) => state.createPage);
   const deletePageLocal = useEditorStore((state) => state.deletePage);
@@ -1671,7 +1672,11 @@ export default function WirePromptSidebar({
             onSelect={syncPromptCaret}
             onClick={syncPromptCaret}
             onInput={resizePromptTextarea}
-            placeholder="Describe a change, @ to pick a page"
+            placeholder={
+              hasSelectedNode
+                ? "Describe a change to the selected element"
+                : "Describe a change, @ to pick a page"
+            }
             rows={4}
             role="combobox"
             aria-expanded={isMentionListOpen}

@@ -1,14 +1,15 @@
 "use client";
 
 import React from "react";
-import { MessageSquarePlus, Monitor, Smartphone } from "lucide-react";
+import { MessageSquarePlus, Monitor, PenTool, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { CommentCard, CommentPin, numberCommentsByPage } from "@/components/ReviewComments";
-import { PAGE_DEVICE_HEIGHTS, PAGE_DEVICE_WIDTHS } from "@/lib/canvasScene";
+import { getPageFrameSize } from "@/lib/canvasScene";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
+import type { PageDeviceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // A review is live while people talk, so other reviewers' comments show up
@@ -21,7 +22,7 @@ interface SharePage {
   id: string;
   title: string;
   html: string;
-  deviceType: "desktop" | "mobile";
+  deviceType: PageDeviceType;
 }
 
 interface ShareViewerProps {
@@ -60,8 +61,9 @@ export default function ShareViewer({
   const stageRef = React.useRef<HTMLDivElement | null>(null);
 
   const page = pages.find((candidate) => candidate.id === pageId) ?? pages[0];
-  const deviceWidth = PAGE_DEVICE_WIDTHS[page.deviceType];
-  const height = Math.max(frameHeight, PAGE_DEVICE_HEIGHTS[page.deviceType]);
+  const frame = getPageFrameSize({ deviceType: page.deviceType, iframeHtml: page.html }, "desktop");
+  const deviceWidth = frame.width;
+  const height = Math.max(frameHeight, frame.height);
   const scale = stageWidth > 0 ? Math.min(1, (stageWidth - STAGE_PADDING) / deviceWidth) : 1;
   const reporterId = `wirely-share-${page.id}`;
   const srcDoc = React.useMemo(
@@ -212,7 +214,12 @@ export default function ShareViewer({
       <div className="flex min-h-0 flex-1">
         <nav className="w-56 shrink-0 overflow-y-auto border-r border-border bg-card p-2" aria-label="Pages">
           {pages.map((candidate) => {
-            const Icon = candidate.deviceType === "mobile" ? Smartphone : Monitor;
+            const Icon =
+              candidate.deviceType === "mobile"
+                ? Smartphone
+                : candidate.deviceType === "vector"
+                  ? PenTool
+                  : Monitor;
             const openCount = comments.filter(
               (comment) => comment.pageId === candidate.id && comment.resolvedAt === null,
             ).length;

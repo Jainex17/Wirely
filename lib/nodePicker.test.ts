@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { injectNodePicker, parseReportedNode } from "@/lib/nodePicker";
+import { injectNodePicker, parseReportedNode, type ReportedNode } from "@/lib/nodePicker";
 
 describe("parseReportedNode", () => {
-  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null };
+  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null, matrix: [2, 0, 0, 2, 10, 20] as ReportedNode["matrix"] };
 
   it("accepts a well formed node", () => {
     expect(parseReportedNode(node)).toEqual(node);
@@ -14,6 +14,7 @@ describe("parseReportedNode", () => {
     expect(parseReportedNode({ ...node, x: Number.NaN })).toBeNull();
     expect(parseReportedNode(null)).toBeNull();
     expect(parseReportedNode({ ...node, color: "red; x" })?.color).toBeNull();
+    expect(parseReportedNode({ ...node, matrix: [1, 0, 0, 1, 0, "x"] })?.matrix).toBeNull();
   });
 });
 

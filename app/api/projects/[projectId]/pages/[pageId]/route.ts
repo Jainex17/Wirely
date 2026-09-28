@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPageDeviceType } from "@/lib/types";
 import {
   deleteProjectPageForUser,
   updateProjectPageForUser,
@@ -21,9 +22,6 @@ type UpdateProjectPageRequestBody = {
 // the shared 64 KB body limit on an ordinary generated page. Matches the MCP
 // write cap of 500,000 characters plus JSON overhead.
 const PAGE_UPDATE_MAX_BYTES = 600_000;
-
-const isPageDeviceType = (value: unknown): value is "desktop" | "mobile" =>
-  value === "desktop" || value === "mobile";
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {

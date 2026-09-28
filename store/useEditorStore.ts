@@ -25,6 +25,7 @@ import {
   getDefaultPageX,
   getPageBounds,
   getPageFrameHeight,
+  getPageFrameSize,
   getPageFrameWidth,
   resolvePageFrameDevice,
   scaleFromZoom,
@@ -34,7 +35,7 @@ import {
   unionBounds,
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
-import type { PageDeviceType } from "@/lib/types";
+import { isPageDeviceType, type PageDeviceType } from "@/lib/types";
 import type { ProjectComment } from "@/lib/projectComments";
 
 export type PageGenerationStatus = "queued" | "generating" | "repairing" | "completed" | "failed";
@@ -287,9 +288,7 @@ const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
   const totalPages = state.pages.length;
 
   return state.pages.map((page, index) => {
-    const device = resolvePageFrameDevice(page.deviceType, state.activeDevice);
-    const deviceWidth = getPageFrameWidth(device);
-    const deviceHeight = getPageFrameHeight(device);
+    const { width: deviceWidth, height: deviceHeight } = getPageFrameSize(page, state.activeDevice);
     const position = state.pagePositions[page.id] ?? {
       x: getDefaultPageX(index, totalPages, deviceWidth),
       y: 0,
@@ -312,7 +311,7 @@ const getFitBoundsCollection = (state: EditorState) =>
   getPageBoundsCollection(state).map((bounds, index) =>
     clipToFirstScreen(
       bounds,
-      getPageFrameHeight(resolvePageFrameDevice(state.pages[index].deviceType, state.activeDevice)),
+      getPageFrameSize(state.pages[index], state.activeDevice).height,
     ),
   );
 
@@ -989,8 +988,9 @@ export const useEditorStore = create<EditorState>()(
 
           for (const incoming of changed) {
             if (isBusy(incoming.id)) continue;
-            const deviceType: PageDeviceType =
-              incoming.deviceType === "mobile" ? "mobile" : "desktop";
+            const deviceType: PageDeviceType = isPageDeviceType(incoming.deviceType)
+              ? incoming.deviceType
+              : "desktop";
             const index = pages.findIndex((page) => page.id === incoming.id);
 
             if (index === -1) {
