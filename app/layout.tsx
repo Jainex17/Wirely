@@ -22,8 +22,10 @@ const displayFont = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  // Resolves relative Open Graph and canonical URLs to the production domain.
-  metadataBase: new URL("https://wirely.site"),
+  // Resolves relative Open Graph and canonical URLs to the canonical domain.
+  // The apex 308-redirects to www, and www is the host that serves content,
+  // so resolved URLs must use www to avoid a redirect hop for every fetcher.
+  metadataBase: new URL("https://www.wirely.site"),
   title: "Wirely",
   description: "The design canvas for your coding agent.",
 };
