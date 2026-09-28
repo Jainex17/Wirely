@@ -1,305 +1,54 @@
 # Wirely
 
-Wirely is the design canvas for your coding agent. Claude Code, Cursor, Codex, or any MCP
-client writes screens onto a pannable canvas over Wirely's MCP server, on the subscription you
-already pay for. You compare directions side by side, pick elements to change, link pages into a
-clickable prototype, and hand the chosen page back to the agent to build in your codebase.
+Wirely is a design canvas for your coding agent.
 
-Wirely can also generate screens itself on your own provider key (BYOK), with a planner, quality
-gate, and repair pass.
+You ask Claude Code, Cursor, Codex, or another agent to design a screen. The agent draws it on a
+Wirely canvas while you watch. You compare ideas side by side, tweak what you like, and hand the
+winner back to the agent to build in your real codebase.
 
-## Features
+It uses the agent subscription you already pay for. Wirely is free and open source.
 
-- Multi-mode generation:
-  - `single_page`
-  - `concept_variants`
-  - `information_architecture`
-- Multi-output planning for coordinated page sets (up to 3 outputs per run).
-- BYOK provider settings per user (Google, OpenRouter, Z.ai, Unsplash).
-- Encrypted user API key storage (AES-256-GCM, user-bound AAD, key versioning).
-- Quality gating and repair pass for generated HTML.
-- Stock image slot planning plus Unsplash resolution and metadata injection.
-- Canvas editor with persistent project/page/conversation history in Postgres.
-- Safe iframe preview constraints for generated content.
-- Route/runtime guardrails:
-  - rate limits
-  - request body size limits
-  - structured logging with sensitive-field redaction
+## What you can do
 
-## Tech Stack
+- **Watch designs appear live.** Pages fill in on the canvas as your agent writes them.
+- **Compare directions.** Ask for several options and see them next to each other.
+- **Pick an element and change it.** Click anything on a page to edit its text or colors, or to
+  describe a change for just that part.
+- **Send a pick to your agent.** Copy a link to one element, or to a whole page, and paste it into
+  your agent with what to change.
+- **Draw vector art.** Vector pages come with a pen tool for drawing and editing shapes.
+- **Build a clickable prototype.** Link pages together and click through them like a real app.
+- **Share for feedback.** Send a review link, and people can pin comments on your pages. Your
+  agent can read those comments too.
+- **Design for desktop and mobile.** Each page has its own device frame.
+- **Organize the canvas.** Group pages, pan and zoom, and change the canvas background.
+- **Export.** Copy a page as an image, as HTML, or as SVG.
+- **Generate inside Wirely.** If you don't use an agent, add your own AI key in settings and
+  generate pages from the chat. The default model is free.
 
-- Next.js 16 (App Router) + React 19 + TypeScript (`strict`)
-- Bun scripts/test runner
-- Tailwind CSS v4 + Radix/shadcn-style components
-- Zustand editor state store
-- Drizzle ORM + Neon Postgres
-- AI SDK providers:
-  - Google (`@ai-sdk/google`)
-  - OpenRouter (`@openrouter/ai-sdk-provider`)
-  - Z.ai (OpenAI-compatible client via `@ai-sdk/openai`)
-- Clerk authentication (Google OAuth flow)
+Pages run in a locked-down preview, so a generated design can't touch your account.
 
-## Architecture (High Level)
+## Connect your agent
 
-1. Home (`/`) loads user session, project history, and enabled model settings.
-2. Settings (`/setting/*`) manages profile, provider keys, and enabled models.
-3. Editor (`/wire/[id]`) loads pages + conversation history.
-4. Generation requests hit:
-   - `POST /api/projects/[projectId]/generate` (authenticated proxy)
-   - `POST /api/wire/[id]` (planning/generation/repair pipeline)
-5. Outputs and messages persist to Postgres (`projects`, `project_pages`, `conversation_messages`, `generation_runs`, `generation_outputs`).
-6. Preview renderer sanitizes output and applies iframe security constraints.
+1. Sign in and create a token on the home page.
+2. Copy the install prompt and paste it into your agent.
+3. Restart the agent and ask it to design something. The project shows up on home.
 
-## Quick Start
+## Run it yourself
 
-### 1. Prerequisites
-
-- Bun (latest stable recommended)
-- Postgres database (Neon or compatible)
-- Clerk app configured for Google OAuth
-
-### 2. Install
+You need [Bun](https://bun.sh), a Postgres database, and a [Clerk](https://clerk.com) app.
 
 ```bash
 bun install
-```
-
-### 3. Configure environment
-
-Create `.env.local` from the example:
-
-```bash
-cp .env.example .env.local
-```
-
-Generate an encryption secret for user API keys:
-
-```bash
-openssl rand -base64 32
-```
-
-Use the generated value for `USER_API_KEY_MASTER_SECRET_BASE64`.
-
-### 4. Run migrations
-
-```bash
-bun run db:migrate
-```
-
-`db:migrate` targets the `DATABASE_URL` in `.env.local` — point it at a local
-Postgres for development. Production (Vercel) runs on the database in
-`PROD_DATABASE_URL`; apply schema changes there with:
-
-```bash
-bun run db:migrate:prod
-```
-
-Deploy a schema change and its migration in the same push — code that selects
-a column the production database does not have yet breaks every signed-in
-page.
-
-> Migration `0013_mighty_juggernaut` (or later) is required for the live
-> generation progress, per-screen device frames, and prototype flow features:
-> it adds `project_pages.device_type` and the `project_prototype_flows` table.
-
-### 5. Start development server
-
-```bash
+cp .env.example .env.local   # fill in the values
+bun run db:migrate           # sets up the tables in DATABASE_URL
 bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-### 6. First-run flow
-
-1. Sign in via `/login`.
-2. On home, create a token and copy the install prompt for your agent. Paste it into the agent,
-   restart it, and the card turns green on its first call.
-3. Ask the agent to design something. The project shows up on home.
-
-To generate inside Wirely instead, add provider keys at `/setting?tab=providers` and enable models
-at `/setting?tab=models`.
-
-## MCP server
-
-`POST /api/mcp` is a stateless streamable HTTP MCP endpoint. It authenticates with a personal
-bearer token minted on home or at `/setting?tab=mcp`. Only the token's SHA-256 hash is stored, and
-tokens are accepted on this route only.
-
-Manual setup, if you skip the install prompt:
-
-```bash
-# Claude Code
-claude mcp add --transport http wirely https://<your-host>/api/mcp \
-  --header "Authorization: Bearer <token>" --scope user
-```
-
-```toml
-# Codex, ~/.codex/config.toml
-[mcp_servers.wirely]
-url = "https://<your-host>/api/mcp"
-http_headers = { "Authorization" = "Bearer <token>" }
-```
-
-```json
-// Cursor, ~/.cursor/mcp.json
-{ "mcpServers": { "wirely": { "url": "https://<your-host>/api/mcp", "headers": { "Authorization": "Bearer <token>" } } } }
-```
-
-## Environment Variables
-
-From `.env.example`:
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | Postgres connection string. |
-| `USER_API_KEY_MASTER_SECRET_BASE64` | Yes | 32-byte base64 secret for encrypting BYOK provider keys. |
-| `USER_API_KEY_KEY_VERSION` | Yes | Positive integer key version for new encryptions. |
-| `USER_API_KEY_PREVIOUS_MASTER_SECRET_BASE64` | Optional | Previous 32-byte base64 secret for key rotation compatibility. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk frontend key. |
-| `CLERK_SECRET_KEY` | Yes | Clerk backend key. |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route, defaults to `/login`. |
-| `REQUEST_BODY_MAX_BYTES` | Optional | Max JSON body size (default `65536`). |
-| `DB_POOL_MAX` | Optional | DB pool size (default `5`). |
-| `DB_POOL_CONNECTION_TIMEOUT_MS` | Optional | DB connection timeout ms (default `3000`). |
-| `DB_POOL_IDLE_TIMEOUT_MS` | Optional | DB idle timeout ms (default `10000`). |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Optional | Server key used for project title generation fallback. |
-| `OPENROUTER_API_KEY` | Optional | Present in env example for compatibility; user-level key settings are used for generation. |
-
-Notes:
-- Generation requests require user-scoped provider keys saved in settings.
-- Unsplash is configured in-app via BYOK (`/setting/provider`), not via top-level env var.
-
-## Scripts
-
-| Command | Description |
-| --- | --- |
-| `bun run dev` | Start local Next.js dev server. |
-| `bun run build` | Production build. |
-| `bun run start` | Start production server. |
-| `bun run lint` | Run ESLint. |
-| `bun run test` | Run Bun tests. |
-| `bun run db:generate` | Generate Drizzle migration files. |
-| `bun run db:migrate` | Apply Drizzle migrations to the `DATABASE_URL` database. |
-| `bun run db:migrate:prod` | Apply pending migrations to production (`PROD_DATABASE_URL`). |
-| `bun run db:backfill:page-html` | Currently points to a missing script path (see Known Limitations). |
-
-## API Surface (Core Routes)
-
-- `GET /api/projects` - list current user projects.
-- `POST /api/projects` - create a project (and initial page).
-- `POST /api/projects/[projectId]/generate` - authenticated proxy into wire generation route.
-- `POST /api/wire/[id]` - main planning/generation/repair pipeline.
-- `GET /api/profile/ai-settings` - read provider-key/model settings flags.
-- `PATCH /api/profile/ai-settings` - update encrypted provider keys and enabled models.
-- `GET /api/projects/[projectId]/pages` - list pages. With `?since=<ISO time>` it returns only
-  pages written after that time, every page id, and the next cursor. The open editor polls it
-  every 2.5s while the tab is visible, so MCP edits show without a reload.
-- `POST /api/projects/[projectId]/pages` - create page.
-- `PATCH /api/projects/[projectId]/pages/[pageId]` - update page.
-- `DELETE /api/projects/[projectId]/pages/[pageId]` - delete page.
-- `GET /api/projects/[projectId]/pages/[pageId]/png` - render the saved page to a PNG with headless
-  Chromium, for the frame's "Copy image" button. Rate limited per user.
-- `POST /api/projects/[projectId]/pages/[pageId]/share` - mint a signed read-only link to the page,
-  valid for 7 days, for the frame's "Copy for agent" prompt.
-- `GET /api/share/pages/[pageId]?exp=&sig=` - public end of that link. No session; the signature
-  is the access check. Serves the page's current HTML as `text/plain`, never rendered.
-- `GET|POST|DELETE /api/projects/[projectId]/share` - read, turn on, or turn off the project's
-  review link, `/share/[token]`. The review page needs a signed-in Wirely user.
-- `GET /api/projects/[projectId]/comments` - review comments on the owner's project.
-- `PATCH|DELETE /api/projects/[projectId]/comments/[commentId]` - resolve, reopen, or delete a
-  comment. Owner only.
-- `GET|POST /api/share/projects/[token]/comments` - list or pin comments through a review link.
-  Posting is rate limited per user.
-- `DELETE /api/share/projects/[token]/comments/[commentId]` - delete a comment as its author or
-  the project owner.
-
-MCP routes (see "MCP server" below):
-
-- `GET /api/profile/agent-tokens` - list MCP tokens.
-- `POST /api/profile/agent-tokens` - mint an MCP token (plaintext returned once).
-- `DELETE /api/profile/agent-tokens` - revoke an MCP token.
-- `POST /api/mcp` - MCP server (stateless streamable HTTP), bearer auth only; see "MCP server" below.
-
-## MCP server (drive Wirely from an agent)
-
-`POST /api/mcp` is a stateless MCP endpoint: clients POST JSON-RPC messages and read one JSON
-body back — no SSE session, nothing stored between requests, so it runs as an ordinary
-serverless function. It authenticates with personal bearer tokens minted in Settings → MCP, and
-never with a Clerk session.
-
-The client's own model does the designing; Wirely stores the results and shows them on the
-canvas. Tools: `list_projects`, `create_project`, `list_pages`, `add_page`, `update_page`,
-`patch_page`, `get_page`, `get_page_png`, `delete_page`. `patch_page` replaces one exact
-snippet, so an agent can write a page in chunks while the user watches. Screen HTML passes
-through the same sandbox sanitizer as generated pages. An HTML write reports when the stored
-page will not render and which elements the sanitizer removed. An SVG file sent as the html of
-`add_page` or `update_page` becomes a `vector` page: one artboard framed at the SVG's own width
-and height, which the user edits on the canvas with the pen tool (P). `patch_page` is safe to call in
-parallel on one page. `get_page_png` renders the
-stored document with headless Chromium (`CHROME_PATH` picks the local browser in development,
-deployments use `@sparticuz/chromium`). With `lint: true` it also reports horizontal overflow,
-clipped text, and low contrast text from the same render.
-
-The editor's element tool (E) copies links like `/wire/[projectId]?page=[pageId]&node=[nodeId]`.
-`get_page` with that `nodeId` returns just the element's stored source, ready for `patch_page`.
-Node ids are the `data-wirely-id` attributes the editor stamps into a page the first time an
-element on it is picked.
-
-## Security and Reliability Notes
-
-- Rate limiting on `POST /api/wire/[id]`:
-  - 5 requests per minute
-  - 30 requests per hour
-  - keyed by `userId + IP + route`
-- JSON body guard rejects oversized payloads with `413`.
-- Structured logger redacts sensitive fields and avoids stack traces in production.
-- Security headers are applied globally in `next.config.ts`.
-- Generated HTML is sanitized and constrained before iframe preview.
-
-## Repository Structure
-
-```text
-app/                    # Next.js routes, pages, API handlers
-components/             # Editor UI, canvas, renderers
-lib/                    # Core logic (auth, db, generation pipeline, security)
-store/                  # Zustand stores
-hooks/                  # React hooks
-drizzle/                # SQL migrations and metadata snapshots
-test/                   # Bun tests
-```
-
-## Development and Testing
-
-Run quality checks before opening a PR:
-
-```bash
-bun run lint
-bun run test
-```
-
-If you change schema:
-
-```bash
-bun run db:generate
-bun run db:migrate        # local database
-bun run db:migrate:prod   # production database, same push as the code
-```
-
-## Known Limitations
-
-- `db:backfill:page-html` currently references `scripts/backfill-page-html-from-conversation.ts`, but that file is not present in this repository snapshot.
-- Rate limiting uses an in-memory store by default (not shared across instances).
+Open http://localhost:3000. `.env.example` lists every setting. For
+`USER_API_KEY_MASTER_SECRET_BASE64`, run `openssl rand -base64 32`.
 
 ## Contributing
 
-1. Fork the repo.
-2. Create a branch for your change.
-3. Keep changes scoped and include tests when behavior changes.
-4. Run lint/tests locally.
-5. Open a pull request with context, rationale, and validation notes.
-
-## License
-
-No `LICENSE` file is currently present in this repository.  
-Add one before distributing or accepting external contributions under a specific open source license.
+Fork the repo, make your change on a branch, run `bun run lint` and `bun run test`, and open a
+pull request.
