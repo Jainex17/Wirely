@@ -129,6 +129,12 @@ interface PageRendererProps {
   isPenMode: boolean;
   /** Saves an edit made on the canvas, such as a moved path point. */
   onSavePageHtml?: (pageId: string, html: string) => void;
+  /**
+   * The move tool is active. A press still drags the page, and a click that
+   * does not move picks the element under it, so the user can select without
+   * switching tools.
+   */
+  isMoveMode: boolean;
   /** The picked element when it is on this page. */
   selectedNodeId: string | null;
   onNodeReport?: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
@@ -228,6 +234,7 @@ export default React.memo(function PageRenderer({
   isElementMode,
   isPenMode,
   onSavePageHtml,
+  isMoveMode,
   selectedNodeId,
   onNodeReport,
 }: PageRendererProps) {
@@ -423,15 +430,17 @@ export default React.memo(function PageRenderer({
       closeContextMenu();
     };
 
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("contextmenu", handlePointerDown);
+    // Capture phase on pointerdown: the canvas prevents default on pointerdown,
+    // which suppresses mousedown, and stops propagation before document.
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("contextmenu", handlePointerDown, true);
     document.addEventListener("keydown", handleEscape);
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
 
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("contextmenu", handlePointerDown);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("contextmenu", handlePointerDown, true);
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
       document.removeEventListener("keydown", handleEscape);
@@ -889,17 +898,21 @@ export default React.memo(function PageRenderer({
 
   React.useEffect(() => () => window.cancelAnimationFrame(hoverFrameRef.current), []);
 
+  const toFramePoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    // The frame is scaled with the canvas; the page inside works in its own px.
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = rect.width > 0 ? currentDevice.width / rect.width : 1;
+    return {
+      x: (event.clientX - rect.left) * ratio,
+      y: (event.clientY - rect.top) * ratio,
+    };
+  };
+
   const sendPointToFrame = (
     event: React.PointerEvent<HTMLDivElement>,
     intent: Exclude<NodeReportIntent, "select">,
   ) => {
-    // The frame is scaled with the canvas; the page inside works in its own px.
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = rect.width > 0 ? currentDevice.width / rect.width : 1;
-    const point = {
-      x: (event.clientX - rect.left) * ratio,
-      y: (event.clientY - rect.top) * ratio,
-    };
+    const point = toFramePoint(event);
     if (intent === "pick") {
       isPickPendingRef.current = true;
       postToFrame({ type: "wirely-node-at", intent, ...point });
@@ -1096,19 +1109,41 @@ export default React.memo(function PageRenderer({
                 </p>
               </div>
             )}
-            {isElementMode && hasHtml && isLive ? (
+            {(isElementMode || isMoveMode) && hasHtml && isLive ? (
               <div
-                className="absolute inset-0 z-10 cursor-crosshair"
+                className={cn(
+                  "absolute inset-0 z-10",
+                  isElementMode ? "cursor-crosshair" : "cursor-default",
+                )}
                 onPointerMove={(event) => sendPointToFrame(event, "hover")}
                 onPointerLeave={() => setHoverBox(null)}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
-                  event.stopPropagation();
-                  sendPointToFrame(event, "pick");
+                  if (isElementMode) {
+                    event.stopPropagation();
+                    sendPointToFrame(event, "pick");
+                    return;
+                  }
+                  // The canvas captures the pointer to drag the page, so the
+                  // release only reaches window. A release near the press is a
+                  // click and picks the element.
+                  const point = toFramePoint(event);
+                  const { clientX, clientY } = event;
+                  window.addEventListener(
+                    "pointerup",
+                    (upEvent) => {
+                      if (Math.hypot(upEvent.clientX - clientX, upEvent.clientY - clientY) >= 4) {
+                        return;
+                      }
+                      isPickPendingRef.current = true;
+                      postToFrame({ type: "wirely-node-at", intent: "pick", ...point });
+                    },
+                    { once: true },
+                  );
                 }}
               />
             ) : null}
-            {isElementMode && hoverBox && hoverBox.nodeId !== selectedNodeId ? (
+            {(isElementMode || isMoveMode) && hoverBox && hoverBox.nodeId !== selectedNodeId ? (
               <NodeBox node={hoverBox} variant="hover" />
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (

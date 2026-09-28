@@ -946,6 +946,7 @@ export default function Canvas({
                   isElementMode={activeTool === "element" && !isSpacePanning}
                   isPenMode={activeTool === "pen" && !isSpacePanning}
                   onSavePageHtml={onSavePageHtml}
+                  isMoveMode={activeTool === "select" && !isSpacePanning}
                   selectedNodeId={
                     selectedNode?.pageId === pageLayout.page.id ? selectedNode.nodeId : null
                   }
