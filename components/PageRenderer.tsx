@@ -1,6 +1,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowUp,
   Bot,
   Check,
   Copy,
@@ -263,23 +264,39 @@ export default React.memo(function PageRenderer({
     x: number;
     y: number;
   } | null>(null);
+  /** Where in page coordinates the context menu was opened. */
+  const [contextMenuPagePoint, setContextMenuPagePoint] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const frameRef = React.useRef<HTMLDivElement | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
-  const [pageCommentDraft, setPageCommentDraft] = React.useState<string | null>(null);
-  const [isPostingPageComment, setIsPostingPageComment] = React.useState(false);
+  // A comment pins where the user right-clicked, not at a fixed corner.
+  const [commentDraft, setCommentDraft] = React.useState<{
+    x: number;
+    y: number;
+    body: string;
+  } | null>(null);
+  const [isPostingComment, setIsPostingComment] = React.useState(false);
 
-  // A comment on the whole page pins at its top left corner.
-  const postPageComment = async () => {
-    const body = pageCommentDraft?.trim();
-    if (!projectId || !body || isPostingPageComment) return;
-    setIsPostingPageComment(true);
+  const postComment = async () => {
+    const body = commentDraft?.body.trim();
+    if (!projectId || !body || isPostingComment) return;
+    setIsPostingComment(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId: page.id, nodeId: null, body, x: 24, y: 24 }),
+        body: JSON.stringify({
+          pageId: page.id,
+          nodeId: null,
+          body,
+          x: Math.max(0, Math.round(commentDraft!.x)),
+          y: Math.max(0, Math.round(commentDraft!.y)),
+        }),
       });
       const payload = (await response.json().catch(() => null)) as
         | { comment?: ProjectComment; error?: string }
@@ -289,17 +306,29 @@ export default React.memo(function PageRenderer({
       }
       const { comments, setComments } = useEditorStore.getState();
       setComments([...comments, payload.comment]);
-      setPageCommentDraft(null);
+      setCommentDraft(null);
       toast.success("Comment added. Ask your agent to address the comments on this project.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not add the comment.");
     } finally {
-      setIsPostingPageComment(false);
+      setIsPostingComment(false);
     }
   };
   const [previewWidthOverride, setPreviewWidthOverride] = React.useState<
     number | null
   >(null);
+
+  // A click anywhere outside the comment popup discards the draft, the same
+  // way the comment cards close.
+  const commentDraftRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!commentDraft) return;
+    const close = (event: PointerEvent) => {
+      if (!commentDraftRef.current?.contains(event.target as Node)) setCommentDraft(null);
+    };
+    document.addEventListener("pointerdown", close, true);
+    return () => document.removeEventListener("pointerdown", close, true);
+  }, [commentDraft]);
   const [isResizingPreview, setIsResizingPreview] = React.useState(false);
   // Code dialog removed from the page toolbar for now.
   // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
@@ -414,6 +443,8 @@ export default React.memo(function PageRenderer({
     setNextPageTitle(page.title);
   }, [page.title]);
 
+  const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
+
   React.useEffect(() => {
     setIframeHeight(Math.max(currentDevice.height, frameHeight));
   }, [currentDevice.height, frameHeight]);
@@ -455,8 +486,20 @@ export default React.memo(function PageRenderer({
         ),
         y: Math.min(event.clientY, Math.max(CONTEXT_MENU_MARGIN, viewportHeight - 260)),
       });
+
+      // The same spot in page coordinates, so Add comment can pin there. The
+      // frame is scaled with the canvas; the page works in its own px.
+      const frame = frameRef.current;
+      if (frame) {
+        const rect = frame.getBoundingClientRect();
+        const ratio = rect.width > 0 ? currentDevice.width / rect.width : 1;
+        setContextMenuPagePoint({
+          x: Math.min(Math.max((event.clientX - rect.left) * ratio, 0), currentDevice.width),
+          y: Math.min(Math.max((event.clientY - rect.top) * ratio, 0), pageHeight),
+        });
+      }
     },
-    [onFocusPage, page.id],
+    [onFocusPage, page.id, currentDevice.width, pageHeight],
   );
 
   React.useEffect(() => {
@@ -935,7 +978,10 @@ export default React.memo(function PageRenderer({
             {
               label: "Add comment",
               icon: MessageSquarePlus,
-              onClick: () => setPageCommentDraft(""),
+              onClick: () => {
+                const point = contextMenuPagePoint ?? { x: 24, y: 24 };
+                setCommentDraft({ x: point.x, y: point.y, body: "" });
+              },
             },
           ]
         : []),
@@ -956,6 +1002,7 @@ export default React.memo(function PageRenderer({
       isOnlyPage,
       onEditPage,
       onFocusPage,
+      contextMenuPagePoint,
       page.deviceType,
       page.id,
       page.iframeHtml,
@@ -1120,8 +1167,6 @@ export default React.memo(function PageRenderer({
     };
   }, [currentDevice.height, iframeReporterId, isLive, onNodeReport, page.id, selectedNodeId]);
 
-  const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
-
   return (
     <>
       <div
@@ -1153,6 +1198,7 @@ export default React.memo(function PageRenderer({
         </div>
         <div className="relative">
           <div
+            ref={frameRef}
             className={cn(
               "relative overflow-hidden rounded-[var(--radius)] bg-transparent shadow-lg outline-solid transition-[outline-color] duration-150",
               isFocused ? "outline-sky-500" : "outline-transparent group-hover:outline-sky-500/60",
@@ -1268,6 +1314,48 @@ export default React.memo(function PageRenderer({
             </div>
           ) : null}
           {projectId ? <CanvasCommentPins pageId={page.id} projectId={projectId} /> : null}
+          {commentDraft ? (
+            <div
+              ref={commentDraftRef}
+              className="absolute z-30 origin-top-left"
+              style={{
+                left: `${Math.min(commentDraft.x, currentDevice.width - 40)}px`,
+                top: `${commentDraft.y}px`,
+                transform: "scale(var(--canvas-inverse-zoom, 1))",
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex -translate-y-1/2 items-center gap-1.5 rounded-full border-2 border-violet-500/70 bg-popover py-1 pl-4 pr-1 shadow-xl">
+                <input
+                  autoFocus
+                  value={commentDraft.body}
+                  maxLength={MAX_COMMENT_CHARS}
+                  placeholder="Add a comment"
+                  aria-label="Add a comment"
+                  onChange={(event) =>
+                    setCommentDraft({ ...commentDraft, body: event.target.value })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && commentDraft.body.trim()) {
+                      void postComment();
+                    }
+                    if (event.key === "Escape") setCommentDraft(null);
+                  }}
+                  className="min-w-0 w-52 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void postComment()}
+                  disabled={!commentDraft.body.trim() || isPostingComment}
+                  title="Post comment"
+                  aria-label="Post comment"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white transition-transform hover:bg-violet-500 active:scale-95 disabled:opacity-50"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
           {showAgentCursor && cursorPoint && cursorEdit ? (
             // Outside the clipped frame so a label near the right edge stays
             // readable. The outer layer slides between targets; the inner one
@@ -1509,43 +1597,6 @@ export default React.memo(function PageRenderer({
               ) : null}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={pageCommentDraft !== null}
-        onOpenChange={(open) => {
-          if (!open) setPageCommentDraft(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Comment on {page.title}</DialogTitle>
-            <DialogDescription>
-              Your agent reads it with list_comments. To comment on one element, pick it with the
-              element tool (E) instead.
-            </DialogDescription>
-          </DialogHeader>
-          <textarea
-            value={pageCommentDraft ?? ""}
-            onChange={(event) => setPageCommentDraft(event.target.value)}
-            maxLength={MAX_COMMENT_CHARS}
-            rows={4}
-            autoFocus
-            placeholder="What should change on this page?"
-            className="w-full resize-none rounded-md border border-input bg-background p-3 text-sm"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPageCommentDraft(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void postPageComment()}
-              disabled={!pageCommentDraft?.trim() || isPostingPageComment}
-            >
-              Add comment
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

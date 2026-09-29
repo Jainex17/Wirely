@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link2, MessageSquarePlus, RotateCcw, X } from "lucide-react";
+import { Link2, RotateCcw, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "@/components/ui/sonner";
 import { logger } from "@/lib/logger";
 import { previewNode } from "@/lib/nodePicker";
-import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
 import {
   buildNodeLink,
   getNodeAttribute,
@@ -105,8 +104,6 @@ function NodeInspectorCard({
 } & NodeInspectorProps) {
   const { pageId, nodeId } = node;
   const [draftText, setDraftText] = useState(text ?? "");
-  const [commentDraft, setCommentDraft] = useState("");
-  const [isPostingComment, setIsPostingComment] = useState(false);
   const [colors, setColors] = useState<Record<NodeColorProperty, string | null>>({
     text: node.color,
     bg: node.background,
@@ -181,41 +178,6 @@ function NodeInspectorCard({
       toast.success("Element link copied. Paste it to your agent with what to change.");
     } catch {
       toast.error("Could not copy the link. Check clipboard permissions.");
-    }
-  };
-
-  const postComment = async () => {
-    const body = commentDraft.trim();
-    if (!body || isPostingComment) return;
-    setIsPostingComment(true);
-    try {
-      // The agent finds the element by its id, which must be saved first.
-      await commit((html) => html);
-      const response = await fetch(`/api/projects/${projectId}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pageId,
-          nodeId,
-          body,
-          x: Math.max(0, node.x ?? 0),
-          y: Math.max(0, node.y ?? 0),
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | { comment?: ProjectComment; error?: string }
-        | null;
-      if (!response.ok || !payload?.comment) {
-        throw new Error(payload?.error || "Could not add the comment.");
-      }
-      const { comments, setComments } = useEditorStore.getState();
-      setComments([...comments, payload.comment]);
-      setCommentDraft("");
-      toast.success("Comment added. Ask your agent to address the comments on this project.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not add the comment.");
-    } finally {
-      setIsPostingComment(false);
     }
   };
 
@@ -324,36 +286,6 @@ function NodeInspectorCard({
               ))}
             </div>
           ) : null}
-        </div>
-      ) : null}
-
-      {exists ? (
-        <div className="flex items-end gap-1.5 border-t border-border p-2">
-          <textarea
-            value={commentDraft}
-            rows={1}
-            maxLength={MAX_COMMENT_CHARS}
-            placeholder="Comment for your agent…"
-            aria-label="Comment on this element"
-            onChange={(event) => setCommentDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void postComment();
-              }
-            }}
-            className="block min-w-0 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <button
-            type="button"
-            onClick={() => void postComment()}
-            disabled={!commentDraft.trim() || isPostingComment}
-            title="Pin this comment on the element"
-            aria-label="Add comment"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-          >
-            <MessageSquarePlus className="h-3.5 w-3.5" />
-          </button>
         </div>
       ) : null}
     </div>
