@@ -43,7 +43,6 @@ const ModelPicker = dynamic(() => import("./ModelPicker"), {
 });
 
 const DeleteProjectDialog = dynamic(() => import("./DeleteProjectDialog"));
-const McpConnectCard = dynamic(() => import("@/components/McpConnectCard"));
 
 // Shown once an agent is connected, so the first thing to paste is obvious.
 const AGENT_EXAMPLE_PROMPT =
@@ -486,12 +485,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           </button>
         </div>
       ) : null}
-
-      {hasConnectedAgent ? null : (
-        <div className={showComposer ? "mt-8" : undefined}>
-          <McpConnectCard />
-        </div>
-      )}
 
       {showComposer ? null : (
         <p className="mt-5 text-sm text-muted-foreground">
