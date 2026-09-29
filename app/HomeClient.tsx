@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useReducer, useState, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -409,6 +409,25 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
+  // The MCP server URL on the host the user is browsing, so the add command
+  // works on localhost and in production alike. Client-only: the origin is
+  // unknown during server render.
+  const [serverUrl, setServerUrl] = useState("");
+  useEffect(() => {
+    setServerUrl(`${window.location.origin}/api/mcp`);
+  }, []);
+
+  const copyAddCommand = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(
+        `claude mcp add --transport http wirely ${url} --scope user`,
+      );
+      toast.success("Copied. Run it in your terminal, then /mcp to authenticate.");
+    } catch {
+      toast.error("Could not copy. Select the text and copy it manually.");
+    }
+  };
+
   const setup = (
     <section className="w-full max-w-2xl">
       {showComposer ? (
@@ -485,6 +504,42 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           </button>
         </div>
       ) : null}
+
+      {hasConnectedAgent ? null : (
+        <div className="mt-8 rounded-xl border border-border bg-card px-5 py-4 text-left">
+          <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            In Claude Code, run <code className="font-mono text-foreground">/mcp</code>, choose{" "}
+            <code className="font-mono text-foreground">wirely</code>, and pick Authenticate —
+            your browser opens Wirely; click Authorize.
+          </p>
+          {serverUrl ? (
+            <>
+              <p className="mt-2 text-sm text-muted-foreground">
+                If Wirely is not in the list yet, add it first:
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyAddCommand(serverUrl)}
+                title="Copy command"
+                className="mt-2 w-full overflow-x-auto rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
+              >
+                claude mcp add --transport http wirely {serverUrl} --scope user
+              </button>
+            </>
+          ) : null}
+          <p className="mt-3 text-xs text-muted-foreground">
+            Using Cursor, Codex, or opencode? Their commands are in{" "}
+            <Link
+              href="/setting?tab=mcp"
+              className="text-primary underline underline-offset-2"
+            >
+              Settings → MCP
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       {showComposer ? null : (
         <p className="mt-5 text-sm text-muted-foreground">
