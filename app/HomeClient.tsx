@@ -410,8 +410,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
-  const leadWithSetup = state.historyItems.length === 0;
-
   const setup = (
     <section className="w-full max-w-2xl">
       {showComposer ? (
@@ -525,8 +523,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       </div>
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-28 sm:px-6">
-        {leadWithSetup ? <div className="pt-10">{setup}</div> : null}
-
         <section className="pt-10">
           <div className="flex items-baseline justify-between gap-4">
             <h1 className="font-display text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
@@ -604,7 +600,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           </ul>
         </section>
 
-        {leadWithSetup ? null : <div className="pt-12">{setup}</div>}
+        <div className="pt-12">{setup}</div>
       </main>
 
       {state.projectToDelete ? (
