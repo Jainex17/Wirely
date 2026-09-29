@@ -16,7 +16,7 @@ import {
   callTool,
   replaceExactlyOnce,
 } from "@/lib/mcp/tools";
-import { buildInstallPrompt, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
+import { buildConnectPrompt, buildInstallPrompt, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -307,6 +307,43 @@ describe("protocol purity", () => {
   });
 });
 
+describe("oauth connect boundary", () => {
+  it("consumes the code and verifies PKCE before any token is issued", () => {
+    const source = read("app/api/mcp/oauth/token/route.ts");
+    const consume = source.indexOf("consumeAuthorizationCode(");
+    const pkce = source.indexOf("verifierMatchesChallenge(");
+    const issue = source.indexOf("createApiToken(");
+
+    expect(consume).toBeGreaterThan(-1);
+    expect(pkce).toBeGreaterThan(-1);
+    expect(issue).toBeGreaterThan(consume);
+    expect(issue).toBeGreaterThan(pkce);
+  });
+
+  it("matches the redirect URI exactly on both authorize steps and never redirects on failure", () => {
+    for (const path of [
+      "app/mcp/authorize/page.tsx",
+      "app/api/mcp/oauth/authorize/route.ts",
+    ]) {
+      const source = read(path);
+      const validates = source.indexOf("validateRedirectUri(");
+      const matches = source.indexOf(".includes(parsed.value.redirectUri)");
+      const errors = source.indexOf("renderError");
+
+      expect(validates).toBeGreaterThan(-1);
+      expect(matches).toBeGreaterThan(validates);
+      expect(errors).toBeGreaterThan(-1);
+    }
+  });
+
+  it("challenges clients toward the discovery document on 401", () => {
+    const source = read("app/api/mcp/route.ts");
+
+    expect(source.includes("resource_metadata=")).toBe(true);
+    expect(source.includes(".well-known/oauth-protected-resource")).toBe(true);
+  });
+});
+
 describe("client install prompts", () => {
   const URL = "https://wirely.vercel.app/api/mcp";
   const TOKEN = "wirely_abc123";
@@ -359,5 +396,16 @@ describe("client install prompts", () => {
   it("refuses to build a prompt without the pieces it needs", () => {
     expect(() => buildInstallPrompt("opencode", "", TOKEN)).toThrow();
     expect(() => buildInstallPrompt("opencode", URL, "  ")).toThrow();
+    expect(() => buildConnectPrompt("cursor", "")).toThrow();
+  });
+
+  it("builds the one-click prompt without any token in it", () => {
+    for (const client of MCP_CLIENTS) {
+      const prompt = buildConnectPrompt(client.id, URL);
+
+      expect(prompt).toContain(URL);
+      expect(prompt).not.toContain("wirely_");
+      expect(prompt).toMatch(/authoriz/i);
+    }
   });
 });

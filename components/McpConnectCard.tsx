@@ -6,6 +6,7 @@ import { Check, Circle, Copy, Loader2, Plug, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import {
+  buildConnectPrompt,
   buildInstallPrompt,
   MCP_CLIENTS,
   type McpClientId,
@@ -28,11 +29,11 @@ const CONNECTION_POLL_MS = 3_000;
 const CONNECTION_POLL_LIMIT_MS = 10 * 60_000;
 
 /**
- * Connects an MCP client in one paste: create a token, copy the prompt for the
- * client, and paste it there. That client's own agent edits its config. The
- * prompt embeds the freshly minted token, so it is only offered while that
- * token is in hand. After that the card polls the token list until the client
- * makes its first call, so the user sees the install worked.
+ * Connects an MCP client in one paste: copy the one-click prompt for the
+ * client, paste it there, and click Authorize when the browser opens. The
+ * token flow below it is the fallback for a client that asks for a token
+ * instead of speaking OAuth. After either path the card can poll the token
+ * list until the client makes its first call, so the user sees it worked.
  */
 export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) {
   const [isCreating, setIsCreating] = useState(false);
@@ -76,8 +77,31 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
   const serverUrl = origin ? `${origin}${MCP_PATH}` : "";
   const selectedClient =
     MCP_CLIENTS.find((client) => client.id === clientId) ?? MCP_CLIENTS[0];
+  const connectPrompt = serverUrl ? buildConnectPrompt(clientId, serverUrl) : "";
   const installPrompt =
     newToken && serverUrl ? buildInstallPrompt(clientId, serverUrl, newToken.token) : "";
+
+  const clientTabs = (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      role="tablist"
+      aria-label="MCP client"
+    >
+      {MCP_CLIENTS.map((client) => (
+        <Button
+          key={client.id}
+          type="button"
+          role="tab"
+          aria-selected={client.id === clientId}
+          variant={client.id === clientId ? "default" : "outline"}
+          size="sm"
+          onClick={() => setClientId(client.id)}
+        >
+          {client.label}
+        </Button>
+      ))}
+    </div>
+  );
 
   const createToken = async () => {
     setIsCreating(true);
@@ -122,11 +146,7 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
 
   return (
     <div className="rounded-xl border border-border bg-card text-left">
-      <div
-        className={`flex items-center gap-3.5 px-4 py-3.5 ${
-          newToken ? "border-b border-border/60" : ""
-        }`}
-      >
+      <div className="flex items-center gap-3.5 border-b border-border/60 px-4 py-3.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
           <Plug className="size-4" />
         </span>
@@ -140,6 +160,7 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
           <Button
             type="button"
             size="sm"
+            variant="outline"
             className="shrink-0 transition-transform active:scale-[0.97]"
             onClick={createToken}
             disabled={isCreating}
@@ -149,35 +170,57 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
             ) : (
               <Plus className="size-3.5" />
             )}
-            Connect
+            Use a token
           </Button>
         )}
+      </div>
+
+      <div className="space-y-3 border-b border-border/60 px-5 py-5">
+        <div>
+          <p className="text-sm font-medium text-foreground">One-click connect</p>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
+            Paste this into {selectedClient.label}. It opens Wirely in your browser; click
+            Authorize there. No token to manage — the connection appears in your token list
+            and can be revoked.
+          </p>
+        </div>
+        {clientTabs}
+        <div className="flex items-start gap-2">
+          <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-relaxed text-foreground">
+            {connectPrompt}
+          </pre>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={!connectPrompt}
+            onClick={() =>
+              copy(
+                "connectPrompt",
+                connectPrompt,
+                `Prompt copied. Paste it into ${selectedClient.label}.`,
+              )
+            }
+          >
+            {copiedField === "connectPrompt" ? (
+              <Check className="size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            Copy
+          </Button>
+        </div>
       </div>
 
       {newToken ? (
         <div className="space-y-4 px-5 py-5">
             <div>
               <p className="text-sm font-medium text-foreground">
-                1. Paste this prompt into your agent
+                Token connect
               </p>
-              <div
-                className="mt-2 flex flex-wrap items-center gap-2"
-                role="tablist"
-                aria-label="MCP client"
-              >
-                {MCP_CLIENTS.map((client) => (
-                  <Button
-                    key={client.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={client.id === clientId}
-                    variant={client.id === clientId ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setClientId(client.id)}
-                  >
-                    {client.label}
-                  </Button>
-                ))}
+              <div className="mt-2">
+                {clientTabs}
               </div>
               <div className="mt-3 flex items-start gap-2">
                 <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-relaxed text-foreground">
@@ -251,7 +294,7 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
                 <>
                   <Circle className="size-4 shrink-0 text-muted-foreground" />
                   <span className="text-muted-foreground">
-                    2. Restart your agent. This turns green on its first call.
+                    Restart your agent. This turns green on its first call.
                   </span>
                 </>
               )}

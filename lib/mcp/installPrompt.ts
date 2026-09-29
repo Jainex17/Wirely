@@ -4,9 +4,12 @@
  * own agent edits its config file. Nothing on the Wirely side needs to know
  * which client is calling later — only this prompt differs.
  *
- * The bearer token rides inside the prompt, so a prompt is only ever built for
- * a token that was just minted and shown once. Pasting it anywhere else hands
- * the token over; the settings panel says so next to the copy button.
+ * `buildConnectPrompt` is the OAuth variant: URL only, no token. The client
+ * starts the connect flow on first use and the user clicks Authorize in the
+ * browser. `buildInstallPrompt` is the token fallback for clients that ask
+ * for one. A prompt that embeds a token is only ever built for a token that
+ * was just minted and shown once; pasting it anywhere else hands it over, and
+ * the settings panel says so next to the copy button.
  */
 
 export type McpClientId = "claude-code" | "cursor" | "codex" | "opencode";
@@ -85,6 +88,72 @@ export const buildInstallPrompt = (
         "",
         'Then run `claude mcp list`, confirm "wirely" is listed, and tell me to ' +
           "restart any open Claude Code session.",
+      ].join("\n");
+  }
+};
+
+/**
+ * The one-click connect prompt: the server URL with no credential in it. The
+ * client runs the OAuth flow itself on first use and the user only clicks
+ * Authorize in a browser. Tokens minted this way show up in the user's token
+ * list named after the client, so revoking stays possible from settings.
+ */
+export const buildConnectPrompt = (clientId: McpClientId, serverUrl: string): string => {
+  if (!serverUrl) throw new Error("A server URL is required to build a connect prompt.");
+
+  switch (clientId) {
+    case "opencode":
+      return [
+        `Install the Wirely MCP server into my opencode config. ${PURPOSE_LINE}`,
+        "",
+        "1. Find my opencode config file (opencode.json or opencode.jsonc, usually in ~/.config/opencode).",
+        '2. Merge this entry in under "mcp", keeping every existing setting:',
+        '   "mcp": { "wirely": { "type": "remote", "enabled": true, "url": "' + serverUrl + '" } }',
+        "3. Verify the file is still valid JSON when you are done.",
+        "4. Tell me what you changed and that I should restart opencode.",
+        "",
+        "On first use opencode opens a browser to authorize; I click Authorize there.",
+      ].join("\n");
+
+    case "cursor":
+      return [
+        `Install the Wirely MCP server into my Cursor editor. ${PURPOSE_LINE}`,
+        "",
+        "1. Open ~/.cursor/mcp.json (create it if it does not exist).",
+        '2. Merge this entry in under "mcpServers", keeping every existing server:',
+        '   "mcpServers": { "wirely": { "url": "' + serverUrl + '" } }',
+        "3. Verify the file is still valid JSON when you are done.",
+        "4. Tell me what you changed and that I should restart Cursor.",
+        "",
+        "The first time Cursor connects it opens a browser to authorize; I click Authorize there.",
+      ].join("\n");
+
+    case "codex":
+      return [
+        `Install the Wirely MCP server into Codex. ${PURPOSE_LINE}`,
+        "",
+        "1. Open ~/.codex/config.toml (create it if it does not exist).",
+        "2. Add this table, keeping every existing setting:",
+        "   [mcp_servers.wirely]",
+        `   url = "${serverUrl}"`,
+        "3. Verify the file is still valid TOML when you are done.",
+        "4. Tell me what you changed and that I should restart Codex.",
+        "",
+        "Codex starts the browser login itself on first use; I click Authorize there.",
+      ].join("\n");
+
+    case "claude-code":
+      return [
+        `Install the Wirely MCP server into Claude Code. ${PURPOSE_LINE}`,
+        "",
+        "Run this command:",
+        `claude mcp add --transport http wirely ${serverUrl} --scope user`,
+        "",
+        'Then run `/mcp`, choose "wirely", and pick Authenticate: a browser opens ' +
+          "and I click Authorize.",
+        "",
+        'Confirm "wirely" is connected with `claude mcp list`, and tell me to restart ' +
+          "any open Claude Code session.",
       ].join("\n");
   }
 };

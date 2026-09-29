@@ -38,7 +38,8 @@ export interface CreatedApiToken {
 
 export const createApiToken = async (
   userId: string,
-  name = "MCP"
+  name = "MCP",
+  oauthClientId?: string,
 ): Promise<CreatedApiToken> => {
   const token = `${API_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   const prefix = token.slice(0, PREFIX_DISPLAY_LENGTH);
@@ -46,7 +47,13 @@ export const createApiToken = async (
 
   const [row] = await db
     .insert(apiTokens)
-    .values({ userId, name, tokenHash: hashApiToken(token), prefix })
+    .values({
+      userId,
+      name,
+      tokenHash: hashApiToken(token),
+      prefix,
+      ...(oauthClientId ? { oauthClientId } : {}),
+    })
     .returning({ id: apiTokens.id, name: apiTokens.name, prefix: apiTokens.prefix });
 
   return { id: row.id, name: row.name, prefix: row.prefix, token };

@@ -5,6 +5,8 @@ const isProtectedRoute = createRouteMatcher([
   "/setting(.*)",
   // Review links are for signed-in users only.
   "/share(.*)",
+  // The OAuth consent screen is for the signed-in account being connected.
+  "/mcp(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
