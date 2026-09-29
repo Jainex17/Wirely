@@ -8,9 +8,11 @@
  * Auth uses the personal bearer tokens minted in settings. Tokens are accepted
  * only here, never on the session-authenticated profile routes.
  */
+import { editorLinkOrigin } from "@/lib/appUrl";
 import { authenticateAgentRequest } from "@/lib/auth/apiToken";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
+import { MCP_SCOPE } from "@/lib/mcp/oauth/metadata";
 import {
   MCP_INSTRUCTIONS,
   MCP_SERVER_NAME,
@@ -39,11 +41,26 @@ const MCP_BODY_MAX_BYTES = 4 * 1024 * 1024;
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status });
 
-const unauthorized = () =>
-  Response.json(
+/**
+ * The 401 challenge clients discover the connect flow from. `resource_metadata`
+ * points at the RFC 9728 document so an OAuth-capable client starts the
+ * one-click flow instead of asking the user for a token.
+ */
+const unauthorized = (request: Request) => {
+  const origin = new URL(request.url).origin;
+  return Response.json(
     { error: "Unauthenticated" },
-    { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="wirely-mcp"' } },
+    {
+      status: 401,
+      headers: {
+        "WWW-Authenticate":
+          `Bearer realm="wirely-mcp", ` +
+          `resource_metadata="${origin}/.well-known/oauth-protected-resource", ` +
+          `scope="${MCP_SCOPE}"`,
+      },
+    },
   );
+};
 
 const methodNotAllowed = () =>
   new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -51,7 +68,7 @@ const methodNotAllowed = () =>
 export async function POST(request: Request) {
   try {
     const user = await authenticateAgentRequest(request);
-    if (!user) return unauthorized();
+    if (!user) return unauthorized(request);
 
     const parsed = await readJsonBodyWithLimit(request, MCP_BODY_MAX_BYTES);
     if (!parsed.ok) return parsed.response;
@@ -90,7 +107,9 @@ export async function POST(request: Request) {
           return json(rpcError(id, RPC_INVALID_PARAMS, "tools/call requires a tool name."));
         }
         logger.info("mcp.tool_called", { tool: name });
-        return json(rpcResult(id, await callTool(user.id, name, args, new URL(request.url).origin)));
+        return json(
+          rpcResult(id, await callTool(user.id, name, args, editorLinkOrigin(new URL(request.url).origin))),
+        );
       }
 
       case "ping":
