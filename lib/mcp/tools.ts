@@ -20,16 +20,27 @@ import {
   listProjectsForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import { recordAgentActivity } from "@/lib/db/queries/agentActivity";
+import {
+  getCanvasSelection,
+  getDesignTokens,
+  setDesignTokens,
+} from "@/lib/db/queries/agentState";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
-import { listProjectCommentsWithPages } from "@/lib/db/queries/reviews";
+import {
+  listProjectCommentsWithPages,
+  setProjectCommentResolved,
+} from "@/lib/db/queries/reviews";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
+import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
-import { getNodeHtml } from "@/lib/pageNodes";
-import { formatCommentsForAgent } from "@/lib/projectComments";
+import { parseDesignTokens } from "@/lib/designTokens";
+import { buildNodeLink, getNodeHtml } from "@/lib/pageNodes";
+import { formatCommentsForAgent, isUuid } from "@/lib/projectComments";
 import { isPageDeviceType } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 
@@ -422,6 +433,174 @@ const deletePage: ToolHandler = async (userId, args) => {
   return succeed(`Deleted page "${result.deleted.title}".`);
 };
 
+const resolveComment: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      commentId: z.string().trim().min(1),
+      resolved: z.boolean().optional(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const resolved = parsed.data.resolved ?? true;
+  const updated =
+    isUuid(parsed.data.commentId) &&
+    (await setProjectCommentResolved({
+      projectId: project.id,
+      commentId: parsed.data.commentId,
+      resolved,
+    }));
+  if (!updated) return fail("Comment not found. Use list_comments for valid ids.");
+  return succeed(resolved ? "Comment resolved." : "Comment reopened.");
+};
+
+const getSelection: ToolHandler = async (userId, args, origin) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1).optional() }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  let selection: Awaited<ReturnType<typeof getCanvasSelection>> | null;
+  try {
+    selection = await getCanvasSelection(userId, parsed.data.projectId);
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+    selection = null;
+  }
+  if (!selection?.pageId) {
+    return fail(
+      "The user has not selected anything on the canvas yet. Ask them to click a page or " +
+        "pick an element in the Wirely editor.",
+    );
+  }
+
+  const page = await getProjectPageForUser({
+    projectId: selection.projectId,
+    pageId: selection.pageId,
+    userId,
+  });
+  if (!page) return fail("The selected page was deleted. Ask the user to select again.");
+
+  const minutesAgo = selection.selectedAt
+    ? Math.round((Date.now() - selection.selectedAt.getTime()) / 60_000)
+    : null;
+  const when = minutesAgo === null ? "" : minutesAgo < 1 ? " just now" : ` ${minutesAgo} min ago`;
+  const header =
+    `Selected${when} in "${selection.projectTitle}" (projectId: ${selection.projectId}), ` +
+    `page "${page.title}" (pageId: ${page.id}, ${page.deviceType}).`;
+
+  if (!selection.nodeId) {
+    return succeed(`${header}\nNo element is picked, so the whole page is selected. Call get_page for its HTML.`);
+  }
+  const nodeHtml = getNodeHtml(page.htmlContent ?? "", selection.nodeId);
+  if (!nodeHtml) {
+    return succeed(
+      `${header}\nThe picked element ${selection.nodeId} is no longer on the page, so treat the ` +
+        "whole page as selected.",
+    );
+  }
+  return {
+    content: [
+      text(
+        `${header}\nElement ${selection.nodeId}: ` +
+          buildNodeLink({ origin, projectId: selection.projectId, pageId: page.id, nodeId: selection.nodeId }),
+      ),
+      text(nodeHtml),
+    ],
+  };
+};
+
+const getDesignTokensHandler: ToolHandler = async (userId, args) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const tokens = await getDesignTokens(project.id);
+  return succeed(
+    tokens
+      ? JSON.stringify(tokens)
+      : `"${project.title}" has no design tokens. Set them with set_design_tokens.`,
+  );
+};
+
+const setDesignTokensHandler: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({ projectId: z.string().trim().min(1), tokens: z.unknown() })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+  const tokens = parseDesignTokens(parsed.data.tokens);
+  if (!tokens.ok) return fail(tokens.error);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  try {
+    const changed = await setDesignTokens(project.id, tokens.tokens);
+    const count = Object.keys(tokens.tokens).length;
+    return succeed(
+      count === 0
+        ? `Removed the design tokens from "${project.title}" and ${changed} page(s).`
+        : `Saved ${count} design token(s) and rewrote ${changed} page(s) in "${project.title}".`,
+    );
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+    return fail("Design tokens are not set up on this Wirely server yet.");
+  }
+};
+
+const importUrl: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      url: z.string().trim().min(1).max(2_000),
+      title: z.string().trim().min(1).max(TITLE_MAX_CHARS).optional(),
+      deviceType: z.enum(["desktop", "mobile"]).optional(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const deviceType = parsed.data.deviceType ?? "desktop";
+  let imported: Awaited<ReturnType<typeof importUrlHtml>>;
+  try {
+    // Headroom under the cap for the CSP meta and the tokens block.
+    imported = await importUrlHtml(parsed.data.url, deviceType, PAGE_HTML_MAX_CHARS - 20_000);
+  } catch (error) {
+    if (error instanceof ImportUrlError || error instanceof ScreenshotUnavailableError) {
+      return fail(error.message);
+    }
+    throw error;
+  }
+
+  const html = sanitizeIframeHtml(imported.html);
+  if (html.length > PAGE_HTML_MAX_CHARS) {
+    return fail(
+      `The imported page is ${html.length} characters, over the ${PAGE_HTML_MAX_CHARS} limit even ` +
+        "with its artwork removed. Try a simpler page of the site.",
+    );
+  }
+
+  const page = await createProjectPageForUser({
+    projectId: project.id,
+    userId,
+    title: (parsed.data.title ?? imported.title.trim()).slice(0, TITLE_MAX_CHARS) || "Imported page",
+    deviceType,
+    htmlContent: html,
+  });
+  if (!page) return fail("Project not found. Use list_projects for valid ids.");
+
+  return succeed(
+    `Imported ${parsed.data.url} as page "${page.title}" (id: ${page.id}, ${html.length} characters). ` +
+      "Call get_page_png to see how it came through.",
+  );
+};
+
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_projects: listProjects,
   create_project: createProjectHandler,
@@ -432,6 +611,11 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   get_page: getPage,
   get_page_png: getPagePng,
   list_comments: listComments,
+  resolve_comment: resolveComment,
+  get_selection: getSelection,
+  get_design_tokens: getDesignTokensHandler,
+  set_design_tokens: setDesignTokensHandler,
+  import_url: importUrl,
   delete_page: deletePage,
 };
 
@@ -449,11 +633,39 @@ export const callTool = async (
     return fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
   }
 
+  let result: ToolCallResult;
   try {
-    return await handler(userId, args, origin);
+    result = await handler(userId, args, origin);
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });
-    return fail("The tool failed on the server. It has been logged; try again.");
+    result = fail("The tool failed on the server. It has been logged; try again.");
+  }
+  await recordActivity(userId, name, args, result);
+  return result;
+};
+
+/**
+ * Logs a project-scoped call for the editor's activity tab. A failed write
+ * here must not fail the tool call the agent is waiting on.
+ */
+const recordActivity = async (
+  userId: string,
+  tool: string,
+  args: ToolArgs,
+  result: ToolCallResult,
+) => {
+  if (typeof args.projectId !== "string") return;
+  const firstText = result.content.find((item) => item.type === "text");
+  try {
+    await recordAgentActivity({
+      userId,
+      projectId: args.projectId,
+      tool,
+      pageId: typeof args.pageId === "string" ? args.pageId : null,
+      error: result.isError && firstText?.type === "text" ? firstText.text.slice(0, 300) : null,
+    });
+  } catch (error) {
+    if (!isMissingRelationError(error)) logger.error("mcp.activity_record_failed", { tool, error });
   }
 };
 

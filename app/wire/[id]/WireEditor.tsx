@@ -15,8 +15,10 @@ import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
+import AgentActivityPanel from "@/components/AgentActivityPanel";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import ShareProjectButton from "@/components/ShareProjectButton";
+import DesignTokensDialog from "@/components/DesignTokensDialog";
 import type { ProjectComment } from "@/lib/projectComments";
 import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
@@ -74,6 +76,7 @@ export default function WireEditor({
   // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
   const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "activity">("chat");
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -201,6 +204,33 @@ export default function WireEditor({
     };
   }, [wireId]);
 
+  // Tells the server what the user picked, so an MCP agent's get_selection can
+  // act on "this" without the user copying a link. A picked element wins over
+  // the focused page, and a burst of clicks sends only the last one.
+  useEffect(() => {
+    let timeoutId = 0;
+    let lastSent = "";
+    const unsubscribe = useEditorStore.subscribe((state) => {
+      const pageId = state.selectedNode?.pageId ?? state.focusedPageId;
+      const nodeId = state.selectedNode?.nodeId ?? null;
+      const key = `${pageId}:${nodeId}`;
+      if (!pageId || key === lastSent) return;
+      lastSent = key;
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        void fetch(`/api/projects/${wireId}/selection`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pageId, nodeId }),
+        }).catch(() => undefined);
+      }, 400);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timeoutId);
+    };
+  }, [wireId]);
+
   useEffect(() => {
     router.prefetch("/");
   }, [router]);
@@ -237,6 +267,7 @@ export default function WireEditor({
   const handleEditPage = (pageId: string) => {
     // The sidebar targets the focused page when the prompt names no other.
     setFocusedPage(pageId);
+    setSidebarTab("chat");
     setPromptFocusRequestKey((currentKey) => currentKey + 1);
   };
 
@@ -281,6 +312,7 @@ export default function WireEditor({
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              <DesignTokensDialog projectId={wireId} />
               <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
               {isPromptPanelCollapsed ? (
@@ -330,11 +362,29 @@ export default function WireEditor({
                 : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
             }
           >
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-4 pr-2">
-              <h2 className="text-[13px] font-semibold text-foreground">Chat</h2>
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-2 pr-2">
+              <div role="tablist" className="flex items-center gap-0.5">
+                {(["chat", "activity"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={sidebarTab === tab}
+                    onClick={() => setSidebarTab(tab)}
+                    className={
+                      sidebarTab === tab
+                        ? "rounded-md bg-foreground/10 px-2.5 py-1 text-[13px] font-semibold text-foreground"
+                        : "rounded-md px-2.5 py-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+                    }
+                  >
+                    {tab === "chat" ? "Chat" : "Agent activity"}
+                  </button>
+                ))}
+              </div>
               {promptPanelToggle}
             </div>
-            <div className="min-h-0 flex-1">
+            {/* The chat stays mounted on the activity tab for the same reason. */}
+            <div className={sidebarTab === "chat" ? "min-h-0 flex-1" : "hidden"}>
               <WirePromptSidebar
                 wireId={wireId}
                 initialModelName={initialModelName}
@@ -342,6 +392,11 @@ export default function WireEditor({
                 focusRequestKey={promptFocusRequestKey}
               />
             </div>
+            {sidebarTab === "activity" ? (
+              <div className="min-h-0 flex-1">
+                <AgentActivityPanel projectId={wireId} isActive={!isPromptPanelCollapsed} />
+              </div>
+            ) : null}
           </div>
         </EditorErrorBoundary>
       </div>

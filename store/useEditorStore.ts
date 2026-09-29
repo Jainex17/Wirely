@@ -73,6 +73,9 @@ export interface SelectedNode {
   /** Computed colors as #rrggbb, or null when transparent. */
   color: string | null;
   background: string | null;
+  /** Top left in page pixels, where a comment on it pins. Missing when opened from a link. */
+  x?: number;
+  y?: number;
 }
 
 export interface CanvasState {

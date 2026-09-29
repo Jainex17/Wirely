@@ -116,12 +116,17 @@ describe("tool catalog", () => {
       "add_page",
       "create_project",
       "delete_page",
+      "get_design_tokens",
       "get_page",
       "get_page_png",
+      "get_selection",
+      "import_url",
       "list_comments",
       "list_pages",
       "list_projects",
       "patch_page",
+      "resolve_comment",
+      "set_design_tokens",
       "update_page",
     ]);
   });

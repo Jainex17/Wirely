@@ -55,7 +55,7 @@ export default function CanvasCommentPins({
           ),
     );
     setActiveId(null);
-    if (method === "PATCH") toast.success("Resolved. Reopen it from the review page.");
+    if (method === "PATCH") toast.success("Comment resolved.");
   };
 
   return pageComments.map((comment, index) => {

@@ -98,10 +98,11 @@ The code uses two names for the same thing in places. Be precise when you talk t
 
 ## The three ways to hurt yourself
 
-1. **Running migrations against the live database.** There is no local Postgres. `DATABASE_URL`
-   points at the real Neon database with real projects in it. `bun run db:generate` writes migration
-   SQL and is safe. `bun run db:migrate` applies it and is not. Read the generated SQL in `drizzle/`
-   before applying anything, and never apply a migration I did not ask for.
+1. **Migrating the production database.** `bun run db:migrate:prod` applies migrations to
+   `PROD_DATABASE_URL`, the Neon database with real projects in it. Never run it unless I ask in
+   this conversation. `bun run db:migrate` applies to whatever `DATABASE_URL` names, so check that it
+   points at a local host before running it. `bun run db:generate` only writes SQL and is safe. Read
+   the generated SQL in `drizzle/` before applying anything.
 
 2. **Spending my API credits in a loop.** Generation costs real money on paid models and burns a real
    daily quota on free ones. Do not call the wire route repeatedly to test a change. The pipeline is

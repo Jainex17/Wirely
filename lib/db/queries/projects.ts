@@ -1,5 +1,8 @@
 import { and, asc, desc, eq, getTableColumns, gt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
+import { getDesignTokens } from "@/lib/db/queries/agentState";
+import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
+import { applyDesignTokens } from "@/lib/designTokens";
 import {
   conversationMessages,
   conversations,
@@ -309,7 +312,7 @@ export const createProjectPageForUser = async ({
       projectId,
       title,
       sortOrder: (lastPage?.sortOrder ?? -1) + 1,
-      htmlContent: htmlContent ?? "",
+      htmlContent: applyDesignTokens(htmlContent ?? "", await getDesignTokens(projectId)),
       ...(deviceType ? { deviceType } : {}),
     })
     .returning();
@@ -327,6 +330,7 @@ export const updateProjectPageForUser = async ({
   htmlContent,
   deviceType,
   expectedHtmlContent,
+  forceSnapshot,
 }: {
   projectId: string;
   pageId: string;
@@ -336,16 +340,27 @@ export const updateProjectPageForUser = async ({
   deviceType?: PageDeviceType;
   /** Writes only if the page still holds this HTML, for compare-and-swap edits. */
   expectedHtmlContent?: string;
+  /** Snapshot the current HTML even if a snapshot was just taken, so a restore can be undone. */
+  forceSnapshot?: boolean;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
   if (!project) return null;
 
+  // Every write carries the project's current tokens, whoever wrote the HTML.
+  const html =
+    htmlContent !== undefined
+      ? applyDesignTokens(htmlContent, await getDesignTokens(projectId))
+      : undefined;
+  if (html !== undefined) {
+    await snapshotPageBeforeWrite({ projectId, pageId, nextHtml: html, force: forceSnapshot });
+  }
+
   const [updated] = await db
     .update(projectPages)
     .set({
       ...(title !== undefined ? { title } : {}),
-      ...(htmlContent !== undefined ? { htmlContent } : {}),
+      ...(html !== undefined ? { htmlContent: html } : {}),
       ...(deviceType !== undefined ? { deviceType } : {}),
       updatedAt: new Date(),
     })
