@@ -4,9 +4,12 @@ import {
   Bot,
   Check,
   Copy,
+  Download,
   Eye,
   FileCode2,
   FileIcon,
+  History,
+  MessageSquarePlus,
   ImageIcon,
   Loader2,
   MoreHorizontal,
@@ -33,6 +36,7 @@ import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import CanvasCommentPins from "./CanvasCommentPins";
 import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
+import PageHistoryDialog from "./PageHistoryDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -57,7 +61,8 @@ import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import type { PageRenderMode } from "@/lib/canvasScene";
 import type { PageDeviceType } from "@/lib/types";
-import type { AgentEdit, PageStatusRecord } from "@/store/useEditorStore";
+import { type AgentEdit, type PageStatusRecord, useEditorStore } from "@/store/useEditorStore";
+import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
 
 /** How long the agent cursor stays after the last change it points at. */
 const AGENT_CURSOR_LINGER_MS = 3_000;
@@ -147,6 +152,17 @@ interface ContextMenuAction {
   destructive?: boolean;
   disabled?: boolean;
 }
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 
 /** Narrowest the preview can be dragged. Below this nothing is readable. */
 export const MIN_PREVIEW_WIDTH = 280;
@@ -250,6 +266,37 @@ export default React.memo(function PageRenderer({
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+  const [pageCommentDraft, setPageCommentDraft] = React.useState<string | null>(null);
+  const [isPostingPageComment, setIsPostingPageComment] = React.useState(false);
+
+  // A comment on the whole page pins at its top left corner.
+  const postPageComment = async () => {
+    const body = pageCommentDraft?.trim();
+    if (!projectId || !body || isPostingPageComment) return;
+    setIsPostingPageComment(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId: page.id, nodeId: null, body, x: 24, y: 24 }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { comment?: ProjectComment; error?: string }
+        | null;
+      if (!response.ok || !payload?.comment) {
+        throw new Error(payload?.error || "Could not add the comment.");
+      }
+      const { comments, setComments } = useEditorStore.getState();
+      setComments([...comments, payload.comment]);
+      setPageCommentDraft(null);
+      toast.success("Comment added. Ask your agent to address the comments on this project.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add the comment.");
+    } finally {
+      setIsPostingPageComment(false);
+    }
+  };
   const [previewWidthOverride, setPreviewWidthOverride] = React.useState<
     number | null
   >(null);
@@ -507,20 +554,26 @@ export default React.memo(function PageRenderer({
     }
   }, [page.deviceType, page.id, page.title, projectId]);
 
-  const [isCopyingImage, setIsCopyingImage] = React.useState(false);
-  const copyImage = React.useCallback(async () => {
-    if (!projectId || isCopyingImage) return;
-    setIsCopyingImage(true);
-    const fetchPng = async () => {
-      const response = await fetch(`/api/projects/${projectId}/pages/${page.id}/png`, {
-        cache: "no-store",
-      });
+  const fetchPagePng = React.useCallback(
+    async (scale = 1) => {
+      const response = await fetch(
+        `/api/projects/${projectId}/pages/${page.id}/png${scale > 1 ? `?scale=${scale}` : ""}`,
+        { cache: "no-store" },
+      );
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error || "Could not render the page image.");
       }
       return response.blob();
-    };
+    },
+    [page.id, projectId],
+  );
+
+  const [isCopyingImage, setIsCopyingImage] = React.useState(false);
+  const copyImage = React.useCallback(async () => {
+    if (!projectId || isCopyingImage) return;
+    setIsCopyingImage(true);
+    const fetchPng = () => fetchPagePng();
 
     try {
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
@@ -531,21 +584,26 @@ export default React.memo(function PageRenderer({
         return;
       }
 
-      const url = URL.createObjectURL(await fetchPng());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${slugifiedTitle}.png`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(await fetchPng(), `${slugifiedTitle}.png`);
       toast.success("This browser cannot copy images, so the PNG was downloaded instead.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not copy the image.");
     } finally {
       setIsCopyingImage(false);
     }
-  }, [isCopyingImage, page.id, projectId, slugifiedTitle]);
+  }, [fetchPagePng, isCopyingImage, projectId, slugifiedTitle]);
+
+  const downloadPng2x = React.useCallback(async () => {
+    const pending = toast.loading("Rendering a 2x PNG…");
+    try {
+      downloadBlob(await fetchPagePng(2), `${slugifiedTitle}@2x.png`);
+      toast.success("PNG downloaded.", { id: pending });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not render the page image.", {
+        id: pending,
+      });
+    }
+  }, [fetchPagePng, slugifiedTitle]);
 
   const previewSrcDoc = React.useMemo(
     () =>
@@ -851,6 +909,37 @@ export default React.memo(function PageRenderer({
           ]
         : []),
       {
+        label: "Download HTML",
+        icon: Download,
+        onClick: () => {
+          const html = stripWirelyArtifacts(page.iframeHtml ?? "");
+          if (!html.trim()) {
+            toast.error("This page has no design yet.");
+            return;
+          }
+          downloadBlob(new Blob([html], { type: "text/html" }), `${slugifiedTitle}.html`);
+        },
+      },
+      ...(projectId
+        ? [
+            {
+              label: "Download PNG 2x",
+              icon: ImageIcon,
+              onClick: () => void downloadPng2x(),
+            },
+            {
+              label: "History",
+              icon: History,
+              onClick: () => setIsHistoryOpen(true),
+            },
+            {
+              label: "Add comment",
+              icon: MessageSquarePlus,
+              onClick: () => setPageCommentDraft(""),
+            },
+          ]
+        : []),
+      {
         label: "Delete",
         icon: Trash2,
         destructive: true,
@@ -863,6 +952,7 @@ export default React.memo(function PageRenderer({
     ],
     [
       copyToClipboard,
+      downloadPng2x,
       isOnlyPage,
       onEditPage,
       onFocusPage,
@@ -870,6 +960,8 @@ export default React.memo(function PageRenderer({
       page.id,
       page.iframeHtml,
       page.title,
+      projectId,
+      slugifiedTitle,
     ],
   );
 
@@ -1419,6 +1511,53 @@ export default React.memo(function PageRenderer({
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={pageCommentDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setPageCommentDraft(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Comment on {page.title}</DialogTitle>
+            <DialogDescription>
+              Your agent reads it with list_comments. To comment on one element, pick it with the
+              element tool (E) instead.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={pageCommentDraft ?? ""}
+            onChange={(event) => setPageCommentDraft(event.target.value)}
+            maxLength={MAX_COMMENT_CHARS}
+            rows={4}
+            autoFocus
+            placeholder="What should change on this page?"
+            className="w-full resize-none rounded-md border border-input bg-background p-3 text-sm"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPageCommentDraft(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void postPageComment()}
+              disabled={!pageCommentDraft?.trim() || isPostingPageComment}
+            >
+              Add comment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {projectId ? (
+        <PageHistoryDialog
+          projectId={projectId}
+          pageId={page.id}
+          pageTitle={page.title}
+          open={isHistoryOpen}
+          onOpenChange={setIsHistoryOpen}
+        />
+      ) : null}
 
       <AlertDialog
         open={isDeleteDialogOpen}

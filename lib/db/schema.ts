@@ -186,6 +186,8 @@ export const projectComments = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     body: text("body").notNull(),
+    /** The element the comment is about, a `data-wirely-id`, or null for the whole page. */
+    nodeId: text("node_id"),
     /** Page pixels from the top left of the page at its device width. */
     x: integer("x").notNull(),
     y: integer("y").notNull(),
@@ -194,6 +196,72 @@ export const projectComments = pgTable(
   },
   (table) => ({
     projectCreatedIdx: index("project_comments_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  }),
+);
+
+/**
+ * Per-project state shared with MCP agents. A table of its own rather than
+ * columns on `projects`, so code that ships before this migration degrades
+ * instead of breaking every `select()` from projects.
+ */
+export const projectAgentState = pgTable("project_agent_state", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  /** CSS custom properties written into every page, see `lib/designTokens.ts`. */
+  designTokens: jsonb("design_tokens").$type<Record<string, string>>(),
+  /** The page the user focused and the element they picked, for `get_selection`. */
+  selectedPageId: uuid("selected_page_id"),
+  selectedNodeId: text("selected_node_id"),
+  selectedAt: timestamp("selected_at", { withTimezone: true }),
+});
+
+/**
+ * A page's HTML as it was before a write replaced it, so the user can restore
+ * a design an agent overwrote. Writes within a few minutes of the last snapshot
+ * share it, so a burst of patches leaves one restore point, not dozens.
+ */
+export const projectPageVersions = pgTable(
+  "project_page_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => projectPages.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    htmlContent: text("html_content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pageCreatedIdx: index("project_page_versions_page_created_idx").on(
+      table.pageId,
+      table.createdAt,
+    ),
+  }),
+);
+
+/**
+ * One MCP tool call an agent made against a project, for the sidebar's
+ * activity tab. `pageId` has no foreign key so the row outlives a deleted page.
+ */
+export const projectAgentActivity = pgTable(
+  "project_agent_activity",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    tool: text("tool").notNull(),
+    pageId: uuid("page_id"),
+    /** The error text an agent saw, or null when the call succeeded. */
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectCreatedIdx: index("project_agent_activity_project_created_idx").on(
       table.projectId,
       table.createdAt,
     ),

@@ -1,0 +1,1 @@
+ALTER TABLE "project_comments" ADD COLUMN "node_id" text;

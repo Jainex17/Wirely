@@ -81,7 +81,7 @@ const globalForBrowser = globalThis as typeof globalThis & {
   __wirelyBrowserPromise?: Promise<Browser> | null;
 };
 
-const getBrowser = (): Promise<Browser> => {
+export const getBrowser = (): Promise<Browser> => {
   if (!globalForBrowser.__wirelyBrowserPromise) {
     const launching = launchBrowser();
     globalForBrowser.__wirelyBrowserPromise = launching;
@@ -94,11 +94,11 @@ const getBrowser = (): Promise<Browser> => {
   return globalForBrowser.__wirelyBrowserPromise;
 };
 
-const forgetBrowser = () => {
+export const forgetBrowser = () => {
   globalForBrowser.__wirelyBrowserPromise = null;
 };
 
-const isBrowserGone = (error: unknown) => {
+export const isBrowserGone = (error: unknown) => {
   const text = error instanceof Error ? error.message : String(error);
   return /closed|disconnected|crashed|session deleted/i.test(text);
 };
@@ -228,13 +228,18 @@ const collectVisualLintData = (): VisualLintData => {
   };
 };
 
-const renderOnce = async (html: string, deviceType: string, lint: boolean): Promise<RenderedPng> => {
+const renderOnce = async (
+  html: string,
+  deviceType: string,
+  lint: boolean,
+  scale: number,
+): Promise<RenderedPng> => {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
     await page.setViewport({
       ...getPageFrameSize({ deviceType, iframeHtml: html }, "desktop"),
-      deviceScaleFactor: 1,
+      deviceScaleFactor: scale,
     });
 
     await page.setContent(sanitizeIframeHtml(html), { waitUntil: "load", timeout: 20_000 });
@@ -249,7 +254,7 @@ const renderOnce = async (html: string, deviceType: string, lint: boolean): Prom
 
     let png = await page.screenshot({ type: "png", fullPage: true });
     let fullPage = true;
-    if (png.byteLength > MAX_PNG_BYTES) {
+    if (png.byteLength > MAX_PNG_BYTES * scale * scale) {
       png = await page.screenshot({ type: "png", fullPage: false });
       fullPage = false;
     }
@@ -269,12 +274,14 @@ export const renderPagePng = async (
   html: string,
   deviceType: string,
   lint = false,
+  /** Device pixel ratio, for a sharper export. The byte cap grows with it. */
+  scale = 1,
 ): Promise<RenderedPng> => {
   try {
-    return await renderOnce(html, deviceType, lint);
+    return await renderOnce(html, deviceType, lint, scale);
   } catch (error) {
     if (!isBrowserGone(error)) throw error;
     forgetBrowser();
-    return renderOnce(html, deviceType, lint);
+    return renderOnce(html, deviceType, lint, scale);
   }
 };

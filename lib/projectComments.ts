@@ -2,6 +2,7 @@
  * Input rules for review comments. Pure, so the API routes stay thin and the
  * rules are tested without a database.
  */
+import { NODE_ID_FORMAT } from "@/lib/pageNodes";
 import { isPageDeviceType } from "@/lib/types";
 
 export const MAX_COMMENT_CHARS = 2_000;
@@ -10,6 +11,8 @@ const MAX_COMMENT_COORDINATE = 20_000;
 
 export interface CommentInput {
   pageId: string;
+  /** The picked element, or null for a comment on the whole page. */
+  nodeId: string | null;
   body: string;
   x: number;
   y: number;
@@ -42,9 +45,19 @@ export const parseCommentInput = (
   if (!isCoordinate(record.x) || !isCoordinate(record.y)) {
     return { ok: false, error: "x and y must be positions on the page." };
   }
+  const nodeId = record.nodeId ?? null;
+  if (nodeId !== null && (typeof nodeId !== "string" || !NODE_ID_FORMAT.test(nodeId))) {
+    return { ok: false, error: "nodeId must be an element id or null." };
+  }
   return {
     ok: true,
-    input: { pageId: record.pageId, body, x: Math.round(record.x), y: Math.round(record.y) },
+    input: {
+      pageId: record.pageId,
+      nodeId,
+      body,
+      x: Math.round(record.x),
+      y: Math.round(record.y),
+    },
   };
 };
 
@@ -52,6 +65,7 @@ export const parseCommentInput = (
 export interface ProjectComment {
   id: string;
   pageId: string;
+  nodeId: string | null;
   body: string;
   x: number;
   y: number;
@@ -80,6 +94,8 @@ export const formatCommentsForAgent = (
       pageId: comment.pageId,
       pageTitle: comment.pageTitle,
       deviceType: isPageDeviceType(comment.deviceType) ? comment.deviceType : "desktop",
+      // Pass as get_page's nodeId to read exactly the element the comment is about.
+      ...(comment.nodeId ? { nodeId: comment.nodeId } : {}),
       author: comment.authorName,
       body: comment.body,
       pin: { x: comment.x, y: comment.y },

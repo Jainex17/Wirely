@@ -11,8 +11,17 @@ describe("parseCommentInput", () => {
   it("trims the body and rounds the pin to whole pixels", () => {
     expect(parseCommentInput({ pageId, body: "  Bigger CTA  ", x: 10.4, y: 99.6 })).toEqual({
       ok: true,
-      input: { pageId, body: "Bigger CTA", x: 10, y: 100 },
+      input: { pageId, nodeId: null, body: "Bigger CTA", x: 10, y: 100 },
     });
+  });
+
+  it("keeps a picked element's id and rejects one that is not a node id", () => {
+    const valid = { pageId, body: "ok", x: 1, y: 1 };
+    expect(parseCommentInput({ ...valid, nodeId: "k3f9a2" })).toMatchObject({
+      ok: true,
+      input: { nodeId: "k3f9a2" },
+    });
+    expect(parseCommentInput({ ...valid, nodeId: '"><script>' }).ok).toBe(false);
   });
 
   it("rejects empty or oversized bodies, bad ids, and pins off the page", () => {
@@ -30,6 +39,7 @@ describe("formatCommentsForAgent", () => {
   const comment = (id: string, page: string, resolvedAt: string | null) => ({
     id,
     pageId: page,
+    nodeId: id === "open-home" ? "k3f9a2" : null,
     pageTitle: page === pageId ? "Home" : "Pricing",
     deviceType: "desktop",
     body: `Comment ${id}`,
@@ -66,6 +76,7 @@ describe("formatCommentsForAgent", () => {
       pageId,
       pageTitle: "Home",
       deviceType: "desktop",
+      nodeId: "k3f9a2",
       author: "Priya Raman",
       body: "Comment open-home",
       pin: { x: 120, y: 480 },

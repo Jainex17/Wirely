@@ -313,6 +313,8 @@ export default function EditorWorkspace({
         tag: node.tag,
         color: node.color,
         background: node.background,
+        x: node.x,
+        y: node.y,
       };
       const current = state.selectedNode;
       if (intent === "select") {

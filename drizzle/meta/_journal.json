@@ -141,6 +141,20 @@
       "when": 1790481770109,
       "tag": "0019_omniscient_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790680932239,
+      "tag": "0020_quiet_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790684147110,
+      "tag": "0021_burly_kid_colt",
+      "breakpoints": true
     }
   ]
 }

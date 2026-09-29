@@ -48,6 +48,17 @@ export const MCP_INSTRUCTIONS = [
     "detail lines; reuse repeated parts with <use>. Match the style asked for (flat, " +
     "isometric, engraving with hatching, botanical). Use <path> for shapes, one decimal per " +
     "coordinate, and no scripts. Check it with get_page_png.",
+  "When the user asks you to address or fix the comments on a project, call list_comments. For " +
+    "each one, read what it points at (get_page with the comment's nodeId when it has one, " +
+    "otherwise get_page_png to see the pin), make the change, then call resolve_comment. " +
+    "Leave a comment open if you could not do what it asks, and tell the user why.",
+  "When the user says \"this\", \"the selected\", or \"what I picked\" without a link, call " +
+    "get_selection to find the page and element they have selected on the canvas.",
+  "When you design for a codebase that has design tokens (CSS variables, a Tailwind theme, a " +
+    "tokens file), read them and call set_design_tokens before writing pages. Then use " +
+    "var(--name) in CSS or Tailwind's bg-(--name) syntax instead of hard-coded values.",
+  "To redesign an existing site, import_url brings its current page onto the canvas as a " +
+    "starting point. Copy it with add_page copyFromPageId before changing it, so the original stays.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
     "components, and styles instead of pasting the HTML in.",
@@ -308,8 +319,10 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_comments",
     description:
-      "List the review comments people pinned on a project's pages through its review link. " +
-      "Each has the page, author, text, and pin position in page pixels at the page's design " +
+      "List the comments pinned on a project's pages, by the owner in the editor or by " +
+      "reviewers through the review link. A comment with a nodeId is about that one element: " +
+      "pass it to get_page to read its exact source. Each has the page, author, text, and pin " +
+      "position in page pixels at the page's design " +
       "width (desktop 1440, mobile 375, vector the artboard's width), so call get_page_png to see what a pin points at. " +
       "Use it when the user asks you to address feedback. Returns open comments unless " +
       "includeResolved is true.",
@@ -324,6 +337,93 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         },
       },
       required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "resolve_comment",
+    description:
+      "Mark a comment done after you made the change it asks for, so it leaves the canvas. " +
+      "Set resolved to false to reopen one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        commentId: { type: "string", description: "A comment id from list_comments." },
+        resolved: { type: "boolean", description: "Defaults to true." },
+      },
+      required: ["projectId", "commentId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_selection",
+    description:
+      "Return the page and element the user most recently selected on the Wirely canvas, " +
+      "with the element's exact HTML, ready to use as patch_page's oldString. Without " +
+      "projectId it returns the latest selection across all of the user's projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { ...PROJECT_ID, description: "Only this project. Omit for the latest anywhere." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_design_tokens",
+    description:
+      "Return the project's design tokens: CSS custom properties Wirely writes into every page.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_design_tokens",
+    description:
+      "Replace the project's design tokens. Wirely writes them as a :root block into every " +
+      "existing and future page, so pages that use var(--name) all update together. Send an " +
+      "empty object to remove them. Mirror the names from the user's codebase.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        tokens: {
+          type: "object",
+          description:
+            'Custom property names to plain CSS values, e.g. { "--color-primary": "#4f46e5", ' +
+            '"--radius-md": "8px", "--font-sans": "Inter, sans-serif" }. Values cannot contain ' +
+            "< > { } ; or \\.",
+          additionalProperties: { type: "string" },
+        },
+      },
+      required: ["projectId", "tokens"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "import_url",
+    description:
+      "Load a public web page in a headless browser and add it to the project as a static " +
+      "page: its rendered HTML with its CSS inlined. Scripts are dropped, form controls " +
+      "become styled divs, and images and artwork too large to keep become gray boxes. Use " +
+      "it to start a redesign from the user's live site. Takes up to about 30 seconds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        url: { type: "string", description: "A public http or https URL." },
+        title: { type: "string", description: "Screen name. Defaults to the page's own title." },
+        deviceType: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          description: "The viewport the page is loaded at. Defaults to desktop.",
+        },
+      },
+      required: ["projectId", "url"],
       additionalProperties: false,
     },
   },

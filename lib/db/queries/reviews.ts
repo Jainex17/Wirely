@@ -65,6 +65,7 @@ export const getSharedProjectByToken = async (token: string) => {
 const commentColumns = {
   id: projectComments.id,
   pageId: projectComments.pageId,
+  nodeId: projectComments.nodeId,
   body: projectComments.body,
   x: projectComments.x,
   y: projectComments.y,
@@ -79,6 +80,7 @@ const commentColumns = {
 const toProjectComment = (row: {
   id: string;
   pageId: string;
+  nodeId: string | null;
   body: string;
   x: number;
   y: number;

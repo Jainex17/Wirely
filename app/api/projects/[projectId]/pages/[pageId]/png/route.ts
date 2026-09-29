@@ -25,11 +25,11 @@ interface RouteContext {
 }
 
 /**
- * Renders one saved page to a PNG for the frame's "Copy image" button. The
+ * Renders one saved page to a PNG for the frame's "Copy image" and download actions. The
  * browser cannot read the sandboxed preview, so the server renders the stored
  * HTML. It never accepts HTML from the request.
  */
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const sessionUser = await getRequestSessionUser();
     if (!sessionUser) {
@@ -57,7 +57,10 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
     }
 
-    const png = await renderPagePng(page.htmlContent, page.deviceType);
+    // 2x and 3x exports for retina screens. Anything else renders at 1x.
+    const requestedScale = Number(new URL(request.url).searchParams.get("scale"));
+    const scale = requestedScale === 2 || requestedScale === 3 ? requestedScale : 1;
+    const png = await renderPagePng(page.htmlContent, page.deviceType, false, scale);
     return new Response(Buffer.from(png.base64, "base64"), {
       status: 200,
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
