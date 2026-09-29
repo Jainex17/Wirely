@@ -22,10 +22,13 @@ const displayFont = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  // Resolves relative Open Graph and canonical URLs to the canonical domain.
-  // The apex 308-redirects to www, and www is the host that serves content,
-  // so resolved URLs must use www to avoid a redirect hop for every fetcher.
+  // Resolves relative canonical URLs to the canonical domain. www is the host
+  // the sitemap and all canonicals name, so both hosts must answer with the
+  // same instruction: the canonical tag tells crawlers which copy counts even
+  // while the apex still serves 200. The Vercel domain config should also 308
+  // the apex to www so fetchers never see two live copies in the first place.
   metadataBase: new URL("https://www.wirely.site"),
+  alternates: { canonical: "/" },
   title: "Wirely",
   description: "The design canvas for your coding agent.",
 };
