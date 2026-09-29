@@ -157,3 +157,60 @@ export const buildConnectPrompt = (clientId: McpClientId, serverUrl: string): st
       ].join("\n");
   }
 };
+
+/**
+ * The connect steps for one client in their smallest shape: where a snippet
+ * goes, the snippet itself (command or config, no credential in it), and the
+ * one thing to do inside the client to authenticate. The home page hint and
+ * the settings card both build from this, so the two surfaces cannot drift.
+ */
+export interface ConnectSnippet {
+  /** Where the snippet goes, e.g. "Terminal" or a config file path. */
+  target: string;
+  /** The command or config to add, copied verbatim into the target. */
+  snippet: string;
+  /** The authenticate step, in the user's own to-do voice. */
+  authenticate: string;
+}
+
+export const buildConnectSnippet = (
+  clientId: McpClientId,
+  serverUrl: string,
+): ConnectSnippet => {
+  if (!serverUrl) throw new Error("A server URL is required to build a connect snippet.");
+
+  switch (clientId) {
+    case "claude-code":
+      return {
+        target: "Terminal",
+        snippet: `claude mcp add --transport http wirely ${serverUrl} --scope user`,
+        authenticate:
+          'Then run /mcp inside Claude Code, choose "wirely", and pick Authenticate. ' +
+          "Your browser opens Wirely — click Authorize.",
+      };
+
+    case "cursor":
+      return {
+        target: '~/.cursor/mcp.json — merge under "mcpServers"',
+        snippet: `"wirely": { "url": "${serverUrl}" }`,
+        authenticate:
+          "Restart Cursor. The first time it connects, your browser opens Wirely — click Authorize.",
+      };
+
+    case "codex":
+      return {
+        target: "~/.codex/config.toml",
+        snippet: `[mcp_servers.wirely]\nurl = "${serverUrl}"`,
+        authenticate:
+          "Restart Codex. It starts the browser login on first use — click Authorize.",
+      };
+
+    case "opencode":
+      return {
+        target: 'opencode.json — merge under "mcp"',
+        snippet: `"wirely": { "type": "remote", "enabled": true, "url": "${serverUrl}" }`,
+        authenticate:
+          "Restart opencode. The first connection opens your browser — click Authorize.",
+      };
+  }
+};

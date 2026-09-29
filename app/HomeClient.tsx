@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useState, type FormEvent, type MouseEvent } from "react";
+import { buildConnectSnippet, type McpClientId, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -409,20 +410,20 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
-  // The MCP server URL on the host the user is browsing, so the add command
-  // works on localhost and in production alike. Client-only: the origin is
+  // The MCP server URL on the host the user is browsing, so the snippets
+  // work on localhost and in production alike. Client-only: the origin is
   // unknown during server render.
   const [serverUrl, setServerUrl] = useState("");
+  const [connectClient, setConnectClient] = useState<McpClientId>("claude-code");
   useEffect(() => {
     setServerUrl(`${window.location.origin}/api/mcp`);
   }, []);
+  const connectSnippet = serverUrl ? buildConnectSnippet(connectClient, serverUrl) : null;
 
-  const copyAddCommand = async (url: string) => {
+  const copyConnectSnippet = async (snippet: string) => {
     try {
-      await navigator.clipboard.writeText(
-        `claude mcp add --transport http wirely ${url} --scope user`,
-      );
-      toast.success("Copied. Run it in your terminal, then /mcp to authenticate.");
+      await navigator.clipboard.writeText(snippet);
+      toast.success("Copied — paste it into the file or terminal.");
     } catch {
       toast.error("Could not copy. Select the text and copy it manually.");
     }
@@ -507,29 +508,42 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
       {hasConnectedAgent ? null : (
         <div className="mt-8 rounded-xl border border-border bg-card px-5 py-4 text-left">
-          <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            In Claude Code, run <code className="font-mono text-foreground">/mcp</code>, choose{" "}
-            <code className="font-mono text-foreground">wirely</code>, and pick Authenticate —
-            your browser opens Wirely; click Authorize.
-          </p>
-          {serverUrl ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
+            <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Coding agent">
+              {MCP_CLIENTS.map((client) => (
+                <Button
+                  key={client.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={client.id === connectClient}
+                  variant={client.id === connectClient ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setConnectClient(client.id)}
+                >
+                  {client.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {connectSnippet ? (
             <>
-              <p className="mt-2 text-sm text-muted-foreground">
-                If Wirely is not in the list yet, add it first:
-              </p>
+              <p className="mt-3 text-xs text-muted-foreground">{connectSnippet.target}</p>
               <button
                 type="button"
-                onClick={() => void copyAddCommand(serverUrl)}
-                title="Copy command"
-                className="mt-2 w-full overflow-x-auto rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
+                onClick={() => void copyConnectSnippet(connectSnippet.snippet)}
+                title="Copy"
+                className="mt-1.5 w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
               >
-                claude mcp add --transport http wirely {serverUrl} --scope user
+                {connectSnippet.snippet}
               </button>
             </>
           ) : null}
+          {connectSnippet ? (
+            <p className="mt-2.5 text-sm text-muted-foreground">{connectSnippet.authenticate}</p>
+          ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
-            Using Cursor, Codex, or opencode? Their commands are in{" "}
+            The browser step mints a token you can revoke in{" "}
             <Link
               href="/setting?tab=mcp"
               className="text-primary underline underline-offset-2"

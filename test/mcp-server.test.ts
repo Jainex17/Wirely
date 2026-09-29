@@ -16,7 +16,12 @@ import {
   callTool,
   replaceExactlyOnce,
 } from "@/lib/mcp/tools";
-import { buildConnectPrompt, buildInstallPrompt, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
+import {
+  buildConnectPrompt,
+  buildConnectSnippet,
+  buildInstallPrompt,
+  MCP_CLIENTS,
+} from "@/lib/mcp/installPrompt";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -407,5 +412,17 @@ describe("client install prompts", () => {
       expect(prompt).not.toContain("wirely_");
       expect(prompt).toMatch(/authoriz/i);
     }
+  });
+
+  it("builds a copyable snippet and an authenticate step for every client", () => {
+    for (const client of MCP_CLIENTS) {
+      const snippet = buildConnectSnippet(client.id, URL);
+
+      expect(snippet.snippet).toContain(URL);
+      expect(snippet.snippet).not.toContain("wirely_");
+      expect(snippet.target.length).toBeGreaterThan(0);
+      expect(snippet.authenticate).toMatch(/authoriz/i);
+    }
+    expect(() => buildConnectSnippet("cursor", "")).toThrow();
   });
 });
