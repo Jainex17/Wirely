@@ -1071,12 +1071,16 @@ export default React.memo(function PageRenderer({
   const isInsertPendingRef = React.useRef(false);
   // An element to start typing into once the frame reports it, after an insert.
   const pendingEditRef = React.useRef<string | null>(null);
+  // The page HTML when typing began. Text typed into a page that changed
+  // since, by an agent or a poll, is dropped rather than written over it.
+  const editStartHtmlRef = React.useRef<string | null>(null);
 
   /** Types into a text-only element in place. False when it holds other elements. */
   const startTextEdit = React.useCallback(
     (nodeId: string) => {
       if (getNodeText(stampNodeIds(page.iframeHtml ?? ""), nodeId) === null) return false;
       setEditingNodeId(nodeId);
+      editStartHtmlRef.current = page.iframeHtml ?? "";
       iframeRef.current?.focus();
       postToFrame({ type: "wirely-node-edit", nodeId });
       return true;
@@ -1228,9 +1232,16 @@ export default React.memo(function PageRenderer({
         const { nodeId, text } = data as { nodeId?: unknown; text?: unknown };
         if (typeof nodeId !== "string" || nodeId !== editingNodeId) return;
         setEditingNodeId(null);
-        if (typeof text === "string" && projectId) {
-          commitPageEdit(projectId, page.id, (html) => setNodeText(html, nodeId, text.slice(0, 20_000)));
+        // Hands the keyboard back to the editor, or its shortcuts would go to the frame.
+        iframeRef.current?.blur();
+        window.focus();
+        const current = useEditorStore.getState().pages.find((entry) => entry.id === page.id);
+        if (typeof text !== "string" || !projectId) return;
+        if (current?.iframeHtml !== editStartHtmlRef.current) {
+          toast.error("The page changed while you were typing, so the text was not saved.");
+          return;
         }
+        commitPageEdit(projectId, page.id, (html) => setNodeText(html, nodeId, text.slice(0, 20_000)));
         return;
       }
       if (payload.type === "wirely-iframe-cursor") {

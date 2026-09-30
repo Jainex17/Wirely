@@ -130,6 +130,7 @@ export default function WireEditor({
     const poll = async () => {
       if (inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
+      const savesBefore = useEditorStore.getState().savesStarted;
       try {
         const response = await fetch(
           `/api/projects/${wireId}/pages?since=${encodeURIComponent(cursor)}`,
@@ -137,9 +138,11 @@ export default function WireEditor({
         );
         if (!response.ok) return;
         const payload = (await response.json()) as ServerPageChanges & { cursor: string };
-        // The store drops a poll while a save is in flight. Keep the old
-        // cursor then, so the next poll asks for these changes again.
-        if (useEditorStore.getState().pendingSaveCount > 0) return;
+        // A poll that overlapped a save may carry the page from before it, and
+        // applying that would undo the edit. Keep the old cursor then, so the
+        // next poll asks for these changes again.
+        const { pendingSaveCount, savesStarted } = useEditorStore.getState();
+        if (pendingSaveCount > 0 || savesStarted !== savesBefore) return;
         cursor = payload.cursor;
         if (payload.changed.length > 0) lastChangeAt = Date.now();
         applyServerPageChanges(payload);
