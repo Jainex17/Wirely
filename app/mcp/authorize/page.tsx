@@ -14,7 +14,7 @@ import { getRequestSessionUser } from "@/lib/auth/session";
 import { getOauthClientById } from "@/lib/db/queries/oauth";
 import { mcpResourceUri } from "@/lib/mcp/oauth/metadata";
 import { requestIssuer } from "@/lib/mcp/oauth/origin";
-import { parseAuthorizationRequest } from "@/lib/mcp/oauth/requests";
+import { authorizationFormFields, parseAuthorizationRequest } from "@/lib/mcp/oauth/requests";
 import { validateRedirectUri } from "@/lib/mcp/oauth/redirectUris";
 
 export const dynamic = "force-dynamic";
@@ -112,15 +112,9 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
         </p>
 
         <form action="/api/mcp/oauth/authorize" method="post" className="mt-5 flex items-center gap-2">
-          <input type="hidden" name="client_id" value={parsed.value.clientId} />
-          <input type="hidden" name="redirect_uri" value={parsed.value.redirectUri} />
-          <input type="hidden" name="code_challenge" value={parsed.value.codeChallenge} />
-          {parsed.value.state !== null ? (
-            <input type="hidden" name="state" value={parsed.value.state} />
-          ) : null}
-          {parsed.value.resource !== null ? (
-            <input type="hidden" name="resource" value={parsed.value.resource} />
-          ) : null}
+          {Object.entries(authorizationFormFields(parsed.value)).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
           <button
             type="submit"
             className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-transform active:scale-[0.97]"

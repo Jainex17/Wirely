@@ -94,6 +94,21 @@ export const parseAuthorizationRequest = (
   };
 };
 
+/**
+ * The hidden fields the consent page posts back to the authorize route. The
+ * route re-runs `parseAuthorizationRequest` on them, so they must carry every
+ * parameter that parser requires, including the fixed ones.
+ */
+export const authorizationFormFields = (request: AuthorizationRequest): Record<string, string> => ({
+  response_type: "code",
+  client_id: request.clientId,
+  redirect_uri: request.redirectUri,
+  code_challenge_method: "S256",
+  code_challenge: request.codeChallenge,
+  ...(request.state !== null ? { state: request.state } : {}),
+  ...(request.resource !== null ? { resource: request.resource } : {}),
+});
+
 export interface TokenRequest {
   clientId: string;
   code: string;
