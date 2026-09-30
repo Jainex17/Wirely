@@ -42,6 +42,16 @@ import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { parseDesignTokens } from "@/lib/designTokens";
 import { buildNodeLink, diffPageNodes, getNodeHtml } from "@/lib/pageNodes";
+import {
+  buildLayerTree,
+  duplicateNode,
+  insertNode,
+  type Layer,
+  moveNode,
+  removeNode,
+  setNodeHidden,
+  wrapNode,
+} from "@/lib/pageTree";
 import { formatCommentsForAgent, isUuid } from "@/lib/projectComments";
 import { isPageDeviceType } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
@@ -386,6 +396,12 @@ const getPageChanges: ToolHandler = async (userId, args) => {
       `Element ${change.nodeId}:`,
       `  before: ${change.before === null ? "(added)" : clip(change.before)}`,
       `  after: ${change.after === null ? "(removed)" : clip(change.after)}`,
+      ...(change.movedTo
+        ? [
+            `  moved: now ${change.movedTo.parent ? `inside ${change.movedTo.parent}` : "at the top of the page"}, ` +
+              (change.movedTo.after ? `right after ${change.movedTo.after}` : "as the first child"),
+          ]
+        : []),
     ].join("\n"),
   );
   const more =
@@ -401,6 +417,136 @@ const getPageChanges: ToolHandler = async (userId, args) => {
       text([...lines, ...more].join("\n\n")),
     ],
   };
+};
+
+const formatOutline = (layers: Layer[], depth = 0): string[] =>
+  layers.flatMap((layer) => [
+    `${"  ".repeat(depth)}- ${layer.tag} ${layer.id}` +
+      (layer.label !== layer.tag ? ` "${layer.label}"` : "") +
+      (layer.hidden ? " [hidden]" : ""),
+    ...formatOutline(layer.children, depth + 1),
+  ]);
+
+const getPageOutline: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({ projectId: z.string().trim().min(1), pageId: z.string().trim().min(1) })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const page = await getProjectPageForUser({
+    projectId: parsed.data.projectId,
+    pageId: parsed.data.pageId,
+    userId,
+  });
+  if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+  const outline = formatOutline(buildLayerTree(page.htmlContent ?? ""));
+  return {
+    content: [
+      text(
+        `Layers of "${page.title}" · ${page.deviceType} · page id ${page.id}. Each line is ` +
+          "tag, node id, then its text or label. Pass a node id to get_page or edit_element.",
+      ),
+      text(outline.length > 0 ? outline.join("\n") : "(no elements)"),
+    ],
+  };
+};
+
+const EDIT_ACTIONS = ["move", "duplicate", "delete", "wrap", "hide", "show", "insert"] as const;
+
+const editElement: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+      action: z.enum(EDIT_ACTIONS),
+      nodeId: z.string().trim().min(1).max(16),
+      targetId: z.string().trim().min(1).max(16).optional(),
+      position: z.enum(["before", "after", "inside"]).optional(),
+      html: z.string().min(1).max(PAGE_HTML_MAX_CHARS).optional(),
+    })
+    .refine((data) => data.action !== "move" || (data.targetId && data.position), {
+      message: "move needs targetId and position.",
+    })
+    .refine((data) => data.action !== "insert" || (data.html && data.position), {
+      message: "insert needs html and position; nodeId is where it goes.",
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+  const { action, nodeId, targetId, position, html: markup } = parsed.data;
+
+  const apply = (html: string): { html: string; newId?: string } | null => {
+    switch (action) {
+      case "move": {
+        const next = moveNode(html, nodeId, targetId ?? "", position ?? "after");
+        return next === null ? null : { html: next };
+      }
+      case "duplicate":
+        return duplicateNode(html, nodeId);
+      case "delete": {
+        const next = removeNode(html, nodeId);
+        return next === null ? null : { html: next };
+      }
+      case "wrap":
+        return wrapNode(html, nodeId);
+      case "hide":
+      case "show": {
+        const next = setNodeHidden(html, nodeId, action === "hide");
+        return next === null ? null : { html: next };
+      }
+      case "insert":
+        return insertNode(html, nodeId, position ?? "inside", markup ?? "");
+    }
+  };
+
+  // Compare-and-swap like patch_page, so a user editing the same page at the
+  // same moment is not overwritten.
+  for (let attempt = 0; attempt < PATCH_ATTEMPTS; attempt += 1) {
+    const page = await getProjectPageForUser({
+      projectId: parsed.data.projectId,
+      pageId: parsed.data.pageId,
+      userId,
+    });
+    if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+    const result = apply(page.htmlContent ?? "");
+    if (!result) {
+      return fail(
+        action === "move"
+          ? `Could not move ${nodeId} ${position} ${targetId}. Both must be on the page, the ` +
+              "target cannot be inside the element, and nothing goes inside a void element like <img>. " +
+              "Call get_page_outline for current ids."
+          : `Element ${nodeId} is not on "${page.title}". Call get_page_outline for current ids.`,
+      );
+    }
+    const html = sanitizeIframeHtml(result.html);
+    if (html.length > PAGE_HTML_MAX_CHARS) {
+      return fail(`The edited page would exceed ${PAGE_HTML_MAX_CHARS} characters.`);
+    }
+    const updated = await updateProjectPageForUser({
+      projectId: parsed.data.projectId,
+      pageId: parsed.data.pageId,
+      userId,
+      htmlContent: html,
+      expectedHtmlContent: page.htmlContent,
+    });
+    if (updated) {
+      await setAgentBaseline(updated.id, updated.htmlContent, page.htmlContent);
+      const done = {
+        move: `Moved ${nodeId} ${position} ${targetId}`,
+        duplicate: `Duplicated ${nodeId}`,
+        delete: `Deleted ${nodeId}`,
+        wrap: `Wrapped ${nodeId} in a new frame`,
+        hide: `Hid ${nodeId}`,
+        show: `Showed ${nodeId}`,
+        insert: `Inserted new content ${position} ${nodeId}`,
+      }[action];
+      return succeed(
+        `${done} on "${updated.title}".` + (result.newId ? ` The new element's id is ${result.newId}.` : ""),
+      );
+    }
+  }
+  return fail("The page kept changing while editing. Call get_page_outline and try again.");
 };
 
 const getPagePng: ToolHandler = async (userId, args) => {
@@ -677,6 +823,8 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   patch_page: patchPage,
   get_page: getPage,
   get_page_changes: getPageChanges,
+  get_page_outline: getPageOutline,
+  edit_element: editElement,
   get_page_png: getPagePng,
   list_comments: listComments,
   resolve_comment: resolveComment,

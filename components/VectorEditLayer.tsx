@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { ReportedNode } from "@/lib/nodePicker";
-import { findNodeSpan, getNodeAttribute, setNodeAttribute, stampNodeIds } from "@/lib/pageNodes";
+import { getNodeAttribute, setNodeAttribute, stampNodeIds } from "@/lib/pageNodes";
 import { scaleFromZoom } from "@/lib/canvasScene";
 import { appendToArtboard, getArtboardMatrix } from "@/lib/vectorArtboard";
 import {
@@ -140,28 +140,19 @@ export default function VectorEditLayer({
     }
   }, [isPenMode]);
 
+  // Delete for a picked shape is the editor's global shortcut.
   React.useEffect(() => {
-    const selectedId = selected?.nodeId;
-    const canDelete = selectedId && selected.tag !== "svg";
-    if (anchors.length === 0 && !canDelete) return;
+    if (anchors.length === 0) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
-      if (anchors.length > 0 && (event.key === "Enter" || event.key === "Escape")) {
+      if (event.key === "Enter" || event.key === "Escape") {
         event.preventDefault();
         finishPen(false);
-        return;
-      }
-      if (canDelete && anchors.length === 0 && (event.key === "Backspace" || event.key === "Delete")) {
-        const span = findNodeSpan(source, selectedId);
-        if (!span) return;
-        event.preventDefault();
-        useEditorStore.getState().setSelectedNode(null);
-        onCommit(source.slice(0, span.start) + source.slice(span.end));
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [anchors.length, finishPen, onCommit, selected, source]);
+  }, [anchors.length, finishPen]);
 
   const startDrag = (event: React.PointerEvent<SVGElement>, drag: Drag) => {
     if (event.button !== 0 || !segments) return;

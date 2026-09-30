@@ -13,6 +13,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import LayersPanel from "@/components/LayersPanel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorStore";
@@ -20,6 +21,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
 
 interface PagesPanelProps {
+  projectId: string;
   projectTitle: string;
   isCollapsed: boolean;
   onToggle: () => void;
@@ -28,11 +30,12 @@ interface PagesPanelProps {
 
 /**
  * The editor's left column: project title, the list of every page on the
- * canvas, and the account menu. Clicking a page pans the canvas to it at the
+ * canvas, the focused page's layers, and the account menu. Clicking a page pans the canvas to it at the
  * current zoom; dragging it onto a group moves it in or out. Collapsed, it shrinks to a floating title card over the canvas
  * so the toggle back stays in the same corner.
  */
 export default function PagesPanel({
+  projectId,
   projectTitle,
   isCollapsed,
   onToggle,
@@ -172,7 +175,10 @@ export default function PagesPanel({
       {/* Full-width rows hanging off a guide line under the chevron, like a
           file tree. */}
       <nav
-        className={cn("min-h-0 flex-1 overflow-y-auto pb-2", !isPageListOpen && "invisible")}
+        className={cn(
+          "max-h-[40%] shrink-0 overflow-y-auto pb-2",
+          !isPageListOpen && "hidden",
+        )}
       >
         <div className="relative flex min-h-full flex-col">
           <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
@@ -208,6 +214,9 @@ export default function PagesPanel({
           </div>
         </div>
       </nav>
+      <div className="flex min-h-0 flex-1 flex-col border-t border-sidebar-border pt-1">
+        <LayersPanel projectId={projectId} />
+      </div>
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
         {footer}
         <a

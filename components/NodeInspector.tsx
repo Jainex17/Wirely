@@ -14,8 +14,6 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "@/components/ui/sonner";
-import { htmlHistory } from "@/lib/htmlHistory";
-import { logger } from "@/lib/logger";
 import { previewNode } from "@/lib/nodePicker";
 import {
   buildNodeLink,
@@ -31,6 +29,7 @@ import {
   setNodeText,
   stampNodeIds,
 } from "@/lib/pageNodes";
+import { commitPageEdit } from "@/store/pageEdits";
 import { type SelectedNode, useEditorStore } from "@/store/useEditorStore";
 
 // Commits a color or style once the control has been still this long, so
@@ -127,28 +126,8 @@ function NodeInspectorCard({
     bg: node.background,
   });
 
-  /** Applies an edit to the page's current HTML, then saves it. */
-  const commit = async (edit: (html: string) => string | null) => {
-    const current =
-      useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml ?? "";
-    const next = edit(stampNodeIds(current));
-    if (next === null) {
-      toast.error("This element changed on the page. Pick it again.");
-      return;
-    }
-    if (next === current) return;
-
-    const { setPageHtml } = useEditorStore.getState();
-    setPageHtml(pageId, next);
-    htmlHistory.record({ pageId, before: current, after: next });
-    try {
-      await savePageHtml(projectId, pageId, next);
-    } catch (error) {
-      logger.error("node_edit_save_failed", { pageId, error });
-      setPageHtml(pageId, current);
-      toast.error("Could not save the change. Try again.");
-    }
-  };
+  const commit = (edit: (html: string) => string | null) =>
+    commitPageEdit(projectId, pageId, edit);
 
   // One pending edit per control. Moving to another control saves the first.
   const pendingRef = useRef<{ key: string; edit: (html: string) => string | null } | null>(null);
@@ -199,7 +178,7 @@ function NodeInspectorCard({
 
   const copyLink = async () => {
     // The link only resolves once the stamped ids are on the server.
-    await commit((html) => html);
+    commit((html) => html);
     try {
       await navigator.clipboard.writeText(
         buildNodeLink({ origin: window.location.origin, projectId, pageId, nodeId }),
@@ -340,22 +319,6 @@ function NodeInspectorCard({
     </div>
   );
 }
-
-/** Saves page HTML, counted in the editor's saving indicator. Throws when the save fails. */
-const savePageHtml = async (projectId: string, pageId: string, html: string) => {
-  const { beginSaving, endSaving } = useEditorStore.getState();
-  beginSaving();
-  try {
-    const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ htmlContent: html }),
-    });
-    if (!response.ok) throw new Error(`Page save failed with status ${response.status}`);
-  } finally {
-    endSaving();
-  }
-};
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

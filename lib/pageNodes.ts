@@ -17,7 +17,7 @@
 export const NODE_ID_ATTRIBUTE = "data-wirely-id";
 
 // Elements with no box of their own, or whose content is not page markup.
-const SKIPPED_TAGS = new Set([
+export const SKIPPED_TAGS = new Set([
   "script",
   "style",
   "head",
@@ -55,14 +55,14 @@ const VOID_TAGS = new Set([
 // An SVG icon is one element to the user. Stamping its paths would bloat the
 // page and let a click pick a path instead of the icon. A vector page's
 // artboard is the exception: its paths are what the user edits.
-const OPAQUE_TAGS = new Set(["svg"]);
-const ARTBOARD_MARKER = /\sdata-wirely-artboard\b/i;
+export const OPAQUE_TAGS = new Set(["svg"]);
+export const ARTBOARD_MARKER = /\sdata-wirely-artboard\b/i;
 
 // Quote-aware, so a ">" inside an attribute value does not end the tag.
 const TAG_PATTERN = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>|<!--[\s\S]*?-->/g;
 const NODE_ID_PATTERN = new RegExp(`\\s${NODE_ID_ATTRIBUTE}\\s*=\\s*["']?([^"'\\s>]+)["']?`, "i");
 
-interface Tag {
+export interface Tag {
   start: number;
   end: number;
   name: string;
@@ -71,7 +71,7 @@ interface Tag {
 }
 
 /** Every tag in document order, skipping comments and the content of raw text elements. */
-function* scanTags(html: string): Generator<Tag> {
+export function* scanTags(html: string): Generator<Tag> {
   const pattern = new RegExp(TAG_PATTERN.source, "g");
   for (let match = pattern.exec(html); match; match = pattern.exec(html)) {
     if (!match[2]) continue;
@@ -91,9 +91,9 @@ function* scanTags(html: string): Generator<Tag> {
   }
 }
 
-const readNodeId = (attributes: string) => NODE_ID_PATTERN.exec(attributes)?.[1] ?? null;
+export const readNodeId = (attributes: string) => NODE_ID_PATTERN.exec(attributes)?.[1] ?? null;
 
-const isSelfClosing = (tag: Tag) =>
+export const isSelfClosing = (tag: Tag) =>
   VOID_TAGS.has(tag.name) || tag.attributes.trimEnd().endsWith("/");
 
 /** Where `tag`'s element closes. A void element closes where it opens. */
@@ -410,6 +410,22 @@ export const setNodeAttribute = (html: string, nodeId: string, name: string, val
   return html.slice(0, span.start) + nextOpenTag + html.slice(span.openEnd);
 };
 
+// One attribute at a time, so a name inside another attribute's value, like
+// "hidden" in class="md:hidden", never matches.
+const ATTRIBUTE_PATTERN = /\s+([^\s"'>/=]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g;
+
+/** Removes one attribute from the element's opening tag. Null when the element is gone. */
+export const removeNodeAttribute = (html: string, nodeId: string, name: string) => {
+  const span = findNodeSpan(html, nodeId);
+  if (!span) return null;
+  const openTag = html.slice(span.start, span.openEnd);
+  const nameEnd = /^<[a-zA-Z][a-zA-Z0-9-]*/.exec(openTag)?.[0].length ?? 0;
+  const attributes = openTag.slice(nameEnd).replace(ATTRIBUTE_PATTERN, (match, attribute: string) =>
+    attribute.toLowerCase() === name.toLowerCase() ? "" : match,
+  );
+  return html.slice(0, span.start) + openTag.slice(0, nameEnd) + attributes + html.slice(span.openEnd);
+};
+
 /** One attribute's value on the element's opening tag, or null. */
 export const getNodeAttribute = (html: string, nodeId: string, name: string) => {
   const span = findNodeSpan(html, nodeId);
@@ -425,6 +441,8 @@ export const NODE_STYLE_PROPERTIES = {
   width: /^\d{1,4}(?:\.\d{1,2})?px$/,
   height: /^\d{1,4}(?:\.\d{1,2})?px$/,
   opacity: /^(?:0(?:\.\d{1,2})?|1)$/,
+  left: /^-?\d{1,5}(?:\.\d{1,2})?px$/,
+  top: /^-?\d{1,5}(?:\.\d{1,2})?px$/,
   "font-size": /^\d{1,3}(?:\.\d{1,2})?px$/,
   "font-weight": /^[1-9]00$/,
   "padding-block": /^\d{1,3}(?:\.\d{1,2})?px$/,
@@ -510,37 +528,73 @@ interface NodeSummary {
   openTag: string;
   /** The content of an element with no child tags, which is its text. */
   text: string | null;
+  /** The nearest ancestor with an id, or null at the top. */
+  parent: string | null;
+  /** The whole element's source, for reporting an added element. */
+  source: string;
 }
 
-/** Every element with a node id, in one pass, keyed by id. */
+/** Every element with a node id, in one pass, keyed by id, plus each parent's child order. */
 const summarizeNodes = (html: string) => {
   const nodes = new Map<string, NodeSummary>();
-  const open: Array<{ name: string; id: string | null; openEnd: number }> = [];
+  const childOrder = new Map<string | null, string[]>();
+  const open: Array<{ name: string; id: string | null; start: number; openEnd: number }> = [];
   for (const tag of scanTags(html)) {
     if (!tag.isClosing) {
       const id = readNodeId(tag.attributes);
       if (id && !nodes.has(id)) {
-        nodes.set(id, { openTag: html.slice(tag.start, tag.end), text: null });
+        const parent = open.findLast((entry) => entry.id)?.id ?? null;
+        const source = isSelfClosing(tag) ? html.slice(tag.start, tag.end) : "";
+        nodes.set(id, { openTag: html.slice(tag.start, tag.end), text: null, parent, source });
+        childOrder.set(parent, [...(childOrder.get(parent) ?? []), id]);
       }
-      if (!isSelfClosing(tag)) open.push({ name: tag.name, id, openEnd: tag.end });
+      if (!isSelfClosing(tag)) open.push({ name: tag.name, id, start: tag.start, openEnd: tag.end });
       continue;
     }
     const index = open.findLastIndex((entry) => entry.name === tag.name);
     if (index === -1) continue;
     const [entry] = open.splice(index);
     const node = entry.id ? nodes.get(entry.id) : undefined;
+    if (!node) continue;
+    node.source = html.slice(entry.start, tag.end);
     const content = html.slice(entry.openEnd, tag.start);
-    if (node && !content.includes("<")) node.text = content.trim();
+    if (!content.includes("<")) node.text = content.trim();
   }
-  return nodes;
+  return { nodes, childOrder };
+};
+
+/** The items of `a` outside a longest common subsequence with `b`: the ones that changed place. */
+const outOfOrder = (a: string[], b: string[]) => {
+  const lengths = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    for (let j = b.length - 1; j >= 0; j -= 1) {
+      lengths[i][j] =
+        a[i] === b[j] ? lengths[i + 1][j + 1] + 1 : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
+    }
+  }
+  const kept = new Set<string>();
+  for (let i = 0, j = 0; i < a.length && j < b.length; ) {
+    if (a[i] === b[j]) {
+      kept.add(a[i]);
+      i += 1;
+      j += 1;
+    } else if (lengths[i + 1][j] >= lengths[i][j + 1]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+  return a.filter((id) => !kept.has(id));
 };
 
 export interface NodeChange {
   nodeId: string;
   /** The opening tag and text before, or null when the element is new. */
   before: string | null;
-  /** The opening tag and text now, or null when the element was removed. */
+  /** The opening tag and text now, the whole element when it is new, or null when it was removed. */
   after: string | null;
+  /** Where a moved element sits now: its parent's id (null at the top) and the sibling it follows. */
+  movedTo?: { parent: string | null; after: string | null };
 }
 
 const describeNode = (node: NodeSummary) =>
@@ -548,23 +602,49 @@ const describeNode = (node: NodeSummary) =>
 
 /**
  * The elements whose opening tag or text differ between two versions of a
- * page, matched by node id. Both sides are stamped first, so HTML saved before
- * the editor stamped it still lines up with the stamped version.
+ * page, matched by node id, plus the ones that moved. An added or removed
+ * subtree is reported once, at its top. Both sides are stamped first, so HTML
+ * saved before the editor stamped it still lines up with the stamped version.
  */
 export const diffPageNodes = (beforeHtml: string, afterHtml: string): NodeChange[] => {
   const before = summarizeNodes(stampNodeIds(beforeHtml));
   const after = summarizeNodes(stampNodeIds(afterHtml));
-  const changes: NodeChange[] = [];
-  for (const [nodeId, node] of before) {
-    const next = after.get(nodeId);
-    if (!next) {
-      changes.push({ nodeId, before: describeNode(node), after: null });
-    } else if (describeNode(node) !== describeNode(next)) {
-      changes.push({ nodeId, before: describeNode(node), after: describeNode(next) });
-    }
+
+  const moved = new Set<string>();
+  for (const [nodeId, node] of after.nodes) {
+    const previous = before.nodes.get(nodeId);
+    if (previous && previous.parent !== node.parent) moved.add(nodeId);
   }
-  for (const [nodeId, node] of after) {
-    if (!before.has(nodeId)) changes.push({ nodeId, before: null, after: describeNode(node) });
+  for (const [parent, order] of after.childOrder) {
+    const stayed = order.filter((id) => before.nodes.get(id)?.parent === parent);
+    const previousOrder = (before.childOrder.get(parent) ?? []).filter((id) => stayed.includes(id));
+    for (const id of outOfOrder(stayed, previousOrder)) moved.add(id);
+  }
+
+  const changes: NodeChange[] = [];
+  for (const [nodeId, node] of before.nodes) {
+    const next = after.nodes.get(nodeId);
+    if (!next) {
+      if (node.parent && !after.nodes.has(node.parent) && before.nodes.has(node.parent)) continue;
+      changes.push({ nodeId, before: describeNode(node), after: null });
+      continue;
+    }
+    const isMoved = moved.has(nodeId);
+    if (!isMoved && describeNode(node) === describeNode(next)) continue;
+    const siblings = after.childOrder.get(next.parent) ?? [];
+    changes.push({
+      nodeId,
+      before: describeNode(node),
+      after: describeNode(next),
+      ...(isMoved
+        ? { movedTo: { parent: next.parent, after: siblings[siblings.indexOf(nodeId) - 1] ?? null } }
+        : {}),
+    });
+  }
+  for (const [nodeId, node] of after.nodes) {
+    if (before.nodes.has(nodeId)) continue;
+    if (node.parent && !before.nodes.has(node.parent)) continue;
+    changes.push({ nodeId, before: null, after: node.source });
   }
   return changes;
 };

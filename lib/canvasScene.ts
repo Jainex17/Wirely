@@ -1,3 +1,4 @@
+import type { InsertKind } from "@/lib/pageTree";
 import { readArtboardSize } from "@/lib/vectorArtboard";
 
 export interface CameraState {
@@ -55,7 +56,10 @@ export type PageRenderMode = "live" | "shell";
  * Move drags pages, hand pans, element picks an element inside a page, and pen
  * draws paths on a vector page.
  */
-export type CanvasTool = "select" | "grab" | "element" | "pen";
+export type CanvasTool = "select" | "grab" | "element" | "pen" | InsertKind;
+
+export const isInsertTool = (tool: CanvasTool): tool is InsertKind =>
+  tool === "frame" || tool === "text" || tool === "rectangle";
 
 export type PageFrameDevice = "desktop" | "tablet" | "mobile";
 

@@ -21,9 +21,11 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * Each line answers a mistake seen in a real session: five states of one
  * layout handed over as "designs to pick from", and a project the user was
  * never given a link to. The motion line matches the canvas, which holds
- * page animations still until Replay. The last two lines cover the hand-off from
- * canvas to the user's repo, where a raw HTML paste ignores their stack and
- * the user's own canvas tweaks would otherwise never reach the code.
+ * page animations still until Replay. The get_page and get_page_changes lines cover
+ * the hand-off from canvas to the user's repo, where a raw HTML paste ignores
+ * their stack and the user's own canvas tweaks would otherwise never reach
+ * the code. The last line keeps an agent from resending a whole page to move
+ * one block.
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
@@ -65,6 +67,8 @@ export const MCP_INSTRUCTIONS = [
     "components, and styles instead of pasting the HTML in.",
   "When the user says they tweaked a page on the canvas and wants those tweaks in their code, " +
     "call get_page_changes and apply only the listed differences to the matching components.",
+  "For structural changes (reorder, duplicate, delete, hide, wrap in a frame, insert a block), " +
+    "call get_page_outline for node ids and use edit_element instead of rewriting the page.",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -296,6 +300,57 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         },
       },
       required: ["projectId", "pageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_page_outline",
+    description:
+      "Return a page's element tree as an indented outline: tag, node id, and text or label " +
+      "per line. Far smaller than get_page, so use it to find elements and plan structural " +
+      "edits on a long page before reading or patching source.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID, pageId: PAGE_ID },
+      required: ["projectId", "pageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "edit_element",
+    description:
+      "Change a page's structure by node id without resending HTML: move an element before, " +
+      "after, or inside another; duplicate, delete, hide, or show it; wrap it in a new flex " +
+      "frame; or insert new HTML before, after, or inside it. The user sees the change live. " +
+      "Duplicate, wrap, and insert return the new element's id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
+        action: {
+          type: "string",
+          enum: ["move", "duplicate", "delete", "wrap", "hide", "show", "insert"],
+        },
+        nodeId: {
+          type: "string",
+          description: "The element to act on. For insert, the element the new HTML goes next to or into.",
+        },
+        targetId: {
+          type: "string",
+          description: "For move: the element to move next to or into.",
+        },
+        position: {
+          type: "string",
+          enum: ["before", "after", "inside"],
+          description: "For move and insert. inside appends as the last child.",
+        },
+        html: {
+          type: "string",
+          description: "For insert: the HTML to add. Sanitized like any page write.",
+        },
+      },
+      required: ["projectId", "pageId", "action", "nodeId"],
       additionalProperties: false,
     },
   },
