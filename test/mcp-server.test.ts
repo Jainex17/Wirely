@@ -121,6 +121,7 @@ describe("tool catalog", () => {
       "delete_page",
       "get_design_tokens",
       "get_page",
+      "get_page_changes",
       "get_page_png",
       "get_selection",
       "import_url",

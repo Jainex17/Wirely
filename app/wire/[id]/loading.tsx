@@ -6,7 +6,7 @@ export default function WireLoading() {
     <main className="editor-theme flex h-screen w-full overflow-hidden bg-background">
       <div className="relative flex-1">
         <div className="pointer-events-none absolute inset-0 canvas-dots" />
-        <div className="absolute left-3 top-3 h-12 w-64 rounded-lg border border-sidebar-border bg-sidebar shadow-lg" />
+        <div className="absolute left-3 top-3 h-12 w-64 rounded-lg border border-sidebar-border bg-sidebar" />
       </div>
       <div className="w-72 shrink-0 border-l border-sidebar-border bg-sidebar">
         <div className="h-12 border-b border-sidebar-border" />

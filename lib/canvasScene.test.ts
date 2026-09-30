@@ -6,7 +6,7 @@ import {
   createDefaultCamera,
   fitBounds,
   getPageBounds,
-  getPageRenderMode,
+  selectLivePages,
   getSnappedPagePosition,
   getViewportBounds,
   clipToFirstScreen,
@@ -65,16 +65,20 @@ describe("canvasScene helpers", () => {
     expect(viewportBounds.bottom).toBeGreaterThanOrEqual(bounds.bottom);
   });
 
-  it("classifies offscreen pages into shell render mode", () => {
+  it("makes live only the nearest pages in view, then keeps mounted ones with spare budget", () => {
     const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
-    const pageBounds = getPageBounds({
-      pageId: "page-2",
-      position: { x: 5000, y: 0 },
-      width: 1440,
-      height: 900,
-    });
+    const page = (pageId: string, x: number) =>
+      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
+    const pages = [page("far", 20_000), page("mid", 200), page("near", -200), page("edge", 1_000)];
 
-    expect(getPageRenderMode(pageBounds, viewportBounds)).toBe("shell");
+    expect([...selectLivePages(pages, viewportBounds, new Set(), 2)]).toEqual(["near", "mid"]);
+    expect([...selectLivePages(pages, viewportBounds, new Set(["far"]), 4)]).toEqual([
+      "near",
+      "mid",
+      "edge",
+      "far",
+    ]);
+    expect(selectLivePages(pages, viewportBounds, new Set(["far"]), 3).has("far")).toBe(false);
   });
 
   it("snaps page positions to nearby page edges and centers", () => {

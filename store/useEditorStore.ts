@@ -36,6 +36,7 @@ import {
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 import { isPageDeviceType, type PageDeviceType } from "@/lib/types";
+import type { NodeStyleProperty } from "@/lib/pageNodes";
 import type { ProjectComment } from "@/lib/projectComments";
 
 export type PageGenerationStatus = "queued" | "generating" | "repairing" | "completed" | "failed";
@@ -73,6 +74,10 @@ export interface SelectedNode {
   /** Computed colors as #rrggbb, or null when transparent. */
   color: string | null;
   background: string | null;
+  /** Computed values of the properties the inspector edits. Missing when opened from a link. */
+  styles?: Partial<Record<NodeStyleProperty, number>>;
+  /** An SVG element, which the box and color controls do not apply to. */
+  isSvg?: boolean;
   /** Top left in page pixels, where a comment on it pins. Missing when opened from a link. */
   x?: number;
   y?: number;

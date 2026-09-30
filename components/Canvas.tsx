@@ -22,7 +22,7 @@ import {
   getPageBounds,
   getPageFrameHeight,
   getPageFrameWidth,
-  getPageRenderMode,
+  selectLivePages,
   getSnappedPagePosition,
   getViewportBounds,
   placeMissingPages,
@@ -305,32 +305,28 @@ export default function Canvas({
     [camera, viewportSize],
   );
 
-  const pageRenderModes = React.useMemo(
-    () =>
-      new Map(
-        pageLayouts.map((pageLayout) => [
-          pageLayout.page.id,
-          getPageRenderMode(pageLayout.bounds, viewportBounds),
-        ]),
-      ),
-    [pageLayouts, viewportBounds],
-  );
-
-  // Mounts every in-view page together once the camera settles. Mounting one
-  // page per tick kept the main thread free but made a ten page project take
-  // seconds to fill in. A mounted page stays mounted.
+  // Picks the live pages once the camera settles, all in one batch. Mounting
+  // one page per tick kept the main thread free but made a ten page project
+  // take seconds to fill in. Frames stay mounted after they scroll away,
+  // because rebuilding them re-runs Tailwind, until the live budget in
+  // `selectLivePages` needs their slot for a page nearer the viewport.
   React.useEffect(() => {
-    const pending = pageLayouts
-      .map((pageLayout) => pageLayout.page.id)
-      .filter((pageId) => !mountedPageIds.has(pageId) && pageRenderModes.get(pageId) === "live");
-    if (pending.length === 0) return;
-
     const timeoutId = window.setTimeout(
-      () => setMountedPageIds((current) => new Set([...current, ...pending])),
+      () =>
+        setMountedPageIds((current) => {
+          const next = selectLivePages(
+            pageLayouts.map((pageLayout) => pageLayout.bounds),
+            viewportBounds,
+            current,
+          );
+          const unchanged =
+            next.size === current.size && [...next].every((pageId) => current.has(pageId));
+          return unchanged ? current : next;
+        }),
       mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS,
     );
     return () => window.clearTimeout(timeoutId);
-  }, [mountedPageIds, pageLayouts, pageRenderModes]);
+  }, [mountedPageIds.size, pageLayouts, viewportBounds]);
 
   React.useEffect(() => {
     const assigned = placeMissingPages(
@@ -896,12 +892,6 @@ export default function Canvas({
             />
           ))}
           {pageLayouts.map((pageLayout) => {
-            // A mounted frame stays live after it scrolls away. Unmounting it
-            // meant zooming back out rebuilt every returning iframe in the same
-            // frame, mid-gesture, each re-parsing its HTML and re-running
-            // Tailwind. The browser already skips painting offscreen iframes.
-            // ponytail: memory grows with every page ever viewed; evict least
-            // recently visible frames if projects reach dozens of pages.
             const renderMode: PageRenderMode = mountedPageIds.has(pageLayout.page.id)
               ? "live"
               : "shell";

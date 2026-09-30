@@ -22,6 +22,7 @@ const TOOL_LABELS: Record<string, string> = {
   update_page: "Rewrote",
   patch_page: "Edited",
   get_page: "Read",
+  get_page_changes: "Read your edits",
   get_page_png: "Screenshotted",
   list_comments: "Read comments",
   resolve_comment: "Resolved a comment",

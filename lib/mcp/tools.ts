@@ -22,8 +22,10 @@ import {
 } from "@/lib/db/queries/projects";
 import { recordAgentActivity } from "@/lib/db/queries/agentActivity";
 import {
+  getAgentBaseline,
   getCanvasSelection,
   getDesignTokens,
+  setAgentBaseline,
   setDesignTokens,
 } from "@/lib/db/queries/agentState";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
@@ -39,7 +41,7 @@ import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { parseDesignTokens } from "@/lib/designTokens";
-import { buildNodeLink, getNodeHtml } from "@/lib/pageNodes";
+import { buildNodeLink, diffPageNodes, getNodeHtml } from "@/lib/pageNodes";
 import { formatCommentsForAgent, isUuid } from "@/lib/projectComments";
 import { isPageDeviceType } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
@@ -197,6 +199,7 @@ const addPage: ToolHandler = async (userId, args) => {
     htmlContent: html,
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
+  await setAgentBaseline(page.id, page.htmlContent);
 
   return withWriteNotes(
     `Added page "${page.title}" (id: ${page.id}) to "${project.title}".`,
@@ -236,6 +239,7 @@ const updatePage: ToolHandler = async (userId, args) => {
     htmlContent: html,
   });
   if (!updated) return fail("Page not found. Use list_pages for valid ids.");
+  if (html !== undefined) await setAgentBaseline(updated.id, updated.htmlContent);
 
   const summary = `Updated page "${updated.title}".`;
   return html === undefined || parsed.data.html === undefined
@@ -289,7 +293,10 @@ const patchPage: ToolHandler = async (userId, args) => {
       htmlContent: html,
       expectedHtmlContent: page.htmlContent,
     });
-    if (updated) return withWriteNotes(`Patched page "${updated.title}".`, patch.html, html);
+    if (updated) {
+      await setAgentBaseline(updated.id, updated.htmlContent, page.htmlContent);
+      return withWriteNotes(`Patched page "${updated.title}".`, patch.html, html);
+    }
   }
 
   return fail("The page kept changing while patching. Call get_page and try again.");
@@ -333,6 +340,65 @@ const getPage: ToolHandler = async (userId, args) => {
     content: [
       text(`"${page.title}" · ${page.deviceType} · page id ${page.id}`),
       text(page.htmlContent ?? ""),
+    ],
+  };
+};
+
+// Enough for a round of hand edits. Past it the agent should read the page.
+const MAX_REPORTED_CHANGES = 40;
+const MAX_CHANGE_SIDE_CHARS = 1_500;
+
+const clip = (value: string) =>
+  value.length > MAX_CHANGE_SIDE_CHARS ? `${value.slice(0, MAX_CHANGE_SIDE_CHARS)}…` : value;
+
+const getPageChanges: ToolHandler = async (userId, args) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const page = await getProjectPageForUser({
+    projectId: parsed.data.projectId,
+    pageId: parsed.data.pageId,
+    userId,
+  });
+  if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+  const baseline = await getAgentBaseline(page.id);
+  // Reading the changes marks them seen, so the next call reports only newer edits.
+  await setAgentBaseline(page.id, page.htmlContent);
+  if (baseline === null) {
+    return succeed(
+      `No agent write is recorded for "${page.title}", so there is nothing to compare. Call ` +
+        "get_page for its full HTML. Changes made from now on will be reported.",
+    );
+  }
+
+  const changes = diffPageNodes(baseline, page.htmlContent);
+  if (changes.length === 0) {
+    return succeed(`"${page.title}" has no element changes since your last write.`);
+  }
+  const lines = changes.slice(0, MAX_REPORTED_CHANGES).map((change) =>
+    [
+      `Element ${change.nodeId}:`,
+      `  before: ${change.before === null ? "(added)" : clip(change.before)}`,
+      `  after: ${change.after === null ? "(removed)" : clip(change.after)}`,
+    ].join("\n"),
+  );
+  const more =
+    changes.length > MAX_REPORTED_CHANGES
+      ? [`${changes.length - MAX_REPORTED_CHANGES} more changes not shown. Call get_page for the full HTML.`]
+      : [];
+  return {
+    content: [
+      text(
+        `${changes.length} element${changes.length === 1 ? "" : "s"} changed on "${page.title}" ` +
+          "since your last write. Each shows the opening tag and, for text-only elements, the text.",
+      ),
+      text([...lines, ...more].join("\n\n")),
     ],
   };
 };
@@ -594,6 +660,7 @@ const importUrl: ToolHandler = async (userId, args) => {
     htmlContent: html,
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
+  await setAgentBaseline(page.id, page.htmlContent);
 
   return succeed(
     `Imported ${parsed.data.url} as page "${page.title}" (id: ${page.id}, ${html.length} characters). ` +
@@ -609,6 +676,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   update_page: updatePage,
   patch_page: patchPage,
   get_page: getPage,
+  get_page_changes: getPageChanges,
   get_page_png: getPagePng,
   list_comments: listComments,
   resolve_comment: resolveComment,

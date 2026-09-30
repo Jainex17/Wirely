@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import {
   buildNodeLink,
+  diffPageNodes,
   findNodeSpan,
   getNodeHtml,
+  getNodeStyle,
   getNodeText,
   readNodeLink,
   scopePromptToNode,
   setNodeColor,
+  setNodeStyle,
   setNodeText,
   stampNodeIds,
 } from "@/lib/pageNodes";
@@ -150,5 +153,54 @@ describe("element links", () => {
     expect(readNodeLink(new URL(link).search)).toEqual({ pageId: "page-2", nodeId: "1x9k3fz" });
     expect(readNodeLink('?page=page-2&node="]x')).toEqual({ pageId: "page-2", nodeId: null });
     expect(readNodeLink("?node=14")).toBeNull();
+  });
+});
+
+describe("inline styles", () => {
+  const html = page('<h1 data-wirely-id="h" style="background: url(&quot;a;b.png&quot;); font-size: 20px">Hi</h1>');
+
+  it("sets, replaces, and removes one declaration without touching the rest", () => {
+    const set = setNodeStyle(html, "h", "font-size", "32px") ?? "";
+    expect(getNodeStyle(set, "h")).toEqual({ "font-size": "32px" });
+    expect(set).toContain('style="background: url(&quot;a;b.png&quot;); font-size: 32px"');
+    const removed = setNodeStyle(set, "h", "font-size", null) ?? "";
+    expect(removed).toContain('style="background: url(&quot;a;b.png&quot;)"');
+  });
+
+  it("rejects values outside the allowlist and missing elements", () => {
+    expect(setNodeStyle(html, "h", "font-size", "1px; color: red")).toBeNull();
+    expect(setNodeStyle(html, "h", "font-weight", "450")).toBeNull();
+    expect(setNodeStyle(html, "missing", "gap", "4px")).toBeNull();
+    expect(setNodeStyle(page('<p data-wirely-id="p">x</p>'), "p", "gap", null)).toBe(
+      page('<p data-wirely-id="p">x</p>'),
+    );
+  });
+});
+
+describe("diffPageNodes", () => {
+  it("reports changed text and attributes, and added and removed elements, by id", () => {
+    const before = page(
+      '<main data-wirely-id="m"><h1 data-wirely-id="h">Old</h1><p data-wirely-id="p">Same</p><b data-wirely-id="b">x</b></main>',
+    );
+    const after = page(
+      '<main data-wirely-id="m"><h1 data-wirely-id="h" style="font-size: 40px">New</h1><p data-wirely-id="p">Same</p><i data-wirely-id="i">y</i></main>',
+    );
+    expect(diffPageNodes(before, after)).toEqual([
+      {
+        nodeId: "h",
+        before: '<h1 data-wirely-id="h">Old',
+        after: '<h1 data-wirely-id="h" style="font-size: 40px">New',
+      },
+      { nodeId: "b", before: '<b data-wirely-id="b">x', after: null },
+      { nodeId: "i", before: null, after: '<i data-wirely-id="i">y' },
+    ]);
+  });
+
+  it("matches an unstamped page to the stamped copy the editor saved", () => {
+    const agentHtml = page("<section><h2>Pricing</h2></section>");
+    const edited = setNodeText(stampNodeIds(agentHtml), idOf(stampNodeIds(agentHtml), "h2"), "Plans") ?? "";
+    expect(diffPageNodes(agentHtml, stampNodeIds(agentHtml))).toEqual([]);
+    const [change] = diffPageNodes(agentHtml, edited);
+    expect(change?.after).toEndWith(">Plans");
   });
 });

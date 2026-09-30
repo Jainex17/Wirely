@@ -1,8 +1,14 @@
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
-import { projectAgentState, projectPages, projects } from "@/lib/db/schema";
+import {
+  projectAgentState,
+  projectPageAgentBaselines,
+  projectPages,
+  projects,
+} from "@/lib/db/schema";
 import { applyDesignTokens, type DesignTokens } from "@/lib/designTokens";
+import { logger } from "@/lib/logger";
 
 /** The project's tokens, or null when it has none. Callers check ownership. */
 export const getDesignTokens = async (projectId: string): Promise<DesignTokens | null> => {
@@ -89,4 +95,52 @@ export const getCanvasSelection = async (userId: string, projectId?: string) => 
     .orderBy(desc(projectAgentState.selectedAt))
     .limit(1);
   return row ?? null;
+};
+
+/**
+ * Records `html` as what the agent last wrote to the page. With `previousHtml`
+ * it only moves a baseline that still equals it, so a patch after the user
+ * edited by hand leaves those edits to report. Never throws: a lost baseline
+ * must not fail the write. Callers check ownership.
+ */
+export const setAgentBaseline = async (pageId: string, html: string, previousHtml?: string) => {
+  const db = getDb();
+  try {
+    if (previousHtml === undefined) {
+      await db
+        .insert(projectPageAgentBaselines)
+        .values({ pageId, htmlContent: html })
+        .onConflictDoUpdate({
+          target: projectPageAgentBaselines.pageId,
+          set: { htmlContent: html, updatedAt: new Date() },
+        });
+      return;
+    }
+    await db
+      .update(projectPageAgentBaselines)
+      .set({ htmlContent: html, updatedAt: new Date() })
+      .where(
+        and(
+          eq(projectPageAgentBaselines.pageId, pageId),
+          eq(projectPageAgentBaselines.htmlContent, previousHtml),
+        ),
+      );
+  } catch (error) {
+    if (!isMissingRelationError(error)) logger.error("agent_baseline_save_failed", { error });
+  }
+};
+
+/** The HTML the agent last wrote to the page, or null when none is recorded. Callers check ownership. */
+export const getAgentBaseline = async (pageId: string) => {
+  try {
+    const [row] = await getDb()
+      .select({ htmlContent: projectPageAgentBaselines.htmlContent })
+      .from(projectPageAgentBaselines)
+      .where(eq(projectPageAgentBaselines.pageId, pageId))
+      .limit(1);
+    return row?.htmlContent ?? null;
+  } catch (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
 };

@@ -21,8 +21,9 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * Each line answers a mistake seen in a real session: five states of one
  * layout handed over as "designs to pick from", and a project the user was
  * never given a link to. The motion line matches the canvas, which holds
- * page animations still until Replay. The last line covers the hand-off from
- * canvas to the user's repo, where a raw HTML paste ignores their stack.
+ * page animations still until Replay. The last two lines cover the hand-off from
+ * canvas to the user's repo, where a raw HTML paste ignores their stack and
+ * the user's own canvas tweaks would otherwise never reach the code.
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
@@ -62,6 +63,8 @@ export const MCP_INSTRUCTIONS = [
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
     "components, and styles instead of pasting the HTML in.",
+  "When the user says they tweaked a page on the canvas and wants those tweaks in their code, " +
+    "call get_page_changes and apply only the listed differences to the matching components.",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -291,6 +294,23 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           type: "string",
           description: "The node value from a Wirely element link. Returns only that element.",
         },
+      },
+      required: ["projectId", "pageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_page_changes",
+    description:
+      "List the elements the user changed by hand on the canvas since your last write to the " +
+      "page (text, colors, sizes, spacing, pen edits), with each element's opening tag and " +
+      "text before and after. Use it to carry the user's canvas edits into their codebase " +
+      "without rereading the whole page. Calling it marks the changes seen.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
       },
       required: ["projectId", "pageId"],
       additionalProperties: false,

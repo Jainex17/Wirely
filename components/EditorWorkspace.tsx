@@ -11,6 +11,7 @@ import {
   getViewportBounds,
   isBoundsIntersecting,
 } from "@/lib/canvasScene";
+import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
 import type { ReportedNode } from "@/lib/nodePicker";
 import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
@@ -304,6 +305,31 @@ export default function EditorWorkspace({
     [projectId],
   );
 
+  /** Saves a pen tool edit, recorded so Cmd+Z can take it back. */
+  const commitCanvasEdit = useCallback(
+    (pageId: string, html: string) => {
+      const before = useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml;
+      if (before !== undefined) htmlHistory.record({ pageId, before, after: html });
+      savePageHtml(pageId, html);
+    },
+    [savePageHtml],
+  );
+
+  const stepHistory = useCallback(
+    (direction: "undo" | "redo") => {
+      const result = htmlHistory.step(
+        direction,
+        (pageId) => useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml,
+      );
+      if (result === "stale") {
+        toast.error("The page changed since that edit. Open the page's History to go further back.");
+      } else if (result) {
+        savePageHtml(result.pageId, result.html);
+      }
+    },
+    [savePageHtml],
+  );
+
   const handleNodeReport = useCallback(
     (pageId: string, node: ReportedNode, intent: "pick" | "select") => {
       const state = useEditorStore.getState();
@@ -313,6 +339,8 @@ export default function EditorWorkspace({
         tag: node.tag,
         color: node.color,
         background: node.background,
+        styles: node.styles,
+        isSvg: node.isSvg,
         x: node.x,
         y: node.y,
       };
@@ -323,7 +351,9 @@ export default function EditorWorkspace({
         if (
           current.tag === next.tag &&
           current.color === next.color &&
-          current.background === next.background
+          current.background === next.background &&
+          current.isSvg === next.isSvg &&
+          JSON.stringify(current.styles) === JSON.stringify(next.styles)
         ) {
           return;
         }
@@ -403,7 +433,13 @@ export default function EditorWorkspace({
         return;
       }
 
-      // Leave Cmd and Ctrl chords, like browser zoom, to the browser.
+      if ((event.metaKey || event.ctrlKey) && event.code === "KeyZ") {
+        stepHistory(event.shiftKey ? "redo" : "undo");
+        event.preventDefault();
+        return;
+      }
+
+      // Leave other Cmd and Ctrl chords, like browser zoom, to the browser.
       if (event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
@@ -452,7 +488,7 @@ export default function EditorWorkspace({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [fitAllPages, fitPage, focusedPageId, setZoom, stepZoom]);
+  }, [fitAllPages, fitPage, focusedPageId, setZoom, stepHistory, stepZoom]);
 
   return (
     <div data-sidebar-mode={sidebarMode} className="relative h-full w-full">
@@ -467,7 +503,7 @@ export default function EditorWorkspace({
         onEditPage={onEditPage}
         onToolChange={setActiveTool}
         onNodeReport={handleNodeReport}
-        onSavePageHtml={savePageHtml}
+        onSavePageHtml={commitCanvasEdit}
       />
     </div>
   );

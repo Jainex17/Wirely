@@ -16,6 +16,7 @@ import PagesPanel from "@/components/PagesPanel";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import AgentActivityPanel from "@/components/AgentActivityPanel";
+import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import ShareProjectButton from "@/components/ShareProjectButton";
 import DesignTokensDialog from "@/components/DesignTokensDialog";
@@ -76,7 +77,7 @@ export default function WireEditor({
   // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
   const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"chat" | "activity">("chat");
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "design" | "activity">("chat");
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -231,6 +232,20 @@ export default function WireEditor({
     };
   }, [wireId]);
 
+  // Picking a new element opens its properties, as selecting a layer does in
+  // Figma. The chat keeps a chip for it, so a prompt still edits just that element.
+  useEffect(
+    () =>
+      useEditorStore.subscribe((state, previous) => {
+        const node = state.selectedNode;
+        const before = previous.selectedNode;
+        if (node && (node.pageId !== before?.pageId || node.nodeId !== before?.nodeId)) {
+          setSidebarTab("design");
+        }
+      }),
+    [],
+  );
+
   useEffect(() => {
     router.prefetch("/");
   }, [router]);
@@ -364,7 +379,7 @@ export default function WireEditor({
           >
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-2 pr-2">
               <div role="tablist" className="flex items-center gap-0.5">
-                {(["chat", "activity"] as const).map((tab) => (
+                {(["chat", "design", "activity"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
@@ -377,7 +392,7 @@ export default function WireEditor({
                         : "rounded-md px-2.5 py-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
                     }
                   >
-                    {tab === "chat" ? "Chat" : "Agent activity"}
+                    {{ chat: "Chat", design: "Design", activity: "Agent activity" }[tab]}
                   </button>
                 ))}
               </div>
@@ -392,6 +407,11 @@ export default function WireEditor({
                 focusRequestKey={promptFocusRequestKey}
               />
             </div>
+            {sidebarTab === "design" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <NodeInspector projectId={wireId} variant="panel" />
+              </div>
+            ) : null}
             {sidebarTab === "activity" ? (
               <div className="min-h-0 flex-1">
                 <AgentActivityPanel projectId={wireId} isActive={!isPromptPanelCollapsed} />

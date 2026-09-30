@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { injectNodePicker, parseReportedNode, type ReportedNode } from "@/lib/nodePicker";
 
 describe("parseReportedNode", () => {
-  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null, matrix: [2, 0, 0, 2, 10, 20] as ReportedNode["matrix"] };
+  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null, matrix: [2, 0, 0, 2, 10, 20] as ReportedNode["matrix"], styles: { "font-size": 24, gap: 0 }, isSvg: false };
 
   it("accepts a well formed node", () => {
     expect(parseReportedNode(node)).toEqual(node);
@@ -15,6 +15,9 @@ describe("parseReportedNode", () => {
     expect(parseReportedNode(null)).toBeNull();
     expect(parseReportedNode({ ...node, color: "red; x" })?.color).toBeNull();
     expect(parseReportedNode({ ...node, matrix: [1, 0, 0, 1, 0, "x"] })?.matrix).toBeNull();
+    expect(
+      parseReportedNode({ ...node, styles: { "font-size": -1, gap: "4px", color: 3 } })?.styles,
+    ).toEqual({});
   });
 });
 

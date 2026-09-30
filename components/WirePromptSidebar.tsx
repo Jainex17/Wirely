@@ -1627,7 +1627,7 @@ export default function WirePromptSidebar({
         ) : null}
       </div>
 
-      <NodeInspector projectId={wireId} onSaveHtml={persistPageHtml} />
+      <NodeInspector projectId={wireId} variant="chip" />
       <form onSubmit={handleSubmit} className="relative shrink-0">
         {isMentionListOpen ? (
           <ul
