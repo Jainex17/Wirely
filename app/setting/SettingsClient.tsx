@@ -275,14 +275,10 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid gap-6 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:gap-12">
-      <div className="md:pt-1">
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      </div>
-      <div className="min-w-0">{children}</div>
+    <section className="max-w-2xl">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
+      <div className="mt-3 min-w-0">{children}</div>
     </section>
   );
 }
