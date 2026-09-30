@@ -143,7 +143,7 @@ export default function PagesPanel({
 
   if (isCollapsed) {
     return (
-      <div className="absolute left-3 top-3 z-30 w-64 rounded-lg border border-sidebar-border bg-sidebar shadow-lg">
+      <div className="absolute left-3 top-3 z-30 w-64 rounded-lg border border-sidebar-border bg-sidebar">
         {titleRow}
       </div>
     );
