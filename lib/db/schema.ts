@@ -220,6 +220,19 @@ export const projectAgentState = pgTable("project_agent_state", {
 });
 
 /**
+ * The HTML an MCP agent last wrote to a page, so get_page_changes can tell it
+ * what the user changed by hand since. Its own table so page queries keep
+ * working on a database that has not run this migration yet.
+ */
+export const projectPageAgentBaselines = pgTable("project_page_agent_baselines", {
+  pageId: uuid("page_id")
+    .primaryKey()
+    .references(() => projectPages.id, { onDelete: "cascade" }),
+  htmlContent: text("html_content").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * A page's HTML as it was before a write replaced it, so the user can restore
  * a design an agent overwrote. Writes within a few minutes of the last snapshot
  * share it, so a burst of patches leaves one restore point, not dozens.

@@ -419,3 +419,152 @@ export const getNodeAttribute = (html: string, nodeId: string, name: string) => 
   );
   return match ? (match[2] ?? match[3] ?? "") : null;
 };
+
+/** The inline style properties the inspector edits, and the values each accepts. */
+export const NODE_STYLE_PROPERTIES = {
+  width: /^\d{1,4}(?:\.\d{1,2})?px$/,
+  height: /^\d{1,4}(?:\.\d{1,2})?px$/,
+  opacity: /^(?:0(?:\.\d{1,2})?|1)$/,
+  "font-size": /^\d{1,3}(?:\.\d{1,2})?px$/,
+  "font-weight": /^[1-9]00$/,
+  "padding-block": /^\d{1,3}(?:\.\d{1,2})?px$/,
+  "padding-inline": /^\d{1,3}(?:\.\d{1,2})?px$/,
+  gap: /^\d{1,3}(?:\.\d{1,2})?px$/,
+  "border-radius": /^\d{1,4}(?:\.\d{1,2})?px$/,
+} as const;
+
+export type NodeStyleProperty = keyof typeof NODE_STYLE_PROPERTIES;
+
+const unescapeAttribute = (value: string) =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+/** Splits a style attribute on the semicolons that end declarations, not those inside url() or quotes. */
+const splitDeclarations = (style: string) => {
+  const declarations: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  for (let index = 0; index < style.length; index += 1) {
+    const char = style[index];
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth = Math.max(0, depth - 1);
+    } else if (char === ";" && depth === 0) {
+      declarations.push(style.slice(start, index));
+      start = index + 1;
+    }
+  }
+  declarations.push(style.slice(start));
+  return declarations.map((declaration) => declaration.trim()).filter(Boolean);
+};
+
+const declarationName = (declaration: string) =>
+  declaration.slice(0, declaration.indexOf(":")).trim().toLowerCase();
+
+/** The inline values the inspector set on the element, by property. */
+export const getNodeStyle = (html: string, nodeId: string) => {
+  const style = unescapeAttribute(getNodeAttribute(html, nodeId, "style") ?? "");
+  const values: Partial<Record<NodeStyleProperty, string>> = {};
+  for (const declaration of splitDeclarations(style)) {
+    const name = declarationName(declaration);
+    if (name in NODE_STYLE_PROPERTIES) {
+      values[name as NodeStyleProperty] = declaration.slice(declaration.indexOf(":") + 1).trim();
+    }
+  }
+  return values;
+};
+
+/**
+ * Sets one inline style declaration on the element, or removes it when `value`
+ * is null. Inline so it wins over the page's classes whether or not the page
+ * uses Tailwind. Null when the element is gone or the value is not allowed.
+ */
+export const setNodeStyle = (
+  html: string,
+  nodeId: string,
+  property: NodeStyleProperty,
+  value: string | null,
+) => {
+  if (value !== null && !NODE_STYLE_PROPERTIES[property].test(value)) return null;
+  const current = getNodeAttribute(html, nodeId, "style");
+  if (current === null && findNodeSpan(html, nodeId) === null) return null;
+  const declarations = splitDeclarations(unescapeAttribute(current ?? "")).filter(
+    (declaration) => declarationName(declaration) !== property,
+  );
+  if (value !== null) declarations.push(`${property}: ${value}`);
+  if (declarations.length === 0 && current === null) return html;
+  return setNodeAttribute(html, nodeId, "style", declarations.join("; "));
+};
+
+interface NodeSummary {
+  openTag: string;
+  /** The content of an element with no child tags, which is its text. */
+  text: string | null;
+}
+
+/** Every element with a node id, in one pass, keyed by id. */
+const summarizeNodes = (html: string) => {
+  const nodes = new Map<string, NodeSummary>();
+  const open: Array<{ name: string; id: string | null; openEnd: number }> = [];
+  for (const tag of scanTags(html)) {
+    if (!tag.isClosing) {
+      const id = readNodeId(tag.attributes);
+      if (id && !nodes.has(id)) {
+        nodes.set(id, { openTag: html.slice(tag.start, tag.end), text: null });
+      }
+      if (!isSelfClosing(tag)) open.push({ name: tag.name, id, openEnd: tag.end });
+      continue;
+    }
+    const index = open.findLastIndex((entry) => entry.name === tag.name);
+    if (index === -1) continue;
+    const [entry] = open.splice(index);
+    const node = entry.id ? nodes.get(entry.id) : undefined;
+    const content = html.slice(entry.openEnd, tag.start);
+    if (node && !content.includes("<")) node.text = content.trim();
+  }
+  return nodes;
+};
+
+export interface NodeChange {
+  nodeId: string;
+  /** The opening tag and text before, or null when the element is new. */
+  before: string | null;
+  /** The opening tag and text now, or null when the element was removed. */
+  after: string | null;
+}
+
+const describeNode = (node: NodeSummary) =>
+  node.text ? `${node.openTag}${node.text}` : node.openTag;
+
+/**
+ * The elements whose opening tag or text differ between two versions of a
+ * page, matched by node id. Both sides are stamped first, so HTML saved before
+ * the editor stamped it still lines up with the stamped version.
+ */
+export const diffPageNodes = (beforeHtml: string, afterHtml: string): NodeChange[] => {
+  const before = summarizeNodes(stampNodeIds(beforeHtml));
+  const after = summarizeNodes(stampNodeIds(afterHtml));
+  const changes: NodeChange[] = [];
+  for (const [nodeId, node] of before) {
+    const next = after.get(nodeId);
+    if (!next) {
+      changes.push({ nodeId, before: describeNode(node), after: null });
+    } else if (describeNode(node) !== describeNode(next)) {
+      changes.push({ nodeId, before: describeNode(node), after: describeNode(next) });
+    }
+  }
+  for (const [nodeId, node] of after) {
+    if (!before.has(nodeId)) changes.push({ nodeId, before: null, after: describeNode(node) });
+  }
+  return changes;
+};
