@@ -233,14 +233,36 @@ export const getPageBounds = ({
 export const isBoundsIntersecting = (a: Bounds, b: Bounds) =>
   a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
 
-export const getPageRenderMode = (
-  pageBounds: PageBounds,
+// Each live page is a full document running Tailwind in its own iframe, so
+// memory and CPU grow with this number, not with the project's page count.
+export const MAX_LIVE_PAGES = 12;
+
+/**
+ * Which pages get a live iframe once the camera settles: the in-view pages
+ * nearest the viewport centre, up to `limit`. Budget left over keeps frames
+ * that are already mounted, nearest first, so panning back does not rebuild
+ * them. Everything else renders as a shell.
+ */
+export const selectLivePages = (
+  pages: readonly PageBounds[],
   viewportBounds: Bounds,
-  overscan = LIVE_PAGE_OVERSCAN_SCENE_PX,
-): PageRenderMode =>
-  isBoundsIntersecting(pageBounds, expandBounds(viewportBounds, overscan))
-    ? "live"
-    : "shell";
+  mounted: ReadonlySet<string>,
+  limit = MAX_LIVE_PAGES,
+) => {
+  const nearby = expandBounds(viewportBounds, LIVE_PAGE_OVERSCAN_SCENE_PX);
+  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
+  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
+  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
+  const byDistance = [...pages].sort((a, b) => distance(a) - distance(b));
+  const live = new Set<string>();
+  for (const page of byDistance) {
+    if (live.size < limit && isBoundsIntersecting(page, nearby)) live.add(page.pageId);
+  }
+  for (const page of byDistance) {
+    if (live.size < limit && mounted.has(page.pageId)) live.add(page.pageId);
+  }
+  return live;
+};
 
 export const getDefaultPageX = (
   index: number,

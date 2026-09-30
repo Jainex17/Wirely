@@ -1200,7 +1200,7 @@ export default React.memo(function PageRenderer({
           <div
             ref={frameRef}
             className={cn(
-              "relative overflow-hidden rounded-[var(--radius)] bg-transparent shadow-lg outline-solid transition-[outline-color] duration-150",
+              "relative overflow-hidden rounded-[var(--radius)] bg-transparent outline-solid transition-[outline-color] duration-150",
               isFocused ? "outline-sky-500" : "outline-transparent group-hover:outline-sky-500/60",
             )}
             style={{
