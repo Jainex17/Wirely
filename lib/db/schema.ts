@@ -385,6 +385,10 @@ export const apiTokens = pgTable(
     name: text("name").default("Local agent").notNull(),
     tokenHash: text("token_hash").notNull(),
     prefix: text("prefix").notNull(),
+    /** The OAuth client this token was issued to, when it came from the connect flow. */
+    oauthClientId: uuid("oauth_client_id").references(() => oauthClients.id, {
+      onDelete: "set null",
+    }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -392,6 +396,49 @@ export const apiTokens = pgTable(
   (table) => ({
     userIdx: index("api_tokens_user_id_idx").on(table.userId),
     tokenHashUnique: uniqueIndex("api_tokens_token_hash_idx").on(table.tokenHash),
+  }),
+);
+
+/**
+ * One MCP client registered through OAuth dynamic client registration
+ * (RFC 7591). Public clients: no secret, PKCE only. The stored redirect URIs
+ * are the only ones an authorization or token request may name, compared by
+ * exact string match — never by prefix.
+ */
+export const oauthClients = pgTable("oauth_clients", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * A single-use OAuth authorization code, stored as its SHA-256 hash like the
+ * tokens. A code lives for minutes and is consumed by the token exchange; the
+ * atomic consume update refuses a second use, which is what makes a replayed
+ * or intercepted code worthless without the client's PKCE verifier anyway.
+ */
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    codeHashUnique: uniqueIndex("oauth_authorization_codes_code_hash_idx").on(
+      table.codeHash,
+    ),
   }),
 );
 

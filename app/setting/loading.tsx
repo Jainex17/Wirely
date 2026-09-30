@@ -16,12 +16,10 @@ export default function SettingLoading() {
           <Skeleton className="h-4 w-20 animate-pulse" />
           <Skeleton className="h-4 w-16 animate-pulse" />
         </div>
-        <div className="grid gap-6 pt-10 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:gap-12">
-          <div>
-            <Skeleton className="h-4 w-28 animate-pulse" />
-            <Skeleton className="mt-3 h-3 w-40 animate-pulse" />
-          </div>
-          <Skeleton className="h-64 w-full animate-pulse rounded-xl" />
+        <div className="max-w-2xl pt-10">
+          <Skeleton className="h-4 w-28 animate-pulse" />
+          <Skeleton className="mt-2 h-3 w-72 animate-pulse" />
+          <Skeleton className="mt-3 h-64 w-full animate-pulse rounded-xl" />
         </div>
       </div>
     </div>

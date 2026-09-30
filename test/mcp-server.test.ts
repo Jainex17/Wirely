@@ -16,7 +16,10 @@ import {
   callTool,
   replaceExactlyOnce,
 } from "@/lib/mcp/tools";
-import { buildInstallPrompt, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
+import {
+  buildConnectSnippet,
+  MCP_CLIENTS,
+} from "@/lib/mcp/connectSnippet";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -307,57 +310,99 @@ describe("protocol purity", () => {
   });
 });
 
-describe("client install prompts", () => {
-  const URL = "https://wirely.vercel.app/api/mcp";
-  const TOKEN = "wirely_abc123";
+describe("oauth connect boundary", () => {
+  it("consumes the code and verifies PKCE before any token is issued", () => {
+    const source = read("app/api/mcp/oauth/token/route.ts");
+    const consume = source.indexOf("consumeAuthorizationCode(");
+    const pkce = source.indexOf("verifierMatchesChallenge(");
+    const issue = source.indexOf("createApiToken(");
 
-  it("embeds the server URL and token in every client's prompt", () => {
-    for (const client of MCP_CLIENTS) {
-      const prompt = buildInstallPrompt(client.id, URL, TOKEN);
+    expect(consume).toBeGreaterThan(-1);
+    expect(pkce).toBeGreaterThan(-1);
+    expect(issue).toBeGreaterThan(consume);
+    expect(issue).toBeGreaterThan(pkce);
+  });
 
-      expect(prompt).toContain(URL);
-      expect(prompt).toContain(`Bearer ${TOKEN}`);
-      expect(prompt.length).toBeGreaterThan(100);
+  it("matches the redirect URI exactly on both authorize steps and never redirects on failure", () => {
+    for (const path of [
+      "app/mcp/authorize/page.tsx",
+      "app/api/mcp/oauth/authorize/route.ts",
+    ]) {
+      const source = read(path);
+      const validates = source.indexOf("validateRedirectUri(");
+      const matches = source.indexOf(".includes(parsed.value.redirectUri)");
+      const errors = source.indexOf("renderError");
+
+      expect(validates).toBeGreaterThan(-1);
+      expect(matches).toBeGreaterThan(validates);
+      expect(errors).toBeGreaterThan(-1);
     }
   });
 
-  it("walks opencode through merging its own config", () => {
-    const prompt = buildInstallPrompt("opencode", URL, TOKEN);
+  it("challenges clients toward the discovery document on 401", () => {
+    const source = read("app/api/mcp/route.ts");
 
-    expect(prompt).toContain("opencode.json");
-    expect(prompt).toContain('"type": "remote"');
-    expect(prompt).toContain("keeping every existing setting");
-    expect(prompt).toContain("restart opencode");
+    expect(source.includes("resource_metadata=")).toBe(true);
+    expect(source.includes(".well-known/oauth-protected-resource")).toBe(true);
+  });
+});
+
+describe("client connect snippets", () => {
+  const URL = "https://wirely.vercel.app/api/mcp";
+  const TOKEN = "wirely_abc123";
+
+  it("gives every client an OAuth snippet with no token and a browser step", () => {
+    for (const client of MCP_CLIENTS) {
+      const steps = buildConnectSnippet(client.id, URL);
+
+      expect(steps.snippet).toContain(URL);
+      expect(steps.snippet).not.toContain("Bearer");
+      expect(steps.target.length).toBeGreaterThan(0);
+      expect(steps.next).toMatch(/authoriz/i);
+    }
   });
 
-  it("walks Cursor through merging mcpServers", () => {
-    const prompt = buildInstallPrompt("cursor", URL, TOKEN);
+  it("puts the token in a bearer header for every client when one is given", () => {
+    for (const client of MCP_CLIENTS) {
+      const steps = buildConnectSnippet(client.id, URL, TOKEN);
 
-    expect(prompt).toContain("~/.cursor/mcp.json");
-    expect(prompt).toContain('"mcpServers"');
-    expect(prompt).toContain("keeping every existing server");
-    expect(prompt).toContain("restart Cursor");
+      expect(steps.snippet).toContain(URL);
+      expect(steps.snippet).toContain(`Bearer ${TOKEN}`);
+      expect(steps.next).not.toMatch(/authoriz/i);
+    }
   });
 
-  it("tells Codex to edit config.toml with a static header", () => {
-    const prompt = buildInstallPrompt("codex", URL, TOKEN);
-
-    expect(prompt).toContain("~/.codex/config.toml");
-    expect(prompt).toContain("[mcp_servers.wirely]");
-    expect(prompt).toContain(`http_headers = { "Authorization" = "Bearer ${TOKEN}" }`);
+  it("gives each client its own install command", () => {
+    expect(buildConnectSnippet("claude-code", URL, TOKEN).snippet).toBe(
+      `claude mcp add --transport http wirely ${URL} --header "Authorization: Bearer ${TOKEN}" --scope user`,
+    );
+    expect(buildConnectSnippet("codex", URL).snippet).toBe(
+      `codex mcp add wirely --url ${URL} && codex mcp login wirely`,
+    );
+    expect(buildConnectSnippet("codex", URL, TOKEN).snippet).toContain(
+      `http_headers = { "Authorization" = "Bearer ${TOKEN}" }`,
+    );
+    expect(buildConnectSnippet("opencode", URL).snippet).toBe(
+      `opencode mcp add wirely --url ${URL} --global && opencode mcp auth wirely`,
+    );
   });
 
-  it("hands Claude Code one runnable command", () => {
-    const prompt = buildInstallPrompt("claude-code", URL, TOKEN);
+  it("gives Cursor an install link that decodes to its server config", () => {
+    for (const token of [undefined, TOKEN]) {
+      const steps = buildConnectSnippet("cursor", URL, token);
+      const link = new globalThis.URL(steps.installUrl ?? "");
+      const config = JSON.parse(atob(link.searchParams.get("config") ?? ""));
 
-    expect(prompt).toContain(`claude mcp add --transport http wirely ${URL}`);
-    expect(prompt).toContain(`--header "Authorization: Bearer ${TOKEN}"`);
-    expect(prompt).toContain("--scope user");
-    expect(prompt).toContain("claude mcp list");
+      expect(link.protocol).toBe("cursor:");
+      expect(link.searchParams.get("name")).toBe("wirely");
+      expect(config.url).toBe(URL);
+      expect(config.headers?.Authorization).toBe(token ? `Bearer ${token}` : undefined);
+    }
+    expect(buildConnectSnippet("claude-code", URL).installUrl).toBeUndefined();
   });
 
-  it("refuses to build a prompt without the pieces it needs", () => {
-    expect(() => buildInstallPrompt("opencode", "", TOKEN)).toThrow();
-    expect(() => buildInstallPrompt("opencode", URL, "  ")).toThrow();
+  it("refuses to build a snippet without the pieces it needs", () => {
+    expect(() => buildConnectSnippet("cursor", "")).toThrow();
+    expect(() => buildConnectSnippet("cursor", URL, "  ")).toThrow();
   });
 });

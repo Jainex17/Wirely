@@ -24,6 +24,7 @@ import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import ProjectThumbnail from "@/components/ProjectThumbnail";
 import { toast } from "@/components/ui/sonner";
+import McpConnectSteps from "@/components/McpConnectSteps";
 
 // The model picker and delete dialog only matter once the user interacts with
 // them, so they load on demand instead of weighing down the first paint.
@@ -43,7 +44,6 @@ const ModelPicker = dynamic(() => import("./ModelPicker"), {
 });
 
 const DeleteProjectDialog = dynamic(() => import("./DeleteProjectDialog"));
-const McpConnectCard = dynamic(() => import("@/components/McpConnectCard"));
 
 // Shown once an agent is connected, so the first thing to paste is obvious.
 const AGENT_EXAMPLE_PROMPT =
@@ -410,8 +410,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
-  const leadWithSetup = state.historyItems.length === 0;
-
   const setup = (
     <section className="w-full max-w-2xl">
       {showComposer ? (
@@ -490,8 +488,19 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       ) : null}
 
       {hasConnectedAgent ? null : (
-        <div className={showComposer ? "mt-8" : undefined}>
-          <McpConnectCard />
+        <div className="mt-8 rounded-xl border border-border bg-card px-5 py-4 text-left">
+          <p className="mb-3 text-sm font-medium text-foreground">Connect your coding agent</p>
+          <McpConnectSteps />
+          <p className="mt-3 text-xs text-muted-foreground">
+            Manage or revoke connections in{" "}
+            <Link
+              href="/setting?tab=mcp"
+              className="text-primary underline underline-offset-2"
+            >
+              settings
+            </Link>
+            .
+          </p>
         </div>
       )}
 
@@ -525,8 +534,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
       </div>
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-28 sm:px-6">
-        {leadWithSetup ? <div className="pt-10">{setup}</div> : null}
-
         <section className="pt-10">
           <div className="flex items-baseline justify-between gap-4">
             <h1 className="font-display text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
@@ -604,7 +611,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           </ul>
         </section>
 
-        {leadWithSetup ? null : <div className="pt-12">{setup}</div>}
+        <div className="pt-12">{setup}</div>
       </main>
 
       {state.projectToDelete ? (

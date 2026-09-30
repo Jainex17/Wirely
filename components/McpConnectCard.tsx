@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Circle, Copy, Loader2, Plug, Plus } from "lucide-react";
+import { Check, Circle, Loader2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import McpConnectSteps from "@/components/McpConnectSteps";
 import { toast } from "@/components/ui/sonner";
-import {
-  buildInstallPrompt,
-  MCP_CLIENTS,
-  type McpClientId,
-} from "@/lib/mcp/installPrompt";
 
 export interface CreatedAgentToken {
   id: string;
@@ -18,35 +13,25 @@ export interface CreatedAgentToken {
 }
 
 interface McpConnectCardProps {
-  /** Settings adds the new token to its list; home ignores it. */
+  /** Settings adds the new token to its list. */
   onTokenCreated?: (token: CreatedAgentToken) => void;
 }
 
-const MCP_PATH = "/api/mcp";
 const CONNECTION_POLL_MS = 3_000;
 // A user who never finishes the install should not poll forever.
 const CONNECTION_POLL_LIMIT_MS = 10 * 60_000;
 
 /**
- * Connects an MCP client in one paste: create a token, copy the prompt for the
- * client, and paste it there. That client's own agent edits its config. The
- * prompt embeds the freshly minted token, so it is only offered while that
- * token is in hand. After that the card polls the token list until the client
- * makes its first call, so the user sees the install worked.
+ * The settings connect card. It leads with the OAuth snippet. A client that
+ * cannot open a browser can switch to a freshly minted token instead, and the
+ * card then polls the token list until that token makes its first call, so the
+ * user sees it worked.
  */
 export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) {
   const [isCreating, setIsCreating] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   /** Plaintext of a freshly minted token. The server cannot show it again. */
   const [newToken, setNewToken] = useState<{ id: string; token: string } | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [showRawToken, setShowRawToken] = useState(false);
-  const [clientId, setClientId] = useState<McpClientId>("claude-code");
-  const [origin, setOrigin] = useState("");
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
 
   const newTokenId = newToken?.id;
   useEffect(() => {
@@ -73,15 +58,8 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
     return () => window.clearInterval(timer);
   }, [newTokenId, isConnected]);
 
-  const serverUrl = origin ? `${origin}${MCP_PATH}` : "";
-  const selectedClient =
-    MCP_CLIENTS.find((client) => client.id === clientId) ?? MCP_CLIENTS[0];
-  const installPrompt =
-    newToken && serverUrl ? buildInstallPrompt(clientId, serverUrl, newToken.token) : "";
-
   const createToken = async () => {
     setIsCreating(true);
-    setShowRawToken(false);
     try {
       const response = await fetch("/api/profile/agent-tokens", {
         method: "POST",
@@ -110,154 +88,45 @@ export default function McpConnectCard({ onTokenCreated }: McpConnectCardProps) 
     }
   };
 
-  const copy = async (field: string, value: string, message: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedField(field);
-      toast.success(message);
-    } catch {
-      toast.error("Could not copy. Select the text and copy it manually.");
-    }
-  };
-
   return (
-    <div className="rounded-xl border border-border bg-card text-left">
-      <div
-        className={`flex items-center gap-3.5 px-4 py-3.5 ${
-          newToken ? "border-b border-border/60" : ""
-        }`}
-      >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground">
-          <Plug className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
-          <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
-            Claude Code, Cursor, Codex, or opencode, on your own plan.
+    <div className="rounded-xl border border-border bg-card">
+      <div className="px-5 py-5">
+        <McpConnectSteps token={newToken?.token} />
+        {newToken ? (
+          <p className="mt-3 text-xs text-muted-foreground">
+            This snippet holds your token and is shown once. Only paste it into your own client.
           </p>
-        </div>
-        {newToken ? null : (
-          <Button
-            type="button"
-            size="sm"
-            className="shrink-0 transition-transform active:scale-[0.97]"
-            onClick={createToken}
-            disabled={isCreating}
-          >
-            {isCreating ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Plus className="size-3.5" />
-            )}
-            Connect
-          </Button>
-        )}
+        ) : null}
       </div>
 
-      {newToken ? (
-        <div className="space-y-4 px-5 py-5">
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                1. Paste this prompt into your agent
-              </p>
-              <div
-                className="mt-2 flex flex-wrap items-center gap-2"
-                role="tablist"
-                aria-label="MCP client"
-              >
-                {MCP_CLIENTS.map((client) => (
-                  <Button
-                    key={client.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={client.id === clientId}
-                    variant={client.id === clientId ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setClientId(client.id)}
-                  >
-                    {client.label}
-                  </Button>
-                ))}
-              </div>
-              <div className="mt-3 flex items-start gap-2">
-                <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs leading-relaxed text-foreground">
-                  {installPrompt}
-                </pre>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() =>
-                    copy("prompt", installPrompt, `Prompt copied. Paste it into ${selectedClient.label}.`)
-                  }
-                >
-                  {copiedField === "prompt" ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                  Copy
-                </Button>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                The prompt carries your token, so only paste it into your own{" "}
-                {selectedClient.label}.{" "}
-                <button
-                  type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
-                  onClick={() => setShowRawToken((value) => !value)}
-                >
-                  {showRawToken ? "Hide the raw token" : "Configure by hand instead"}
-                </button>
-              </p>
-              {showRawToken ? (
-                <div className="mt-2 space-y-1 font-mono text-[11px] text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <code className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-background px-2.5 py-1.5 text-foreground">
-                      {newToken.token}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => copy("token", newToken.token, "Token copied.")}
-                    >
-                      {copiedField === "token" ? (
-                        <Check className="size-3.5" />
-                      ) : (
-                        <Copy className="size-3.5" />
-                      )}
-                      Token
-                    </Button>
-                  </div>
-                  <p>Server URL: {serverUrl}</p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex items-center gap-2 border-t border-border/60 pt-4 text-sm">
-              {isConnected ? (
-                <>
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="size-3" />
-                  </span>
-                  <span className="text-foreground">
-                    Connected. Ask your agent to design something in Wirely.
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Circle className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="text-muted-foreground">
-                    2. Restart your agent. This turns green on its first call.
-                  </span>
-                </>
-              )}
-            </div>
-        </div>
-      ) : null}
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-5 py-3 text-xs">
+        {newToken ? (
+          <span className="flex items-center gap-2">
+            {isConnected ? (
+              <>
+                <Check className="size-3.5 text-primary" />
+                <span className="text-foreground">Connected.</span>
+              </>
+            ) : (
+              <>
+                <Circle className="size-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">Waiting for the first call.</span>
+              </>
+            )}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Client can&apos;t open a browser?</span>
+        )}
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1.5 text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+          disabled={isCreating}
+          onClick={newToken ? () => setNewToken(null) : createToken}
+        >
+          {isCreating ? <Loader2 className="size-3 animate-spin" /> : null}
+          {newToken ? "Use browser sign-in" : "Use a token"}
+        </button>
+      </div>
     </div>
   );
 }

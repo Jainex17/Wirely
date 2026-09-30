@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
   // same instruction: the canonical tag tells crawlers which copy counts even
   // while the apex still serves 200. The Vercel domain config should also 308
   // the apex to www so fetchers never see two live copies in the first place.
-  metadataBase: new URL("https://www.wirely.site"),
+  metadataBase: new URL(CANONICAL_APP_ORIGIN),
   alternates: { canonical: "/" },
   title: "Wirely",
   description: "The design canvas for your coding agent.",
