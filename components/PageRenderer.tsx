@@ -44,6 +44,7 @@ import {
 import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, moveElement } from "@/store/pageEdits";
 import ElementEditLayer from "./ElementEditLayer";
+import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import CanvasCommentPins from "./CanvasCommentPins";
 import VectorEditLayer from "./VectorEditLayer";
@@ -415,18 +416,36 @@ export default React.memo(function PageRenderer({
       : "";
     return markAgentCursor(previousSrcDoc, canvasSrcDoc);
   }, [canvasSrcDoc, currentDevice.height, cursorEdit, cursorPreviousHtml, hasHtml]);
+  // The page with its Tailwind compiled in the editor, so the frame loads
+  // plain CSS instead of running the compiler itself. The last compiled page
+  // stays up while the next one compiles, so an edit reloads the frame once.
+  const [compiledFrame, setCompiledFrame] = React.useState<{
+    html: string;
+    reporterId: string;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!hasHtml || !isLive) return;
+    let isCurrent = true;
+    const reporterId = iframeReporterId;
+    void precompileFrameHtml(markedSrcDoc.html).then((html) => {
+      if (isCurrent) setCompiledFrame({ html, reporterId });
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
   const measuredSrcDoc = React.useMemo(
     () =>
-      hasHtml
+      hasHtml && compiledFrame
         ? injectFrameMotion(
             injectNodePicker(
-              injectIframeHeightReporter(markedSrcDoc.html, iframeReporterId),
-              iframeReporterId,
+              injectIframeHeightReporter(compiledFrame.html, compiledFrame.reporterId),
+              compiledFrame.reporterId,
             ),
-            iframeReporterId,
+            compiledFrame.reporterId,
           )
         : "",
-    [hasHtml, iframeReporterId, markedSrcDoc.html],
+    [compiledFrame, hasHtml],
   );
   const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
     null,
@@ -1299,7 +1318,7 @@ export default React.memo(function PageRenderer({
               height: `${pageHeight}px`,
             }}
           >
-            {hasHtml && isLive ? (
+            {hasHtml && isLive && measuredSrcDoc ? (
               <iframe
                 ref={iframeRef}
                 title={page.title}
