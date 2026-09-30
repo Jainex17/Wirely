@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { parseAuthorizationRequest, parseTokenRequest, registrationBodySchema } from "./requests";
+import {
+  authorizationFormFields,
+  parseAuthorizationRequest,
+  parseTokenRequest,
+  registrationBodySchema,
+} from "./requests";
 
 const ORIGIN = "https://www.wirely.site";
 const RESOURCE = `${ORIGIN}/api/mcp`;
@@ -134,5 +139,26 @@ describe("registrationBodySchema", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("authorizationFormFields", () => {
+  it("posts back fields the authorize route accepts as the same request", () => {
+    const first = parseAuthorizationRequest(authorizationParams(), RESOURCE);
+    if (!first.ok) throw new Error(first.description);
+
+    const posted = new URLSearchParams(authorizationFormFields(first.value));
+    expect(parseAuthorizationRequest(posted, RESOURCE)).toEqual(first);
+  });
+
+  it("round-trips a request without state or resource", () => {
+    const params = authorizationParams();
+    params.delete("state");
+    params.delete("resource");
+    const first = parseAuthorizationRequest(params, RESOURCE);
+    if (!first.ok) throw new Error(first.description);
+
+    const posted = new URLSearchParams(authorizationFormFields(first.value));
+    expect(parseAuthorizationRequest(posted, RESOURCE)).toEqual(first);
   });
 });
