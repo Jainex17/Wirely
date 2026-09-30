@@ -17,11 +17,9 @@ import {
   replaceExactlyOnce,
 } from "@/lib/mcp/tools";
 import {
-  buildConnectPrompt,
   buildConnectSnippet,
-  buildInstallPrompt,
   MCP_CLIENTS,
-} from "@/lib/mcp/installPrompt";
+} from "@/lib/mcp/connectSnippet";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -349,80 +347,62 @@ describe("oauth connect boundary", () => {
   });
 });
 
-describe("client install prompts", () => {
+describe("client connect snippets", () => {
   const URL = "https://wirely.vercel.app/api/mcp";
   const TOKEN = "wirely_abc123";
 
-  it("embeds the server URL and token in every client's prompt", () => {
+  it("gives every client an OAuth snippet with no token and a browser step", () => {
     for (const client of MCP_CLIENTS) {
-      const prompt = buildInstallPrompt(client.id, URL, TOKEN);
+      const steps = buildConnectSnippet(client.id, URL);
 
-      expect(prompt).toContain(URL);
-      expect(prompt).toContain(`Bearer ${TOKEN}`);
-      expect(prompt.length).toBeGreaterThan(100);
+      expect(steps.snippet).toContain(URL);
+      expect(steps.snippet).not.toContain("Bearer");
+      expect(steps.target.length).toBeGreaterThan(0);
+      expect(steps.next).toMatch(/authoriz/i);
     }
   });
 
-  it("walks opencode through merging its own config", () => {
-    const prompt = buildInstallPrompt("opencode", URL, TOKEN);
-
-    expect(prompt).toContain("opencode.json");
-    expect(prompt).toContain('"type": "remote"');
-    expect(prompt).toContain("keeping every existing setting");
-    expect(prompt).toContain("restart opencode");
-  });
-
-  it("walks Cursor through merging mcpServers", () => {
-    const prompt = buildInstallPrompt("cursor", URL, TOKEN);
-
-    expect(prompt).toContain("~/.cursor/mcp.json");
-    expect(prompt).toContain('"mcpServers"');
-    expect(prompt).toContain("keeping every existing server");
-    expect(prompt).toContain("restart Cursor");
-  });
-
-  it("tells Codex to edit config.toml with a static header", () => {
-    const prompt = buildInstallPrompt("codex", URL, TOKEN);
-
-    expect(prompt).toContain("~/.codex/config.toml");
-    expect(prompt).toContain("[mcp_servers.wirely]");
-    expect(prompt).toContain(`http_headers = { "Authorization" = "Bearer ${TOKEN}" }`);
-  });
-
-  it("hands Claude Code one runnable command", () => {
-    const prompt = buildInstallPrompt("claude-code", URL, TOKEN);
-
-    expect(prompt).toContain(`claude mcp add --transport http wirely ${URL}`);
-    expect(prompt).toContain(`--header "Authorization: Bearer ${TOKEN}"`);
-    expect(prompt).toContain("--scope user");
-    expect(prompt).toContain("claude mcp list");
-  });
-
-  it("refuses to build a prompt without the pieces it needs", () => {
-    expect(() => buildInstallPrompt("opencode", "", TOKEN)).toThrow();
-    expect(() => buildInstallPrompt("opencode", URL, "  ")).toThrow();
-    expect(() => buildConnectPrompt("cursor", "")).toThrow();
-  });
-
-  it("builds the one-click prompt without any token in it", () => {
+  it("puts the token in a bearer header for every client when one is given", () => {
     for (const client of MCP_CLIENTS) {
-      const prompt = buildConnectPrompt(client.id, URL);
+      const steps = buildConnectSnippet(client.id, URL, TOKEN);
 
-      expect(prompt).toContain(URL);
-      expect(prompt).not.toContain("wirely_");
-      expect(prompt).toMatch(/authoriz/i);
+      expect(steps.snippet).toContain(URL);
+      expect(steps.snippet).toContain(`Bearer ${TOKEN}`);
+      expect(steps.next).not.toMatch(/authoriz/i);
     }
   });
 
-  it("builds a copyable snippet and an authenticate step for every client", () => {
-    for (const client of MCP_CLIENTS) {
-      const snippet = buildConnectSnippet(client.id, URL);
+  it("gives each client its own install command", () => {
+    expect(buildConnectSnippet("claude-code", URL, TOKEN).snippet).toBe(
+      `claude mcp add --transport http wirely ${URL} --header "Authorization: Bearer ${TOKEN}" --scope user`,
+    );
+    expect(buildConnectSnippet("codex", URL).snippet).toBe(
+      `codex mcp add wirely --url ${URL} && codex mcp login wirely`,
+    );
+    expect(buildConnectSnippet("codex", URL, TOKEN).snippet).toContain(
+      `http_headers = { "Authorization" = "Bearer ${TOKEN}" }`,
+    );
+    expect(buildConnectSnippet("opencode", URL).snippet).toBe(
+      `opencode mcp add wirely --url ${URL} --global && opencode mcp auth wirely`,
+    );
+  });
 
-      expect(snippet.snippet).toContain(URL);
-      expect(snippet.snippet).not.toContain("wirely_");
-      expect(snippet.target.length).toBeGreaterThan(0);
-      expect(snippet.authenticate).toMatch(/authoriz/i);
+  it("gives Cursor an install link that decodes to its server config", () => {
+    for (const token of [undefined, TOKEN]) {
+      const steps = buildConnectSnippet("cursor", URL, token);
+      const link = new globalThis.URL(steps.installUrl ?? "");
+      const config = JSON.parse(atob(link.searchParams.get("config") ?? ""));
+
+      expect(link.protocol).toBe("cursor:");
+      expect(link.searchParams.get("name")).toBe("wirely");
+      expect(config.url).toBe(URL);
+      expect(config.headers?.Authorization).toBe(token ? `Bearer ${token}` : undefined);
     }
+    expect(buildConnectSnippet("claude-code", URL).installUrl).toBeUndefined();
+  });
+
+  it("refuses to build a snippet without the pieces it needs", () => {
     expect(() => buildConnectSnippet("cursor", "")).toThrow();
+    expect(() => buildConnectSnippet("cursor", URL, "  ")).toThrow();
   });
 });

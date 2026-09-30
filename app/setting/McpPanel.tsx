@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import McpConnectCard from "@/components/McpConnectCard";
 import { Badge } from "@/components/ui/badge";
@@ -20,8 +20,7 @@ export interface McpPanelProps {
   initialTokens: AgentTokenSummary[];
 }
 
-const formatDate = (value: string | null) => {
-  if (!value) return "never";
+const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "unknown";
   return date.toLocaleDateString(undefined, {
@@ -31,32 +30,31 @@ const formatDate = (value: string | null) => {
   });
 };
 
-/** MCP settings: the connect card plus the list of live tokens to revoke. */
+/** MCP settings: connect a client, then see and revoke the connected ones. */
 export default function McpPanel({ initialTokens }: McpPanelProps) {
   const [tokens, setTokens] = useState(initialTokens);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
-  /** The token inside the card's install prompt. Revoking it resets the card. */
+  /** The token inside the card's snippet. Revoking it resets the card. */
   const [promptTokenId, setPromptTokenId] = useState<string | null>(null);
   const [cardKey, setCardKey] = useState(0);
 
-  const refresh = async () => {
-    setIsRefreshing(true);
-    try {
-      const response = await fetch("/api/profile/agent-tokens", { cache: "no-store" });
-      const payload = (await response.json()) as {
-        error?: string;
-        tokens?: AgentTokenSummary[];
-      };
-      if (!response.ok) throw new Error(payload.error || "Could not load tokens.");
-
-      setTokens(payload.tokens ?? []);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not load tokens.");
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+  // The OAuth flow finishes in another browser tab, so reload the list when
+  // the user comes back to this one and the new client shows up.
+  useEffect(() => {
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch("/api/profile/agent-tokens", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { tokens?: AgentTokenSummary[] };
+        if (payload.tokens) setTokens(payload.tokens);
+      } catch {
+        // The list stays as it was; the next focus retries.
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
 
   const revokeToken = async (tokenId: string) => {
     setRevokingId(tokenId);
@@ -70,13 +68,13 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
       if (!response.ok) throw new Error(payload.error || "Could not revoke the token.");
 
       setTokens((current) => current.filter((token) => token.id !== tokenId));
-      // Only the prompt's own token closes the prompt. Revoking an older one
+      // Only the snippet's own token resets the card. Revoking an older one
       // (say, one another client already uses) must not.
       if (tokenId === promptTokenId) {
         setPromptTokenId(null);
         setCardKey((key) => key + 1);
       }
-      toast.success("Token revoked.");
+      toast.success("Access revoked.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not revoke the token.");
     } finally {
@@ -85,17 +83,9 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
   };
 
   return (
-    <section className="grid gap-6 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:gap-12">
-      <div className="md:pt-1">
-        <h2 className="text-base font-semibold text-foreground">MCP</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          Use Wirely from Claude Code, Cursor, Codex, or opencode. Your
-          agent&apos;s model designs the screens on your own plan. Wirely stores
-          them on your canvas and previews them.
-        </p>
-      </div>
-
-      <div className="min-w-0 space-y-4">
+    <div className="max-w-2xl space-y-10">
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-foreground">Connect your coding agent</h2>
         <McpConnectCard
           key={cardKey}
           onTokenCreated={(token) => {
@@ -106,80 +96,59 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
             ]);
           }}
         />
+      </section>
 
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-foreground">Connected clients</h2>
         <div className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4">
-            <p className="text-sm font-medium text-foreground">
-              Tokens
-              <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                {tokens.length}
-              </span>
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={refresh}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="size-3.5" />
-              )}
-              Refresh
-            </Button>
-          </div>
-
           {tokens.length === 0 ? (
             <p className="px-5 py-6 text-sm text-muted-foreground">
-              No tokens yet. Create one above to connect your client.
+              No clients yet. Connect one above.
             </p>
           ) : (
-            <div className="divide-y divide-border/60">
+            <ul className="divide-y divide-border/60">
               {tokens.map((token) => (
-                <div
-                  key={token.id}
-                  className="flex items-center justify-between gap-4 px-5 py-4"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
+                <li key={token.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <span
+                    aria-hidden
+                    className={`size-2 shrink-0 rounded-full ${
+                      token.lastUsedAt ? "bg-emerald-500" : "bg-muted-foreground/30"
+                    }`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-foreground">
                       {token.name}
                       {token.id === promptTokenId ? (
-                        <Badge
-                          variant="outline"
-                          className="ml-2 align-middle text-muted-foreground"
-                        >
-                          this prompt
+                        <Badge variant="outline" className="ml-2 align-middle text-muted-foreground">
+                          in the snippet
                         </Badge>
                       ) : null}
                     </p>
-                    <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      {token.prefix}… · last used {formatDate(token.lastUsedAt)}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      <span className="font-mono">{token.prefix}…</span>
+                      {" · "}
+                      {token.lastUsedAt
+                        ? `last used ${formatDate(token.lastUsedAt)}`
+                        : "not used yet"}
                     </p>
                   </div>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="shrink-0"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
                     onClick={() => revokeToken(token.id)}
                     disabled={revokingId === token.id}
                   >
-                    {revokingId === token.id ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
+                    {revokingId === token.id ? <Loader2 className="size-3.5 animate-spin" /> : null}
                     Revoke
                   </Button>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

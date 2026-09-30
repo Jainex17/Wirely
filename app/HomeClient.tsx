@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useReducer, useState, type FormEvent, type MouseEvent } from "react";
-import { buildConnectSnippet, type McpClientId, MCP_CLIENTS } from "@/lib/mcp/installPrompt";
+import { useReducer, useState, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,6 +24,7 @@ import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import ProjectThumbnail from "@/components/ProjectThumbnail";
 import { toast } from "@/components/ui/sonner";
+import McpConnectSteps from "@/components/McpConnectSteps";
 
 // The model picker and delete dialog only matter once the user interacts with
 // them, so they load on demand instead of weighing down the first paint.
@@ -410,25 +410,6 @@ export default function HomeClient({ initialData }: HomeClientProps) {
     }
   };
 
-  // The MCP server URL on the host the user is browsing, so the snippets
-  // work on localhost and in production alike. Client-only: the origin is
-  // unknown during server render.
-  const [serverUrl, setServerUrl] = useState("");
-  const [connectClient, setConnectClient] = useState<McpClientId>("claude-code");
-  useEffect(() => {
-    setServerUrl(`${window.location.origin}/api/mcp`);
-  }, []);
-  const connectSnippet = serverUrl ? buildConnectSnippet(connectClient, serverUrl) : null;
-
-  const copyConnectSnippet = async (snippet: string) => {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      toast.success("Copied — paste it into the file or terminal.");
-    } catch {
-      toast.error("Could not copy. Select the text and copy it manually.");
-    }
-  };
-
   const setup = (
     <section className="w-full max-w-2xl">
       {showComposer ? (
@@ -508,47 +489,15 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
       {hasConnectedAgent ? null : (
         <div className="mt-8 rounded-xl border border-border bg-card px-5 py-4 text-left">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-foreground">Connect your coding agent</p>
-            <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Coding agent">
-              {MCP_CLIENTS.map((client) => (
-                <Button
-                  key={client.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={client.id === connectClient}
-                  variant={client.id === connectClient ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setConnectClient(client.id)}
-                >
-                  {client.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          {connectSnippet ? (
-            <>
-              <p className="mt-3 text-xs text-muted-foreground">{connectSnippet.target}</p>
-              <button
-                type="button"
-                onClick={() => void copyConnectSnippet(connectSnippet.snippet)}
-                title="Copy"
-                className="mt-1.5 w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 text-left font-mono text-xs text-foreground transition-colors hover:border-foreground/25"
-              >
-                {connectSnippet.snippet}
-              </button>
-            </>
-          ) : null}
-          {connectSnippet ? (
-            <p className="mt-2.5 text-sm text-muted-foreground">{connectSnippet.authenticate}</p>
-          ) : null}
+          <p className="mb-3 text-sm font-medium text-foreground">Connect your coding agent</p>
+          <McpConnectSteps />
           <p className="mt-3 text-xs text-muted-foreground">
-            The browser step mints a token you can revoke in{" "}
+            Manage or revoke connections in{" "}
             <Link
               href="/setting?tab=mcp"
               className="text-primary underline underline-offset-2"
             >
-              Settings → MCP
+              settings
             </Link>
             .
           </p>
