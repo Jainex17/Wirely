@@ -192,7 +192,30 @@ describe("diffPageNodes", () => {
         after: '<h1 data-wirely-id="h" style="font-size: 40px">New',
       },
       { nodeId: "b", before: '<b data-wirely-id="b">x', after: null },
-      { nodeId: "i", before: null, after: '<i data-wirely-id="i">y' },
+      { nodeId: "i", before: null, after: '<i data-wirely-id="i">y</i>' },
+    ]);
+  });
+
+  it("reports a moved element once, with where it went, and an added subtree at its top", () => {
+    const before = page(
+      '<ul data-wirely-id="u"><li data-wirely-id="a">A</li><li data-wirely-id="b">B</li><li data-wirely-id="c">C</li></ul>',
+    );
+    const after = page(
+      '<ul data-wirely-id="u"><li data-wirely-id="c">C</li><li data-wirely-id="a">A</li><li data-wirely-id="b">B</li>' +
+        '<li data-wirely-id="n"><b data-wirely-id="nb">New</b></li></ul>',
+    );
+    expect(diffPageNodes(before, after)).toEqual([
+      {
+        nodeId: "c",
+        before: '<li data-wirely-id="c">C',
+        after: '<li data-wirely-id="c">C',
+        movedTo: { parent: "u", after: null },
+      },
+      {
+        nodeId: "n",
+        before: null,
+        after: '<li data-wirely-id="n"><b data-wirely-id="nb">New</b></li>',
+      },
     ]);
   });
 

@@ -22,6 +22,7 @@ import {
   getPageBounds,
   getPageFrameHeight,
   getPageFrameWidth,
+  isInsertTool,
   selectLivePages,
   getSnappedPagePosition,
   getViewportBounds,
@@ -132,6 +133,7 @@ interface CanvasProps {
   onEditPage?: (pageId: string) => void;
   onToolChange: (tool: CanvasTool) => void;
   onNodeReport: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
+  onInsertAt: (pageId: string, node: ReportedNode) => void;
   onSavePageHtml: (pageId: string, html: string) => void;
 }
 
@@ -158,6 +160,7 @@ export default function Canvas({
   onEditPage,
   onToolChange,
   onNodeReport,
+  onInsertAt,
   onSavePageHtml,
 }: CanvasProps) {
   const {
@@ -937,6 +940,8 @@ export default function Canvas({
                   isPenMode={activeTool === "pen" && !isSpacePanning}
                   onSavePageHtml={onSavePageHtml}
                   isMoveMode={activeTool === "select" && !isSpacePanning}
+                  insertKind={isInsertTool(activeTool) && !isSpacePanning ? activeTool : null}
+                  onInsertAt={onInsertAt}
                   selectedNodeId={
                     selectedNode?.pageId === pageLayout.page.id ? selectedNode.nodeId : null
                   }

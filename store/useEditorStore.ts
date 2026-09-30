@@ -88,6 +88,8 @@ export interface CanvasState {
   canvasBackground: CanvasBackground;
   activeDevice: DeviceType;
   pendingSaveCount: number;
+  /** Counts every save ever started, so a poll can tell one began while it was out. */
+  savesStarted: number;
   pagePositions: PagePositionMap;
   pageStackOrder: string[];
   pageGroups: PageGroup[];
@@ -214,6 +216,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   canvasBackground: "dark",
   activeDevice: "desktop",
   pendingSaveCount: 0,
+  savesStarted: 0,
   pagePositions: {},
   pageStackOrder: [],
   pageGroups: [],
@@ -457,7 +460,10 @@ export const useEditorStore = create<EditorState>()(
       setViewportSize: (viewportSize) => set({ viewportSize }),
       setActiveDevice: (activeDevice) => set({ activeDevice }),
       beginSaving: () =>
-        set((state) => ({ pendingSaveCount: state.pendingSaveCount + 1 })),
+        set((state) => ({
+          pendingSaveCount: state.pendingSaveCount + 1,
+          savesStarted: state.savesStarted + 1,
+        })),
       endSaving: () =>
         set((state) => ({
           pendingSaveCount: Math.max(0, state.pendingSaveCount - 1),
