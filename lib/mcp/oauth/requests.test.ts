@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { parseAuthorizationRequest, parseTokenRequest } from "./requests";
+import { parseAuthorizationRequest, parseTokenRequest, registrationBodySchema } from "./requests";
 
 const ORIGIN = "https://www.wirely.site";
 const RESOURCE = `${ORIGIN}/api/mcp`;
@@ -105,5 +105,34 @@ describe("parseTokenRequest", () => {
     const noRedirect = tokenParams();
     noRedirect.delete("redirect_uri");
     expect(parseTokenRequest(noRedirect)).toMatchObject({ ok: false, error: "invalid_request" });
+  });
+});
+
+describe("registrationBodySchema", () => {
+  it("accepts the standard metadata Claude Code sends and keeps only name and redirects", () => {
+    const parsed = registrationBodySchema.safeParse({
+      client_name: "Claude Code (wirely)",
+      redirect_uris: ["http://localhost:8123/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+      application_type: "native",
+      scope: "mcp",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual({
+      client_name: "Claude Code (wirely)",
+      redirect_uris: ["http://localhost:8123/callback"],
+    });
+  });
+
+  it("still rejects a redirect URI that fails validation", () => {
+    const parsed = registrationBodySchema.safeParse({
+      client_name: "Evil",
+      redirect_uris: ["http://evil.example/callback"],
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

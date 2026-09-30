@@ -1,11 +1,14 @@
 /**
- * Pure parsers for the two request shapes of the connect flow: the browser
- * authorization request and the token exchange. Every field an attacker can
+ * Pure parsers for the request shapes of the connect flow: client
+ * registration, the browser authorization request, and the token exchange. Every field an attacker can
  * type is checked here, once, so the authorize page and the token route stay
  * thin and cannot drift apart on what they accept.
  */
 
+import { z } from "zod";
+
 import { isCodeChallenge } from "./pkce";
+import { validateRedirectUri } from "./redirectUris";
 
 export type OAuthErrorCode = "invalid_request" | "unsupported_grant_type" | "invalid_target";
 
@@ -127,3 +130,24 @@ export const parseTokenRequest = (params: URLSearchParams): ParsedRequest<TokenR
     value: { clientId, code, redirectUri, codeVerifier, resource: readParam(params, "resource") },
   };
 };
+
+const REDIRECT_URI_MAX_COUNT = 3;
+const CLIENT_NAME_MAX_CHARS = 100;
+
+/**
+ * The RFC 7591 registration body. Unknown metadata such as `grant_types` or
+ * `token_endpoint_auth_method` is stripped, not rejected: section 2 says the
+ * server must ignore fields it does not understand, and Claude Code sends
+ * several. The response states the values Wirely actually uses.
+ */
+export const registrationBodySchema = z.object({
+  client_name: z.string().trim().min(1).max(CLIENT_NAME_MAX_CHARS),
+  redirect_uris: z
+    .array(z.string())
+    .min(1)
+    .max(REDIRECT_URI_MAX_COUNT)
+    .refine((uris) => uris.every((uri) => validateRedirectUri(uri) === null), {
+      message:
+        "Each redirect URI must be https, http on a loopback host, or a known client scheme, without userinfo or fragment.",
+    }),
+});

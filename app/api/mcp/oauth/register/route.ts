@@ -3,27 +3,22 @@
  *
  * Registration is deliberately unauthenticated — a client registers before
  * its user has any Wirely session — so this is the endpoint where junk
- * arrives. It is rate limited per IP, the body is small and strictly parsed,
- * and the only stored values are a display name and redirect URIs that have
- * passed `validateRedirectUri`. No secret is issued: every client is a public
+ * arrives. It is rate limited per IP, the body is small, and the only stored
+ * values are a display name and redirect URIs that have passed
+ * `validateRedirectUri`. No secret is issued: every client is a public
  * PKCE client.
  */
-import { z } from "zod";
-
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { createOauthClient } from "@/lib/db/queries/oauth";
 import { MCP_SCOPE } from "@/lib/mcp/oauth/metadata";
-import { validateRedirectUri } from "@/lib/mcp/oauth/redirectUris";
+import { registrationBodySchema } from "@/lib/mcp/oauth/requests";
 import { createRateLimiter } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const REGISTER_BODY_MAX_BYTES = 16_000;
-
-const REDIRECT_URI_MAX_COUNT = 3;
-const CLIENT_NAME_MAX_CHARS = 100;
 
 const getClientIp = (request: Request) => {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -35,20 +30,6 @@ const getClientIp = (request: Request) => {
 };
 
 const registerLimiter = createRateLimiter();
-
-const bodySchema = z
-  .object({
-    client_name: z.string().trim().min(1).max(CLIENT_NAME_MAX_CHARS),
-    redirect_uris: z
-      .array(z.string())
-      .min(1)
-      .max(REDIRECT_URI_MAX_COUNT)
-      .refine((uris) => uris.every((uri) => validateRedirectUri(uri) === null), {
-        message:
-          "Each redirect URI must be https, http on a loopback host, or a known client scheme, without userinfo or fragment.",
-      }),
-  })
-  .strict();
 
 export async function POST(request: Request) {
   const limit = registerLimiter.check(`mcp-oauth-register:${getClientIp(request)}`);
@@ -62,7 +43,7 @@ export async function POST(request: Request) {
   const parsed = await readJsonBodyWithLimit(request, REGISTER_BODY_MAX_BYTES);
   if (!parsed.ok) return parsed.response;
 
-  const body = bodySchema.safeParse(parsed.data);
+  const body = registrationBodySchema.safeParse(parsed.data);
   if (!body.success) {
     const first = body.error.issues[0];
     return Response.json(
