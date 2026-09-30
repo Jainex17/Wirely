@@ -5,6 +5,7 @@ import {
   ChevronUp,
   Columns3,
   Contrast,
+  Frame,
   Hand,
   LayoutGrid,
   Maximize,
@@ -13,7 +14,9 @@ import {
   PenTool,
   Plus,
   Scan,
+  Square,
   SquareDashedMousePointer,
+  Type,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { type CanvasTool, MAX_CANVAS_ZOOM, MIN_CANVAS_ZOOM } from "@/lib/canvasScene";
@@ -128,6 +131,28 @@ export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolba
         onClick={() => onToolChange("pen")}
       >
         <PenTool className="h-4 w-4" />
+      </RailButton>
+      <div className="mx-1 h-5 w-px bg-border" />
+      <RailButton
+        label="Frame (F), click in a page to add one"
+        isActive={activeTool === "frame"}
+        onClick={() => onToolChange("frame")}
+      >
+        <Frame className="h-4 w-4" />
+      </RailButton>
+      <RailButton
+        label="Rectangle (R)"
+        isActive={activeTool === "rectangle"}
+        onClick={() => onToolChange("rectangle")}
+      >
+        <Square className="h-4 w-4" />
+      </RailButton>
+      <RailButton
+        label="Text (T)"
+        isActive={activeTool === "text"}
+        onClick={() => onToolChange("text")}
+      >
+        <Type className="h-4 w-4" />
       </RailButton>
       <div className="mx-1 h-5 w-px bg-border" />
       <DropdownMenu>

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { injectNodePicker, parseReportedNode, type ReportedNode } from "@/lib/nodePicker";
 
 describe("parseReportedNode", () => {
-  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null, matrix: [2, 0, 0, 2, 10, 20] as ReportedNode["matrix"], styles: { "font-size": 24, gap: 0 }, isSvg: false };
+  const node = { nodeId: "1x9k3fz", tag: "h2", x: 1, y: 2, width: 30, height: 40, color: "#0a0a0a", background: null, matrix: [2, 0, 0, 2, 10, 20] as ReportedNode["matrix"], styles: { "font-size": 24, gap: 0 }, isSvg: false, layout: null };
 
   it("accepts a well formed node", () => {
     expect(parseReportedNode(node)).toEqual(node);
@@ -18,6 +18,21 @@ describe("parseReportedNode", () => {
     expect(
       parseReportedNode({ ...node, styles: { "font-size": -1, gap: "4px", color: 3 } })?.styles,
     ).toEqual({});
+  });
+
+  it("keeps a well formed layout and drops one with a hostile sibling", () => {
+    const layout = {
+      parentId: "p1",
+      axis: "row" as const,
+      siblings: [{ nodeId: "1x9k3fz", x: 0, y: 0, width: 10, height: 10 }],
+      isAbsolute: false,
+      left: 0,
+      top: 0,
+    };
+    expect(parseReportedNode({ ...node, layout })?.layout).toEqual(layout);
+    expect(
+      parseReportedNode({ ...node, layout: { ...layout, siblings: [{ nodeId: '"]', x: 0 }] } })?.layout,
+    ).toBeNull();
   });
 });
 

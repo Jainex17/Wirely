@@ -10,11 +10,14 @@ import {
   getPageFrameSize,
   getViewportBounds,
   isBoundsIntersecting,
+  isInsertTool,
 } from "@/lib/canvasScene";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
-import type { ReportedNode } from "@/lib/nodePicker";
-import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
+import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
+import { findNodeSpan, getNodeText, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
+import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertNode } from "@/lib/pageTree";
+import { commitPageEdit, type ElementAction, runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
 
@@ -279,40 +282,12 @@ export default function EditorWorkspace({
     }
   }, [camera, fitAllPages, focusPage, pageBoundsById, pages, setSelectedNode, viewportWidth]);
 
-  /** Shows an edit made on the canvas at once and saves it, putting the old HTML back if the save fails. */
-  const savePageHtml = useCallback(
-    (pageId: string, html: string, failureMessage = "Could not save the change. Try again.") => {
-      const state = useEditorStore.getState();
-      const previous = state.pages.find((page) => page.id === pageId)?.iframeHtml ?? "";
-      state.setPageHtml(pageId, html);
-      if (!projectId) return;
-      state.beginSaving();
-      void fetch(`/api/projects/${projectId}/pages/${pageId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ htmlContent: html }),
-      })
-        .then((response) => {
-          if (!response.ok) throw new Error(`Save failed with status ${response.status}`);
-        })
-        .catch((error: unknown) => {
-          logger.error("page_html_save_failed", { pageId, projectId, error });
-          useEditorStore.getState().setPageHtml(pageId, previous);
-          toast.error(failureMessage);
-        })
-        .finally(() => state.endSaving());
-    },
-    [projectId],
-  );
-
   /** Saves a pen tool edit, recorded so Cmd+Z can take it back. */
   const commitCanvasEdit = useCallback(
     (pageId: string, html: string) => {
-      const before = useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml;
-      if (before !== undefined) htmlHistory.record({ pageId, before, after: html });
-      savePageHtml(pageId, html);
+      if (projectId) commitPageEdit(projectId, pageId, () => html);
     },
-    [savePageHtml],
+    [projectId],
   );
 
   const stepHistory = useCallback(
@@ -323,11 +298,45 @@ export default function EditorWorkspace({
       );
       if (result === "stale") {
         toast.error("The page changed since that edit. Open the page's History to go further back.");
-      } else if (result) {
-        savePageHtml(result.pageId, result.html);
+      } else if (result && projectId) {
+        commitPageEdit(projectId, result.pageId, () => result.html, { record: false });
       }
     },
-    [savePageHtml],
+    [projectId],
+  );
+
+  /**
+   * Adds the active insert tool's element where the click landed: inside an
+   * empty or containing element, after text, images, and icons. Then picks it,
+   * and starts typing into new text.
+   */
+  const handleInsertAt = useCallback(
+    (pageId: string, node: ReportedNode) => {
+      if (!projectId || !isInsertTool(activeTool)) return;
+      const kind = activeTool;
+      let newId: string | null = null;
+      const next = commitPageEdit(projectId, pageId, (html) => {
+        const span = findNodeSpan(html, node.nodeId);
+        if (!span) return null;
+        const isVoid = span.end === span.openEnd;
+        const holdsText = getNodeText(html, node.nodeId) !== null;
+        const position = isVoid || holdsText || node.isSvg ? "after" : "inside";
+        const result = insertNode(html, node.nodeId, position, INSERT_MARKUP[kind]);
+        newId = result?.newId ?? null;
+        return result?.html ?? null;
+      });
+      setActiveTool("select");
+      if (next === null || !newId) return;
+      useEditorStore.getState().setSelectedNode({
+        pageId,
+        nodeId: newId,
+        tag: kind === "text" ? "p" : "div",
+        color: null,
+        background: null,
+      });
+      if (kind === "text") requestTextEdit(pageId, newId);
+    },
+    [activeTool, projectId],
   );
 
   const handleNodeReport = useCallback(
@@ -375,13 +384,12 @@ export default function EditorWorkspace({
       const isBusy = status === "queued" || status === "generating" || status === "repairing";
       if (!projectId || stamped === html || isBusy) return;
 
-      savePageHtml(
-        pageId,
-        stamped,
-        "Could not save the page, so element links to it may not work yet.",
-      );
+      commitPageEdit(projectId, pageId, (html) => html, {
+        record: false,
+        failureMessage: "Could not save the page, so element links to it may not work yet.",
+      });
     },
-    [projectId, savePageHtml],
+    [projectId],
   );
 
   useEffect(() => {
@@ -439,6 +447,49 @@ export default function EditorWorkspace({
         return;
       }
 
+      // Figma's element shortcuts, for the picked element. A vector page's
+      // root <svg> is the artboard, so deleting it is not offered.
+      const { selectedNode, pages } = useEditorStore.getState();
+      const isArtboard =
+        selectedNode?.tag === "svg" &&
+        pages.find((page) => page.id === selectedNode.pageId)?.deviceType === "vector";
+      if (projectId && selectedNode) {
+        const isCommand = event.metaKey || event.ctrlKey;
+        const action: ElementAction | null =
+          !isCommand && (event.key === "Delete" || event.key === "Backspace") && !isArtboard
+            ? "delete"
+            : isCommand && !event.altKey && event.code === "KeyD"
+              ? "duplicate"
+              : isCommand && event.altKey && event.code === "KeyG"
+                ? "wrap"
+                : null;
+        if (action) {
+          runElementAction(projectId, action);
+          event.preventDefault();
+          return;
+        }
+        // Enter goes into the element and Shift+Enter out to its parent.
+        if (event.key === "Enter" && !isCommand) {
+          const html = pages.find((page) => page.id === selectedNode.pageId)?.iframeHtml ?? "";
+          const layers = buildLayerTree(html);
+          const nextId = event.shiftKey
+            ? findLayerParent(layers, selectedNode.nodeId)
+            : findLayer(layers, selectedNode.nodeId)?.children[0]?.id;
+          const next = nextId ? findLayer(layers, nextId) : null;
+          if (next) {
+            useEditorStore.getState().setSelectedNode({
+              pageId: selectedNode.pageId,
+              nodeId: next.id,
+              tag: next.tag,
+              color: null,
+              background: null,
+            });
+          }
+          event.preventDefault();
+          return;
+        }
+      }
+
       // Leave other Cmd and Ctrl chords, like browser zoom, to the browser.
       if (event.metaKey || event.ctrlKey || event.altKey) {
         return;
@@ -458,6 +509,9 @@ export default function EditorWorkspace({
             KeyH: () => setActiveTool("grab"),
             KeyE: () => setActiveTool("element"),
             KeyP: () => setActiveTool("pen"),
+            KeyF: () => setActiveTool("frame"),
+            KeyT: () => setActiveTool("text"),
+            KeyR: () => setActiveTool("rectangle"),
             Equal: () => stepZoom(1),
             NumpadAdd: () => stepZoom(1),
             Minus: () => stepZoom(-1),
@@ -488,7 +542,7 @@ export default function EditorWorkspace({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [fitAllPages, fitPage, focusedPageId, setZoom, stepHistory, stepZoom]);
+  }, [fitAllPages, fitPage, focusedPageId, projectId, setZoom, stepHistory, stepZoom]);
 
   return (
     <div data-sidebar-mode={sidebarMode} className="relative h-full w-full">
@@ -504,6 +558,7 @@ export default function EditorWorkspace({
         onToolChange={setActiveTool}
         onNodeReport={handleNodeReport}
         onSavePageHtml={commitCanvasEdit}
+        onInsertAt={handleInsertAt}
       />
     </div>
   );

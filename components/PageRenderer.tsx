@@ -26,13 +26,24 @@ import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
 import { FRAME_MOTION_FOUND, FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
 import {
   injectNodePicker,
+  NODE_EDIT_REQUEST_EVENT,
   NODE_PREVIEW_EVENT,
   parseReportedNode,
+  previewNode,
   type NodePreview,
   type NodeReportIntent,
   type ReportedNode,
 } from "@/lib/nodePicker";
-import { stampNodeIds } from "@/lib/pageNodes";
+import {
+  getNodeText,
+  type NodeStyleProperty,
+  setNodeStyle,
+  setNodeText,
+  stampNodeIds,
+} from "@/lib/pageNodes";
+import type { InsertKind } from "@/lib/pageTree";
+import { commitPageEdit, moveElement } from "@/store/pageEdits";
+import ElementEditLayer from "./ElementEditLayer";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import CanvasCommentPins from "./CanvasCommentPins";
 import VectorEditLayer from "./VectorEditLayer";
@@ -144,6 +155,9 @@ interface PageRendererProps {
   /** The picked element when it is on this page. */
   selectedNodeId: string | null;
   onNodeReport?: (pageId: string, node: ReportedNode, intent: "pick" | "select") => void;
+  /** An insert tool is active, so a click adds this kind of element where it lands. */
+  insertKind: InsertKind | null;
+  onInsertAt?: (pageId: string, node: ReportedNode) => void;
 }
 
 interface ContextMenuAction {
@@ -254,6 +268,8 @@ export default React.memo(function PageRenderer({
   isMoveMode,
   selectedNodeId,
   onNodeReport,
+  insertKind,
+  onInsertAt,
 }: PageRendererProps) {
   const MAX_IFRAME_HEIGHT = 20000;
   const CONTEXT_MENU_WIDTH = 216;
@@ -1030,6 +1046,46 @@ export default React.memo(function PageRenderer({
     if (selectedNodeId) postToFrame({ type: "wirely-node-find", nodeId: selectedNodeId });
   }, [postToFrame, selectedNodeId]);
 
+  // The element whose text the user is typing into, in the frame itself.
+  const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
+  // Set when an insert click is waiting for the frame to say what it hit.
+  const isInsertPendingRef = React.useRef(false);
+  // An element to start typing into once the frame reports it, after an insert.
+  const pendingEditRef = React.useRef<string | null>(null);
+
+  /** Types into a text-only element in place. False when it holds other elements. */
+  const startTextEdit = React.useCallback(
+    (nodeId: string) => {
+      if (getNodeText(stampNodeIds(page.iframeHtml ?? ""), nodeId) === null) return false;
+      setEditingNodeId(nodeId);
+      iframeRef.current?.focus();
+      postToFrame({ type: "wirely-node-edit", nodeId });
+      return true;
+    },
+    [page.iframeHtml, postToFrame],
+  );
+
+  React.useEffect(() => {
+    const handleRequest = (event: Event) => {
+      const { pageId, nodeId } = (event as CustomEvent<{ pageId: string; nodeId: string }>).detail;
+      if (pageId === page.id) pendingEditRef.current = nodeId;
+    };
+    window.addEventListener(NODE_EDIT_REQUEST_EVENT, handleRequest);
+    return () => window.removeEventListener(NODE_EDIT_REQUEST_EVENT, handleRequest);
+  }, [page.id]);
+
+  const toPagePoint = React.useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = frameRef.current?.getBoundingClientRect();
+      const ratio = rect && rect.width > 0 ? currentDevice.width / rect.width : 1;
+      return {
+        x: (clientX - (rect?.left ?? 0)) * ratio,
+        y: (clientY - (rect?.top ?? 0)) * ratio,
+      };
+    },
+    [currentDevice.width],
+  );
+
   // Re-measured when the page grows, since images and fonts move elements.
   React.useEffect(() => {
     if (isLive) findSelectedNode();
@@ -1079,8 +1135,10 @@ export default React.memo(function PageRenderer({
   }, [isLive, page.id, postToFrame]);
 
   const handleLoad = React.useCallback(() => {
-    // A reload drops any click the old document was answering.
+    // A reload drops any click the old document was answering, and any typing.
     isPickPendingRef.current = false;
+    isInsertPendingRef.current = false;
+    setEditingNodeId(null);
     findSelectedNode();
   }, [findSelectedNode]);
 
@@ -1122,6 +1180,9 @@ export default React.memo(function PageRenderer({
         const node = parseReportedNode(rawNode);
         if (intent === "hover") {
           setHoverBox(node);
+        } else if (intent === "pick" && isInsertPendingRef.current) {
+          isInsertPendingRef.current = false;
+          if (node) onInsertAt?.(page.id, node);
         } else if (intent === "pick" && isPickPendingRef.current) {
           isPickPendingRef.current = false;
           if (!node) return;
@@ -1135,6 +1196,21 @@ export default React.memo(function PageRenderer({
           }
           setSelectedBox(node);
           onNodeReport?.(page.id, node, "select");
+          if (pendingEditRef.current === node.nodeId) {
+            pendingEditRef.current = null;
+            startTextEdit(node.nodeId);
+          }
+        }
+        return;
+      }
+      if (payload.type === "wirely-node-text") {
+        // Only the element this frame was asked to edit, so a page script
+        // cannot rewrite some other element.
+        const { nodeId, text } = data as { nodeId?: unknown; text?: unknown };
+        if (typeof nodeId !== "string" || nodeId !== editingNodeId) return;
+        setEditingNodeId(null);
+        if (typeof text === "string" && projectId) {
+          commitPageEdit(projectId, page.id, (html) => setNodeText(html, nodeId, text.slice(0, 20_000)));
         }
         return;
       }
@@ -1165,7 +1241,18 @@ export default React.memo(function PageRenderer({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [currentDevice.height, iframeReporterId, isLive, onNodeReport, page.id, selectedNodeId]);
+  }, [
+    currentDevice.height,
+    editingNodeId,
+    iframeReporterId,
+    isLive,
+    onInsertAt,
+    onNodeReport,
+    page.id,
+    projectId,
+    selectedNodeId,
+    startTextEdit,
+  ]);
 
   return (
     <>
@@ -1218,7 +1305,10 @@ export default React.memo(function PageRenderer({
                 title={page.title}
                 srcDoc={measuredSrcDoc}
                 onLoad={handleLoad}
-                className="h-full w-full border-0 pointer-events-none bg-background"
+                className={cn(
+                  "h-full w-full border-0 bg-background",
+                  editingNodeId ? "pointer-events-auto" : "pointer-events-none",
+                )}
                 style={{ overflow: "hidden" }}
                 loading="eager"
                 sandbox="allow-scripts"
@@ -1247,16 +1337,22 @@ export default React.memo(function PageRenderer({
                 </p>
               </div>
             )}
-            {(isElementMode || isMoveMode) && hasHtml && isLive ? (
+            {(isElementMode || isMoveMode || insertKind) && hasHtml && isLive && !editingNodeId ? (
               <div
                 className={cn(
                   "absolute inset-0 z-10",
-                  isElementMode ? "cursor-crosshair" : "cursor-default",
+                  isElementMode || insertKind ? "cursor-crosshair" : "cursor-default",
                 )}
                 onPointerMove={(event) => sendPointToFrame(event, "hover")}
                 onPointerLeave={() => setHoverBox(null)}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
+                  if (insertKind) {
+                    event.stopPropagation();
+                    isInsertPendingRef.current = true;
+                    postToFrame({ type: "wirely-node-at", intent: "pick", ...toFramePoint(event) });
+                    return;
+                  }
                   if (isElementMode) {
                     event.stopPropagation();
                     sendPointToFrame(event, "pick");
@@ -1286,6 +1382,35 @@ export default React.memo(function PageRenderer({
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (
               <NodeBox node={selectedBox} variant="selected" />
+            ) : null}
+            {isMoveMode && isLive && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
+              <ElementEditLayer
+                key={selectedBox.nodeId}
+                node={selectedBox}
+                toPagePoint={toPagePoint}
+                onPreviewStyle={(style) =>
+                  previewNode({ pageId: page.id, nodeId: selectedBox.nodeId, style })
+                }
+                onCommitStyle={(style) =>
+                  commitPageEdit(projectId, page.id, (html) =>
+                    Object.entries(style).reduce<string | null>(
+                      (next, [property, value]) =>
+                        next === null
+                          ? null
+                          : setNodeStyle(next, selectedBox.nodeId, property as NodeStyleProperty, value),
+                      html,
+                    ),
+                  )
+                }
+                onMove={(targetId, position) =>
+                  moveElement(projectId, page.id, selectedBox.nodeId, targetId, position)
+                }
+                onClick={(point) => {
+                  isPickPendingRef.current = true;
+                  postToFrame({ type: "wirely-node-at", intent: "pick", ...point });
+                }}
+                onDoubleClick={() => startTextEdit(selectedBox.nodeId)}
+              />
             ) : null}
             {page.deviceType === "vector" && hasHtml && isLive && (isPenMode || isElementMode) ? (
               <VectorEditLayer
