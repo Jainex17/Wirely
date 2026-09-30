@@ -265,6 +265,7 @@ export default function WireEditor({
 
   const pagesPanel = (
     <PagesPanel
+      projectId={wireId}
       projectTitle={initialProject.projectTitle}
       isCollapsed={isPagesPanelCollapsed}
       onToggle={() => setIsPagesPanelCollapsed((collapsed) => !collapsed)}
