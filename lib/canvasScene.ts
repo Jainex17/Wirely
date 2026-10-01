@@ -553,3 +553,27 @@ export const getSnappedPagePosition = ({
     ),
   };
 };
+
+const EDGE_PAN_ZONE_PX = 48;
+const EDGE_PAN_MAX_SPEED_PX = 20;
+
+/**
+ * How far to pan the canvas this frame while a page or group is dragged near
+ * its edge, in screen pixels. Speed grows as the pointer nears the edge and
+ * stays at full speed past it, so dragging off the canvas keeps scrolling.
+ */
+export const getEdgePanVelocity = (pointer: ScenePoint, canvas: Bounds): ScenePoint => {
+  const speedAlong = (position: number, start: number, end: number) => {
+    if (position < start + EDGE_PAN_ZONE_PX) {
+      return -EDGE_PAN_MAX_SPEED_PX * Math.min(1, (start + EDGE_PAN_ZONE_PX - position) / EDGE_PAN_ZONE_PX);
+    }
+    if (position > end - EDGE_PAN_ZONE_PX) {
+      return EDGE_PAN_MAX_SPEED_PX * Math.min(1, (position - end + EDGE_PAN_ZONE_PX) / EDGE_PAN_ZONE_PX);
+    }
+    return 0;
+  };
+  return {
+    x: speedAlong(pointer.x, canvas.left, canvas.right),
+    y: speedAlong(pointer.y, canvas.top, canvas.bottom),
+  };
+};
