@@ -6,7 +6,8 @@ import { useShallow } from "zustand/react/shallow";
 import { logger } from "@/lib/logger";
 import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
-import PageRenderer from "./PageRenderer";
+import CanvasCommentPins from "./CanvasCommentPins";
+import PageRenderer, { PAGE_FRAME_TOP } from "./PageRenderer";
 import type { ReportedNode } from "@/lib/nodePicker";
 import type { PageRecord } from "@/lib/types";
 import {
@@ -953,6 +954,24 @@ export default function Canvas({
               </div>
             );
           })}
+
+          {/* Pins sit in their own layer above every page, so a page stacked on
+              top of another never hides that page's comments. */}
+          {projectId
+            ? pageLayouts.map((pageLayout) => (
+                <div
+                  key={`comments-${pageLayout.page.id}`}
+                  className="absolute"
+                  style={{
+                    left: `${pageLayout.position.x}px`,
+                    top: `${pageLayout.position.y + PAGE_FRAME_TOP}px`,
+                    zIndex: pageLayouts.length + 1,
+                  }}
+                >
+                  <CanvasCommentPins pageId={pageLayout.page.id} projectId={projectId} />
+                </div>
+              ))
+            : null}
 
           {snapGuides.map((guide, index) => {
             if (guide.orientation === "vertical") {
