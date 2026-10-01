@@ -1,5 +1,5 @@
 /**
- * Renders stored page HTML to a PNG with headless Chromium.
+ * Renders stored page HTML to a PNG or PDF with headless Chromium.
  *
  * The preview it is meant to match runs allowlisted CDN scripts with
  * JavaScript enabled, so the renderer does the same. Not every write path
@@ -13,7 +13,7 @@
  */
 import { accessSync, constants } from "node:fs";
 
-import type { Browser } from "puppeteer-core";
+import type { Browser, Page } from "puppeteer-core";
 
 import { getPageFrameSize } from "@/lib/canvasScene";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
@@ -228,12 +228,13 @@ const collectVisualLintData = (): VisualLintData => {
   };
 };
 
-const renderOnce = async (
+/** Opens the page HTML at its device's frame size and waits for it to settle, then hands it to `render`. */
+const withLoadedPage = async <T>(
   html: string,
   deviceType: string,
-  lint: boolean,
   scale: number,
-): Promise<RenderedPng> => {
+  render: (page: Page) => Promise<T>,
+): Promise<T> => {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -251,7 +252,33 @@ const renderOnce = async (
     await page
       .evaluate(() => document.fonts.ready.then(() => undefined))
       .catch(() => undefined);
+    return await render(page);
+  } finally {
+    await page.close().catch(() => undefined);
+  }
+};
 
+/**
+ * Retries once on a browser that died between invocations, which is the one
+ * failure a cold serverless instance regularly produces.
+ */
+const withBrowserRetry = async <T>(render: () => Promise<T>): Promise<T> => {
+  try {
+    return await render();
+  } catch (error) {
+    if (!isBrowserGone(error)) throw error;
+    forgetBrowser();
+    return render();
+  }
+};
+
+const renderOnce = (
+  html: string,
+  deviceType: string,
+  lint: boolean,
+  scale: number,
+): Promise<RenderedPng> =>
+  withLoadedPage(html, deviceType, scale, async (page) => {
     let png = await page.screenshot({ type: "png", fullPage: true });
     let fullPage = true;
     if (png.byteLength > MAX_PNG_BYTES * scale * scale) {
@@ -260,28 +287,35 @@ const renderOnce = async (
     }
     const lintData = lint ? await page.evaluate(collectVisualLintData) : undefined;
     return { base64: Buffer.from(png).toString("base64"), fullPage, lint: lintData };
-  } finally {
-    await page.close().catch(() => undefined);
-  }
-};
+  });
 
-/**
- * Screenshots the page HTML at its device's frame size. Retries once on a
- * browser that died between invocations, which is the one failure a cold
- * serverless instance regularly produces.
- */
-export const renderPagePng = async (
+/** Screenshots the page HTML at its device's frame size. */
+export const renderPagePng = (
   html: string,
   deviceType: string,
   lint = false,
   /** Device pixel ratio, for a sharper export. The byte cap grows with it. */
   scale = 1,
-): Promise<RenderedPng> => {
-  try {
-    return await renderOnce(html, deviceType, lint, scale);
-  } catch (error) {
-    if (!isBrowserGone(error)) throw error;
-    forgetBrowser();
-    return renderOnce(html, deviceType, lint, scale);
-  }
-};
+): Promise<RenderedPng> => withBrowserRetry(() => renderOnce(html, deviceType, lint, scale));
+
+// PDF pages top out at 200 inches, which is 19,200 CSS px.
+const MAX_PDF_HEIGHT_PX = 19_200;
+
+/**
+ * Prints the page HTML as one PDF page the size of the whole design, with
+ * screen styles, so text stays selectable and shapes stay vector.
+ */
+export const renderPagePdf = (html: string, deviceType: string): Promise<Uint8Array> =>
+  withBrowserRetry(() =>
+    withLoadedPage(html, deviceType, 1, async (page) => {
+      await page.emulateMediaType("screen");
+      const { width } = getPageFrameSize({ deviceType, iframeHtml: html }, "desktop");
+      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      return page.pdf({
+        width: `${width}px`,
+        height: `${Math.min(Math.max(1, height), MAX_PDF_HEIGHT_PX)}px`,
+        printBackground: true,
+        pageRanges: "1",
+      });
+    }),
+  );

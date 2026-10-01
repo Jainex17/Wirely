@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { getProjectPageForUser } from "@/lib/db/queries/projects";
 import { logger } from "@/lib/logger";
-import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
+import { renderPagePdf, renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { createRateLimiter } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -25,7 +25,8 @@ interface RouteContext {
 }
 
 /**
- * Renders one saved page to a PNG for the frame's "Copy image" and download actions. The
+ * Renders one saved page to a PNG, or a PDF with `?format=pdf`, for the frame's "Copy image"
+ * and download actions. The
  * browser cannot read the sandboxed preview, so the server renders the stored
  * HTML. It never accepts HTML from the request.
  */
@@ -57,8 +58,17 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
     }
 
+    const params = new URL(request.url).searchParams;
+    if (params.get("format") === "pdf") {
+      const pdf = await renderPagePdf(page.htmlContent, page.deviceType);
+      return new Response(Buffer.from(pdf), {
+        status: 200,
+        headers: { "Content-Type": "application/pdf", "Cache-Control": "no-store" },
+      });
+    }
+
     // 2x and 3x exports for retina screens. Anything else renders at 1x.
-    const requestedScale = Number(new URL(request.url).searchParams.get("scale"));
+    const requestedScale = Number(params.get("scale"));
     const scale = requestedScale === 2 || requestedScale === 3 ? requestedScale : 1;
     const png = await renderPagePng(page.htmlContent, page.deviceType, false, scale);
     return new Response(Buffer.from(png.base64, "base64"), {

@@ -28,7 +28,7 @@ It uses the agent subscription you already pay for. Wirely is free and open sour
   so other people can pin comments. Your agent can read those comments too.
 - **Design for desktop and mobile.** Each page has its own device frame.
 - **Organize the canvas.** Group pages, pan and zoom, and change the canvas background.
-- **Export.** Copy a page as an image, as HTML, or as SVG.
+- **Export.** Copy a page as an image, HTML, or SVG, or download it as a PNG at 2x or 3x or as a PDF.
 - **Generate inside Wirely.** If you don't use an agent, add your own AI key in settings and
   generate pages from the chat. The default model is free.
 

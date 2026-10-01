@@ -9,6 +9,7 @@ import {
   Eye,
   FileCode2,
   FileIcon,
+  FileText,
   History,
   MessageSquarePlus,
   ImageIcon,
@@ -638,10 +639,11 @@ export default React.memo(function PageRenderer({
     }
   }, [page.deviceType, page.id, page.title, projectId]);
 
-  const fetchPagePng = React.useCallback(
-    async (scale = 1) => {
+  /** A server render of the saved page: a PNG at 1x by default, `scale=2`, or `format=pdf`. */
+  const fetchPageRender = React.useCallback(
+    async (query = "") => {
       const response = await fetch(
-        `/api/projects/${projectId}/pages/${page.id}/png${scale > 1 ? `?scale=${scale}` : ""}`,
+        `/api/projects/${projectId}/pages/${page.id}/png${query ? `?${query}` : ""}`,
         { cache: "no-store" },
       );
       if (!response.ok) {
@@ -657,7 +659,7 @@ export default React.memo(function PageRenderer({
   const copyImage = React.useCallback(async () => {
     if (!projectId || isCopyingImage) return;
     setIsCopyingImage(true);
-    const fetchPng = () => fetchPagePng();
+    const fetchPng = () => fetchPageRender();
 
     try {
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
@@ -675,19 +677,24 @@ export default React.memo(function PageRenderer({
     } finally {
       setIsCopyingImage(false);
     }
-  }, [fetchPagePng, isCopyingImage, projectId, slugifiedTitle]);
+  }, [fetchPageRender, isCopyingImage, projectId, slugifiedTitle]);
 
-  const downloadPng2x = React.useCallback(async () => {
-    const pending = toast.loading("Rendering a 2x PNG…");
-    try {
-      downloadBlob(await fetchPagePng(2), `${slugifiedTitle}@2x.png`);
-      toast.success("PNG downloaded.", { id: pending });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not render the page image.", {
-        id: pending,
-      });
-    }
-  }, [fetchPagePng, slugifiedTitle]);
+  const downloadRender = React.useCallback(
+    async (kind: "2x" | "3x" | "pdf") => {
+      const isPdf = kind === "pdf";
+      const pending = toast.loading(isPdf ? "Rendering a PDF…" : `Rendering a ${kind} PNG…`);
+      try {
+        const blob = await fetchPageRender(isPdf ? "format=pdf" : `scale=${kind[0]}`);
+        downloadBlob(blob, isPdf ? `${slugifiedTitle}.pdf` : `${slugifiedTitle}@${kind}.png`);
+        toast.success(isPdf ? "PDF downloaded." : "PNG downloaded.", { id: pending });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not render the page.", {
+          id: pending,
+        });
+      }
+    },
+    [fetchPageRender, slugifiedTitle],
+  );
 
   // Built only while the preview is open, so opening the editor does not
   // sanitize every page a second time.
@@ -1011,7 +1018,17 @@ export default React.memo(function PageRenderer({
             {
               label: "Download PNG 2x",
               icon: ImageIcon,
-              onClick: () => void downloadPng2x(),
+              onClick: () => void downloadRender("2x"),
+            },
+            {
+              label: "Download PNG 3x",
+              icon: ImageIcon,
+              onClick: () => void downloadRender("3x"),
+            },
+            {
+              label: "Download PDF",
+              icon: FileText,
+              onClick: () => void downloadRender("pdf"),
             },
             {
               label: "History",
@@ -1041,7 +1058,7 @@ export default React.memo(function PageRenderer({
     ],
     [
       copyToClipboard,
-      downloadPng2x,
+      downloadRender,
       isOnlyPage,
       onEditPage,
       onFocusPage,
