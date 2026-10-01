@@ -145,6 +145,14 @@ const getCenter = (points: ScenePoint[]) => ({
   y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
 });
 
+/**
+ * True for an event from a dialog or menu a page portals to <body>. React still
+ * bubbles those through the canvas, and a pan or page drag starting there takes
+ * pointer capture, which swallows the click meant for the dialog's Close button.
+ */
+const isFromPortal = (event: React.PointerEvent<HTMLElement>) =>
+  !event.currentTarget.contains(event.target as Node);
+
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
@@ -502,7 +510,7 @@ export default function Canvas({
 
   const handleCanvasPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (isEditableTarget(event.target)) {
+      if (isFromPortal(event) || isEditableTarget(event.target)) {
         return;
       }
 
@@ -619,6 +627,7 @@ export default function Canvas({
   const handlePagePointerDownCapture = React.useCallback(
     (pageId: string) => (event: React.PointerEvent<HTMLDivElement>) => {
       if (!event.shiftKey || activeTool !== "select" || event.button !== 0) return;
+      if (isFromPortal(event)) return;
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
@@ -635,7 +644,8 @@ export default function Canvas({
         activeTool !== "select" ||
         isSpacePanning ||
         event.button !== 0 ||
-        event.pointerType === "touch"
+        event.pointerType === "touch" ||
+        isFromPortal(event)
       ) {
         return;
       }

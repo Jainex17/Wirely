@@ -1703,10 +1703,10 @@ export default React.memo(function PageRenderer({
               <span className="rounded-md bg-muted/60 px-2 py-1 text-xs tabular-nums text-muted-foreground">
                 {previewWidth} x {previewFrameHeight}
               </span>
-              {/* A plain button writing state directly, not DialogClose: after
-                  clicking inside the preview frame, Radix's focus bookkeeping
-                  has already eaten close clicks once, and the controlled state
-                  is the source of truth anyway. */}
+              {/* Writes the controlled state directly, which is the source of
+                  truth. Close clicks were once lost because the canvas took
+                  pointer capture on events bubbling out of this portal; see
+                  isFromPortal in Canvas.tsx. */}
               <Button
                 type="button"
                 variant="ghost"
