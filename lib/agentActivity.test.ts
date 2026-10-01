@@ -58,6 +58,8 @@ describe("describePatch", () => {
   it("tells a style change from a markup change when the text is the same", () => {
     expect(describePatch('<a class="px-2">Go</a>', '<a class="px-4">Go</a>')).toBe("Changed styles");
     expect(describePatch("<a>Go</a>", '<a href="#x">Go</a>')).toBe("Changed the markup");
+    // Agents often patch only an attribute, with no tag around it.
+    expect(describePatch('class="text-6xl"', 'class="text-7xl tracking-tight"')).toBe("Changed styles");
   });
 
   it("ignores script and style contents", () => {

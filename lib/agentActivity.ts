@@ -61,9 +61,14 @@ export const MAX_DETAIL_CHARS = 160;
 const clip = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
 
-/** The words a reader sees in an HTML snippet, without tags, scripts, or styles. */
+/**
+ * The words a reader sees in an HTML snippet, without tags, scripts, or
+ * styles. A bare attribute fragment, like `class="px-4"`, has none.
+ */
 const visibleText = (html: string) =>
-  html
+  !/[<>]/.test(html) && /=\s*["']/.test(html)
+    ? ""
+    : html
     .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/&nbsp;/g, " ")
