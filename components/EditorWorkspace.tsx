@@ -425,12 +425,16 @@ export default function EditorWorkspace({
   ]);
 
   useEffect(() => {
-    // Figma's bindings: V, H, E, and P pick a tool, Shift+1 fits every page, Shift+2
+    // Figma's bindings: V, H, E, P, and C pick a tool, Shift+1 fits every page, Shift+2
     // the selected one, Shift+0 goes to 100%. Digits match on `code` because
     // Shift turns the `key` for 1 into "!".
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
         return;
+      }
+
+      if (event.key === "Escape") {
+        setActiveTool((tool) => (tool === "comment" ? "select" : tool));
       }
 
       if (event.code === "Space") {
@@ -509,6 +513,7 @@ export default function EditorWorkspace({
             KeyH: () => setActiveTool("grab"),
             KeyE: () => setActiveTool("element"),
             KeyP: () => setActiveTool("pen"),
+            KeyC: () => setActiveTool("comment"),
             KeyF: () => setActiveTool("frame"),
             KeyT: () => setActiveTool("text"),
             KeyR: () => setActiveTool("rectangle"),

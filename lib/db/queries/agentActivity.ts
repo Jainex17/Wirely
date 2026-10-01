@@ -14,12 +14,13 @@ export const recordAgentActivity = async (input: {
   tool: string;
   pageId: string | null;
   error: string | null;
+  detail: string | null;
 }) => {
   if (!isUuid(input.projectId)) return;
   const pageId = input.pageId && isUuid(input.pageId) ? input.pageId : null;
   await getDb().execute(sql`
-    insert into project_agent_activity (project_id, tool, page_id, error)
-    select id, ${input.tool}, ${pageId}::uuid, ${input.error}
+    insert into project_agent_activity (project_id, tool, page_id, error, detail)
+    select id, ${input.tool}, ${pageId}::uuid, ${input.error}, ${input.detail}
     from projects
     where id = ${input.projectId}::uuid and user_id = ${input.userId}::uuid
   `);
@@ -33,6 +34,7 @@ export const listAgentActivity = async (projectId: string, limit = 100) =>
       tool: projectAgentActivity.tool,
       pageId: projectAgentActivity.pageId,
       error: projectAgentActivity.error,
+      detail: projectAgentActivity.detail,
       createdAt: projectAgentActivity.createdAt,
     })
     .from(projectAgentActivity)

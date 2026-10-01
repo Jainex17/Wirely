@@ -143,8 +143,10 @@ interface PageRendererProps {
   renderMode: PageRenderMode;
   /** The element tool is active, so pointer moves and clicks pick elements in this page. */
   isElementMode: boolean;
-  /** The pen tool is active. It draws only on vector pages. */
+  /** The pen tool is active. */
   isPenMode: boolean;
+  /** The comment tool is active, so a click opens a comment on the element under it. */
+  isCommentMode: boolean;
   /** Saves an edit made on the canvas, such as a moved path point. */
   onSavePageHtml?: (pageId: string, html: string) => void;
   /**
@@ -265,6 +267,7 @@ export default React.memo(function PageRenderer({
   renderMode,
   isElementMode,
   isPenMode,
+  isCommentMode,
   onSavePageHtml,
   isMoveMode,
   selectedNodeId,
@@ -291,10 +294,12 @@ export default React.memo(function PageRenderer({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
-  // A comment pins where the user right-clicked, not at a fixed corner.
+  // A comment pins where the user clicked or right-clicked, and to the
+  // element there when the comment tool picked one.
   const [commentDraft, setCommentDraft] = React.useState<{
     x: number;
     y: number;
+    nodeId: string | null;
     body: string;
   } | null>(null);
   const [isPostingComment, setIsPostingComment] = React.useState(false);
@@ -309,7 +314,7 @@ export default React.memo(function PageRenderer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pageId: page.id,
-          nodeId: null,
+          nodeId: commentDraft!.nodeId,
           body,
           x: Math.max(0, Math.round(commentDraft!.x)),
           y: Math.max(0, Math.round(commentDraft!.y)),
@@ -683,9 +688,11 @@ export default React.memo(function PageRenderer({
     }
   }, [fetchPagePng, slugifiedTitle]);
 
+  // Built only while the preview is open, so opening the editor does not
+  // sanitize every page a second time.
   const previewSrcDoc = React.useMemo(
     () =>
-      hasRawHtml
+      hasRawHtml && isPreviewOpen
         ? injectPreviewEscapeHandler(
             stabilizeViewportHeightClasses(
               sanitizeIframeHtml(page.iframeHtml ?? ""),
@@ -694,7 +701,7 @@ export default React.memo(function PageRenderer({
             iframeReporterId,
           )
         : "",
-    [currentDevice.height, hasRawHtml, iframeReporterId, page.iframeHtml],
+    [currentDevice.height, hasRawHtml, iframeReporterId, isPreviewOpen, page.iframeHtml],
   );
 
   /**
@@ -1015,7 +1022,7 @@ export default React.memo(function PageRenderer({
               icon: MessageSquarePlus,
               onClick: () => {
                 const point = contextMenuPagePoint ?? { x: 24, y: 24 };
-                setCommentDraft({ x: point.x, y: point.y, body: "" });
+                setCommentDraft({ x: point.x, y: point.y, nodeId: null, body: "" });
               },
             },
           ]
@@ -1069,6 +1076,8 @@ export default React.memo(function PageRenderer({
   const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
   // Set when an insert click is waiting for the frame to say what it hit.
   const isInsertPendingRef = React.useRef(false);
+  // Where a comment tool click landed, while the frame finds the element there.
+  const commentPointRef = React.useRef<{ x: number; y: number } | null>(null);
   // An element to start typing into once the frame reports it, after an insert.
   const pendingEditRef = React.useRef<string | null>(null);
   // The page HTML when typing began. Text typed into a page that changed
@@ -1161,6 +1170,7 @@ export default React.memo(function PageRenderer({
     // A reload drops any click the old document was answering, and any typing.
     isPickPendingRef.current = false;
     isInsertPendingRef.current = false;
+    commentPointRef.current = null;
     setEditingNodeId(null);
     findSelectedNode();
   }, [findSelectedNode]);
@@ -1206,6 +1216,16 @@ export default React.memo(function PageRenderer({
         } else if (intent === "pick" && isInsertPendingRef.current) {
           isInsertPendingRef.current = false;
           if (node) onInsertAt?.(page.id, node);
+        } else if (intent === "pick" && commentPointRef.current) {
+          const point = commentPointRef.current;
+          commentPointRef.current = null;
+          // Picking the element outlines it and saves its id to the server,
+          // so the agent can find what the comment points at.
+          if (node) {
+            setSelectedBox(node);
+            onNodeReport?.(page.id, node, "pick");
+          }
+          setCommentDraft({ ...point, nodeId: node?.nodeId ?? null, body: "" });
         } else if (intent === "pick" && isPickPendingRef.current) {
           isPickPendingRef.current = false;
           if (!node) return;
@@ -1367,16 +1387,26 @@ export default React.memo(function PageRenderer({
                 </p>
               </div>
             )}
-            {(isElementMode || isMoveMode || insertKind) && hasHtml && isLive && !editingNodeId ? (
+            {(isElementMode || isMoveMode || isCommentMode || insertKind) &&
+            hasHtml &&
+            isLive &&
+            !editingNodeId ? (
               <div
                 className={cn(
                   "absolute inset-0 z-10",
-                  isElementMode || insertKind ? "cursor-crosshair" : "cursor-default",
+                  isElementMode || isCommentMode || insertKind ? "cursor-crosshair" : "cursor-default",
                 )}
                 onPointerMove={(event) => sendPointToFrame(event, "hover")}
                 onPointerLeave={() => setHoverBox(null)}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
+                  if (isCommentMode) {
+                    event.stopPropagation();
+                    const point = toFramePoint(event);
+                    commentPointRef.current = point;
+                    postToFrame({ type: "wirely-node-at", intent: "pick", ...point });
+                    return;
+                  }
                   if (insertKind) {
                     event.stopPropagation();
                     isInsertPendingRef.current = true;
@@ -1407,7 +1437,9 @@ export default React.memo(function PageRenderer({
                 }}
               />
             ) : null}
-            {(isElementMode || isMoveMode) && hoverBox && hoverBox.nodeId !== selectedNodeId ? (
+            {(isElementMode || isMoveMode || isCommentMode) &&
+            hoverBox &&
+            hoverBox.nodeId !== selectedNodeId ? (
               <NodeBox node={hoverBox} variant="hover" />
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (
@@ -1442,7 +1474,7 @@ export default React.memo(function PageRenderer({
                 onDoubleClick={() => startTextEdit(selectedBox.nodeId)}
               />
             ) : null}
-            {page.deviceType === "vector" && hasHtml && isLive && (isPenMode || isElementMode) ? (
+            {hasHtml && isLive && (isPenMode || (page.deviceType === "vector" && isElementMode)) ? (
               <VectorEditLayer
                 html={page.iframeHtml ?? ""}
                 width={currentDevice.width}

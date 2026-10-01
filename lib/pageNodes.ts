@@ -195,11 +195,16 @@ export const stampNodeIds = (html: string) => {
     }
   });
 
-  let result = html;
-  for (const edit of edits.reverse()) {
-    result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
+  // Edits come in document order. Joining the pieces once keeps this linear;
+  // splicing each edit into the string copied the whole page per element.
+  const parts: string[] = [];
+  let last = 0;
+  for (const edit of edits) {
+    parts.push(html.slice(last, edit.start), edit.text);
+    last = edit.end;
   }
-  return result;
+  parts.push(html.slice(last));
+  return parts.join("");
 };
 
 export interface NodeSpan {

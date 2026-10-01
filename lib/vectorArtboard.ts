@@ -130,6 +130,20 @@ export const appendToArtboard = (html: string, markup: string) => {
   return span ? html.slice(0, span.closeStart) + markup + html.slice(span.closeStart) : null;
 };
 
+/**
+ * Adds a pen stroke to a page. On a vector page it joins the artboard. On an
+ * HTML page it goes before </body> in its own <svg>, positioned at the
+ * document's top left with no viewBox, so path units are page px and the
+ * stroke lands where it was drawn.
+ */
+export const appendPenPath = (html: string, pathMarkup: string) => {
+  const onArtboard = appendToArtboard(html, pathMarkup);
+  if (onArtboard !== null) return onArtboard;
+  const drawing = `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" style="position:absolute;left:0;top:0;overflow:visible;z-index:2147483647">${pathMarkup}</svg>`;
+  const bodyEnd = html.search(/<\/body>/i);
+  return bodyEnd === -1 ? html + drawing : html.slice(0, bodyEnd) + drawing + html.slice(bodyEnd);
+};
+
 /** The artboard as a standalone .svg file, with Wirely's ids and marker removed. */
 export const exportArtboardSvg = (html: string) => {
   const span = findArtboardSpan(html);

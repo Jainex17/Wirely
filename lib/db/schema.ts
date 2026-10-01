@@ -271,6 +271,8 @@ export const projectAgentActivity = pgTable(
     pageId: uuid("page_id"),
     /** The error text an agent saw, or null when the call succeeded. */
     error: text("error"),
+    /** What the call changed, from the agent's note or worked out from the call. */
+    detail: text("detail"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

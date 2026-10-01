@@ -14,16 +14,16 @@ It uses the agent subscription you already pay for. Wirely is free and open sour
 - **Compare directions.** Ask for several options and see them next to each other.
 - **Edit like a design tool.** Pick any element to change its text, colors, size, spacing, and
   radius. Drag it to reorder, drag its handles to resize, and double-click text to type into it.
-  The layers panel shows every element on a page for hiding, nesting, duplicating, and deleting,
+  Each page in the pages panel opens into its layers, for hiding, nesting, duplicating, and deleting,
   and Cmd+Z undoes it all. Frame, rectangle, and text tools add new elements.
 - **Hand your edits back.** Your agent can read the page's layers, rearrange them by id, and ask
   what you changed by hand since it last wrote the page.
 - **Send a pick to your agent.** Copy a link to one element, or to a whole page, and paste it into
   your agent with what to change.
-- **Draw vector art.** Vector pages come with a pen tool for drawing and editing shapes.
+- **Draw vector art.** The pen tool draws on any page, and on vector pages it also edits shapes.
 - **Build a clickable prototype.** Link pages together and click through them like a real app.
-- **Share for feedback.** Send a review link, and people can pin comments on your pages. Your
-  agent can read those comments too.
+- **Share for feedback.** Press C and click any element to comment on it, or send a review link
+  so other people can pin comments. Your agent can read those comments too.
 - **Design for desktop and mobile.** Each page has its own device frame.
 - **Organize the canvas.** Group pages, pan and zoom, and change the canvas background.
 - **Export.** Copy a page as an image, as HTML, or as SVG.

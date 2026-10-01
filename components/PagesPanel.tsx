@@ -4,18 +4,21 @@ import { type DragEvent, type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  ChevronDown,
+  ChevronRight,
+  Copy,
   Frame,
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
   PenTool,
   Smartphone,
+  Trash2,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import LayersPanel from "@/components/LayersPanel";
+import LayerTree from "@/components/LayerTree";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
@@ -29,10 +32,12 @@ interface PagesPanelProps {
 }
 
 /**
- * The editor's left column: project title, the list of every page on the
- * canvas, the focused page's layers, and the account menu. Clicking a page pans the canvas to it at the
- * current zoom; dragging it onto a group moves it in or out. Collapsed, it shrinks to a floating title card over the canvas
- * so the toggle back stays in the same corner.
+ * The editor's left column: project title, one tree of every page on the
+ * canvas with each page's layers nested under it, and the account menu.
+ * Clicking a page pans the canvas to it at the current zoom; dragging it onto
+ * a group moves it in or out. The focused page opens by default. Collapsed,
+ * the column shrinks to a floating title card over the canvas so the toggle
+ * back stays in the same corner.
  */
 export default function PagesPanel({
   projectId,
@@ -42,18 +47,29 @@ export default function PagesPanel({
   footer,
 }: PagesPanelProps) {
   const router = useRouter();
-  const [isPageListOpen, setIsPageListOpen] = useState(true);
-  const { pages, pageGroups, focusedPageId, focusPage, focusPages, movePageToGroup } =
+  const { pages, pageGroups, focusedPageId, selectedNode, focusPage, focusPages, movePageToGroup } =
     useEditorStore(
       useShallow((state) => ({
         pages: state.pages,
         pageGroups: state.pageGroups,
         focusedPageId: state.focusedPageId,
+        selectedNode: state.selectedNode,
         focusPage: state.focusPage,
         focusPages: state.focusPages,
         movePageToGroup: state.movePageToGroup,
       })),
     );
+  // Pages the user opened or closed. The rest are open only while focused.
+  const [openByPageId, setOpenByPageId] = useState<Record<string, boolean>>({});
+  const isPageOpen = (pageId: string) => openByPageId[pageId] ?? pageId === focusedPageId;
+  // An element picked on the canvas reopens its page, once per pick.
+  const [revealedNodeId, setRevealedNodeId] = useState<string | null>(null);
+  if (selectedNode && selectedNode.nodeId !== revealedNodeId) {
+    setRevealedNodeId(selectedNode.nodeId);
+    if (openByPageId[selectedNode.pageId] === false) {
+      setOpenByPageId({ ...openByPageId, [selectedNode.pageId]: true });
+    }
+  }
   const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
   // Rows drag with native drag and drop: drop a page on a group to move it in,
   // or on the ungrouped list to move it out. `undefined` means no drop target.
@@ -80,32 +96,56 @@ export default function PagesPanel({
     },
   });
 
-  const renderPage = (page: (typeof pages)[number], indent: string) => {
+  const renderPage = (page: (typeof pages)[number], depth: number) => {
     const Icon =
       page.deviceType === "mobile" ? Smartphone : page.deviceType === "vector" ? PenTool : Monitor;
     const isCurrent = focusedPageId === page.id;
+    const isOpen = isPageOpen(page.id);
     return (
-      <button
-        key={page.id}
-        type="button"
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
-          event.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={() => setDropGroupId(undefined)}
-        onClick={() => focusPage(page.id)}
-        className={cn(
-          "flex h-7 w-full items-center gap-2 pr-3 text-left text-xs transition-colors",
-          indent,
-          isCurrent
-            ? "bg-primary/15 text-foreground"
-            : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-        )}
-      >
-        <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
-        <span className="truncate">{page.title}</span>
-      </button>
+      <div key={page.id}>
+        <div
+          role="treeitem"
+          aria-selected={isCurrent}
+          aria-expanded={isOpen}
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+            event.dataTransfer.effectAllowed = "move";
+          }}
+          onDragEnd={() => setDropGroupId(undefined)}
+          onClick={() => focusPage(page.id)}
+          className={cn(
+            "flex h-7 w-full cursor-default items-center gap-1.5 pr-3 text-xs font-medium transition-colors",
+            isCurrent
+              ? "text-foreground"
+              : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+            isCurrent && selectedNode?.pageId !== page.id && "bg-primary/15",
+          )}
+          style={{ paddingLeft: 8 + depth * 12 }}
+        >
+          <button
+            type="button"
+            aria-label={isOpen ? `Hide layers of ${page.title}` : `Show layers of ${page.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenByPageId((current) => ({ ...current, [page.id]: !isOpen }));
+            }}
+            className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+          >
+            <ChevronRight className={cn("h-3 w-3 transition-transform", isOpen && "rotate-90")} />
+          </button>
+          <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
+          <span className="truncate">{page.title}</span>
+        </div>
+        {isOpen ? (
+          <LayerTree
+            projectId={projectId}
+            pageId={page.id}
+            html={page.iframeHtml ?? ""}
+            baseDepth={depth + 1}
+          />
+        ) : null}
+      </div>
     );
   };
 
@@ -155,68 +195,57 @@ export default function PagesPanel({
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
       <div className="border-b border-sidebar-border">{titleRow}</div>
-      <button
-        type="button"
-        onClick={() => setIsPageListOpen((open) => !open)}
-        aria-expanded={isPageListOpen}
-        className="mt-2 flex h-7 w-full items-center gap-1.5 px-3 text-[11px] font-semibold text-foreground"
-      >
-        <ChevronDown
-          className={cn(
-            "h-3 w-3 text-muted-foreground transition-transform",
-            !isPageListOpen && "-rotate-90",
-          )}
-        />
-        Pages
-        <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-          {pages.length}
-        </span>
-      </button>
-      {/* Full-width rows hanging off a guide line under the chevron, like a
-          file tree. */}
-      <nav
-        className={cn(
-          "max-h-[40%] shrink-0 overflow-y-auto pb-2",
-          !isPageListOpen && "hidden",
-        )}
-      >
-        <div className="relative flex min-h-full flex-col">
-          <div className="pointer-events-none absolute inset-y-0 left-[17px] w-px bg-foreground/10" />
-          {pageGroups.map((group) => (
-            <div
-              key={group.id}
-              {...dropTargetProps(group.id)}
-              className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
+      <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-2">
+        <span className="text-[11px] font-semibold text-foreground">Pages</span>
+        <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
+        {selectedNode ? (
+          <div className="ml-auto flex items-center">
+            <HeaderButton label="Duplicate element (Cmd+D)" onClick={() => runElementAction(projectId, "duplicate")}>
+              <Copy className="h-3.5 w-3.5" />
+            </HeaderButton>
+            <HeaderButton
+              label="Wrap element in frame (Cmd+Alt+G)"
+              onClick={() => runElementAction(projectId, "wrap")}
             >
-              <button
-                type="button"
-                onClick={() => focusPages(group.pageIds)}
-                className="flex h-7 w-full items-center gap-2 pl-8 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
-              >
-                <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{group.name}</span>
-                <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                  {group.pageIds.length}
-                </span>
-              </button>
-              {pages
-                .filter((page) => group.pageIds.includes(page.id))
-                .map((page) => renderPage(page, "pl-12"))}
-            </div>
-          ))}
-          <div
-            {...dropTargetProps(null)}
-            className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
-          >
-            {pages
-              .filter((page) => !groupedPageIds.has(page.id))
-              .map((page) => renderPage(page, "pl-8"))}
+              <Frame className="h-3.5 w-3.5" />
+            </HeaderButton>
+            <HeaderButton label="Delete element (Delete)" onClick={() => runElementAction(projectId, "delete")}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </HeaderButton>
           </div>
+        ) : null}
+      </div>
+      <nav role="tree" aria-label="Pages and layers" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+        {pageGroups.map((group) => (
+          <div
+            key={group.id}
+            {...dropTargetProps(group.id)}
+            className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
+          >
+            <button
+              type="button"
+              onClick={() => focusPages(group.pageIds)}
+              className="flex h-7 w-full items-center gap-1.5 pl-2 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+            >
+              <span className="w-4 shrink-0" />
+              <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{group.name}</span>
+              <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+                {group.pageIds.length}
+              </span>
+            </button>
+            {pages
+              .filter((page) => group.pageIds.includes(page.id))
+              .map((page) => renderPage(page, 1))}
+          </div>
+        ))}
+        <div
+          {...dropTargetProps(null)}
+          className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
+        >
+          {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, 0))}
         </div>
       </nav>
-      <div className="flex min-h-0 flex-1 flex-col border-t border-sidebar-border pt-1">
-        <LayersPanel projectId={projectId} />
-      </div>
       <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
         {footer}
         <a
@@ -229,5 +258,27 @@ export default function PagesPanel({
         </a>
       </div>
     </aside>
+  );
+}
+
+function HeaderButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }
