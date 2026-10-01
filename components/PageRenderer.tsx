@@ -43,6 +43,7 @@ import {
 } from "@/lib/pageNodes";
 import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, moveElement } from "@/store/pageEdits";
+import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
 import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
@@ -1125,6 +1126,29 @@ export default React.memo(function PageRenderer({
 
   React.useEffect(() => () => window.cancelAnimationFrame(hoverFrameRef.current), []);
 
+  // Holding Alt with an element picked measures from it to the hovered one.
+  const [isAltHeld, setIsAltHeld] = React.useState(false);
+  const canMeasure = isLive && (isElementMode || isMoveMode) && selectedBox !== null;
+  React.useEffect(() => {
+    if (!canMeasure) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Alt") return;
+      // Keeps Windows browsers from moving focus to their menu bar.
+      event.preventDefault();
+      setIsAltHeld(event.type === "keydown");
+    };
+    const release = () => setIsAltHeld(false);
+    window.addEventListener("keydown", handleKey);
+    window.addEventListener("keyup", handleKey);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("keyup", handleKey);
+      window.removeEventListener("blur", release);
+      release();
+    };
+  }, [canMeasure]);
+
   const toFramePoint = (event: React.PointerEvent<HTMLDivElement>) => {
     // The frame is scaled with the canvas; the page inside works in its own px.
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1444,6 +1468,13 @@ export default React.memo(function PageRenderer({
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (
               <NodeBox node={selectedBox} variant="selected" />
+            ) : null}
+            {canMeasure &&
+            isAltHeld &&
+            selectedBox?.nodeId === selectedNodeId &&
+            hoverBox &&
+            hoverBox.nodeId !== selectedNodeId ? (
+              <MeasureLines from={selectedBox} to={hoverBox} />
             ) : null}
             {isMoveMode && isLive && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
               <ElementEditLayer
@@ -1831,6 +1862,33 @@ export default React.memo(function PageRenderer({
     </>
   );
 });
+
+/** Red distance lines from the picked element to the hovered one, with their px labels. */
+function MeasureLines({ from, to }: { from: ReportedNode; to: ReportedNode }) {
+  return measureBetween(from, to).map((line) => {
+    const isVertical = line.x1 === line.x2;
+    return (
+      <div
+        key={`${line.x1}:${line.y1}:${line.x2}:${line.y2}`}
+        aria-hidden="true"
+        className="pointer-events-none absolute z-30 bg-rose-500"
+        style={{
+          left: line.x1,
+          top: line.y1,
+          width: isVertical ? "calc(1px * var(--canvas-inverse-zoom, 1))" : line.x2 - line.x1,
+          height: isVertical ? line.y2 - line.y1 : "calc(1px * var(--canvas-inverse-zoom, 1))",
+        }}
+      >
+        <span
+          className="absolute left-1/2 top-1/2 whitespace-nowrap rounded-sm bg-rose-500 px-1 text-[11px] font-medium tabular-nums text-white"
+          style={{ transform: "translate(-50%, -50%) scale(var(--canvas-inverse-zoom, 1))" }}
+        >
+          {line.length}
+        </span>
+      </div>
+    );
+  });
+}
 
 /** The outline drawn over a hovered or picked element, in page pixels. */
 function NodeBox({ node, variant }: { node: ReportedNode; variant: "hover" | "selected" }) {

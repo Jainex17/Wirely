@@ -13,7 +13,9 @@ It uses the agent subscription you already pay for. Wirely is free and open sour
 - **Watch designs appear live.** Pages fill in on the canvas as your agent writes them.
 - **Compare directions.** Ask for several options and see them next to each other.
 - **Edit like a design tool.** Pick any element to change its text, colors, size, spacing, and
-  radius. Drag it to reorder, drag its handles to resize, and double-click text to type into it.
+  radius, and shadow. Drag it to reorder, drag its handles to resize, and double-click text to type
+  into it. Moves and resizes snap to nearby edges and centers, and holding Alt shows the distance to
+  the element under the pointer.
   Each page in the pages panel opens into its layers, for hiding, nesting, duplicating, and deleting,
   and Cmd+Z undoes it all. Frame, rectangle, and text tools add new elements.
 - **Hand your edits back.** Your agent can read the page's layers, rearrange them by id, and ask
