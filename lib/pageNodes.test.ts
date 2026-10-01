@@ -11,6 +11,7 @@ import {
   setNodeColor,
   setNodeStyle,
   setNodeText,
+  SHADOW_PRESETS,
   stampNodeIds,
 } from "@/lib/pageNodes";
 
@@ -167,10 +168,16 @@ describe("inline styles", () => {
     expect(removed).toContain('style="background: url(&quot;a;b.png&quot;)"');
   });
 
+  it("reads back a preset shadow, whose value holds commas and slashes", () => {
+    const set = setNodeStyle(html, "h", "box-shadow", SHADOW_PRESETS.Medium) ?? "";
+    expect(getNodeStyle(set, "h")["box-shadow"]).toBe(SHADOW_PRESETS.Medium);
+  });
+
   it("rejects values outside the allowlist and missing elements", () => {
     expect(setNodeStyle(html, "h", "font-size", "1px; color: red")).toBeNull();
     expect(setNodeStyle(html, "h", "font-weight", "450")).toBeNull();
     expect(setNodeStyle(html, "missing", "gap", "4px")).toBeNull();
+    expect(setNodeStyle(html, "h", "box-shadow", "0 0 0 9999px url(x)")).toBeNull();
     expect(setNodeStyle(page('<p data-wirely-id="p">x</p>'), "p", "gap", null)).toBe(
       page('<p data-wirely-id="p">x</p>'),
     );
