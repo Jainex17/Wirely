@@ -20,6 +20,7 @@ import {
   listProjectsForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import { describeAgentCall } from "@/lib/agentActivity";
 import { recordAgentActivity } from "@/lib/db/queries/agentActivity";
 import {
   getAgentBaseline,
@@ -106,7 +107,14 @@ export const replaceExactlyOnce = (
 
 type ToolArgs = Record<string, unknown>;
 /** `origin` is the app origin the request came in on, for building links back to the editor. */
-type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<ToolCallResult>;
+/**
+ * A tool result plus what the activity tab should record when the arguments
+ * alone do not say, like the id of a page add_page created. `callTool` drops
+ * it before the result goes back to the agent.
+ */
+type HandlerResult = ToolCallResult & { activity?: { pageId?: string; detail?: string } };
+
+type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<HandlerResult>;
 
 const listProjects: ToolHandler = async (userId) => {
   const projects = await listProjectsForUser(userId);
@@ -211,11 +219,14 @@ const addPage: ToolHandler = async (userId, args) => {
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
   await setAgentBaseline(page.id, page.htmlContent);
 
-  return withWriteNotes(
-    `Added page "${page.title}" (id: ${page.id}) to "${project.title}".`,
-    sentHtml,
-    html,
-  );
+  return {
+    ...withWriteNotes(
+      `Added page "${page.title}" (id: ${page.id}) to "${project.title}".`,
+      sentHtml,
+      html,
+    ),
+    activity: { pageId: page.id },
+  };
 };
 
 const updatePage: ToolHandler = async (userId, args) => {
@@ -642,7 +653,10 @@ const deletePage: ToolHandler = async (userId, args) => {
   if (result.notFound || !result.deleted) {
     return fail("Page not found. Use list_pages for valid ids.");
   }
-  return succeed(`Deleted page "${result.deleted.title}".`);
+  return {
+    ...succeed(`Deleted page "${result.deleted.title}".`),
+    activity: { detail: `"${result.deleted.title}"` },
+  };
 };
 
 const resolveComment: ToolHandler = async (userId, args) => {
@@ -849,15 +863,16 @@ export const callTool = async (
     return fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
   }
 
-  let result: ToolCallResult;
+  let result: HandlerResult;
   try {
     result = await handler(userId, args, origin);
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });
     result = fail("The tool failed on the server. It has been logged; try again.");
   }
-  await recordActivity(userId, name, args, result);
-  return result;
+  const { activity, ...toolResult } = result;
+  await recordActivity(userId, name, args, toolResult, activity);
+  return toolResult;
 };
 
 /**
@@ -869,6 +884,7 @@ const recordActivity = async (
   tool: string,
   args: ToolArgs,
   result: ToolCallResult,
+  activity: HandlerResult["activity"],
 ) => {
   if (typeof args.projectId !== "string") return;
   const firstText = result.content.find((item) => item.type === "text");
@@ -877,8 +893,9 @@ const recordActivity = async (
       userId,
       projectId: args.projectId,
       tool,
-      pageId: typeof args.pageId === "string" ? args.pageId : null,
+      pageId: activity?.pageId ?? (typeof args.pageId === "string" ? args.pageId : null),
       error: result.isError && firstText?.type === "text" ? firstText.text.slice(0, 300) : null,
+      detail: result.isError ? null : (describeAgentCall(tool, args) ?? activity?.detail ?? null),
     });
   } catch (error) {
     if (!isMissingRelationError(error)) logger.error("mcp.activity_record_failed", { tool, error });

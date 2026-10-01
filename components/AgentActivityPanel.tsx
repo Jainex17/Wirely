@@ -5,12 +5,15 @@ import Link from "next/link";
 import {
   describeAgentTool,
   groupAgentActivity,
+  isReadTool,
   type AgentActivityEntry,
 } from "@/lib/agentActivity";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/useEditorStore";
 
 const POLL_INTERVAL_MS = 4_000;
+// Rows list this many of their folded calls' details before "and N more".
+const MAX_SHOWN_DETAILS = 3;
 // An agent that called a tool this recently is treated as still working.
 const WORKING_WINDOW_MS = 60_000;
 
@@ -102,29 +105,59 @@ export default function AgentActivityPanel({
         </span>
       </div>
       <ol className="min-h-0 flex-1 overflow-y-auto py-1">
-        {rows.map((row) => {
+        {rows.map((row, index) => {
           const pageTitle = row.pageId ? pageTitles.get(row.pageId) : undefined;
+          const isRead = isReadTool(row.tool);
+          const ago = formatAgo(row.createdAt, now);
+          // A burst of calls shares one time label, on its first row.
+          const showTime = index === 0 || formatAgo(rows[index - 1].createdAt, now) !== ago;
           return (
             <li key={row.id}>
+              {showTime ? (
+                <p className="px-4 pb-0.5 pt-2 text-[11px] text-muted-foreground">{ago}</p>
+              ) : null}
               <button
                 type="button"
                 disabled={!pageTitle}
                 onClick={() => row.pageId && focusPage(row.pageId)}
-                className="flex w-full flex-col gap-0.5 px-4 py-1.5 text-left text-xs enabled:hover:bg-foreground/5"
+                title={pageTitle ? `Go to "${pageTitle}"` : undefined}
+                className="flex w-full flex-col gap-0.5 px-4 py-1 text-left text-xs enabled:hover:bg-foreground/5"
               >
-                <span className="flex w-full items-baseline gap-1.5">
-                  <span className={cn("truncate", row.error ? "text-destructive" : "text-foreground")}>
+                <span className="flex w-full min-w-0 items-baseline gap-1.5">
+                  <span
+                    className={cn(
+                      "shrink-0",
+                      row.error
+                        ? "text-destructive"
+                        : isRead
+                          ? "text-muted-foreground"
+                          : "font-medium text-foreground",
+                    )}
+                  >
                     {describeAgentTool(row.tool)}
-                    {row.pageId ? ` ${pageTitle ? `"${pageTitle}"` : "a deleted page"}` : ""}
                     {row.error ? " failed" : ""}
                   </span>
-                  {row.count > 1 ? (
-                    <span className="shrink-0 text-muted-foreground">×{row.count}</span>
+                  {row.pageId ? (
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      {pageTitle ?? "a deleted page"}
+                    </span>
                   ) : null}
-                  <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-                    {formatAgo(row.createdAt, now)}
-                  </span>
+                  {row.count > 1 ? (
+                    <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                      {row.count}×
+                    </span>
+                  ) : null}
                 </span>
+                {row.details.slice(0, MAX_SHOWN_DETAILS).map((detail) => (
+                  <span key={detail} className="line-clamp-2 text-[11px] text-foreground/80">
+                    {detail}
+                  </span>
+                ))}
+                {row.details.length > MAX_SHOWN_DETAILS ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    and {row.details.length - MAX_SHOWN_DETAILS} more
+                  </span>
+                ) : null}
                 {row.error ? (
                   <span className="line-clamp-2 text-[11px] text-muted-foreground">{row.error}</span>
                 ) : null}

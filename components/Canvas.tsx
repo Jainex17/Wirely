@@ -393,6 +393,7 @@ export default function Canvas({
             pagePositions,
             pageStackOrder,
             pageGroups,
+            pageFrameHeights,
           }),
         );
       } catch (error) {
@@ -402,6 +403,7 @@ export default function Canvas({
   }, [
     camera,
     layoutStorageKey,
+    pageFrameHeights,
     pageGroups,
     pagePositions,
     pageStackOrder,
@@ -938,6 +940,7 @@ export default function Canvas({
                   renderMode={renderMode}
                   isElementMode={activeTool === "element" && !isSpacePanning}
                   isPenMode={activeTool === "pen" && !isSpacePanning}
+                  isCommentMode={activeTool === "comment" && !isSpacePanning}
                   onSavePageHtml={onSavePageHtml}
                   isMoveMode={activeTool === "select" && !isSpacePanning}
                   insertKind={isInsertTool(activeTool) && !isSpacePanning ? activeTool : null}

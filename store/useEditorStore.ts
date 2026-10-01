@@ -561,8 +561,19 @@ export const useEditorStore = create<EditorState>()(
         }),
       hydratePageLayout: (layout) =>
         set((state) => {
-          const { camera, pagePositions = {}, pageStackOrder = [], pageGroups = [] } = layout ?? {};
+          const {
+            camera,
+            pagePositions = {},
+            pageStackOrder = [],
+            pageGroups = [],
+            pageFrameHeights = {},
+          } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
+          const storedHeights = Object.fromEntries(
+            Object.entries(filterPageFrameHeights(pageFrameHeights, pageIds)).filter(
+              ([, height]) => typeof height === "number" && height >= 1 && height <= 20_000,
+            ),
+          );
 
           return {
             camera: camera
@@ -575,6 +586,8 @@ export const useEditorStore = create<EditorState>()(
             pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
+            // A height a frame already reported this session is newer.
+            pageFrameHeights: { ...storedHeights, ...state.pageFrameHeights },
             focusedPageId:
               state.focusedPageId && pageIds.includes(state.focusedPageId)
                 ? state.focusedPageId

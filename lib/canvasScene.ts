@@ -53,10 +53,10 @@ export interface SnapResult {
 export type PageRenderMode = "live" | "shell";
 
 /**
- * Move drags pages, hand pans, element picks an element inside a page, and pen
- * draws paths on a vector page.
+ * Move drags pages, hand pans, element picks an element inside a page, pen
+ * draws paths, and comment pins a comment to the element clicked.
  */
-export type CanvasTool = "select" | "grab" | "element" | "pen" | InsertKind;
+export type CanvasTool = "select" | "grab" | "element" | "pen" | "comment" | InsertKind;
 
 export const isInsertTool = (tool: CanvasTool): tool is InsertKind =>
   tool === "frame" || tool === "text" || tool === "rectangle";

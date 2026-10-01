@@ -69,6 +69,8 @@ export const MCP_INSTRUCTIONS = [
     "call get_page_changes and apply only the listed differences to the matching components.",
   "For structural changes (reorder, duplicate, delete, hide, wrap in a frame, insert a block), " +
     "call get_page_outline for node ids and use edit_element instead of rewriting the page.",
+  "Pass a short note with each change (add_page, update_page, patch_page, edit_element, " +
+    "delete_page, set_design_tokens) saying what it does. The user follows your work by these notes.",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -169,6 +171,12 @@ export interface McpToolDefinition {
 const idProperty = (description: string) => ({ type: "string", description });
 const PROJECT_ID = idProperty("A project id from list_projects or create_project.");
 const PAGE_ID = idProperty("A page id from list_pages, add_page, or create_project.");
+const NOTE = {
+  type: "string",
+  description:
+    "One short sentence on what this change does, in plain words, like \"Tighten the hero " +
+    "spacing\". The user reads it in the editor's activity list.",
+};
 
 const htmlDescription =
   "One complete, self-contained HTML document. For Tailwind utility classes to " +
@@ -236,6 +244,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
             "Defaults to desktop. Mobile frames render at 375px. Vector is an SVG artboard " +
             "framed at the SVG's own width and height, and is picked for you when html is an SVG file.",
         },
+        note: NOTE,
       },
       required: ["projectId", "title"],
       additionalProperties: false,
@@ -254,6 +263,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         title: { type: "string", description: "New screen name." },
         html: { type: "string", description: "The new page document." },
         deviceType: { type: "string", enum: ["desktop", "mobile", "vector"] },
+        note: NOTE,
       },
       required: ["projectId", "pageId"],
       additionalProperties: false,
@@ -279,6 +289,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           type: "string",
           description: "Replacement text. May be empty to delete oldString.",
         },
+        note: NOTE,
       },
       required: ["projectId", "pageId", "oldString", "newString"],
       additionalProperties: false,
@@ -349,6 +360,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           type: "string",
           description: "For insert: the HTML to add. Sanitized like any page write.",
         },
+        note: NOTE,
       },
       required: ["projectId", "pageId", "action", "nodeId"],
       additionalProperties: false,
@@ -474,6 +486,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
             "< > { } ; or \\.",
           additionalProperties: { type: "string" },
         },
+        note: NOTE,
       },
       required: ["projectId", "tokens"],
       additionalProperties: false,
@@ -508,7 +521,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       "Delete a page from a project. The last remaining page cannot be deleted.",
     inputSchema: {
       type: "object",
-      properties: { projectId: PROJECT_ID, pageId: PAGE_ID },
+      properties: { projectId: PROJECT_ID, pageId: PAGE_ID, note: NOTE },
       required: ["projectId", "pageId"],
       additionalProperties: false,
     },

@@ -9,6 +9,7 @@ import {
   Hand,
   LayoutGrid,
   Maximize,
+  MessageCircle,
   Minus,
   MousePointer2,
   PenTool,
@@ -126,11 +127,18 @@ export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolba
         <SquareDashedMousePointer className="h-4 w-4" />
       </RailButton>
       <RailButton
-        label="Pen (P), on vector pages"
+        label="Pen (P)"
         isActive={activeTool === "pen"}
         onClick={() => onToolChange("pen")}
       >
         <PenTool className="h-4 w-4" />
+      </RailButton>
+      <RailButton
+        label="Comment (C), click an element to comment on it"
+        isActive={activeTool === "comment"}
+        onClick={() => onToolChange("comment")}
+      >
+        <MessageCircle className="h-4 w-4" />
       </RailButton>
       <div className="mx-1 h-5 w-px bg-border" />
       <RailButton

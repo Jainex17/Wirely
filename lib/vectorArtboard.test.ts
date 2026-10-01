@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  appendPenPath,
   appendToArtboard,
   exportArtboardSvg,
   getArtboardMatrix,
@@ -55,5 +56,19 @@ describe("vector artboards", () => {
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="10"')).toBe(true);
     expect(svg).not.toContain("data-wirely");
     expect(svg.endsWith("</svg>")).toBe(true);
+  });
+
+  it("adds a pen stroke to an HTML page as a positioned svg that survives sanitizing", () => {
+    const page = "<!doctype html><html><body><main>Hi</main></body></html>";
+    const drawn = appendPenPath(page, '<path d="M10 20L30 40"/>');
+    expect(drawn).toContain('<path d="M10 20L30 40"/></svg></body>');
+    const stored = sanitizeIframeHtml(drawn);
+    expect(stored).toContain('<path d="M10 20L30 40"');
+    expect(stored).toMatch(/<svg[^>]*style="position:absolute;left:0;top:0;overflow:visible/);
+    // A vector page keeps drawing into its artboard.
+    const artboard = prepareArtboardHtml('<svg width="10" height="10"></svg>');
+    expect(appendPenPath(artboard, '<path d="M0 0"/>')).toBe(
+      appendToArtboard(artboard, '<path d="M0 0"/>') ?? "",
+    );
   });
 });

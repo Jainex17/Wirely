@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PageDeviceType } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
@@ -85,6 +85,13 @@ export default function WireEditor({
   const applyServerPageChanges = useEditorStore((state) => state.applyServerPageChanges);
   // Saving indicator hidden for now — restore with the header cloud icon.
   // const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
+
+  // Dialogs, menus, and toasts portal to <body>, outside the editor's root,
+  // so the editor palette goes on <body> too while the editor is open.
+  useEffect(() => {
+    document.body.classList.add("editor-theme");
+    return () => document.body.classList.remove("editor-theme");
+  }, []);
 
   useEffect(() => {
     hydrateProject(
@@ -283,12 +290,16 @@ export default function WireEditor({
     />
   );
 
-  const handleEditPage = (pageId: string) => {
-    // The sidebar targets the focused page when the prompt names no other.
-    setFocusedPage(pageId);
-    setSidebarTab("chat");
-    setPromptFocusRequestKey((currentKey) => currentKey + 1);
-  };
+  // Stable, because Canvas passes it to every memoized page frame.
+  const handleEditPage = useCallback(
+    (pageId: string) => {
+      // The sidebar targets the focused page when the prompt names no other.
+      setFocusedPage(pageId);
+      setSidebarTab("chat");
+      setPromptFocusRequestKey((currentKey) => currentKey + 1);
+    },
+    [setFocusedPage],
+  );
 
   const promptPanelToggle = (
     <Button

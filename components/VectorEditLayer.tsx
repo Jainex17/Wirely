@@ -4,7 +4,7 @@ import React from "react";
 import type { ReportedNode } from "@/lib/nodePicker";
 import { getNodeAttribute, setNodeAttribute, stampNodeIds } from "@/lib/pageNodes";
 import { scaleFromZoom } from "@/lib/canvasScene";
-import { appendToArtboard, getArtboardMatrix } from "@/lib/vectorArtboard";
+import { appendPenPath, getArtboardMatrix } from "@/lib/vectorArtboard";
 import {
   applyMatrix,
   buildPenPath,
@@ -67,7 +67,7 @@ const describeHandles = (segments: Segment[]) => {
 };
 
 /**
- * The pen tool and path editing on a vector page. Drawn over the sandboxed
+ * The pen tool on any page, and path editing on a vector page. Drawn over the sandboxed
  * frame in page px, from geometry parsed out of the page source, so nothing
  * from the page itself renders in the editor's origin.
  *
@@ -123,7 +123,7 @@ export default function VectorEditLayer({
       penDragRef.current = null;
       if (anchors.length < 2) return;
       const strokeWidth = Math.round((2 / Math.abs(artboard[0] || 1)) * 100) / 100;
-      const next = appendToArtboard(
+      const next = appendPenPath(
         source,
         `<path d="${buildPenPath(anchors, closed)}" fill="none" stroke="#18181b" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`,
       );

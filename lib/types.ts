@@ -63,4 +63,6 @@ export interface PersistedWireLayout {
   pagePositions?: PagePositionMap;
   pageStackOrder?: string[];
   pageGroups?: PageGroup[];
+  /** Last measured height of each page, so frames open at their real height. */
+  pageFrameHeights?: Record<string, number>;
 }

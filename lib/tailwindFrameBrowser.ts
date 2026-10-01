@@ -11,6 +11,12 @@ let sources: Promise<TailwindSources> | null = null;
 const CACHE_LIMIT = 60;
 const cache = new Map<string, Promise<string>>();
 
+// Compiles run one at a time, each in its own task. A project opening with
+// six pages would otherwise compile them back to back in one long task and
+// freeze the editor; yielding between them also staggers the frame mounts.
+let queue: Promise<unknown> = Promise.resolve();
+const yieldToBrowser = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 /** Resolves to the page with compiled CSS, or to the page unchanged if compiling fails. */
 export const precompileFrameHtml = (html: string) => {
   const cached = cache.get(html);
@@ -27,13 +33,14 @@ export const precompileFrameHtml = (html: string) => {
       throw error;
     });
 
-  const result = Promise.all([sources, import("@/lib/tailwindFrame")])
+  const result = Promise.all([sources, import("@/lib/tailwindFrame"), queue.then(yieldToBrowser)])
     .then(([loaded, { precompileTailwind }]) => precompileTailwind(html, loaded))
     .catch(() => {
       // The runtime still styles the page, and the next render may compile.
       cache.delete(html);
       return html;
     });
+  queue = result;
   cache.set(html, result);
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value ?? "");
   return result;

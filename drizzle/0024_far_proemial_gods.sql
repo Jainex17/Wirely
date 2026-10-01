@@ -1,0 +1,1 @@
+ALTER TABLE "project_agent_activity" ADD COLUMN "detail" text;

@@ -60,6 +60,18 @@ describe("useEditorStore canvas state", () => {
     });
   });
 
+  it("restores saved frame heights for current pages, but not over a fresh measurement", () => {
+    useEditorStore.setState({
+      pages: ["page-1", "page-2"].map((id) => ({ id, title: id, sections: [] })),
+      pageFrameHeights: { "page-2": 1800 },
+    });
+    useEditorStore.getState().hydratePageLayout({
+      pageFrameHeights: { "page-1": 4200, "page-2": 900, gone: 3000, "page-3": Number.NaN },
+    });
+
+    expect(useEditorStore.getState().pageFrameHeights).toEqual({ "page-1": 4200, "page-2": 1800 });
+  });
+
   it("updates frame heights and focuses a page using the current zoom", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: 0, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 2200, y: 0 });
