@@ -20,6 +20,7 @@ import {
   CANVAS_TOP_OFFSET,
   clampZoom,
   getDefaultPageX,
+  getEdgePanVelocity,
   getPageBounds,
   getPageFrameHeight,
   getPageFrameWidth,
@@ -101,6 +102,7 @@ interface PointerDragState {
   startClientX: number;
   startClientY: number;
   initialPosition: ScenePoint;
+  initialCamera: CameraState;
   hasMoved: boolean;
 }
 
@@ -108,6 +110,7 @@ interface GroupDragState {
   pointerId: number;
   startClientX: number;
   startClientY: number;
+  initialCamera: CameraState;
   initialPositions: Record<string, ScenePoint>;
 }
 
@@ -146,6 +149,23 @@ const getCenter = (points: ScenePoint[]) => ({
   y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
 });
 
+/**
+ * How far a drag has carried its item in scene pixels. The canvas can pan
+ * under a held pointer, so the pan since the drag began counts as movement.
+ */
+const getDragDelta = (
+  drag: { startClientX: number; startClientY: number; initialCamera: CameraState },
+  clientX: number,
+  clientY: number,
+  scale: number,
+) => {
+  const { camera } = useEditorStore.getState();
+  return {
+    x: (clientX - drag.startClientX - (camera.x - drag.initialCamera.x)) / scale,
+    y: (clientY - drag.startClientY - (camera.y - drag.initialCamera.y)) / scale,
+  };
+};
+
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
@@ -180,6 +200,7 @@ export default function Canvas({
     selectedNode,
     setSelectedNode,
     setCamera,
+    panBy,
     setPagePosition,
     setPagePositions,
     groupPages,
@@ -205,6 +226,7 @@ export default function Canvas({
       selectedNode: state.selectedNode,
       setSelectedNode: state.setSelectedNode,
       setCamera: state.setCamera,
+      panBy: state.panBy,
       setPagePosition: state.setPagePosition,
       setPagePositions: state.setPagePositions,
       groupPages: state.groupPages,
@@ -224,6 +246,12 @@ export default function Canvas({
   const pageDragStateRef = React.useRef<PointerDragState | null>(null);
   const groupDragStateRef = React.useRef<GroupDragState | null>(null);
   const panStateRef = React.useRef<CanvasPanState | null>(null);
+  const edgePanRef = React.useRef<{
+    clientX: number;
+    clientY: number;
+    redrag: (clientX: number, clientY: number) => void;
+    frame: number | null;
+  } | null>(null);
   const pointersRef = React.useRef<Map<number, ScenePoint>>(new Map());
   const pinchStateRef = React.useRef<PinchState | null>(null);
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
@@ -630,6 +658,42 @@ export default function Canvas({
     [activeTool, setFocusedPage],
   );
 
+  // While a page or group is held near the canvas edge, pan one step a frame
+  // and move the held item with the pan, so it can be dropped beyond the view.
+  const panAtEdge = React.useCallback(
+    (clientX: number, clientY: number, redrag: (clientX: number, clientY: number) => void) => {
+      const state = edgePanRef.current ?? { clientX, clientY, redrag, frame: null };
+      Object.assign(state, { clientX, clientY, redrag });
+      edgePanRef.current = state;
+      if (state.frame !== null) return;
+
+      const step = () => {
+        const current = edgePanRef.current;
+        const canvas = canvasRef.current;
+        if (!current || !canvas) return;
+        current.frame = null;
+        const velocity = getEdgePanVelocity(
+          { x: current.clientX, y: current.clientY },
+          canvas.getBoundingClientRect(),
+        );
+        if (velocity.x === 0 && velocity.y === 0) return;
+        panBy({ x: -velocity.x, y: -velocity.y });
+        current.redrag(current.clientX, current.clientY);
+        current.frame = window.requestAnimationFrame(step);
+      };
+      state.frame = window.requestAnimationFrame(step);
+    },
+    [canvasRef, panBy],
+  );
+
+  const stopEdgePan = React.useCallback(() => {
+    const frame = edgePanRef.current?.frame;
+    if (frame != null) window.cancelAnimationFrame(frame);
+    edgePanRef.current = null;
+  }, []);
+
+  React.useEffect(() => stopEdgePan, [stopEdgePan]);
+
   const handlePagePointerDown = React.useCallback(
     (pageId: string) => (event: React.PointerEvent<HTMLDivElement>) => {
       if (
@@ -658,6 +722,7 @@ export default function Canvas({
               y: pageBoundsById[pageId].top,
             }
           : { x: 0, y: 0 },
+        initialCamera: useEditorStore.getState().camera,
         hasMoved: false,
       };
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -690,37 +755,44 @@ export default function Canvas({
       dragState.hasMoved = true;
       setDraggingPageId(pageId);
 
-      const candidatePosition = {
-        x: dragState.initialPosition.x + viewportDeltaX / scale,
-        y: dragState.initialPosition.y + viewportDeltaY / scale,
-      };
       const draggedLayout = pageLayouts.find(
         (layout) => layout.page.id === pageId,
       );
-      const snapped = getSnappedPagePosition({
-        movingPageId: pageId,
-        position: candidatePosition,
-        width:
-          draggedLayout?.currentDevice.width ??
-          pageBoundsById[pageId]?.width ??
-          getPageFrameWidth(resolvePageFrameDevice(undefined, activeDevice)),
-        height:
-          pageBoundsById[pageId]?.height ??
-          draggedLayout?.frameHeight ??
-          0,
-        otherPages: pageLayouts.map((pageLayout) => pageLayout.bounds),
-        scale,
-        disabled: event.metaKey || event.ctrlKey,
-      });
+      const isSnapDisabled = event.metaKey || event.ctrlKey;
+      const movePage = (clientX: number, clientY: number) => {
+        const delta = getDragDelta(dragState, clientX, clientY, scale);
+        const snapped = getSnappedPagePosition({
+          movingPageId: pageId,
+          position: {
+            x: dragState.initialPosition.x + delta.x,
+            y: dragState.initialPosition.y + delta.y,
+          },
+          width:
+            draggedLayout?.currentDevice.width ??
+            pageBoundsById[pageId]?.width ??
+            getPageFrameWidth(resolvePageFrameDevice(undefined, activeDevice)),
+          height:
+            pageBoundsById[pageId]?.height ??
+            draggedLayout?.frameHeight ??
+            0,
+          otherPages: pageLayouts.map((pageLayout) => pageLayout.bounds),
+          scale,
+          disabled: isSnapDisabled,
+        });
 
-      setPagePosition(pageId, snapped.position);
-      setSnapGuides(snapped.guides);
+        setPagePosition(pageId, snapped.position);
+        setSnapGuides(snapped.guides);
+      };
+
+      movePage(event.clientX, event.clientY);
+      panAtEdge(event.clientX, event.clientY, movePage);
       event.preventDefault();
     },
     [
       activeDevice,
       pageBoundsById,
       pageLayouts,
+      panAtEdge,
       scale,
       setPagePosition,
     ],
@@ -735,6 +807,7 @@ export default function Canvas({
       }
 
       pageDragStateRef.current = null;
+      stopEdgePan();
       setDraggingPageId(null);
       setSnapGuides([]);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -742,7 +815,7 @@ export default function Canvas({
       }
       event.preventDefault();
     },
-    [],
+    [stopEdgePan],
   );
 
   const handleMeasuredHeightChange = React.useCallback(
@@ -799,6 +872,7 @@ export default function Canvas({
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        initialCamera: useEditorStore.getState().camera,
         initialPositions: Object.fromEntries(
           pageIds.flatMap((pageId) => {
             const bounds = pageBoundsById[pageId];
@@ -816,27 +890,31 @@ export default function Canvas({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const dragState = groupDragStateRef.current;
       if (!dragState || dragState.pointerId !== event.pointerId) return;
-      const deltaX = (event.clientX - dragState.startClientX) / scale;
-      const deltaY = (event.clientY - dragState.startClientY) / scale;
-      setPagePositions(
-        Object.fromEntries(
-          Object.entries(dragState.initialPositions).map(([pageId, position]) => [
-            pageId,
-            { x: position.x + deltaX, y: position.y + deltaY },
-          ]),
-        ),
-      );
+      const moveGroup = (clientX: number, clientY: number) => {
+        const delta = getDragDelta(dragState, clientX, clientY, scale);
+        setPagePositions(
+          Object.fromEntries(
+            Object.entries(dragState.initialPositions).map(([pageId, position]) => [
+              pageId,
+              { x: position.x + delta.x, y: position.y + delta.y },
+            ]),
+          ),
+        );
+      };
+      moveGroup(event.clientX, event.clientY);
+      panAtEdge(event.clientX, event.clientY, moveGroup);
     },
-    [scale, setPagePositions],
+    [panAtEdge, scale, setPagePositions],
   );
 
   const stopGroupDrag = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (groupDragStateRef.current?.pointerId !== event.pointerId) return;
     groupDragStateRef.current = null;
+    stopEdgePan();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, []);
+  }, [stopEdgePan]);
 
   const handlePageContextEdit = React.useCallback(
     (pageId: string) => {

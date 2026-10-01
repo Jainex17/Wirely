@@ -5,6 +5,7 @@ import {
   createBounds,
   createDefaultCamera,
   fitBounds,
+  getEdgePanVelocity,
   getPageBounds,
   selectLivePages,
   getSnappedPagePosition,
@@ -20,6 +21,17 @@ import {
 } from "@/lib/canvasScene";
 
 describe("canvasScene helpers", () => {
+  it("pans toward the edge a dragged item is held against", () => {
+    const canvas = createBounds(100, 50, 1000, 600);
+
+    expect(getEdgePanVelocity({ x: 600, y: 350 }, canvas)).toEqual({ x: 0, y: 0 });
+    // Halfway into the right edge zone is half speed; past the edge is full speed.
+    expect(getEdgePanVelocity({ x: 976, y: 350 }, canvas)).toEqual({ x: 10, y: 0 });
+    expect(getEdgePanVelocity({ x: 1300, y: 350 }, canvas)).toEqual({ x: 20, y: 0 });
+    // The top left corner pans up and left at once.
+    expect(getEdgePanVelocity({ x: 100, y: 0 }, canvas)).toEqual({ x: -20, y: -20 });
+  });
+
   it("round-trips scene and viewport coordinates", () => {
     const camera = { x: 120, y: -80, zoom: 75 };
     const viewport = { width: 1200, height: 800 };
