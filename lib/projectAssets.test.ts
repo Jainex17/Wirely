@@ -3,6 +3,7 @@ import sharp from "sharp";
 
 import {
   AssetRejectedError,
+  checkAssetQuota,
   cleanAssetName,
   compressImage,
   createAssetUploadPath,
@@ -73,5 +74,27 @@ describe("assets in pages", () => {
   it("cleans names that could break out of an attribute", () => {
     expect(cleanAssetName('logo"><script>.png')).toBe("logoscript.png");
     expect(cleanAssetName("   ")).toBe("image");
+  });
+});
+
+describe("checkAssetQuota", () => {
+  const MB = 1024 * 1024;
+
+  it("lets an image in while the project and the user are under their limits", () => {
+    expect(
+      checkAssetQuota({ projectImageCount: 29, userStoredBytes: 20 * MB, newBytes: 5 * MB }),
+    ).toBeNull();
+  });
+
+  it("refuses a 31st image in one project", () => {
+    expect(
+      checkAssetQuota({ projectImageCount: 30, userStoredBytes: 0, newBytes: 1 }),
+    ).toContain("30 images");
+  });
+
+  it("refuses an image that would take the user past 25 MB across projects", () => {
+    expect(
+      checkAssetQuota({ projectImageCount: 0, userStoredBytes: 24.5 * MB, newBytes: MB }),
+    ).toContain("24.5 MB is used");
   });
 });

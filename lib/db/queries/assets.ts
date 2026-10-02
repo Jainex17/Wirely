@@ -1,12 +1,12 @@
-import { and, asc, count, eq, getTableColumns } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, sql, sum } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { projectAssets, projects } from "@/lib/db/schema";
 import {
   AssetRejectedError,
+  checkAssetQuota,
   cleanAssetName,
   compressImage,
-  MAX_ASSETS_PER_PROJECT,
   MAX_STORED_BYTES,
 } from "@/lib/projectAssets";
 
@@ -39,26 +39,6 @@ export const saveProjectAsset = async ({
   name: string | null;
   bytes: Buffer;
 }): Promise<ProjectAssetSummary | null> => {
-  const db = getDb();
-  const [project] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-    .limit(1);
-  if (!project) return null;
-
-  // ponytail: count then insert can race past the cap by a request or two; a
-  // trigger would close it if abuse ever shows up.
-  const [{ total }] = await db
-    .select({ total: count() })
-    .from(projectAssets)
-    .where(eq(projectAssets.projectId, projectId));
-  if (total >= MAX_ASSETS_PER_PROJECT) {
-    throw new AssetRejectedError(
-      `A project holds up to ${MAX_ASSETS_PER_PROJECT} images. Delete one to add another.`,
-    );
-  }
-
   const image = await compressImage(bytes);
   if (image.data.byteLength > MAX_STORED_BYTES) {
     throw new AssetRejectedError(
@@ -66,19 +46,48 @@ export const saveProjectAsset = async ({
     );
   }
 
-  const [asset] = await db
-    .insert(projectAssets)
-    .values({
-      projectId,
-      name: cleanAssetName(name),
-      mimeType: image.mimeType,
-      byteSize: image.data.byteLength,
-      width: image.width,
-      height: image.height,
-      data: image.data,
-    })
-    .returning(assetSummaryColumns);
-  return asset ?? null;
+  return getDb().transaction(async (tx) => {
+    // Holds this user's other uploads until this one commits, so two at once
+    // cannot both pass the limits on the same totals.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`asset-upload:${userId}`}))`);
+
+    const [project] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+      .limit(1);
+    if (!project) return null;
+
+    const [{ projectImageCount }] = await tx
+      .select({ projectImageCount: count() })
+      .from(projectAssets)
+      .where(eq(projectAssets.projectId, projectId));
+    const [{ userStoredBytes }] = await tx
+      .select({ userStoredBytes: sum(projectAssets.byteSize).mapWith(Number) })
+      .from(projectAssets)
+      .innerJoin(projects, eq(projects.id, projectAssets.projectId))
+      .where(eq(projects.userId, userId));
+    const rejection = checkAssetQuota({
+      projectImageCount,
+      userStoredBytes: userStoredBytes ?? 0,
+      newBytes: image.data.byteLength,
+    });
+    if (rejection) throw new AssetRejectedError(rejection);
+
+    const [asset] = await tx
+      .insert(projectAssets)
+      .values({
+        projectId,
+        name: cleanAssetName(name),
+        mimeType: image.mimeType,
+        byteSize: image.data.byteLength,
+        width: image.width,
+        height: image.height,
+        data: image.data,
+      })
+      .returning(assetSummaryColumns);
+    return asset ?? null;
+  });
 };
 
 export const deleteProjectAssetForUser = async ({

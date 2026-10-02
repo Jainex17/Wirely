@@ -17,6 +17,12 @@ export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 /** What one image may take in the database after compression. */
 export const MAX_STORED_BYTES = 1.5 * 1024 * 1024;
 export const MAX_ASSETS_PER_PROJECT = 30;
+/**
+ * Everything one user's images may take across all their projects. Images
+ * share the app's one small Postgres database, so without this one account
+ * could fill it for everyone.
+ */
+export const MAX_STORED_BYTES_PER_USER = 25 * 1024 * 1024;
 /** Longest side kept. Larger photos are scaled down, which a design never shows anyway. */
 const MAX_DIMENSION = 2560;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
@@ -69,6 +75,29 @@ export const compressImage = async (input: Buffer) => {
   return data.byteLength < input.byteLength || resized
     ? { data, mimeType: "image/webp", width: info.width, height: info.height }
     : original;
+};
+
+/** Why one more image of `newBytes` cannot be stored, or null when it fits both limits. */
+export const checkAssetQuota = ({
+  projectImageCount,
+  userStoredBytes,
+  newBytes,
+}: {
+  projectImageCount: number;
+  userStoredBytes: number;
+  newBytes: number;
+}) => {
+  if (projectImageCount >= MAX_ASSETS_PER_PROJECT) {
+    return `A project holds up to ${MAX_ASSETS_PER_PROJECT} images. Delete one to add another.`;
+  }
+  if (userStoredBytes + newBytes > MAX_STORED_BYTES_PER_USER) {
+    const usedMb = (userStoredBytes / 1024 / 1024).toFixed(1);
+    return (
+      `Your images across all projects can take up to ${MAX_STORED_BYTES_PER_USER / 1024 / 1024} MB, ` +
+      `and ${usedMb} MB is used. Delete some images to add this one.`
+    );
+  }
+  return null;
 };
 
 /** A readable file name, since agents and the sidebar both show it. */
