@@ -79,6 +79,20 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).toContain('href="#"');
   });
 
+  it("keeps project images and allows the app origin for them in a browser", () => {
+    const html = '<img src="/api/assets/3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b"><img src="/api/other">';
+    expect(sanitizeIframeHtml(html)).toContain("/api/assets/3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b");
+    expect(sanitizeIframeHtml(html)).not.toContain("/api/other");
+
+    const globals = globalThis as { location?: { origin: string } };
+    globals.location = { origin: "https://wirely.site" };
+    try {
+      expect(sanitizeIframeHtml(html)).toMatch(/img-src [^;]*https:\/\/wirely\.site/);
+    } finally {
+      delete globals.location;
+    }
+  });
+
   it("removes image tags from disallowed hosts", () => {
     const html = `
       <img src="https://images.unsplash.com/photo-1" alt="ok" />

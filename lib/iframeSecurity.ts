@@ -1,3 +1,5 @@
+import { ASSET_PATH_PATTERN } from "@/lib/assetPaths";
+
 const ALLOWED_EXTERNAL_SCRIPT_PATTERNS = [
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser@4(?:[?#].*)?$/i,
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/@tailwindplus\/elements@1(?:[?#].*)?$/i,
@@ -9,11 +11,15 @@ const ALLOWED_IMAGE_HOSTS = ["images.unsplash.com", "plus.unsplash.com"] as cons
 const UNSAFE_INLINE_SCRIPT_PATTERN =
   /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon|websocket|eventsource|broadcastchannel|sharedworker|worker|window\.location|document\.location)\b|window\.(?:top|parent)|\bnew\s+Image\s*\(|(?:^|[^\w$])Image\s*\(|(?:^|[^\w$.])postMessage\s*\(|\.\s*src\s*=/i;
 
-const IFRAME_CSP = [
+// Project images load from the editor's own origin. A sandboxed frame's
+// origin is opaque, so 'self' would match nothing and the origin is named
+// instead. It is only known in a browser; the server writes the policy
+// without it, and every render sanitizes again with it.
+const buildIframeCsp = (appOrigin: string | null) => [
   "default-src 'none'",
   "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
   "style-src https://cdn.jsdelivr.net 'unsafe-inline'",
-  `img-src ${ALLOWED_IMAGE_HOSTS.map((host) => `https://${host}`).join(" ")} data: blob:`,
+  `img-src ${ALLOWED_IMAGE_HOSTS.map((host) => `https://${host}`).join(" ")}${appOrigin ? ` ${appOrigin}` : ""} data: blob:`,
   "font-src https: data:",
   "connect-src 'none'",
   "frame-src 'none'",
@@ -22,7 +28,13 @@ const IFRAME_CSP = [
   "form-action 'none'",
 ].join("; ");
 
-const IFRAME_CSP_META_TAG = `<meta http-equiv="Content-Security-Policy" content="${IFRAME_CSP}">`;
+const readAppOrigin = () => {
+  const origin = (globalThis as { location?: { origin?: string } }).location?.origin;
+  return origin && /^https?:\/\/[a-z0-9.:[\]-]+$/i.test(origin) ? origin : null;
+};
+
+const buildCspMetaTag = () =>
+  `<meta http-equiv="Content-Security-Policy" content="${buildIframeCsp(readAppOrigin())}">`;
 
 export const DISALLOWED_CONTAINER_TAGS = [
   "iframe",
@@ -90,6 +102,7 @@ const parseAttributeValue = (value: string) =>
 const isAllowedImageUrl = (value: string) => {
   if (!value) return false;
   if (value.startsWith("data:") || value.startsWith("blob:")) return true;
+  if (ASSET_PATH_PATTERN.test(value)) return true;
   try {
     const parsed = new URL(value);
     return (
@@ -136,6 +149,7 @@ const sanitizeImageSources = (value: string) =>
     });
 
 const ensureIframeCspMeta = (value: string) => {
+  const IFRAME_CSP_META_TAG = buildCspMetaTag();
   const withoutExistingCsp = value.replace(
     /<meta\b[^>]*http-equiv\s*=\s*("|\')content-security-policy\1[^>]*>/gi,
     "",

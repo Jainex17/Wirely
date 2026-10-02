@@ -21,6 +21,9 @@ import {
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
 import { describeAgentCall } from "@/lib/agentActivity";
+import { assetPath } from "@/lib/assetPaths";
+import { getAssetData, listProjectAssetsForUser } from "@/lib/db/queries/assets";
+import { createAssetUploadPath, inlineAssets } from "@/lib/projectAssets";
 import { recordAgentActivity } from "@/lib/db/queries/agentActivity";
 import {
   getAgentBaseline,
@@ -581,7 +584,11 @@ const getPagePng: ToolHandler = async (userId, args) => {
   }
 
   try {
-    const png = await renderPagePng(page.htmlContent, page.deviceType, parsed.data.lint ?? false);
+    const png = await renderPagePng(
+      await inlineAssets(page.htmlContent, getAssetData),
+      page.deviceType,
+      parsed.data.lint ?? false,
+    );
     return {
       content: [
         {
@@ -634,6 +641,49 @@ const listComments: ToolHandler = async (userId, args) => {
     );
   }
   return succeed(JSON.stringify(comments));
+};
+
+const addAsset: ToolHandler = async (userId, args, origin) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const link = `${origin}${createAssetUploadPath({ projectId: project.id, userId })}`;
+  return succeed(
+    "Upload the image from the user's disk with one shell command, replacing FILE:\n" +
+      `curl -sS -T "FILE" "${link}&name=$(basename "FILE")"\n` +
+      "It prints JSON with src. Use that src as-is in <img src> or an SVG <image href>. " +
+      "The link works for 15 minutes and takes images up to 4 MB.",
+  );
+};
+
+const listAssets: ToolHandler = async (userId, args) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  let assets: Awaited<ReturnType<typeof listProjectAssetsForUser>>;
+  try {
+    assets = await listProjectAssetsForUser(project.id, userId);
+  } catch (error) {
+    if (!isMissingRelationError(error)) throw error;
+    return fail("Images are not set up on this Wirely server yet.");
+  }
+  if (assets.length === 0) return succeed(`"${project.title}" has no images yet. Use add_asset.`);
+  return succeed(
+    JSON.stringify(
+      assets.map((asset) => ({
+        name: asset.name,
+        src: assetPath(asset.id),
+        width: asset.width,
+        height: asset.height,
+      })),
+    ),
+  );
 };
 
 const deletePage: ToolHandler = async (userId, args) => {
@@ -846,6 +896,8 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   get_design_tokens: getDesignTokensHandler,
   set_design_tokens: setDesignTokensHandler,
   import_url: importUrl,
+  add_asset: addAsset,
+  list_assets: listAssets,
   delete_page: deletePage,
 };
 
