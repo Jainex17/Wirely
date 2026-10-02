@@ -46,7 +46,6 @@ import { commitPageEdit, moveElement } from "@/store/pageEdits";
 import ElementEditLayer from "./ElementEditLayer";
 import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
-import CanvasCommentPins from "./CanvasCommentPins";
 import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
 import PageHistoryDialog from "./PageHistoryDialog";
@@ -82,6 +81,8 @@ const AGENT_CURSOR_LINGER_MS = 3_000;
 // Each replay step reloads the frame, so steps come no faster than the frame
 // can repaint without flashing. Ten steps cap a replay near three seconds.
 const REVEAL_STEP_MS = 300;
+/** Where the design starts below the frame's top: the 50px title row plus the 4px column gap. */
+export const PAGE_FRAME_TOP = 54;
 
 const stabilizeViewportHeightClasses = (
   html: string,
@@ -1500,7 +1501,6 @@ export default React.memo(function PageRenderer({
               </span>
             </div>
           ) : null}
-          {projectId ? <CanvasCommentPins pageId={page.id} projectId={projectId} /> : null}
           {commentDraft ? (
             <div
               ref={commentDraftRef}
@@ -1703,10 +1703,10 @@ export default React.memo(function PageRenderer({
               <span className="rounded-md bg-muted/60 px-2 py-1 text-xs tabular-nums text-muted-foreground">
                 {previewWidth} x {previewFrameHeight}
               </span>
-              {/* A plain button writing state directly, not DialogClose: after
-                  clicking inside the preview frame, Radix's focus bookkeeping
-                  has already eaten close clicks once, and the controlled state
-                  is the source of truth anyway. */}
+              {/* Writes the controlled state directly, which is the source of
+                  truth. Close clicks were once lost because the canvas took
+                  pointer capture on events bubbling out of this portal; see
+                  isFromPortal in Canvas.tsx. */}
               <Button
                 type="button"
                 variant="ghost"
