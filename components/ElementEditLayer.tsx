@@ -60,6 +60,9 @@ export default function ElementEditLayer({
   onDoubleClick,
 }: ElementEditLayerProps) {
   const [gesture, setGesture] = React.useState<Gesture | null>(null);
+  // Mirrors `gesture.moved` without waiting for a render, so a release right
+  // after the first preview still saves it.
+  const movedRef = React.useRef(false);
   const layout = node.layout;
 
   const begin = (event: React.PointerEvent, next: Gesture) => {
@@ -67,6 +70,7 @@ export default function ElementEditLayer({
     // Keeps the canvas from dragging the whole page.
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    movedRef.current = false;
     setGesture(next);
   };
 
@@ -136,6 +140,7 @@ export default function ElementEditLayer({
     const dx = point.x - gesture.start.x;
     const dy = point.y - gesture.start.y;
     if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    movedRef.current = true;
 
     if (gesture.kind === "resize") {
       const { style, guides } = resolve(gesture, point);
@@ -158,12 +163,13 @@ export default function ElementEditLayer({
     if (!gesture) return;
     setGesture(null);
     const point = toPagePoint(event.clientX, event.clientY);
+    const moved = gesture.moved || movedRef.current;
 
     if (gesture.kind === "resize") {
-      if (gesture.moved) onCommitStyle(resolve(gesture, point).style);
+      if (moved) onCommitStyle(resolve(gesture, point).style);
       return;
     }
-    if (!gesture.moved) {
+    if (!moved) {
       onClick(point);
       return;
     }
