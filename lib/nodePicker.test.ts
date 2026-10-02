@@ -25,6 +25,7 @@ describe("parseReportedNode", () => {
       parentId: "p1",
       axis: "row" as const,
       siblings: [{ nodeId: "1x9k3fz", x: 0, y: 0, width: 10, height: 10 }],
+      parentBox: { x: 0, y: 0, width: 100, height: 50 },
       isAbsolute: false,
       left: 0,
       top: 0,

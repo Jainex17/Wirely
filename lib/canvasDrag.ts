@@ -4,7 +4,8 @@
  * before or after it by which half of it the pointer is over. Works for rows,
  * columns, wrapped rows, and grids alike.
  */
-import type { NodeBox } from "@/lib/nodePicker";
+import { getPageBounds, getSnappedPagePosition, type SnapGuide } from "@/lib/canvasScene";
+import type { NodeBox, NodeLayout } from "@/lib/nodePicker";
 
 export interface DropTarget {
   targetId: string;
@@ -66,4 +67,36 @@ export const findDropTarget = (
         height: LINE_PX,
       };
   return { targetId: nearest.nodeId, position, line };
+};
+
+/**
+ * Snaps a box inside a page to its siblings' and parent's edges and centers,
+ * with the same rules the canvas uses for pages. A resize passes the dragged
+ * corner as a box with no size. Returns the shift and the guides, in page px.
+ */
+export const snapElementBox = (
+  box: Omit<NodeBox, "nodeId">,
+  selfId: string,
+  layout: NodeLayout,
+  /** Screen px per page px, so the snap distance stays the same on screen at any zoom. */
+  scale: number,
+): { dx: number; dy: number; guides: SnapGuide[] } => {
+  const toBounds = (pageId: string, target: Omit<NodeBox, "nodeId">) =>
+    getPageBounds({
+      pageId,
+      position: { x: target.x, y: target.y },
+      width: target.width,
+      height: target.height,
+    });
+  const targets = layout.siblings.map((sibling) => toBounds(sibling.nodeId, sibling));
+  if (layout.parentBox) targets.push(toBounds("", layout.parentBox));
+  const { position, guides } = getSnappedPagePosition({
+    movingPageId: selfId,
+    position: { x: box.x, y: box.y },
+    width: box.width,
+    height: box.height,
+    otherPages: targets,
+    scale,
+  });
+  return { dx: position.x - box.x, dy: position.y - box.y, guides };
 };

@@ -9,6 +9,7 @@ import {
   Eye,
   FileCode2,
   FileIcon,
+  FileText,
   History,
   MessageSquarePlus,
   ImageIcon,
@@ -43,6 +44,7 @@ import {
 } from "@/lib/pageNodes";
 import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, moveElement } from "@/store/pageEdits";
+import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
 import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
@@ -638,10 +640,11 @@ export default React.memo(function PageRenderer({
     }
   }, [page.deviceType, page.id, page.title, projectId]);
 
-  const fetchPagePng = React.useCallback(
-    async (scale = 1) => {
+  /** A server render of the saved page: a PNG at 1x by default, `scale=2`, or `format=pdf`. */
+  const fetchPageRender = React.useCallback(
+    async (query = "") => {
       const response = await fetch(
-        `/api/projects/${projectId}/pages/${page.id}/png${scale > 1 ? `?scale=${scale}` : ""}`,
+        `/api/projects/${projectId}/pages/${page.id}/png${query ? `?${query}` : ""}`,
         { cache: "no-store" },
       );
       if (!response.ok) {
@@ -657,7 +660,7 @@ export default React.memo(function PageRenderer({
   const copyImage = React.useCallback(async () => {
     if (!projectId || isCopyingImage) return;
     setIsCopyingImage(true);
-    const fetchPng = () => fetchPagePng();
+    const fetchPng = () => fetchPageRender();
 
     try {
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
@@ -675,19 +678,24 @@ export default React.memo(function PageRenderer({
     } finally {
       setIsCopyingImage(false);
     }
-  }, [fetchPagePng, isCopyingImage, projectId, slugifiedTitle]);
+  }, [fetchPageRender, isCopyingImage, projectId, slugifiedTitle]);
 
-  const downloadPng2x = React.useCallback(async () => {
-    const pending = toast.loading("Rendering a 2x PNG…");
-    try {
-      downloadBlob(await fetchPagePng(2), `${slugifiedTitle}@2x.png`);
-      toast.success("PNG downloaded.", { id: pending });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not render the page image.", {
-        id: pending,
-      });
-    }
-  }, [fetchPagePng, slugifiedTitle]);
+  const downloadRender = React.useCallback(
+    async (kind: "2x" | "3x" | "pdf") => {
+      const isPdf = kind === "pdf";
+      const pending = toast.loading(isPdf ? "Rendering a PDF…" : `Rendering a ${kind} PNG…`);
+      try {
+        const blob = await fetchPageRender(isPdf ? "format=pdf" : `scale=${kind[0]}`);
+        downloadBlob(blob, isPdf ? `${slugifiedTitle}.pdf` : `${slugifiedTitle}@${kind}.png`);
+        toast.success(isPdf ? "PDF downloaded." : "PNG downloaded.", { id: pending });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not render the page.", {
+          id: pending,
+        });
+      }
+    },
+    [fetchPageRender, slugifiedTitle],
+  );
 
   // Built only while the preview is open, so opening the editor does not
   // sanitize every page a second time.
@@ -1011,7 +1019,17 @@ export default React.memo(function PageRenderer({
             {
               label: "Download PNG 2x",
               icon: ImageIcon,
-              onClick: () => void downloadPng2x(),
+              onClick: () => void downloadRender("2x"),
+            },
+            {
+              label: "Download PNG 3x",
+              icon: ImageIcon,
+              onClick: () => void downloadRender("3x"),
+            },
+            {
+              label: "Download PDF",
+              icon: FileText,
+              onClick: () => void downloadRender("pdf"),
             },
             {
               label: "History",
@@ -1041,7 +1059,7 @@ export default React.memo(function PageRenderer({
     ],
     [
       copyToClipboard,
-      downloadPng2x,
+      downloadRender,
       isOnlyPage,
       onEditPage,
       onFocusPage,
@@ -1125,6 +1143,29 @@ export default React.memo(function PageRenderer({
   }, [findSelectedNode, iframeHeight, isLive]);
 
   React.useEffect(() => () => window.cancelAnimationFrame(hoverFrameRef.current), []);
+
+  // Holding Alt with an element picked measures from it to the hovered one.
+  const [isAltHeld, setIsAltHeld] = React.useState(false);
+  const canMeasure = isLive && (isElementMode || isMoveMode) && selectedBox !== null;
+  React.useEffect(() => {
+    if (!canMeasure) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Alt") return;
+      // Keeps Windows browsers from moving focus to their menu bar.
+      event.preventDefault();
+      setIsAltHeld(event.type === "keydown");
+    };
+    const release = () => setIsAltHeld(false);
+    window.addEventListener("keydown", handleKey);
+    window.addEventListener("keyup", handleKey);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("keyup", handleKey);
+      window.removeEventListener("blur", release);
+      release();
+    };
+  }, [canMeasure]);
 
   const toFramePoint = (event: React.PointerEvent<HTMLDivElement>) => {
     // The frame is scaled with the canvas; the page inside works in its own px.
@@ -1445,6 +1486,13 @@ export default React.memo(function PageRenderer({
             ) : null}
             {selectedBox && selectedBox.nodeId === selectedNodeId ? (
               <NodeBox node={selectedBox} variant="selected" />
+            ) : null}
+            {canMeasure &&
+            isAltHeld &&
+            selectedBox?.nodeId === selectedNodeId &&
+            hoverBox &&
+            hoverBox.nodeId !== selectedNodeId ? (
+              <MeasureLines from={selectedBox} to={hoverBox} />
             ) : null}
             {isMoveMode && isLive && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
               <ElementEditLayer
@@ -1831,6 +1879,33 @@ export default React.memo(function PageRenderer({
     </>
   );
 });
+
+/** Red distance lines from the picked element to the hovered one, with their px labels. */
+function MeasureLines({ from, to }: { from: ReportedNode; to: ReportedNode }) {
+  return measureBetween(from, to).map((line) => {
+    const isVertical = line.x1 === line.x2;
+    return (
+      <div
+        key={`${line.x1}:${line.y1}:${line.x2}:${line.y2}`}
+        aria-hidden="true"
+        className="pointer-events-none absolute z-30 bg-rose-500"
+        style={{
+          left: line.x1,
+          top: line.y1,
+          width: isVertical ? "calc(1px * var(--canvas-inverse-zoom, 1))" : line.x2 - line.x1,
+          height: isVertical ? line.y2 - line.y1 : "calc(1px * var(--canvas-inverse-zoom, 1))",
+        }}
+      >
+        <span
+          className="absolute left-1/2 top-1/2 whitespace-nowrap rounded-sm bg-rose-500 px-1 text-[11px] font-medium tabular-nums text-white"
+          style={{ transform: "translate(-50%, -50%) scale(var(--canvas-inverse-zoom, 1))" }}
+        >
+          {line.length}
+        </span>
+      </div>
+    );
+  });
+}
 
 /** The outline drawn over a hovered or picked element, in page pixels. */
 function NodeBox({ node, variant }: { node: ReportedNode; variant: "hover" | "selected" }) {

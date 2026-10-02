@@ -1,17 +1,32 @@
 "use client";
 
 import React from "react";
-import { type DropTarget, findDropTarget } from "@/lib/canvasDrag";
+import { type DropTarget, findDropTarget, snapElementBox } from "@/lib/canvasDrag";
+import type { SnapGuide } from "@/lib/canvasScene";
 import type { ReportedNode } from "@/lib/nodePicker";
 
 type Point = { x: number; y: number };
 type ResizeEdge = "right" | "bottom" | "corner";
 
-type Gesture =
-  | { kind: "move"; start: Point; moved: boolean; drop: DropTarget | null; offset: Point }
-  | { kind: "resize"; edge: ResizeEdge; start: Point; size: { width: number; height: number } };
+type Gesture = {
+  start: Point;
+  /**
+   * The element's box and left/top when the gesture began. Each preview makes
+   * the frame report the element again, so the live node has already moved.
+   */
+  origin: { x: number; y: number; width: number; height: number; left: number; top: number };
+  /** Screen px per page px when the gesture began, for the snap distance. */
+  scale: number;
+  guides: SnapGuide[];
+  /** Past the drag threshold. Until then a release is a click and changes nothing. */
+  moved: boolean;
+} & (
+  | { kind: "move"; drop: DropTarget | null; offset: Point }
+  | { kind: "resize"; edge: ResizeEdge }
+);
 
 const THIN_LINE = "calc(2px * var(--canvas-inverse-zoom, 1))";
+const GUIDE_LINE = "calc(1px * var(--canvas-inverse-zoom, 1))";
 
 // A press that travels less than this in page px is a click, not a drag.
 const DRAG_THRESHOLD_PX = 4;
@@ -31,7 +46,8 @@ interface ElementEditLayerProps {
 /**
  * Handles on the picked element, in page px over the frame: drag it to
  * reorder it among its siblings, or to move it when it is absolutely
- * positioned, and drag an edge or the corner to resize it. Previews go to the
+ * positioned, and drag an edge or the corner to resize it. Moves and resizes
+ * snap to the siblings' and parent's edges and centers. Previews go to the
  * frame as inline styles and the result is saved on release.
  */
 export default function ElementEditLayer({
@@ -44,6 +60,9 @@ export default function ElementEditLayer({
   onDoubleClick,
 }: ElementEditLayerProps) {
   const [gesture, setGesture] = React.useState<Gesture | null>(null);
+  // Mirrors `gesture.moved` without waiting for a render, so a release right
+  // after the first preview still saves it.
+  const movedRef = React.useRef(false);
   const layout = node.layout;
 
   const begin = (event: React.PointerEvent, next: Gesture) => {
@@ -51,7 +70,68 @@ export default function ElementEditLayer({
     // Keeps the canvas from dragging the whole page.
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    movedRef.current = false;
     setGesture(next);
+  };
+
+  const startOf = (event: React.PointerEvent) => {
+    const start = toPagePoint(event.clientX, event.clientY);
+    const span = toPagePoint(event.clientX + 100, event.clientY).x - start.x;
+    return {
+      start,
+      origin: {
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        left: layout?.left ?? 0,
+        top: layout?.top ?? 0,
+      },
+      scale: span > 0 ? 100 / span : 1,
+      guides: [],
+      moved: false,
+    };
+  };
+
+  /** The snapped style for a resize or absolute move to this point. */
+  const resolve = (current: Gesture, point: Point) => {
+    const { origin } = current;
+    const dx = point.x - current.start.x;
+    const dy = point.y - current.start.y;
+    if (current.kind === "resize") {
+      const useX = current.edge !== "bottom";
+      const useY = current.edge !== "right";
+      // The dragged corner snaps as a point.
+      const snap = layout
+        ? snapElementBox(
+            { x: origin.x + origin.width + dx, y: origin.y + origin.height + dy, width: 0, height: 0 },
+            node.nodeId,
+            layout,
+            current.scale,
+          )
+        : { dx: 0, dy: 0, guides: [] };
+      const style: Record<string, string> = {};
+      if (useX) style.width = `${Math.max(1, Math.round(origin.width + dx + snap.dx))}px`;
+      if (useY) style.height = `${Math.max(1, Math.round(origin.height + dy + snap.dy))}px`;
+      const guides = snap.guides.filter((guide) =>
+        guide.orientation === "vertical" ? useX : useY,
+      );
+      return { style, guides, offset: { x: dx, y: dy } };
+    }
+    const snap = layout
+      ? snapElementBox(
+          { x: origin.x + dx, y: origin.y + dy, width: origin.width, height: origin.height },
+          node.nodeId,
+          layout,
+          current.scale,
+        )
+      : { dx: 0, dy: 0, guides: [] };
+    const offset = { x: dx + snap.dx, y: dy + snap.dy };
+    const style = {
+      left: `${Math.round(origin.left + offset.x)}px`,
+      top: `${Math.round(origin.top + offset.y)}px`,
+    };
+    return { style, guides: snap.guides, offset };
   };
 
   const handleMove = (event: React.PointerEvent) => {
@@ -59,22 +139,20 @@ export default function ElementEditLayer({
     const point = toPagePoint(event.clientX, event.clientY);
     const dx = point.x - gesture.start.x;
     const dy = point.y - gesture.start.y;
+    if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    movedRef.current = true;
 
     if (gesture.kind === "resize") {
-      const style: Record<string, string> = {};
-      if (gesture.edge !== "bottom") style.width = `${Math.max(1, Math.round(gesture.size.width + dx))}px`;
-      if (gesture.edge !== "right") style.height = `${Math.max(1, Math.round(gesture.size.height + dy))}px`;
+      const { style, guides } = resolve(gesture, point);
       onPreviewStyle(style);
+      setGesture({ ...gesture, moved: true, guides });
       return;
     }
 
-    if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     if (layout?.isAbsolute) {
-      onPreviewStyle({
-        left: `${Math.round(layout.left + dx)}px`,
-        top: `${Math.round(layout.top + dy)}px`,
-      });
-      setGesture({ ...gesture, moved: true, offset: { x: dx, y: dy } });
+      const { style, guides, offset } = resolve(gesture, point);
+      onPreviewStyle(style);
+      setGesture({ ...gesture, moved: true, offset, guides });
       return;
     }
     const drop = layout ? findDropTarget(layout.siblings, node.nodeId, layout.axis, point) : null;
@@ -85,25 +163,18 @@ export default function ElementEditLayer({
     if (!gesture) return;
     setGesture(null);
     const point = toPagePoint(event.clientX, event.clientY);
-    const dx = point.x - gesture.start.x;
-    const dy = point.y - gesture.start.y;
+    const moved = gesture.moved || movedRef.current;
 
     if (gesture.kind === "resize") {
-      const style: Record<string, string> = {};
-      if (gesture.edge !== "bottom") style.width = `${Math.max(1, Math.round(gesture.size.width + dx))}px`;
-      if (gesture.edge !== "right") style.height = `${Math.max(1, Math.round(gesture.size.height + dy))}px`;
-      onCommitStyle(style);
+      if (moved) onCommitStyle(resolve(gesture, point).style);
       return;
     }
-    if (!gesture.moved) {
+    if (!moved) {
       onClick(point);
       return;
     }
     if (layout?.isAbsolute) {
-      onCommitStyle({
-        left: `${Math.round(layout.left + dx)}px`,
-        top: `${Math.round(layout.top + dy)}px`,
-      });
+      onCommitStyle(resolve(gesture, point).style);
     } else if (gesture.drop) {
       onMove(gesture.drop.targetId, gesture.drop.position);
     }
@@ -124,10 +195,9 @@ export default function ElementEditLayer({
       style={{ transform: "translate(-50%, -50%) scale(var(--canvas-inverse-zoom, 1))" }}
       onPointerDown={(event) =>
         begin(event, {
+          ...startOf(event),
           kind: "resize",
           edge,
-          start: toPagePoint(event.clientX, event.clientY),
-          size: { width: node.width, height: node.height },
         })
       }
       onPointerMove={handleMove}
@@ -145,9 +215,8 @@ export default function ElementEditLayer({
         style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
         onPointerDown={(event) =>
           begin(event, {
+            ...startOf(event),
             kind: "move",
-            start: toPagePoint(event.clientX, event.clientY),
-            moved: false,
             drop: null,
             offset: { x: 0, y: 0 },
           })
@@ -168,6 +237,18 @@ export default function ElementEditLayer({
           </>
         )}
       </div>
+      {gesture?.guides.map((guide) => (
+        <div
+          key={`${guide.orientation}:${guide.position}`}
+          aria-hidden
+          className="pointer-events-none absolute z-30 bg-rose-500"
+          style={
+            guide.orientation === "vertical"
+              ? { left: guide.position, top: guide.start, width: GUIDE_LINE, height: guide.end - guide.start }
+              : { left: guide.start, top: guide.position, width: guide.end - guide.start, height: GUIDE_LINE }
+          }
+        />
+      ))}
       {gesture?.kind === "move" && gesture.moved && !layout?.isAbsolute ? (
         <>
           {/* A ghost of the element follows the pointer while it reorders. */}

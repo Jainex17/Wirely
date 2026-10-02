@@ -8,6 +8,7 @@ import {
   MoveHorizontal,
   MoveVertical,
   RotateCcw,
+  Square,
   SquareRoundCorner,
   Type,
   X,
@@ -27,6 +28,7 @@ import {
   setNodeColor,
   setNodeStyle,
   setNodeText,
+  SHADOW_PRESETS,
   stampNodeIds,
 } from "@/lib/pageNodes";
 import { commitPageEdit } from "@/store/pageEdits";
@@ -301,6 +303,10 @@ function NodeInspectorCard({
                   {numberField("opacity", <Blend className="h-3 w-3" />, "Opacity")}
                   {numberField("border-radius", <SquareRoundCorner className="h-3 w-3" />, "Corner radius")}
                 </div>
+                <ShadowField
+                  inline={inlineStyles["box-shadow"]}
+                  onChange={(value) => changeStyle("box-shadow", value)}
+                />
               </Section>
               <Section title="Fill">
                 <ColorRow
@@ -384,7 +390,7 @@ function ColorRow({
   );
 }
 
-type NumberStyleProperty = Exclude<NodeStyleProperty, "font-weight">;
+type NumberStyleProperty = Exclude<NodeStyleProperty, "font-weight" | "box-shadow">;
 
 /** Opacity reads and writes as a percent; everything else is px. */
 const toDisplay = (property: NumberStyleProperty, value: number) =>
@@ -460,6 +466,41 @@ function StyleField({
         className="min-w-0 flex-1 bg-transparent font-mono text-foreground [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       {property === "opacity" ? <span className="text-muted-foreground">%</span> : null}
+    </label>
+  );
+}
+
+/** A preset shadow, or "Page" to keep whatever shadow the page's classes give it. */
+function ShadowField({
+  inline,
+  onChange,
+}: {
+  inline: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label title={fieldTitle("Shadow", inline !== undefined)} className={FIELD_CLASS}>
+      <Square
+        className={`h-3 w-3 shrink-0 ${inline !== undefined ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"}`}
+      />
+      <select
+        value={inline ?? ""}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label="Shadow"
+        className="min-w-0 flex-1 bg-transparent text-foreground focus:outline-none"
+      >
+        <option value="">Page shadow</option>
+        {inline !== undefined && !Object.values<string>(SHADOW_PRESETS).includes(inline) ? (
+          <option value={inline} disabled>
+            Custom shadow
+          </option>
+        ) : null}
+        {Object.entries(SHADOW_PRESETS).map(([name, value]) => (
+          <option key={name} value={value}>
+            {name === "None" ? "No shadow" : `${name} shadow`}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

@@ -442,7 +442,19 @@ export const getNodeAttribute = (html: string, nodeId: string, name: string) => 
 };
 
 /** The inline style properties the inspector edits, and the values each accepts. */
+/** The shadows the Design tab offers, matching Tailwind's shadow-sm to shadow-xl. */
+export const SHADOW_PRESETS = {
+  None: "none",
+  Small: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+  Medium: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+  Large: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+  "Extra large": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+} as const;
+
+const shadowValues = new Set<string>(Object.values(SHADOW_PRESETS));
+
 export const NODE_STYLE_PROPERTIES = {
+  "box-shadow": { test: (value: string) => shadowValues.has(value) },
   width: /^\d{1,4}(?:\.\d{1,2})?px$/,
   height: /^\d{1,4}(?:\.\d{1,2})?px$/,
   opacity: /^(?:0(?:\.\d{1,2})?|1)$/,
