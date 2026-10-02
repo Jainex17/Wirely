@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { toast } from "@/components/ui/sonner";
 import {
-  type CanvasTool,
   getDefaultPageX,
   getPageBounds,
   getPageFrameSize,
@@ -38,7 +37,6 @@ export default function EditorWorkspace({
 }: EditorWorkspaceProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const hasInitializedViewportRef = useRef(false);
-  const [activeTool, setActiveTool] = useState<CanvasTool>("select");
   const [isSpacePanning, setIsSpacePanning] = useState(false);
 
   const {
@@ -65,6 +63,8 @@ export default function EditorWorkspace({
     renamePage,
     deletePage,
     hydrateProject,
+    activeTool,
+    setActiveTool,
   } = useEditorStore(
     useShallow((state) => ({
       camera: state.camera,
@@ -90,6 +90,8 @@ export default function EditorWorkspace({
       renamePage: state.renamePage,
       deletePage: state.deletePage,
       hydrateProject: state.hydrateProject,
+      activeTool: state.activeTool,
+      setActiveTool: state.setActiveTool,
     })),
   );
 
@@ -243,7 +245,8 @@ export default function EditorWorkspace({
 
   useEffect(() => {
     hasInitializedViewportRef.current = false;
-  }, [projectId]);
+    setActiveTool("select");
+  }, [projectId, setActiveTool]);
 
   // A project whose camera shows no page on open starts fitted to the top of
   // every page.
@@ -336,7 +339,7 @@ export default function EditorWorkspace({
       });
       if (kind === "text") requestTextEdit(pageId, newId);
     },
-    [activeTool, projectId],
+    [activeTool, projectId, setActiveTool],
   );
 
   const handleNodeReport = useCallback(
@@ -434,7 +437,7 @@ export default function EditorWorkspace({
       }
 
       if (event.key === "Escape") {
-        setActiveTool((tool) => (tool === "comment" ? "select" : tool));
+        if (useEditorStore.getState().activeTool === "comment") setActiveTool("select");
       }
 
       if (event.code === "Space") {
@@ -547,7 +550,16 @@ export default function EditorWorkspace({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [fitAllPages, fitPage, focusedPageId, projectId, setZoom, stepHistory, stepZoom]);
+  }, [
+    fitAllPages,
+    fitPage,
+    focusedPageId,
+    projectId,
+    setActiveTool,
+    setZoom,
+    stepHistory,
+    stepZoom,
+  ]);
 
   return (
     <div data-sidebar-mode={sidebarMode} className="relative h-full w-full">

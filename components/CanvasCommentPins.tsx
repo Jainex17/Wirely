@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { updateProjectComment } from "@/components/CommentsPanel";
 import { CommentCard, CommentPin } from "@/components/ReviewComments";
-import { toast } from "@/components/ui/sonner";
-import type { ProjectComment } from "@/lib/projectComments";
 import { useEditorStore } from "@/store/useEditorStore";
 
 /**
  * Open review comments on one page frame. Each pin opens its comment, which
- * the owner can resolve or delete; resolved comments stay on the review page,
- * where they can be reopened.
+ * the owner can resolve or delete; resolved comments stay in the comments
+ * panel and on the review page, where they can be reopened.
  */
 export default function CanvasCommentPins({
   pageId,
@@ -22,41 +21,22 @@ export default function CanvasCommentPins({
   const pageComments = useEditorStore(
     useShallow((state) => state.comments.filter((comment) => comment.pageId === pageId)),
   );
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeCommentId = useEditorStore((state) => state.activeCommentId);
+  const setActiveCommentId = useEditorStore((state) => state.setActiveCommentId);
+  // Only the page holding the open card listens for a click outside it.
+  const activeId = pageComments.some((comment) => comment.id === activeCommentId)
+    ? activeCommentId
+    : null;
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!activeId) return;
     const close = (event: PointerEvent) => {
-      if (!cardRef.current?.contains(event.target as Node)) setActiveId(null);
+      if (!cardRef.current?.contains(event.target as Node)) setActiveCommentId(null);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
-  }, [activeId]);
-
-  const update = async (comment: ProjectComment, method: "PATCH" | "DELETE") => {
-    const response = await fetch(`/api/projects/${projectId}/comments/${comment.id}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: method === "PATCH" ? JSON.stringify({ resolved: true }) : undefined,
-    }).catch(() => null);
-    if (!response?.ok) {
-      toast.error("Could not update the comment.");
-      return;
-    }
-    const { comments, setComments } = useEditorStore.getState();
-    setComments(
-      method === "DELETE"
-        ? comments.filter((candidate) => candidate.id !== comment.id)
-        : comments.map((candidate) =>
-            candidate.id === comment.id
-              ? { ...candidate, resolvedAt: new Date().toISOString() }
-              : candidate,
-          ),
-    );
-    setActiveId(null);
-    if (method === "PATCH") toast.success("Comment resolved.");
-  };
+  }, [activeId, setActiveCommentId]);
 
   return pageComments.map((comment, index) => {
     if (comment.resolvedAt !== null) return null;
@@ -71,7 +51,7 @@ export default function CanvasCommentPins({
           number={index + 1}
           isResolved={false}
           isActive={comment.id === activeId}
-          onClick={() => setActiveId(comment.id === activeId ? null : comment.id)}
+          onClick={() => setActiveCommentId(comment.id === activeId ? null : comment.id)}
           style={{ ...style, zIndex: 25 }}
         />
         {comment.id === activeId ? (
@@ -86,8 +66,10 @@ export default function CanvasCommentPins({
               number={index + 1}
               canDelete
               canResolve
-              onDelete={() => void update(comment, "DELETE")}
-              onToggleResolved={() => void update(comment, "PATCH")}
+              onDelete={() => void updateProjectComment(projectId, comment, "delete")}
+              onToggleResolved={() =>
+                void updateProjectComment(projectId, comment, { resolved: true })
+              }
             />
           </div>
         ) : null}

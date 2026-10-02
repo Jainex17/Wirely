@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createDefaultCamera } from "@/lib/canvasScene";
-import { useEditorStore } from "@/store/useEditorStore";
+import { getViewportSceneBounds, useEditorStore } from "@/store/useEditorStore";
 
 const resetStore = () => {
   useEditorStore.setState({
@@ -414,5 +414,48 @@ describe("useEditorStore page groups", () => {
 
     store.movePageToGroup("page-1", "missing");
     expect(useEditorStore.getState().pageGroups[0].pageIds).toEqual(["page-2", "page-3"]);
+  });
+});
+
+describe("focusComment", () => {
+  const comment = (id: string, resolvedAt: string | null) => ({
+    id,
+    pageId: "page-2",
+    nodeId: null,
+    body: "Tighten this",
+    x: 120,
+    y: 900,
+    authorUserId: "user-1",
+    authorName: "Ana",
+    authorAvatarUrl: null,
+    resolvedAt,
+    createdAt: "2026-10-01T00:00:00.000Z",
+  });
+
+  it("opens an open comment and centres its pin at the current zoom", () => {
+    useEditorStore.setState({
+      comments: [comment("open", null)],
+      pagePositions: { "page-2": { x: 2000, y: 0 } },
+    });
+    const zoom = useEditorStore.getState().camera.zoom;
+
+    useEditorStore.getState().focusComment("open");
+
+    const state = useEditorStore.getState();
+    expect(state.activeCommentId).toBe("open");
+    expect(state.focusedPageId).toBe("page-2");
+    expect(state.camera.zoom).toBe(zoom);
+    const view = getViewportSceneBounds(state);
+    expect((view.left + view.right) / 2).toBeCloseTo(2120, 0);
+    expect((view.top + view.bottom) / 2).toBeCloseTo(900, 0);
+  });
+
+  it("shows a resolved comment's page without opening a pin it no longer has", () => {
+    useEditorStore.setState({ comments: [comment("done", "2026-10-02T00:00:00.000Z")] });
+
+    useEditorStore.getState().focusComment("done");
+
+    expect(useEditorStore.getState().activeCommentId).toBeNull();
+    expect(useEditorStore.getState().focusedPageId).toBe("page-2");
   });
 });
