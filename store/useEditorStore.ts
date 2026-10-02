@@ -12,11 +12,13 @@ import {
 } from "@/lib/types";
 import {
   type CameraState,
+  type CanvasTool,
   type PageBounds,
   type ViewportSize,
   CANVAS_TOP_OFFSET,
   MAX_FIT_ZOOM,
   PAGE_GAP,
+  centerOnPoint,
   clampZoom,
   clipToFirstScreen,
   createBounds,
@@ -96,6 +98,9 @@ export interface CanvasState {
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
   selectedNode: SelectedNode | null;
+  activeTool: CanvasTool;
+  /** The comment whose card is open on the canvas and highlighted in the comments panel. */
+  activeCommentId: string | null;
   requestedGeneratedPageFocusIds: string[] | null;
   viewportSize: ViewportSize;
 }
@@ -136,6 +141,10 @@ export interface EditorState extends CanvasState, ProjectState {
   setFocusedPage: (pageId: string | null) => void;
   setSelectedNode: (node: SelectedNode | null) => void;
   setComments: (comments: ProjectComment[]) => void;
+  setActiveTool: (tool: CanvasTool) => void;
+  setActiveCommentId: (commentId: string | null) => void;
+  /** Opens a comment and pans the canvas to its pin, keeping the zoom. */
+  focusComment: (commentId: string) => void;
   setPageFrameHeight: (pageId: string, height: number) => void;
   focusPage: (pageId: string) => void;
   focusPages: (pageIds: string[]) => void;
@@ -223,6 +232,8 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageFrameHeights: {},
   focusedPageId: "page-home",
   selectedNode: null,
+  activeTool: "select",
+  activeCommentId: null,
   requestedGeneratedPageFocusIds: null,
   viewportSize: { width: 0, height: 0 },
 };
@@ -597,6 +608,30 @@ export const useEditorStore = create<EditorState>()(
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
       setComments: (comments) => set({ comments }),
+      setActiveTool: (activeTool) => set({ activeTool }),
+      setActiveCommentId: (activeCommentId) => set({ activeCommentId }),
+      focusComment: (commentId) =>
+        set((state) => {
+          const comment = state.comments.find((candidate) => candidate.id === commentId);
+          if (!comment) return state;
+          // Resolved comments have no pin on the canvas, so only their page is shown.
+          const next = {
+            activeCommentId: comment.resolvedAt === null ? comment.id : null,
+            focusedPageId: comment.pageId,
+          };
+          const page = getPageBoundsCollection(state).find(
+            (bounds) => bounds.pageId === comment.pageId,
+          );
+          if (!page || !hasUsableViewport(state.viewportSize)) return next;
+          return {
+            ...next,
+            camera: centerOnPoint({
+              scenePoint: { x: page.left + comment.x, y: page.top + comment.y },
+              viewport: state.viewportSize,
+              zoom: state.camera.zoom,
+            }),
+          };
+        }),
       setPageFrameHeight: (pageId, height) =>
         set((state) => {
           const nextHeight = Math.max(1, Math.round(height));

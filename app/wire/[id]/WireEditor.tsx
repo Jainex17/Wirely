@@ -9,13 +9,14 @@ import type { Message } from "ai";
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 // import { ArrowLeft, Cloud, Workflow } from "lucide-react";
 // import { ArrowLeft, Cloud } from "lucide-react";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import AgentActivityPanel from "@/components/AgentActivityPanel";
+import CommentsPanel from "@/components/CommentsPanel";
 import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import ShareProjectButton from "@/components/ShareProjectButton";
@@ -83,6 +84,11 @@ export default function WireEditor({
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
   const setFocusedPage = useEditorStore((state) => state.setFocusedPage);
   const applyServerPageChanges = useEditorStore((state) => state.applyServerPageChanges);
+  // The comment tool swaps the sidebar for the project's comments, as Figma does,
+  // and opens the sidebar if it was collapsed.
+  const isCommentMode = useEditorStore((state) => state.activeTool === "comment");
+  const setActiveTool = useEditorStore((state) => state.setActiveTool);
+  const isSidebarVisible = !isPromptPanelCollapsed || isCommentMode;
   // Saving indicator hidden for now — restore with the header cloud icon.
   // const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
 
@@ -345,7 +351,7 @@ export default function WireEditor({
               <DesignTokensDialog projectId={wireId} />
               <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
-              {isPromptPanelCollapsed ? (
+              {!isSidebarVisible ? (
                 <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">
                   {promptPanelToggle}
                 </div>
@@ -387,12 +393,34 @@ export default function WireEditor({
               in the sidebar survives the toggle. */}
           <div
             className={
-              isPromptPanelCollapsed
+              !isSidebarVisible
                 ? "hidden"
                 : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
             }
           >
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-2 pr-2">
+            {isCommentMode ? (
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-3 pr-2">
+                <h2 className="text-[13px] font-semibold text-foreground">Comments</h2>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setActiveTool("select")}
+                  aria-label="Close comments"
+                  title="Close comments (Esc)"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+            <div
+              className={
+                isCommentMode
+                  ? "hidden"
+                  : "flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-2 pr-2"
+              }
+            >
               <div role="tablist" className="flex items-center gap-0.5">
                 {(["chat", "design", "activity"] as const).map((tab) => (
                   <button
@@ -414,7 +442,12 @@ export default function WireEditor({
               {promptPanelToggle}
             </div>
             {/* The chat stays mounted on the activity tab for the same reason. */}
-            <div className={sidebarTab === "chat" ? "min-h-0 flex-1" : "hidden"}>
+            {isCommentMode ? (
+              <div className="min-h-0 flex-1">
+                <CommentsPanel projectId={wireId} />
+              </div>
+            ) : null}
+            <div className={sidebarTab === "chat" && !isCommentMode ? "min-h-0 flex-1" : "hidden"}>
               <WirePromptSidebar
                 wireId={wireId}
                 initialModelName={initialModelName}
@@ -422,14 +455,14 @@ export default function WireEditor({
                 focusRequestKey={promptFocusRequestKey}
               />
             </div>
-            {sidebarTab === "design" ? (
+            {sidebarTab === "design" && !isCommentMode ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <NodeInspector projectId={wireId} variant="panel" />
               </div>
             ) : null}
-            {sidebarTab === "activity" ? (
+            {sidebarTab === "activity" && !isCommentMode ? (
               <div className="min-h-0 flex-1">
-                <AgentActivityPanel projectId={wireId} isActive={!isPromptPanelCollapsed} />
+                <AgentActivityPanel projectId={wireId} isActive={isSidebarVisible} />
               </div>
             ) : null}
           </div>
