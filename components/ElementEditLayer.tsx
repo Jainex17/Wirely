@@ -18,8 +18,10 @@ type Gesture = {
   /** Screen px per page px when the gesture began, for the snap distance. */
   scale: number;
   guides: SnapGuide[];
+  /** Past the drag threshold. Until then a release is a click and changes nothing. */
+  moved: boolean;
 } & (
-  | { kind: "move"; moved: boolean; drop: DropTarget | null; offset: Point }
+  | { kind: "move"; drop: DropTarget | null; offset: Point }
   | { kind: "resize"; edge: ResizeEdge }
 );
 
@@ -83,6 +85,7 @@ export default function ElementEditLayer({
       },
       scale: span > 0 ? 100 / span : 1,
       guides: [],
+      moved: false,
     };
   };
 
@@ -130,17 +133,17 @@ export default function ElementEditLayer({
   const handleMove = (event: React.PointerEvent) => {
     if (!gesture) return;
     const point = toPagePoint(event.clientX, event.clientY);
+    const dx = point.x - gesture.start.x;
+    const dy = point.y - gesture.start.y;
+    if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
 
     if (gesture.kind === "resize") {
       const { style, guides } = resolve(gesture, point);
       onPreviewStyle(style);
-      setGesture({ ...gesture, guides });
+      setGesture({ ...gesture, moved: true, guides });
       return;
     }
 
-    const dx = point.x - gesture.start.x;
-    const dy = point.y - gesture.start.y;
-    if (!gesture.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     if (layout?.isAbsolute) {
       const { style, guides, offset } = resolve(gesture, point);
       onPreviewStyle(style);
@@ -157,7 +160,7 @@ export default function ElementEditLayer({
     const point = toPagePoint(event.clientX, event.clientY);
 
     if (gesture.kind === "resize") {
-      onCommitStyle(resolve(gesture, point).style);
+      if (gesture.moved) onCommitStyle(resolve(gesture, point).style);
       return;
     }
     if (!gesture.moved) {
@@ -208,7 +211,6 @@ export default function ElementEditLayer({
           begin(event, {
             ...startOf(event),
             kind: "move",
-            moved: false,
             drop: null,
             offset: { x: 0, y: 0 },
           })
