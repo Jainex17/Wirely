@@ -303,19 +303,25 @@ const MAX_PDF_HEIGHT_PX = 19_200;
 
 /**
  * Prints the page HTML as one PDF page the size of the whole design, with
- * screen styles, so text stays selectable and shapes stay vector.
+ * screen styles, so text stays selectable and shapes stay vector. A design
+ * taller than the largest PDF page continues onto more pages of that size.
  */
 export const renderPagePdf = (html: string, deviceType: string): Promise<Uint8Array> =>
   withBrowserRetry(() =>
     withLoadedPage(html, deviceType, 1, async (page) => {
       await page.emulateMediaType("screen");
       const { width } = getPageFrameSize({ deviceType, iframeHtml: html }, "desktop");
-      const height = await page.evaluate(() => document.documentElement.scrollHeight);
+      const height = Math.max(
+        1,
+        await page.evaluate(() => document.documentElement.scrollHeight),
+      );
+      const fitsOnePage = height <= MAX_PDF_HEIGHT_PX;
       return page.pdf({
         width: `${width}px`,
-        height: `${Math.min(Math.max(1, height), MAX_PDF_HEIGHT_PX)}px`,
+        height: `${Math.min(height, MAX_PDF_HEIGHT_PX)}px`,
         printBackground: true,
-        pageRanges: "1",
+        // A design that fits gets one page, without a blank one after it from rounding.
+        ...(fitsOnePage ? { pageRanges: "1" } : {}),
       });
     }),
   );
