@@ -102,6 +102,10 @@ export const fallbackTitleFromPrompt = (prompt: string) => {
  * their key, the server Google key, then a title derived from the prompt text.
  * A missing key is normal, not an error, so only a real failure is logged.
  */
+// The user waits on a spinner until the project exists, and the prompt text
+// is an acceptable title, so a slow or rate-limited provider gets one short try.
+const titleCallLimits = () => ({ maxRetries: 0, abortSignal: AbortSignal.timeout(2_500) });
+
 const generateProjectTitle = async (
   prompt: string,
   { userId, modelName }: { userId: string; modelName: WireModelName | null },
@@ -126,6 +130,7 @@ const generateProjectTitle = async (
           model: getLanguageModel({ modelName: fastModel, ...keys }),
           system,
           prompt: titlePrompt,
+          ...titleCallLimits(),
         });
         const title = readTitle(result.text);
         if (title) return title;
@@ -146,6 +151,7 @@ const generateProjectTitle = async (
       model: provider(TITLE_MODEL_NAME),
       system,
       prompt: titlePrompt,
+      ...titleCallLimits(),
     });
 
     const title = readTitle(result.text);
