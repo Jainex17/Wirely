@@ -6,6 +6,7 @@ import {
   getNodeHtml,
   getNodeStyle,
   getNodeText,
+  parseGradient,
   readNodeLink,
   scopePromptToNode,
   setNodeColor,
@@ -171,6 +172,20 @@ describe("inline styles", () => {
   it("reads back a preset shadow, whose value holds commas and slashes", () => {
     const set = setNodeStyle(html, "h", "box-shadow", SHADOW_PRESETS.Medium) ?? "";
     expect(getNodeStyle(set, "h")["box-shadow"]).toBe(SHADOW_PRESETS.Medium);
+  });
+
+  it("sets a gradient and reads it back, and refuses anything else as a background image", () => {
+    const value = "linear-gradient(135deg, #6366f1, #ec4899)";
+    const set = setNodeStyle(html, "h", "background-image", value) ?? "";
+    expect(parseGradient(getNodeStyle(set, "h")["background-image"] ?? "")).toEqual({
+      kind: "linear",
+      angle: 135,
+      from: "#6366f1",
+      to: "#ec4899",
+    });
+    expect(parseGradient("radial-gradient(circle, #000000, #ffffff)")?.kind).toBe("radial");
+    expect(setNodeStyle(html, "h", "background-image", "url(https://evil.example.com/x.png)")).toBeNull();
+    expect(setNodeStyle(html, "h", "background-image", "linear-gradient(400deg, #000000, #ffffff)")).toBeNull();
   });
 
   it("rejects values outside the allowlist and missing elements", () => {

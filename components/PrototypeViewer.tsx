@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Monitor,
+  Presentation,
   Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,19 @@ const DEVICE_WIDTHS: Record<ViewerDevice, number> = {
   mobile: 375,
 };
 
+const MOBILE_HEIGHT = 812;
+
+/**
+ * A click inside the sandboxed screen gives it the keyboard, so the arrow keys
+ * would stop changing screens. The frame forwards them out by message instead
+ * of the viewer reaching in, which the sandbox does not allow.
+ */
+const forwardArrowKeys = (html: string) => {
+  if (!html) return html;
+  const script = `<script>document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){window.parent.postMessage({type:"wirely-prototype-key",key:event.key},"*");}});</script>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${script}</body>`) : `${html}${script}`;
+};
+
 export default function PrototypeViewer({
   wireId,
   projectTitle,
@@ -49,17 +63,33 @@ export default function PrototypeViewer({
     null,
   );
   const [zoom, setZoom] = React.useState(100);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const [isPresenting, setIsPresenting] = React.useState(false);
+  const [screenSize, setScreenSize] = React.useState({ width: 0, height: 0 });
 
   const currentPage = pages[currentIndex] ?? pages[0];
   const device: ViewerDevice = deviceOverride ?? currentPage.deviceType;
   const deviceWidth = DEVICE_WIDTHS[device];
 
-  const iframeHeight =
-    device === "mobile" ? 812 : Math.round((deviceWidth * 9) / 16);
+  // Presenting fills the screen: a desktop screen spans its width, a mobile
+  // screen fits whole inside it.
+  const presentScale =
+    device === "mobile"
+      ? Math.min(screenSize.width / deviceWidth, screenSize.height / MOBILE_HEIGHT)
+      : screenSize.width / deviceWidth;
+  const iframeHeight = isPresenting
+    ? device === "mobile"
+      ? MOBILE_HEIGHT
+      : Math.round(screenSize.height / presentScale)
+    : device === "mobile"
+      ? MOBILE_HEIGHT
+      : Math.round((deviceWidth * 9) / 16);
+  const frameScale = isPresenting ? presentScale : zoom / 100;
 
   const isBrowser = useIsBrowser();
   const srcDoc = React.useMemo(
-    () => (isBrowser ? sanitizeIframeHtml(currentPage.html ?? "") : ""),
+    () => (isBrowser ? forwardArrowKeys(sanitizeIframeHtml(currentPage.html ?? "")) : ""),
     [currentPage.html, isBrowser],
   );
 
@@ -80,58 +110,91 @@ export default function PrototypeViewer({
       }
     };
 
+    const handleFrameKey = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as { type?: string; key?: string } | null;
+      if (data?.type !== "wirely-prototype-key") return;
+      goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
+    };
+
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("message", handleFrameKey);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("message", handleFrameKey);
     };
   }, [currentIndex, goToIndex]);
 
-  return (
-    <div className="flex h-screen w-full flex-col bg-muted">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            aria-label="Back to editor"
-            title="Back to editor"
-            onClick={() => router.push(`/wire/${wireId}`)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {projectTitle}
-            </p>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-              Prototype
-            </p>
-          </div>
-        </div>
+  React.useEffect(() => {
+    const sync = () => {
+      setIsPresenting(document.fullscreenElement === rootRef.current);
+      setScreenSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    sync();
+    document.addEventListener("fullscreenchange", sync);
+    window.addEventListener("resize", sync);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
 
-        <div className="flex items-center gap-3">
-          <select
-            value={zoom}
-            onChange={(event) => setZoom(Number(event.target.value))}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs"
-            aria-label="Zoom"
-          >
-            {ZOOM_LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}%
-              </option>
-            ))}
-          </select>
-          <div className="flex items-center rounded-md border border-border p-0.5">
-            <button
+  const present = () => {
+    rootRef.current?.requestFullscreen().catch(() => {
+      // Refused, for example inside an embed without fullscreen permission.
+    });
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      className={cn("flex h-screen w-full flex-col", isPresenting ? "bg-black" : "bg-muted")}
+    >
+      {isPresenting ? null : (
+        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
               type="button"
-              className={cn(
-                "flex h-7 items-center gap-1 rounded px-2 text-xs",
-                device === "desktop"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground",
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Back to editor"
+              title="Back to editor"
+              onClick={() => router.push(`/wire/${wireId}`)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {projectTitle}
+              </p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                Prototype
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <select
+              value={zoom}
+              onChange={(event) => setZoom(Number(event.target.value))}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+              aria-label="Zoom"
+            >
+              {ZOOM_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}%
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center rounded-md border border-border p-0.5">
+              <button
+                type="button"
+                className={cn(
+                  "flex h-7 items-center gap-1 rounded px-2 text-xs",
+                  device === "desktop"
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground",
               )}
               onClick={() => setDeviceOverride("desktop")}
             >
@@ -179,20 +242,42 @@ export default function PrototypeViewer({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 gap-1.5"
+            title="Present full screen. Arrow keys change screens, Escape exits."
+            onClick={present}
+          >
+            <Presentation className="h-3.5 w-3.5" />
+            Present
+          </Button>
         </div>
       </header>
+      )}
 
-      <main className="relative flex flex-1 items-start justify-center overflow-auto p-6">
+      <main
+        className={cn(
+          "relative flex flex-1 items-start justify-center",
+          isPresenting ? "overflow-hidden" : "overflow-auto p-6",
+        )}
+      >
         <div
-          className="rounded-[var(--radius)] border border-border bg-background shadow-xl"
+          className={cn(
+            "bg-background",
+            isPresenting && device === "desktop"
+              ? ""
+              : "rounded-[var(--radius)] border border-border shadow-xl",
+          )}
           style={{
             width: `${deviceWidth}px`,
             height: `${iframeHeight}px`,
-            transform: `scale(${zoom / 100})`,
+            transform: `scale(${frameScale})`,
             transformOrigin: "top center",
           }}
         >
           <iframe
+            ref={iframeRef}
             key={`${currentPage.id}-${device}`}
             title={`${currentPage.title} prototype screen`}
             srcDoc={srcDoc}
@@ -203,20 +288,21 @@ export default function PrototypeViewer({
         </div>
       </main>
 
-      <nav
-        aria-label="Prototype screens"
-        className="flex h-16 shrink-0 items-center gap-2 overflow-x-auto border-t border-border bg-card px-4"
-      >
-        {pages.map((page, index) => (
-          <button
-            key={page.id}
-            type="button"
-            onClick={() => setCurrentIndex(index)}
-            className={cn(
-              "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-xs transition",
-              index === currentIndex
-                ? "border-primary bg-primary/10 font-medium text-primary"
-                : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      {isPresenting ? null : (
+        <nav
+          aria-label="Prototype screens"
+          className="flex h-16 shrink-0 items-center gap-2 overflow-x-auto border-t border-border bg-card px-4"
+        >
+          {pages.map((page, index) => (
+            <button
+              key={page.id}
+              type="button"
+              onClick={() => setCurrentIndex(index)}
+              className={cn(
+                "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-xs transition",
+                index === currentIndex
+                  ? "border-primary bg-primary/10 font-medium text-primary"
+                  : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
             <span className="text-[10px] opacity-70">{index + 1}</span>
@@ -224,6 +310,7 @@ export default function PrototypeViewer({
           </button>
         ))}
       </nav>
+      )}
     </div>
   );
 }

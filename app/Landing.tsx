@@ -303,8 +303,8 @@ function FeatureGrid() {
               $0
             </p>
             <p className="max-w-[44ch] text-sm leading-relaxed text-muted-foreground">
-              Wirely has no plans and no credits. It is open source, and your agent runs on
-              the subscription you already have.
+              Wirely has no plans, no credits, and no cap on agent calls. It is open source,
+              and your agent runs on the Claude, ChatGPT, or Cursor plan you already have.
             </p>
           </div>
           <Button asChild variant="outline" className={`shrink-0 rounded-full bg-transparent ${PRESS}`}>

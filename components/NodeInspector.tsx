@@ -7,6 +7,7 @@ import {
   Link2,
   MoveHorizontal,
   MoveVertical,
+  Palette,
   RotateCcw,
   Square,
   SquareRoundCorner,
@@ -22,9 +23,12 @@ import {
   getNodeStyle,
   getNodeText,
   findNodeSpan,
+  formatGradient,
+  type Gradient,
   NODE_STYLE_PROPERTIES,
   type NodeColorProperty,
   type NodeStyleProperty,
+  parseGradient,
   setNodeColor,
   setNodeStyle,
   setNodeText,
@@ -317,6 +321,12 @@ function NodeInspectorCard({
                   onChange={(color) => changeColor("bg", color)}
                   onReset={() => resetColor("bg")}
                 />
+                <GradientField
+                  // Reloads the draft when an undo or an agent write changes the saved value.
+                  key={inlineStyles["background-image"] ?? ""}
+                  inline={inlineStyles["background-image"]}
+                  onChange={(value) => changeStyle("background-image", value)}
+                />
               </Section>
             </>
           ) : null}
@@ -390,7 +400,10 @@ function ColorRow({
   );
 }
 
-type NumberStyleProperty = Exclude<NodeStyleProperty, "font-weight" | "box-shadow">;
+type NumberStyleProperty = Exclude<
+  NodeStyleProperty,
+  "font-weight" | "box-shadow" | "background-image"
+>;
 
 /** Opacity reads and writes as a percent; everything else is px. */
 const toDisplay = (property: NumberStyleProperty, value: number) =>
@@ -502,6 +515,89 @@ function ShadowField({
         ))}
       </select>
     </label>
+  );
+}
+
+const SWATCH_CLASS =
+  "relative h-4 w-4 shrink-0 cursor-pointer overflow-hidden rounded-sm border border-border";
+
+/**
+ * A linear or radial gradient over the fill color, or "Page" to keep whatever
+ * background image the page gives the element.
+ */
+function GradientField({
+  inline,
+  onChange,
+}: {
+  inline: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const [gradient, setGradient] = useState(() => (inline ? parseGradient(inline) : null));
+  const isCustom = inline !== undefined && gradient === null;
+  const update = (next: Gradient | null) => {
+    setGradient(next);
+    onChange(next ? formatGradient(next) : "");
+  };
+  const stop = (key: "from" | "to", label: string) =>
+    gradient ? (
+      <label className={SWATCH_CLASS} style={{ background: gradient[key] }} title={label}>
+        <input
+          type="color"
+          value={gradient[key]}
+          onChange={(event) => update({ ...gradient, [key]: event.target.value })}
+          aria-label={label}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
+    ) : null;
+
+  return (
+    <div className={FIELD_CLASS}>
+      <Palette
+        className={`h-3 w-3 shrink-0 ${inline !== undefined ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"}`}
+      />
+      <select
+        value={gradient?.kind ?? (isCustom ? "custom" : "")}
+        title={fieldTitle("Gradient", inline !== undefined)}
+        onChange={(event) => {
+          const kind = event.target.value;
+          update(
+            kind === "linear" || kind === "radial"
+              ? { angle: 180, from: "#6366f1", to: "#ec4899", ...gradient, kind }
+              : null,
+          );
+        }}
+        aria-label="Gradient"
+        className="min-w-0 flex-1 bg-transparent text-foreground focus:outline-none"
+      >
+        <option value="">Page gradient</option>
+        {isCustom ? (
+          <option value="custom" disabled>
+            Custom background
+          </option>
+        ) : null}
+        <option value="linear">Linear</option>
+        <option value="radial">Radial</option>
+      </select>
+      {stop("from", "Gradient start color")}
+      {stop("to", "Gradient end color")}
+      {gradient?.kind === "linear" ? (
+        <input
+          type="number"
+          min={0}
+          max={360}
+          step={15}
+          value={gradient.angle}
+          aria-label="Gradient angle in degrees"
+          title="Angle in degrees"
+          onChange={(event) => {
+            const angle = Math.round(Number(event.target.value));
+            if (Number.isFinite(angle) && angle >= 0 && angle <= 360) update({ ...gradient, angle });
+          }}
+          className="w-9 shrink-0 bg-transparent text-right font-mono text-foreground [appearance:textfield] focus:outline-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+      ) : null}
+    </div>
   );
 }
 

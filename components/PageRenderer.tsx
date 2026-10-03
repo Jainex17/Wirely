@@ -188,6 +188,13 @@ const downloadBlob = (blob: Blob, filename: string) => {
 /** Narrowest the preview can be dragged. Below this nothing is readable. */
 export const MIN_PREVIEW_WIDTH = 280;
 
+/** Common breakpoints, for checking a page reflows at each one. */
+const PREVIEW_BREAKPOINTS = [
+  { label: "Mobile", width: 375 },
+  { label: "Tablet", width: 768 },
+  { label: "Desktop", width: 1440 },
+] as const;
+
 /**
  * Room kept either side of the artboard for the drag handles.
  *
@@ -1737,7 +1744,7 @@ export default React.memo(function PageRenderer({
         */}
         <DialogContent
           showCloseButton={false}
-          className="top-8 flex h-[calc(100vh-4rem)] w-[calc(100vw-4rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+          className="top-8 flex h-[calc(100vh-4rem)] w-[calc(100vw-4rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[1600px]"
         >
           <div className="flex shrink-0 items-center justify-between gap-6 border-b border-border px-5 py-3">
             <div className="min-w-0">
@@ -1745,11 +1752,34 @@ export default React.memo(function PageRenderer({
                 {page.title}
               </DialogTitle>
               <DialogDescription className="text-xs leading-5 text-muted-foreground">
-                Drag the edge to resize. Press Escape to close.
+                Pick a breakpoint or drag the edge to resize. Press Escape to close.
               </DialogDescription>
             </div>
 
             <div className="flex shrink-0 items-center gap-3">
+              <div className="flex items-center rounded-md border border-border p-0.5">
+                {PREVIEW_BREAKPOINTS.map(({ label, width }) => (
+                  <button
+                    key={width}
+                    type="button"
+                    disabled={width > previewMaxWidth}
+                    title={
+                      width > previewMaxWidth
+                        ? `${width}px is wider than this window`
+                        : `${label}, ${width}px`
+                    }
+                    onClick={() => setPreviewWidthOverride(width)}
+                    className={cn(
+                      "rounded px-2 py-1 text-xs tabular-nums transition-colors disabled:opacity-40",
+                      previewWidth === width
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {width}
+                  </button>
+                ))}
+              </div>
               {/* The live width, in the same spot whether or not you are
                   dragging, so the number never jumps around mid-drag. */}
               <span className="rounded-md bg-muted/60 px-2 py-1 text-xs tabular-nums text-muted-foreground">

@@ -38,6 +38,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_design_tokens: "Read design tokens",
   set_design_tokens: "Set design tokens",
   import_url: "Imported a web page",
+  set_prototype_flow: "Linked the prototype",
 };
 
 /** Calls that only look. The tab shows them quieter than changes. */

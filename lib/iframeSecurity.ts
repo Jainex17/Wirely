@@ -8,6 +8,14 @@ const ALLOWED_EXTERNAL_SCRIPT_PATTERNS = [
 ] as const;
 const ALLOWED_IMAGE_HOSTS = ["images.unsplash.com", "plus.unsplash.com"] as const;
 
+/**
+ * Paper Shaders, the one ES module a page may import from an inline
+ * `<script type="module">` for WebGL backgrounds. The bundle has no imports of
+ * its own. Pinned to one version so the CSP names one exact file.
+ */
+export const PAPER_SHADERS_MODULE_URL =
+  "https://cdn.jsdelivr.net/npm/@paper-design/shaders@0.0.81/+esm";
+
 const UNSAFE_INLINE_SCRIPT_PATTERN =
   /\b(?:fetch|xmlhttprequest|eval|new\s+Function|import\s*\(|document\.cookie|localstorage|sessionstorage|indexeddb|opendatabase|navigator\.sendbeacon|websocket|eventsource|broadcastchannel|sharedworker|worker|window\.location|document\.location)\b|window\.(?:top|parent)|\bnew\s+Image\s*\(|(?:^|[^\w$])Image\s*\(|(?:^|[^\w$.])postMessage\s*\(|\.\s*src\s*=/i;
 
@@ -15,9 +23,12 @@ const UNSAFE_INLINE_SCRIPT_PATTERN =
 // origin is opaque, so 'self' would match nothing and the origin is named
 // instead. It is only known in a browser; the server writes the policy
 // without it, and every render sanitizes again with it.
-const buildIframeCsp = (appOrigin: string | null) => [
+// Scripts are allowed by exact URL, not by host. The tag allowlist only sees
+// <script src>, so a host-wide source would let an inline module import any
+// package on jsdelivr.
+const buildIframeCsp = (appOrigin: string | null, scriptUrls: string[]) => [
   "default-src 'none'",
-  "script-src https://cdn.jsdelivr.net 'unsafe-inline'",
+  `script-src 'unsafe-inline' ${[...new Set([...scriptUrls, PAPER_SHADERS_MODULE_URL])].join(" ")}`,
   "style-src https://cdn.jsdelivr.net 'unsafe-inline'",
   `img-src ${ALLOWED_IMAGE_HOSTS.map((host) => `https://${host}`).join(" ")}${appOrigin ? ` ${appOrigin}` : ""} data: blob:`,
   "font-src https: data:",
@@ -33,8 +44,8 @@ const readAppOrigin = () => {
   return origin && /^https?:\/\/[a-z0-9.:[\]-]+$/i.test(origin) ? origin : null;
 };
 
-const buildCspMetaTag = () =>
-  `<meta http-equiv="Content-Security-Policy" content="${buildIframeCsp(readAppOrigin())}">`;
+const buildCspMetaTag = (scriptUrls: string[]) =>
+  `<meta http-equiv="Content-Security-Policy" content="${buildIframeCsp(readAppOrigin(), scriptUrls)}">`;
 
 export const DISALLOWED_CONTAINER_TAGS = [
   "iframe",
@@ -72,6 +83,16 @@ const sanitizeScriptTags = (value: string) =>
       scriptTag.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i)?.[1] ?? "";
     return UNSAFE_INLINE_SCRIPT_PATTERN.test(content) ? "" : scriptTag;
   });
+
+/**
+ * The external scripts left after sanitizing, without query or hash, which a
+ * CSP source ignores anyway. Every one already passed the allowlist, whose
+ * patterns only admit URL-safe characters before the query.
+ */
+const collectScriptUrls = (value: string) =>
+  [...value.matchAll(/<script\b[\s\S]*?<\/script>/gi)]
+    .map((match) => getScriptSrc(match[0]).split(/[?#]/)[0])
+    .filter((src) => src && isAllowedScriptSrc(src));
 
 const removeDisallowedTags = (value: string) => {
   let sanitized = value;
@@ -149,7 +170,7 @@ const sanitizeImageSources = (value: string) =>
     });
 
 const ensureIframeCspMeta = (value: string) => {
-  const IFRAME_CSP_META_TAG = buildCspMetaTag();
+  const IFRAME_CSP_META_TAG = buildCspMetaTag(collectScriptUrls(value));
   const withoutExistingCsp = value.replace(
     /<meta\b[^>]*http-equiv\s*=\s*("|\')content-security-policy\1[^>]*>/gi,
     "",

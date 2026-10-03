@@ -11,6 +11,8 @@
  * handlers and `app/api/mcp/route.ts` holds the transport.
  */
 
+import { PAPER_SHADERS_MODULE_URL } from "@/lib/iframeSecurity";
+
 export const MCP_SERVER_NAME = "wirely";
 export const MCP_SERVER_VERSION = "1.0.0";
 
@@ -69,6 +71,19 @@ export const MCP_INSTRUCTIONS = [
     "call get_page_changes and apply only the listed differences to the matching components.",
   "For structural changes (reorder, duplicate, delete, hide, wrap in a frame, insert a block), " +
     "call get_page_outline for node ids and use edit_element instead of rewriting the page.",
+  "For a shader background (mesh gradient, grain, dithering, and others), import Paper " +
+    "Shaders in an inline <script type=\"module\">: import { ShaderMount, " +
+    "meshGradientFragmentShader, getShaderColorFromString } from " +
+    `"${PAPER_SHADERS_MODULE_URL}". It is the only module a page can import. Mount it ` +
+    "still, with speed 0 and frame 0: new ShaderMount(el, meshGradientFragmentShader, { " +
+    "u_colors: [\"#0b1020\", \"#4f46e5\", \"#ec4899\"].map(getShaderColorFromString), " +
+    "u_colorsCount: 3, u_distortion: 0.8, u_swirl: 0.1, u_grainMixer: 0, u_grainOverlay: 0, " +
+    "u_fit: 2, u_scale: 1, u_rotation: 0, u_offsetX: 0, u_offsetY: 0, u_originX: 0.5, " +
+    "u_originY: 0.5, u_worldWidth: 0, u_worldHeight: 0 }, undefined, 0, 0). Give the element " +
+    "a CSS background too: get_page_png has no WebGL and shows only that.",
+  "For a multi-screen flow, call get_design_tokens first and write one nav block that every " +
+    "screen reuses with the same links in the same order. When the screens are done, call " +
+    "set_prototype_flow with them in order, and fix any navigation mismatch it reports.",
   "Pass a short note with each change (add_page, update_page, patch_page, edit_element, " +
     "delete_page, set_design_tokens) saying what it does. The user follows your work by these notes.",
 ].join("\n");
@@ -186,7 +201,8 @@ const htmlDescription =
   "with their contents, so draw CTAs as styled <a href=\"#\"> or <div role=\"button\"> " +
   "elements instead, and keep <img> sources on Unsplash hosts or project images from " +
   "add_asset and list_assets. Allowlisted CDN " +
-  "scripts (the Tailwind browser build, Tailwind Plus elements, Chart.js) are kept; " +
+  "scripts (the Tailwind browser build, Tailwind Plus elements, Chart.js) are kept, and an " +
+  "inline module may import Paper Shaders; " +
   "scripts are the page's only way to run code.";
 
 export const MCP_TOOLS: McpToolDefinition[] = [
@@ -547,6 +563,35 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       type: "object",
       properties: { projectId: PROJECT_ID, pageId: PAGE_ID, note: NOTE },
       required: ["projectId", "pageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_prototype_flow",
+    description:
+      "Link screens into the project's clickable prototype, in the order a viewer steps " +
+      "through them. Pages left out are not in the prototype, so call it again with a " +
+      "different list to add or remove screens. Returns the prototype link to give the " +
+      "user, and lists screens whose <nav> links differ from the other screens of the " +
+      "same device type.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageIds: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 50,
+          description: "Page ids in prototype order, with no repeats.",
+        },
+        startPageId: {
+          type: "string",
+          description: "The screen the prototype opens on. Defaults to the first of pageIds.",
+        },
+        note: NOTE,
+      },
+      required: ["projectId", "pageIds"],
       additionalProperties: false,
     },
   },
