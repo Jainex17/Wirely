@@ -1442,29 +1442,27 @@ export default React.memo(function PageRenderer({
               height: `${pageHeight}px`,
             }}
           >
+            {/* Always this child slot, so React keeps one preview iframe through
+                the hand-off to live instead of remounting and reloading it. */}
+            {stillFrame}
             {hasHtml && isLive && measuredSrcDoc ? (
-              <>
-                {stillFrame}
-                <iframe
-                  ref={iframeRef}
-                  title={page.title}
-                  srcDoc={measuredSrcDoc}
-                  onLoad={handleLoad}
-                  className={cn(
-                    "relative h-full w-full border-0 bg-background",
-                    editingNodeId ? "pointer-events-auto" : "pointer-events-none",
-                    stillSrcDoc && "opacity-0",
-                  )}
-                  style={{ overflow: "hidden" }}
-                  loading="eager"
-                  sandbox="allow-scripts"
-                  referrerPolicy="no-referrer"
-                  scrolling="no"
-                />
-              </>
-            ) : stillFrame ? (
-              stillFrame
-            ) : hasRawHtml ? (
+              <iframe
+                ref={iframeRef}
+                title={page.title}
+                srcDoc={measuredSrcDoc}
+                onLoad={handleLoad}
+                className={cn(
+                  "relative h-full w-full border-0 bg-background",
+                  editingNodeId ? "pointer-events-auto" : "pointer-events-none",
+                  stillSrcDoc && "opacity-0",
+                )}
+                style={{ overflow: "hidden" }}
+                loading="eager"
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                scrolling="no"
+              />
+            ) : stillFrame ? null : hasRawHtml ? (
               // Offscreen, or on screen and waiting its turn to mount.
               <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
                 <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
