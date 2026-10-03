@@ -1,0 +1,7 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <style>.ink{fill:#0b1020}@media (prefers-color-scheme:dark){.ink{fill:#e9ecf5}}</style>
+  <path class="ink" d="M100 0A100 100 0 0 0 0 100h100z"/>
+  <circle cx="150" cy="50" r="46" fill="#2f6699"/>
+  <path d="M0 100l100 100H0z" fill="#6c9bd2"/>
+  <path d="M100 100h100A100 100 0 0 1 100 200z" fill="#a3c0dd"/>
+</svg>
