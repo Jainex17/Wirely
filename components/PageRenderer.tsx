@@ -455,11 +455,14 @@ export default React.memo(function PageRenderer({
   }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
   // A preview runs no scripts, so it gets the compiled page with motion frozen
   // in CSS and none of the live frame's picker, height, or motion scripts.
-  // A regenerating page clears its HTML, so the placeholder replaces the old
-  // preview. A failed compile keeps the shell, since this frame cannot run
-  // the Tailwind runtime that would style it.
+  // When the page goes live, the preview stays underneath until the live frame
+  // loads, so the swap never shows a blank frame. A regenerating page clears
+  // its HTML, so the placeholder replaces the old preview. A failed compile
+  // keeps the shell, since this frame cannot run the Tailwind runtime.
   const [stillSrcDoc, setStillSrcDoc] = React.useState<string | null>(null);
-  if ((!isPreview || !hasHtml) && stillSrcDoc) setStillSrcDoc(null);
+  const [hasLiveLoaded, setHasLiveLoaded] = React.useState(false);
+  if (!isLive && hasLiveLoaded) setHasLiveLoaded(false);
+  if ((!hasHtml || renderMode === "shell" || hasLiveLoaded) && stillSrcDoc) setStillSrcDoc(null);
   React.useEffect(() => {
     if (!hasHtml || !isPreview) return;
     let isCurrent = true;
@@ -470,6 +473,18 @@ export default React.memo(function PageRenderer({
       isCurrent = false;
     };
   }, [canvasSrcDoc, hasHtml, isPreview]);
+  // An empty sandbox runs no scripts at all, which is stricter than the live
+  // frame's allow-scripts.
+  const stillFrame = stillSrcDoc ? (
+    <iframe
+      title={page.title}
+      srcDoc={stillSrcDoc}
+      className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background"
+      sandbox=""
+      referrerPolicy="no-referrer"
+      scrolling="no"
+    />
+  ) : null;
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -1237,6 +1252,7 @@ export default React.memo(function PageRenderer({
   }, [isLive, page.id, postToFrame]);
 
   const handleLoad = React.useCallback(() => {
+    setHasLiveLoaded(true);
     // A reload drops any click the old document was answering, and any typing.
     isPickPendingRef.current = false;
     isInsertPendingRef.current = false;
@@ -1420,32 +1436,27 @@ export default React.memo(function PageRenderer({
             }}
           >
             {hasHtml && isLive && measuredSrcDoc ? (
-              <iframe
-                ref={iframeRef}
-                title={page.title}
-                srcDoc={measuredSrcDoc}
-                onLoad={handleLoad}
-                className={cn(
-                  "h-full w-full border-0 bg-background",
-                  editingNodeId ? "pointer-events-auto" : "pointer-events-none",
-                )}
-                style={{ overflow: "hidden" }}
-                loading="eager"
-                sandbox="allow-scripts"
-                referrerPolicy="no-referrer"
-                scrolling="no"
-              />
-            ) : isPreview && stillSrcDoc ? (
-              // An empty sandbox runs no scripts at all, which is stricter than
-              // the live frame's allow-scripts.
-              <iframe
-                title={page.title}
-                srcDoc={stillSrcDoc}
-                className="pointer-events-none h-full w-full border-0 bg-background"
-                sandbox=""
-                referrerPolicy="no-referrer"
-                scrolling="no"
-              />
+              <>
+                {stillFrame}
+                <iframe
+                  ref={iframeRef}
+                  title={page.title}
+                  srcDoc={measuredSrcDoc}
+                  onLoad={handleLoad}
+                  className={cn(
+                    "relative h-full w-full border-0 bg-background",
+                    editingNodeId ? "pointer-events-auto" : "pointer-events-none",
+                    stillSrcDoc && "opacity-0",
+                  )}
+                  style={{ overflow: "hidden" }}
+                  loading="eager"
+                  sandbox="allow-scripts"
+                  referrerPolicy="no-referrer"
+                  scrolling="no"
+                />
+              </>
+            ) : stillFrame ? (
+              stillFrame
             ) : hasRawHtml ? (
               // Offscreen, or on screen and waiting its turn to mount.
               <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">

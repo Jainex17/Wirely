@@ -241,11 +241,19 @@ export const isBoundsIntersecting = (a: Bounds, b: Bounds) =>
 // memory and CPU grow with this number, not with the project's page count.
 export const MAX_LIVE_PAGES = 12;
 
+const byDistanceFromCenter = (pages: readonly PageBounds[], viewportBounds: Bounds) => {
+  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
+  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
+  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
+  return [...pages].sort((a, b) => distance(a) - distance(b));
+};
+
 /**
- * Which pages get a live iframe once the camera settles: the in-view pages
- * nearest the viewport centre, up to `limit`. Budget left over keeps frames
- * that are already mounted, nearest first, so panning back does not rebuild
- * them. Everything else renders as a shell.
+ * Which pages get a live iframe once the camera settles. Frames already
+ * mounted near the viewport keep their slot first, so a small pan or a page
+ * drag does not swap frames and reload them. New pages near the viewport take
+ * what is left, nearest the centre first, then mounted frames further away.
+ * Everything else renders as a preview or a shell.
  */
 export const selectLivePages = (
   pages: readonly PageBounds[],
@@ -254,17 +262,17 @@ export const selectLivePages = (
   limit = MAX_LIVE_PAGES,
 ) => {
   const nearby = expandBounds(viewportBounds, LIVE_PAGE_OVERSCAN_SCENE_PX);
-  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
-  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
-  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
-  const byDistance = [...pages].sort((a, b) => distance(a) - distance(b));
+  const ordered = byDistanceFromCenter(pages, viewportBounds);
+  const isNearby = (page: PageBounds) => isBoundsIntersecting(page, nearby);
   const live = new Set<string>();
-  for (const page of byDistance) {
-    if (live.size < limit && isBoundsIntersecting(page, nearby)) live.add(page.pageId);
-  }
-  for (const page of byDistance) {
-    if (live.size < limit && mounted.has(page.pageId)) live.add(page.pageId);
-  }
+  const fill = (accept: (page: PageBounds) => boolean) => {
+    for (const page of ordered) {
+      if (live.size < limit && accept(page)) live.add(page.pageId);
+    }
+  };
+  fill((page) => mounted.has(page.pageId) && isNearby(page));
+  fill(isNearby);
+  fill((page) => mounted.has(page.pageId));
   return live;
 };
 
@@ -274,25 +282,31 @@ export const selectLivePages = (
 export const MAX_PREVIEW_PAGES = 48;
 
 /**
- * Which pages show a still preview: the pages on screen nearest the viewport
- * centre, up to `limit`. A page that also gets a live frame renders live.
- * Offscreen pages are left out, so zooming back in drops previews nobody sees.
+ * Which pages show a still preview: current previews still on screen, then new
+ * on-screen pages nearest the centre, then current previews just off screen,
+ * up to `limit`. Keeping the current ones first stops a pan from reloading
+ * frames that are still visible. A page that also gets a live frame renders
+ * live.
  */
 export const selectPreviewPages = (
   pages: readonly PageBounds[],
   viewportBounds: Bounds,
+  current: ReadonlySet<string> = new Set(),
   limit = MAX_PREVIEW_PAGES,
 ) => {
-  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
-  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
-  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
-  return new Set(
-    pages
-      .filter((page) => isBoundsIntersecting(page, viewportBounds))
-      .sort((a, b) => distance(a) - distance(b))
-      .slice(0, limit)
-      .map((page) => page.pageId),
-  );
+  const nearby = expandBounds(viewportBounds, LIVE_PAGE_OVERSCAN_SCENE_PX);
+  const ordered = byDistanceFromCenter(pages, viewportBounds);
+  const isOnScreen = (page: PageBounds) => isBoundsIntersecting(page, viewportBounds);
+  const previews = new Set<string>();
+  const fill = (accept: (page: PageBounds) => boolean) => {
+    for (const page of ordered) {
+      if (previews.size < limit && accept(page)) previews.add(page.pageId);
+    }
+  };
+  fill((page) => current.has(page.pageId) && isOnScreen(page));
+  fill(isOnScreen);
+  fill((page) => current.has(page.pageId) && isBoundsIntersecting(page, nearby));
+  return previews;
 };
 
 export const getDefaultPageX = (

@@ -365,12 +365,12 @@ export default function Canvas({
     if (viewportSize.width === 0) return;
     const timeoutId = window.setTimeout(() => {
       const bounds = pageLayouts.map((pageLayout) => pageLayout.bounds);
-      const previews = selectPreviewPages(bounds, viewportBounds);
-      setPreviewPageIds((current) =>
-        previews.size === current.size && [...previews].every((pageId) => current.has(pageId))
+      setPreviewPageIds((current) => {
+        const previews = selectPreviewPages(bounds, viewportBounds, current);
+        return previews.size === current.size && [...previews].every((pageId) => current.has(pageId))
           ? current
-          : previews,
-      );
+          : previews;
+      });
       setMountedPageIds((current) => {
         let next = selectLivePages(bounds, viewportBounds, current);
         if (current.size === 0) {

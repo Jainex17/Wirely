@@ -101,7 +101,21 @@ describe("canvasScene helpers", () => {
     const pages = [page("far", 20_000), page("mid", 200), page("near", -200), page("edge", 1_000)];
 
     expect([...selectPreviewPages(pages, viewportBounds)]).toEqual(["near", "mid"]);
-    expect([...selectPreviewPages(pages, viewportBounds, 1)]).toEqual(["near"]);
+    expect([...selectPreviewPages(pages, viewportBounds, new Set(), 1)]).toEqual(["near"]);
+  });
+
+  it("keeps mounted frames near the viewport instead of swapping in nearer ones", () => {
+    const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
+    const page = (pageId: string, x: number) =>
+      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
+    const pages = [page("mid", 200), page("near", -200), page("edge", 1_000)];
+
+    // A pan moved "near" closer to the centre than the frames already live.
+    expect([...selectLivePages(pages, viewportBounds, new Set(["mid", "edge"]), 2)]).toEqual([
+      "mid",
+      "edge",
+    ]);
+    expect([...selectPreviewPages(pages, viewportBounds, new Set(["mid"]), 1)]).toEqual(["mid"]);
   });
 
   it("snaps page positions to nearby page edges and centers", () => {
