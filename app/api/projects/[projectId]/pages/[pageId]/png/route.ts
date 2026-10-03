@@ -22,6 +22,9 @@ const pngRateLimiter = createRateLimiter({
   ],
 });
 
+// Under Vercel's 4.5 MB function response limit, with room for headers.
+const MAX_DOWNLOAD_BYTES = 4_400_000;
+
 interface RouteContext {
   params: Promise<{ projectId: string; pageId: string }>;
 }
@@ -75,7 +78,17 @@ export async function GET(request: Request, context: RouteContext) {
     const requestedScale = Number(params.get("scale"));
     const scale = requestedScale === 2 || requestedScale === 3 ? requestedScale : 1;
     const png = await renderPagePng(html, page.deviceType, false, scale);
-    return new Response(Buffer.from(png.base64, "base64"), {
+    const bytes = Buffer.from(png.base64, "base64");
+    // A render over the size cap falls back to the top screen only, and Vercel
+    // rejects a response over 4.5 MB. A download must be the whole page, so it
+    // fails with a reason rather than saving a cropped or missing file.
+    if (scale > 1 && (!png.fullPage || bytes.byteLength > MAX_DOWNLOAD_BYTES)) {
+      return NextResponse.json(
+        { error: `This page is too long to export at ${scale}x. Try a lower scale.` },
+        { status: 413 },
+      );
+    }
+    return new Response(bytes, {
       status: 200,
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
     });

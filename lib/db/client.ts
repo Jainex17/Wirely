@@ -19,9 +19,11 @@ const poolConfig = {
     process.env.DB_POOL_CONNECTION_TIMEOUT_MS,
     3_000,
   ),
+  // Opening a connection to Neon costs a TCP, TLS, and login round trip. The
+  // open editor polls every few seconds, so keep connections past one idle tab.
   idleTimeoutMillis: parsePositiveInteger(
     process.env.DB_POOL_IDLE_TIMEOUT_MS,
-    10_000,
+    60_000,
   ),
 };
 

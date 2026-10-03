@@ -653,7 +653,9 @@ const addAsset: ToolHandler = async (userId, args, origin) => {
   const link = `${origin}${createAssetUploadPath({ projectId: project.id, userId })}`;
   return succeed(
     "Upload the image from the user's disk with one shell command, replacing FILE:\n" +
-      `curl -sS -T "FILE" "${link}&name=$(basename "FILE")"\n` +
+      // --url-query percent-encodes the name, so a file named with a space,
+      // "#", or "&" uploads under its own name instead of a cut-off one.
+      `curl -sS -T "FILE" --url-query "name=$(basename "FILE")" "${link}"\n` +
       "It prints JSON with src. Use that src as-is in <img src> or an SVG <image href>. " +
       "The link works for 15 minutes and takes images up to 4 MB.",
   );

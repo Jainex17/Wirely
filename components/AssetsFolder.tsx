@@ -58,22 +58,38 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Bumped by every list request and every local upload or delete. A list
+  // response applies only if nothing started since its request, so an older
+  // response cannot hide a new image or bring back a deleted one.
+  const listVersionRef = useRef(0);
+
+  // An agent uploads from the user's terminal, so the list reloads when the
+  // user comes back to this tab.
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/projects/${projectId}/assets`, { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`List failed with status ${response.status}`);
-        const payload = (await response.json()) as { assets: Asset[]; unavailable?: boolean };
-        if (cancelled) return;
-        setAssets(payload.assets);
-        setStatus(payload.unavailable ? "unavailable" : "ready");
-      })
-      .catch((error: unknown) => {
-        logger.error("assets_list_failed", { projectId, error });
-        if (!cancelled) setStatus("failed");
-      });
+    const load = () => {
+      if (document.visibilityState !== "visible") return;
+      const version = ++listVersionRef.current;
+      fetch(`/api/projects/${projectId}/assets`, { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`List failed with status ${response.status}`);
+          const payload = (await response.json()) as { assets: Asset[]; unavailable?: boolean };
+          if (cancelled || version !== listVersionRef.current) return;
+          setAssets(payload.assets);
+          setStatus(payload.unavailable ? "unavailable" : "ready");
+        })
+        .catch((error: unknown) => {
+          logger.error("assets_list_failed", { projectId, error });
+          if (!cancelled) setStatus((current) => (current === "loading" ? "failed" : current));
+        });
+    };
+    load();
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", load);
     };
   }, [projectId]);
 
@@ -93,6 +109,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
         } | null;
         if (!response.ok || !payload?.asset) throw new Error(payload?.error || "Upload failed.");
         const asset = payload.asset;
+        listVersionRef.current++;
         setAssets((current) => [...current, asset]);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : `Could not upload ${file.name}.`);
@@ -112,6 +129,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
       toast.error("Could not delete the image. Try again.");
       return;
     }
+    listVersionRef.current++;
     setAssets((current) => current.filter((candidate) => candidate.id !== asset.id));
   };
 

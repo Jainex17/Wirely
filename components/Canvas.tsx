@@ -26,6 +26,7 @@ import {
   getPageFrameWidth,
   isInsertTool,
   selectLivePages,
+  isBoundsIntersecting,
   getSnappedPagePosition,
   getViewportBounds,
   placeMissingPages,
@@ -350,15 +351,25 @@ export default function Canvas({
   // take seconds to fill in. Frames stay mounted after they scroll away,
   // because rebuilding them re-runs Tailwind, until the live budget in
   // `selectLivePages` needs their slot for a page nearer the viewport.
+  // On open, the pages on screen mount first and the overscan follows one
+  // tick later, so the visible frames do not wait on offscreen ones.
   React.useEffect(() => {
+    // Before the first measure the viewport is empty and the camera has not
+    // fit the pages yet, so any pick would be the wrong pages.
+    if (viewportSize.width === 0) return;
     const timeoutId = window.setTimeout(
       () =>
         setMountedPageIds((current) => {
-          const next = selectLivePages(
-            pageLayouts.map((pageLayout) => pageLayout.bounds),
-            viewportBounds,
-            current,
-          );
+          const bounds = pageLayouts.map((pageLayout) => pageLayout.bounds);
+          let next = selectLivePages(bounds, viewportBounds, current);
+          if (current.size === 0) {
+            const onScreen = new Set(
+              bounds
+                .filter((page) => next.has(page.pageId) && isBoundsIntersecting(page, viewportBounds))
+                .map((page) => page.pageId),
+            );
+            if (onScreen.size > 0) next = onScreen;
+          }
           const unchanged =
             next.size === current.size && [...next].every((pageId) => current.has(pageId));
           return unchanged ? current : next;
@@ -366,7 +377,7 @@ export default function Canvas({
       mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS,
     );
     return () => window.clearTimeout(timeoutId);
-  }, [mountedPageIds.size, pageLayouts, viewportBounds]);
+  }, [mountedPageIds.size, pageLayouts, viewportBounds, viewportSize.width]);
 
   React.useEffect(() => {
     const assigned = placeMissingPages(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { updateProjectComment } from "@/components/CommentsPanel";
 import { CommentCard, CommentPin } from "@/components/ReviewComments";
@@ -9,9 +9,10 @@ import { useEditorStore } from "@/store/useEditorStore";
 /**
  * Open review comments on one page frame. Each pin opens its comment, which
  * the owner can resolve or delete; resolved comments stay in the comments
- * panel and on the review page, where they can be reopened.
+ * panel and on the review page, where they can be reopened. Memoized because
+ * the canvas re-renders on every pan frame and the pins' props do not change.
  */
-export default function CanvasCommentPins({
+export default memo(function CanvasCommentPins({
   pageId,
   projectId,
 }: {
@@ -76,4 +77,4 @@ export default function CanvasCommentPins({
       </div>
     );
   });
-}
+});

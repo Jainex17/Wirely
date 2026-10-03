@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import {
   ChevronUp,
   Columns3,
@@ -79,8 +79,11 @@ interface CanvasToolbarProps {
   onToolChange: (tool: CanvasTool) => void;
 }
 
-/** The floating tool bar at the bottom centre of the canvas. */
-export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolbarProps) {
+/**
+ * The floating tool bar at the bottom centre of the canvas. Memoized because
+ * the canvas re-renders on every pan frame and these props rarely change.
+ */
+export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasToolbarProps) {
   const {
     canvasBackground,
     focusedPageId,
@@ -222,7 +225,7 @@ export default function CanvasToolbar({ activeTool, onToolChange }: CanvasToolba
       </DropdownMenu>
     </div>
   );
-}
+});
 
 /** Zoom out, zoom to fit, and zoom in, for the canvas's top-right corner. */
 export function CanvasZoomControls() {

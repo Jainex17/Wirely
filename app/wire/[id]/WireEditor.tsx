@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
+import { warmTailwindFrame } from "@/lib/tailwindFrameBrowser";
 import type { PersistedWireLayout } from "@/lib/types";
 import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
@@ -95,6 +96,7 @@ export default function WireEditor({
   // Dialogs, menus, and toasts portal to <body>, outside the editor's root,
   // so the editor palette goes on <body> too while the editor is open.
   useEffect(() => {
+    warmTailwindFrame();
     document.body.classList.add("editor-theme");
     return () => document.body.classList.remove("editor-theme");
   }, []);

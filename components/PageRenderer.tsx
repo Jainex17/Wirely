@@ -431,6 +431,10 @@ export default React.memo(function PageRenderer({
     html: string;
     reporterId: string;
   } | null>(null);
+  // A frame that scrolls out of the live set drops its page, so coming back
+  // after an agent edit does not load the old page first and then reload.
+  // The compile cache makes an unchanged page come back within a tick.
+  if (!isLive && compiledFrame) setCompiledFrame(null);
   React.useEffect(() => {
     if (!hasHtml || !isLive) return;
     let isCurrent = true;
