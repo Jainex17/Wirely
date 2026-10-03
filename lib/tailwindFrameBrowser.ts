@@ -1,6 +1,7 @@
 /**
- * The editor's side of `lib/tailwindFrame.ts`. The compiler loads on first
- * use, so pages without the editor never download it, and the stylesheets
+ * The browser side of `lib/tailwindFrame.ts`, used by canvas frames and home
+ * thumbnails. The compiler loads on first use, so a page that shows no frame
+ * never downloads it, and the stylesheets
  * are fetched once per session.
  */
 import type { TailwindSources } from "@/lib/tailwindFrame";
@@ -17,12 +18,8 @@ const cache = new Map<string, Promise<string>>();
 let queue: Promise<unknown> = Promise.resolve();
 const yieldToBrowser = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-/** Resolves to the page with compiled CSS, or to the page unchanged if compiling fails. */
-export const precompileFrameHtml = (html: string) => {
-  const cached = cache.get(html);
-  if (cached) return cached;
-
-  sources ??= fetch("/api/tailwind-sources")
+const loadSources = () =>
+  (sources ??= fetch("/api/tailwind-sources")
     .then((response) => {
       if (!response.ok) throw new Error(`Tailwind sources failed with status ${response.status}`);
       return response.json() as Promise<TailwindSources>;
@@ -31,9 +28,24 @@ export const precompileFrameHtml = (html: string) => {
       // Lets the next frame try again rather than every frame failing for good.
       sources = null;
       throw error;
-    });
+    }));
 
-  const result = Promise.all([sources, import("@/lib/tailwindFrame"), queue.then(yieldToBrowser)])
+/**
+ * Starts both downloads before the first frame asks, so they overlap the
+ * editor's hydration instead of running after it. A failure here is retried by
+ * the first real compile.
+ */
+export const warmTailwindFrame = () => {
+  loadSources().catch(() => {});
+  import("@/lib/tailwindFrame").catch(() => {});
+};
+
+/** Resolves to the page with compiled CSS, or to the page unchanged if compiling fails. */
+export const precompileFrameHtml = (html: string) => {
+  const cached = cache.get(html);
+  if (cached) return cached;
+
+  const result = Promise.all([loadSources(), import("@/lib/tailwindFrame"), queue.then(yieldToBrowser)])
     .then(([loaded, { precompileTailwind }]) => precompileTailwind(html, loaded))
     .catch(() => {
       // The runtime still styles the page, and the next render may compile.
