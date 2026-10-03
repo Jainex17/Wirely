@@ -453,8 +453,37 @@ export const SHADOW_PRESETS = {
 
 const shadowValues = new Set<string>(Object.values(SHADOW_PRESETS));
 
+/** A two-stop gradient the Design tab can set over an element's fill. */
+export interface Gradient {
+  kind: "linear" | "radial";
+  /** Degrees, used by linear only. */
+  angle: number;
+  from: string;
+  to: string;
+}
+
+const GRADIENT_PATTERN =
+  /^(?:linear-gradient\((\d{1,3})deg, (#[0-9a-f]{6}), (#[0-9a-f]{6})\)|radial-gradient\(circle, (#[0-9a-f]{6}), (#[0-9a-f]{6})\))$/i;
+
+export const formatGradient = ({ kind, angle, from, to }: Gradient) =>
+  kind === "linear"
+    ? `linear-gradient(${angle}deg, ${from}, ${to})`
+    : `radial-gradient(circle, ${from}, ${to})`;
+
+/** Null for anything the Design tab did not write, like an agent's url() or multi-stop gradient. */
+export const parseGradient = (value: string): Gradient | null => {
+  const match = GRADIENT_PATTERN.exec(value);
+  if (!match) return null;
+  if (match[1] !== undefined) {
+    const angle = Number(match[1]);
+    return angle <= 360 ? { kind: "linear", angle, from: match[2], to: match[3] } : null;
+  }
+  return { kind: "radial", angle: 180, from: match[4], to: match[5] };
+};
+
 export const NODE_STYLE_PROPERTIES = {
   "box-shadow": { test: (value: string) => shadowValues.has(value) },
+  "background-image": { test: (value: string) => parseGradient(value) !== null },
   width: /^\d{1,4}(?:\.\d{1,2})?px$/,
   height: /^\d{1,4}(?:\.\d{1,2})?px$/,
   opacity: /^(?:0(?:\.\d{1,2})?|1)$/,
