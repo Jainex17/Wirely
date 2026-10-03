@@ -462,11 +462,14 @@ export default React.memo(function PageRenderer({
   }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
   // A preview runs no scripts, so it gets the compiled page with motion frozen
   // in CSS and none of the live frame's picker, height, or motion scripts.
-  // A regenerating page clears its HTML, so the placeholder replaces the old
-  // preview. A failed compile keeps the shell, since this frame cannot run
-  // the Tailwind runtime that would style it.
+  // When the page goes live, the preview stays underneath until the live frame
+  // loads, so the swap never shows a blank frame. A regenerating page clears
+  // its HTML, so the placeholder replaces the old preview. A failed compile
+  // keeps the shell, since this frame cannot run the Tailwind runtime.
   const [stillSrcDoc, setStillSrcDoc] = React.useState<string | null>(null);
-  if ((!isPreview || !hasHtml) && stillSrcDoc) setStillSrcDoc(null);
+  const [hasLiveLoaded, setHasLiveLoaded] = React.useState(false);
+  if (!isLive && hasLiveLoaded) setHasLiveLoaded(false);
+  if ((!hasHtml || renderMode === "shell" || hasLiveLoaded) && stillSrcDoc) setStillSrcDoc(null);
   React.useEffect(() => {
     if (!hasHtml || !isPreview) return;
     let isCurrent = true;
@@ -477,6 +480,18 @@ export default React.memo(function PageRenderer({
       isCurrent = false;
     };
   }, [canvasSrcDoc, hasHtml, isPreview]);
+  // An empty sandbox runs no scripts at all, which is stricter than the live
+  // frame's allow-scripts.
+  const stillFrame = stillSrcDoc ? (
+    <iframe
+      title={page.title}
+      srcDoc={stillSrcDoc}
+      className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background"
+      sandbox=""
+      referrerPolicy="no-referrer"
+      scrolling="no"
+    />
+  ) : null;
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -1244,6 +1259,7 @@ export default React.memo(function PageRenderer({
   }, [isLive, page.id, postToFrame]);
 
   const handleLoad = React.useCallback(() => {
+    setHasLiveLoaded(true);
     // A reload drops any click the old document was answering, and any typing.
     isPickPendingRef.current = false;
     isInsertPendingRef.current = false;
@@ -1426,6 +1442,9 @@ export default React.memo(function PageRenderer({
               height: `${pageHeight}px`,
             }}
           >
+            {/* Always this child slot, so React keeps one preview iframe through
+                the hand-off to live instead of remounting and reloading it. */}
+            {stillFrame}
             {hasHtml && isLive && measuredSrcDoc ? (
               <iframe
                 ref={iframeRef}
@@ -1433,8 +1452,9 @@ export default React.memo(function PageRenderer({
                 srcDoc={measuredSrcDoc}
                 onLoad={handleLoad}
                 className={cn(
-                  "h-full w-full border-0 bg-background",
+                  "relative h-full w-full border-0 bg-background",
                   editingNodeId ? "pointer-events-auto" : "pointer-events-none",
+                  stillSrcDoc && "opacity-0",
                 )}
                 style={{ overflow: "hidden" }}
                 loading="eager"
@@ -1442,18 +1462,7 @@ export default React.memo(function PageRenderer({
                 referrerPolicy="no-referrer"
                 scrolling="no"
               />
-            ) : isPreview && stillSrcDoc ? (
-              // An empty sandbox runs no scripts at all, which is stricter than
-              // the live frame's allow-scripts.
-              <iframe
-                title={page.title}
-                srcDoc={stillSrcDoc}
-                className="pointer-events-none h-full w-full border-0 bg-background"
-                sandbox=""
-                referrerPolicy="no-referrer"
-                scrolling="no"
-              />
-            ) : hasRawHtml ? (
+            ) : stillFrame ? null : hasRawHtml ? (
               // Offscreen, or on screen and waiting its turn to mount.
               <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
                 <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
