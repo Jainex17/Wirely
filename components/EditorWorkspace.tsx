@@ -13,6 +13,7 @@ import {
 } from "@/lib/canvasScene";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
+import { isPageDeviceType } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
 import { findNodeSpan, getNodeText, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertNode } from "@/lib/pageTree";
@@ -199,13 +200,14 @@ export default function EditorWorkspace({
             throw new Error(`Reload failed with status ${reloadResponse.status}`);
           }
           const payload = (await reloadResponse.json()) as {
-            pages?: Array<{ id: string; title: string; htmlContent: string }>;
+            pages?: Array<{ id: string; title: string; htmlContent: string; deviceType: string }>;
           };
           const reloadedPages =
             payload.pages?.map((item) => ({
               id: item.id,
               title: item.title,
               iframeHtml: item.htmlContent,
+              deviceType: isPageDeviceType(item.deviceType) ? item.deviceType : ("desktop" as const),
               sections: [] as string[],
             })) ?? [];
           hydrateProject(reloadedPages);
