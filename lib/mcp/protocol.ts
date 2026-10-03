@@ -81,6 +81,9 @@ export const MCP_INSTRUCTIONS = [
     "u_fit: 2, u_scale: 1, u_rotation: 0, u_offsetX: 0, u_offsetY: 0, u_originX: 0.5, " +
     "u_originY: 0.5, u_worldWidth: 0, u_worldHeight: 0 }, undefined, 0, 0). Give the element " +
     "a CSS background too: get_page_png has no WebGL and shows only that.",
+  "For a multi-screen flow, call get_design_tokens first and write one nav block that every " +
+    "screen reuses with the same links in the same order. When the screens are done, call " +
+    "set_prototype_flow with them in order, and fix any navigation mismatch it reports.",
   "Pass a short note with each change (add_page, update_page, patch_page, edit_element, " +
     "delete_page, set_design_tokens) saying what it does. The user follows your work by these notes.",
 ].join("\n");
@@ -560,6 +563,35 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       type: "object",
       properties: { projectId: PROJECT_ID, pageId: PAGE_ID, note: NOTE },
       required: ["projectId", "pageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_prototype_flow",
+    description:
+      "Link screens into the project's clickable prototype, in the order a viewer steps " +
+      "through them. Pages left out are not in the prototype, so call it again with a " +
+      "different list to add or remove screens. Returns the prototype link to give the " +
+      "user, and lists screens whose <nav> links differ from the other screens of the " +
+      "same device type.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageIds: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 50,
+          description: "Page ids in prototype order, with no repeats.",
+        },
+        startPageId: {
+          type: "string",
+          description: "The screen the prototype opens on. Defaults to the first of pageIds.",
+        },
+        note: NOTE,
+      },
+      required: ["projectId", "pageIds"],
       additionalProperties: false,
     },
   },

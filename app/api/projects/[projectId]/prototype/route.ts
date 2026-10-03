@@ -6,6 +6,7 @@ import {
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
+import { parseFlowInput } from "@/lib/prototypeFlow";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -15,19 +16,6 @@ interface SavePrototypeFlowRequestBody {
   pageIds?: unknown;
   startPageId?: unknown;
 }
-
-const MAX_FLOW_PAGE_COUNT = 50;
-
-const parsePageIds = (value: unknown): string[] | null => {
-  if (!Array.isArray(value)) return null;
-  if (value.length === 0 || value.length > MAX_FLOW_PAGE_COUNT) return null;
-  const pageIds: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== "string" || entry.trim().length === 0) return null;
-    pageIds.push(entry);
-  }
-  return pageIds;
-};
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -65,40 +53,16 @@ export async function PUT(request: Request, context: RouteContext) {
       return parsed.response;
     }
 
-    const pageIds = parsePageIds(parsed.data.pageIds);
-    if (!pageIds) {
-      return NextResponse.json(
-        {
-          error:
-            "pageIds must be a non-empty array of page ids with at most 50 entries.",
-        },
-        { status: 400 },
-      );
-    }
-    if (new Set(pageIds).size !== pageIds.length) {
-      return NextResponse.json(
-        { error: "pageIds must not contain duplicates." },
-        { status: 400 },
-      );
-    }
-
-    const startPageId =
-      typeof parsed.data.startPageId === "string" &&
-      parsed.data.startPageId.trim().length > 0
-        ? parsed.data.startPageId
-        : undefined;
-    if (startPageId !== undefined && !pageIds.includes(startPageId)) {
-      return NextResponse.json(
-        { error: "startPageId must be one of pageIds." },
-        { status: 400 },
-      );
+    const input = parseFlowInput(parsed.data.pageIds, parsed.data.startPageId);
+    if (!input.ok) {
+      return NextResponse.json({ error: input.error }, { status: 400 });
     }
 
     const flow = await upsertPrototypeFlowForProject({
       projectId,
       userId: sessionUser.id,
-      pageIds,
-      startPageId: startPageId ?? null,
+      pageIds: input.pageIds,
+      startPageId: input.startPageId,
     });
 
     if (!flow) {

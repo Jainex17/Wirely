@@ -135,6 +135,7 @@ describe("tool catalog", () => {
       "patch_page",
       "resolve_comment",
       "set_design_tokens",
+      "set_prototype_flow",
       "update_page",
     ]);
   });

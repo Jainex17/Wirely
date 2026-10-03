@@ -57,6 +57,8 @@ import {
   wrapNode,
 } from "@/lib/pageTree";
 import { formatCommentsForAgent, isUuid } from "@/lib/projectComments";
+import { upsertPrototypeFlowForProject } from "@/lib/db/queries/prototypeFlows";
+import { findNavigationMismatches, parseFlowInput } from "@/lib/prototypeFlow";
 import { isPageDeviceType } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 
@@ -880,6 +882,42 @@ const importUrl: ToolHandler = async (userId, args) => {
   );
 };
 
+const setPrototypeFlow: ToolHandler = async (userId, args, origin) => {
+  const parsed = z
+    .object({ projectId: z.string().trim().min(1), pageIds: z.unknown(), startPageId: z.unknown() })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+  const input = parseFlowInput(parsed.data.pageIds, parsed.data.startPageId);
+  if (!input.ok) return fail(input.error);
+
+  const flow = await upsertPrototypeFlowForProject({
+    projectId: parsed.data.projectId,
+    userId,
+    pageIds: input.pageIds,
+    startPageId: input.startPageId,
+  });
+  if (!flow) return fail("Project or page not found. Use list_pages for valid ids.");
+
+  const pages = await listProjectPagesForUser({ projectId: parsed.data.projectId, userId });
+  const pageById = new Map(pages.map((page) => [page.id, page]));
+  const flowPages = flow.pageIds.flatMap((pageId) => {
+    const page = pageById.get(pageId);
+    return page ? [{ title: page.title, deviceType: page.deviceType, html: page.htmlContent ?? "" }] : [];
+  });
+  const mismatches = findNavigationMismatches(flowPages);
+
+  return {
+    ...succeed(
+      `The prototype steps through ${flowPages.map((page) => `"${page.title}"`).join(", ")}.\n` +
+        `Give the user this link to play it: ${origin}/wire/${parsed.data.projectId}/prototype` +
+        (mismatches.length > 0
+          ? `\nNavigation differs between screens:\n${mismatches.join("\n")}`
+          : ""),
+    ),
+    activity: { pageId: flow.startPageId ?? undefined, detail: `${flowPages.length} screens` },
+  };
+};
+
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_projects: listProjects,
   create_project: createProjectHandler,
@@ -901,6 +939,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   add_asset: addAsset,
   list_assets: listAssets,
   delete_page: deletePage,
+  set_prototype_flow: setPrototypeFlow,
 };
 
 /** Guards the `tools/list` catalog and the dispatch table against drifting apart. */
