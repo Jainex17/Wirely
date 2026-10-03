@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
+import WirelyMark from "@/components/icons/WirelyMark";
 
 interface AppHeaderProps {
   user: UserAccountMenuUser | null;
@@ -55,7 +56,8 @@ export default function AppHeader({
             <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : (
-          <Link href="/" className="text-[15px] font-semibold tracking-tight">
+          <Link href="/" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+            <WirelyMark className="size-5" />
             Wirely
           </Link>
         )}

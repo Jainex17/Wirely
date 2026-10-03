@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import WirelyMark from "@/components/icons/WirelyMark";
 import LandingHeader from "./LandingHeader";
 import {
   LANDING_DIRECTIONS,
@@ -370,7 +371,8 @@ export default function Landing({ origin }: { origin: string }) {
     <div className="min-h-[100dvh] bg-background">
       <LandingHeader markerId={HERO_END_ID}>
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="font-display text-lg font-semibold tracking-tight">
+          <Link href="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+            <WirelyMark className="size-6" />
             Wirely
           </Link>
           <div className="flex items-center gap-1">
@@ -401,7 +403,10 @@ export default function Landing({ origin }: { origin: string }) {
 
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-8 text-sm text-muted-foreground">
-          <span className="font-display font-semibold text-foreground">Wirely</span>
+          <span className="flex items-center gap-2 font-display font-semibold text-foreground">
+            <WirelyMark className="size-5" />
+            Wirely
+          </span>
           <div className="flex items-center gap-6">
             <a href={REPO_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">
               GitHub

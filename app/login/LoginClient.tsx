@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useClerk } from "@clerk/nextjs";
 import { toast } from "@/components/ui/sonner";
+import WirelyMark from "@/components/icons/WirelyMark";
 
 interface LoginClientProps {
   nextPath?: string;
@@ -55,7 +56,8 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
     <main className="relative min-h-[100dvh] overflow-hidden bg-background text-foreground flex items-center justify-center px-6">
       <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-xl p-8">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+          <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            <WirelyMark className="size-5 text-foreground" />
             Wirely
           </p>
           <h1 className="text-2xl font-semibold">Sign in</h1>
