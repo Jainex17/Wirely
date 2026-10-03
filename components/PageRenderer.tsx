@@ -24,6 +24,7 @@ import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
+import { captureFrameSnapshot } from "@/lib/frameSnapshot";
 import {
   FRAME_MOTION_FOUND,
   FRAME_MOTION_REPLAY,
@@ -480,18 +481,6 @@ export default React.memo(function PageRenderer({
       isCurrent = false;
     };
   }, [canvasSrcDoc, hasHtml, isPreview]);
-  // An empty sandbox runs no scripts at all, which is stricter than the live
-  // frame's allow-scripts.
-  const stillFrame = stillSrcDoc ? (
-    <iframe
-      title={page.title}
-      srcDoc={stillSrcDoc}
-      className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background"
-      sandbox=""
-      referrerPolicy="no-referrer"
-      scrolling="no"
-    />
-  ) : null;
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -537,6 +526,43 @@ export default React.memo(function PageRenderer({
   }, [page.title]);
 
   const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
+
+  // The preview swaps its iframe for a still image once one is drawn, so a
+  // zoomed out canvas scales bitmaps instead of re-rasterizing documents.
+  // The image belongs to one page HTML; anything else keeps the iframe.
+  const [snapshot, setSnapshot] = React.useState<{ html: string; url: string } | null>(null);
+  React.useEffect(() => {
+    if (!stillSrcDoc) return;
+    let isCurrent = true;
+    void captureFrameSnapshot(stillSrcDoc, currentDevice.width, pageHeight).then((url) => {
+      if (isCurrent && url) setSnapshot({ html: stillSrcDoc, url });
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [currentDevice.width, pageHeight, stillSrcDoc]);
+  // An empty sandbox runs no scripts at all, which is stricter than the live
+  // frame's allow-scripts.
+  const stillFrame = !stillSrcDoc ? null : snapshot?.html === stillSrcDoc ? (
+    // eslint-disable-next-line @next/next/no-img-element -- an object URL drawn in this tab
+    <img
+      src={snapshot.url}
+      alt=""
+      draggable={false}
+      className="pointer-events-none absolute inset-x-0 top-0 w-full bg-background"
+      // An evicted snapshot's URL is revoked; the iframe takes over again.
+      onError={() => setSnapshot(null)}
+    />
+  ) : (
+    <iframe
+      title={page.title}
+      srcDoc={stillSrcDoc}
+      className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background"
+      sandbox=""
+      referrerPolicy="no-referrer"
+      scrolling="no"
+    />
+  );
 
   React.useEffect(() => {
     setIframeHeight(Math.max(currentDevice.height, frameHeight));
@@ -1442,8 +1468,8 @@ export default React.memo(function PageRenderer({
               height: `${pageHeight}px`,
             }}
           >
-            {/* Always this child slot, so React keeps one preview iframe through
-                the hand-off to live instead of remounting and reloading it. */}
+            {/* Always this child slot, so React keeps one preview through the
+                hand-off to live instead of remounting and reloading it. */}
             {stillFrame}
             {hasHtml && isLive && measuredSrcDoc ? (
               <iframe
