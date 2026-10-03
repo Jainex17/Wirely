@@ -7,7 +7,11 @@ export interface PrototypeFlow {
   startPageId: string | null;
 }
 
-/** The saved flow, or every page in canvas order when none is saved. Null when the project is not the user's. */
+/**
+ * The saved flow, or every page in canvas order when none is saved. A saved
+ * flow whose pages were all deleted comes back empty. Null when the project is
+ * not the user's.
+ */
 export const getPrototypeFlowForProject = async (
   projectId: string,
   userId: string,
@@ -41,10 +45,9 @@ export const getPrototypeFlowForProject = async (
     };
   }
 
-  // A saved flow is exactly the pages it lists, so a screen left out stays out.
-  // Only when every listed page is gone does it fall back to all of them.
-  const storedIds = (flow.pageIds ?? []).filter((pageId) => pageIdSet.has(pageId));
-  const pageIds = storedIds.length > 0 ? storedIds : pages.map((page) => page.id);
+  // A saved flow is exactly the pages it lists, so a screen left out stays out,
+  // even when every listed page has since been deleted and the flow is empty.
+  const pageIds = (flow.pageIds ?? []).filter((pageId) => pageIdSet.has(pageId));
 
   const startPageId =
     flow.startPageId && pageIds.includes(flow.startPageId)

@@ -211,6 +211,11 @@ export default function PrototypeFlowDialog({
                 </button>
               </li>
             ))}
+            {flowIds.length === 0 ? (
+              <li className="px-2 py-3 text-sm text-muted-foreground">
+                The screens in this prototype were deleted. Add at least one screen below.
+              </li>
+            ) : null}
             {otherPages.length > 0 ? (
               <li className="px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Not in the prototype
