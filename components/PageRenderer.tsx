@@ -24,7 +24,12 @@ import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
-import { FRAME_MOTION_FOUND, FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
+import {
+  FRAME_MOTION_FOUND,
+  FRAME_MOTION_REPLAY,
+  freezeFrameMotion,
+  injectFrameMotion,
+} from "@/lib/frameMotion";
 import {
   injectNodePicker,
   NODE_EDIT_REQUEST_EVENT,
@@ -46,7 +51,7 @@ import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, moveElement } from "@/store/pageEdits";
 import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
-import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
+import { hasTailwindRuntime, precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
@@ -369,6 +374,7 @@ export default React.memo(function PageRenderer({
     Math.max(currentDevice.height, frameHeight),
   );
   const isLive = renderMode === "live";
+  const isPreview = renderMode === "preview";
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
   // The cursor marker exists only in the srcdoc string. Stored page HTML,
@@ -406,8 +412,9 @@ export default React.memo(function PageRenderer({
   // Stamped before sanitizing, so the ids match the ones the editor saves
   // when an element is picked, even where the sanitizer drops elements.
   const sanitizedHtml = React.useMemo(
-    () => (hasRawHtml && isLive ? sanitizeIframeHtml(stampNodeIds(displayedHtml)) : ""),
-    [displayedHtml, hasRawHtml, isLive],
+    () =>
+      hasRawHtml && (isLive || isPreview) ? sanitizeIframeHtml(stampNodeIds(displayedHtml)) : "",
+    [displayedHtml, hasRawHtml, isLive, isPreview],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
   const iframeReporterId = React.useMemo(
@@ -453,6 +460,23 @@ export default React.memo(function PageRenderer({
       isCurrent = false;
     };
   }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
+  // A preview runs no scripts, so it gets the compiled page with motion frozen
+  // in CSS and none of the live frame's picker, height, or motion scripts.
+  // A regenerating page clears its HTML, so the placeholder replaces the old
+  // preview. A failed compile keeps the shell, since this frame cannot run
+  // the Tailwind runtime that would style it.
+  const [stillSrcDoc, setStillSrcDoc] = React.useState<string | null>(null);
+  if ((!isPreview || !hasHtml) && stillSrcDoc) setStillSrcDoc(null);
+  React.useEffect(() => {
+    if (!hasHtml || !isPreview) return;
+    let isCurrent = true;
+    void precompileFrameHtml(canvasSrcDoc, { background: true }).then((html) => {
+      if (isCurrent && !hasTailwindRuntime(html)) setStillSrcDoc(freezeFrameMotion(html));
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [canvasSrcDoc, hasHtml, isPreview]);
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -1415,6 +1439,17 @@ export default React.memo(function PageRenderer({
                 style={{ overflow: "hidden" }}
                 loading="eager"
                 sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+                scrolling="no"
+              />
+            ) : isPreview && stillSrcDoc ? (
+              // An empty sandbox runs no scripts at all, which is stricter than
+              // the live frame's allow-scripts.
+              <iframe
+                title={page.title}
+                srcDoc={stillSrcDoc}
+                className="pointer-events-none h-full w-full border-0 bg-background"
+                sandbox=""
                 referrerPolicy="no-referrer"
                 scrolling="no"
               />
