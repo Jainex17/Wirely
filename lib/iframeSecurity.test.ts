@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { PAPER_SHADERS_MODULE_URL, sanitizeIframeHtml } from "@/lib/iframeSecurity";
 
 describe("sanitizeIframeHtml", () => {
   it("keeps allowed Tailwind and Chart.js scripts", () => {
@@ -27,6 +27,25 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).toContain("Content-Security-Policy");
     expect(sanitized).toContain("connect-src 'none'");
     expect(sanitized).toContain("img-src https://images.unsplash.com https://plus.unsplash.com data: blob:");
+  });
+
+  it("allows scripts by exact URL, not every package on the CDN", () => {
+    const html = `
+      <html><head>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js?v=1"></script>
+      </head><body>
+        <script type="module">import x from "https://cdn.jsdelivr.net/npm/evil@1/+esm";</script>
+      </body></html>
+    `;
+
+    const scriptSrc = sanitizeIframeHtml(html).match(/script-src ([^;]*)/)?.[1] ?? "";
+    expect(scriptSrc.split(" ").sort()).toEqual(
+      [
+        "'unsafe-inline'",
+        "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js",
+        PAPER_SHADERS_MODULE_URL,
+      ].sort(),
+    );
   });
 
   it("removes disallowed and unsafe scripts", () => {
