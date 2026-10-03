@@ -58,22 +58,36 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const uploadCountRef = useRef(0);
+  uploadCountRef.current = uploadCount;
+
+  // An agent uploads from the user's terminal, so the list reloads when the
+  // user comes back to this tab. A reload during an upload could drop the
+  // file the upload is about to add, so it waits for the next return.
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/projects/${projectId}/assets`, { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`List failed with status ${response.status}`);
-        const payload = (await response.json()) as { assets: Asset[]; unavailable?: boolean };
-        if (cancelled) return;
-        setAssets(payload.assets);
-        setStatus(payload.unavailable ? "unavailable" : "ready");
-      })
-      .catch((error: unknown) => {
-        logger.error("assets_list_failed", { projectId, error });
-        if (!cancelled) setStatus("failed");
-      });
+    const load = () => {
+      if (document.visibilityState !== "visible" || uploadCountRef.current > 0) return;
+      fetch(`/api/projects/${projectId}/assets`, { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`List failed with status ${response.status}`);
+          const payload = (await response.json()) as { assets: Asset[]; unavailable?: boolean };
+          if (cancelled || uploadCountRef.current > 0) return;
+          setAssets(payload.assets);
+          setStatus(payload.unavailable ? "unavailable" : "ready");
+        })
+        .catch((error: unknown) => {
+          logger.error("assets_list_failed", { projectId, error });
+          if (!cancelled) setStatus((current) => (current === "loading" ? "failed" : current));
+        });
+    };
+    load();
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", load);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", load);
     };
   }, [projectId]);
 
