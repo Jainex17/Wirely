@@ -21,10 +21,10 @@ describe("injectFrameMotion", () => {
 });
 
 describe("freezeFrameMotion", () => {
-  it("turns off animations in the head, or at the top when there is no head", () => {
+  it("settles animations in the head, or at the top when there is no head", () => {
     expect(freezeFrameMotion("<html><head></head><body></body></html>")).toMatch(
-      /<style>[^<]*animation:none!important[^<]*<\/style><\/head>/,
+      /<style>[^<]*animation-duration:0s!important[^<]*<\/style><\/head>/,
     );
-    expect(freezeFrameMotion("<p>x</p>")).toMatch(/^<style>[^<]*animation:none!important/);
+    expect(freezeFrameMotion("<p>x</p>")).toMatch(/^<style>[^<]*animation-duration:0s!important/);
   });
 });

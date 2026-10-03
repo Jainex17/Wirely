@@ -23,14 +23,16 @@ export const FRAME_MOTION_FOUND = "wirely-motion-found";
 const SETTLE_PASSES_MS = [0, 60, 250, 700, 1500];
 
 /**
- * Turns off every animation and transition with CSS alone, for a preview frame
- * that runs no scripts. Elements show their resting style, which for an
- * entrance animation is its end state.
+ * Settles every animation and transition with CSS alone, for a preview frame
+ * that runs no scripts. Each animation runs once in zero time, so an element
+ * that starts hidden and fades in with `forwards` shows its end state, as it
+ * does after `injectFrameMotion` finishes it in a live frame. Loops run once
+ * and stop.
  */
 export const freezeFrameMotion = (html: string) => {
   if (!html) return html;
   const style =
-    "<style>*,*::before,*::after{animation:none!important;transition:none!important}</style>";
+    "<style>*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important}</style>";
   if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${style}</head>`);
   return `${style}${html}`;
 };

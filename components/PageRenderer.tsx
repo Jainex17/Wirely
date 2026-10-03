@@ -51,7 +51,7 @@ import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, moveElement } from "@/store/pageEdits";
 import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
-import { precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
+import { hasTailwindRuntime, precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
@@ -455,13 +455,16 @@ export default React.memo(function PageRenderer({
   }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
   // A preview runs no scripts, so it gets the compiled page with motion frozen
   // in CSS and none of the live frame's picker, height, or motion scripts.
+  // A regenerating page clears its HTML, so the placeholder replaces the old
+  // preview. A failed compile keeps the shell, since this frame cannot run
+  // the Tailwind runtime that would style it.
   const [stillSrcDoc, setStillSrcDoc] = React.useState<string | null>(null);
-  if (!isPreview && stillSrcDoc) setStillSrcDoc(null);
+  if ((!isPreview || !hasHtml) && stillSrcDoc) setStillSrcDoc(null);
   React.useEffect(() => {
     if (!hasHtml || !isPreview) return;
     let isCurrent = true;
-    void precompileFrameHtml(canvasSrcDoc).then((html) => {
-      if (isCurrent) setStillSrcDoc(freezeFrameMotion(html));
+    void precompileFrameHtml(canvasSrcDoc, { background: true }).then((html) => {
+      if (isCurrent && !hasTailwindRuntime(html)) setStillSrcDoc(freezeFrameMotion(html));
     });
     return () => {
       isCurrent = false;
