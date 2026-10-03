@@ -26,6 +26,7 @@ import {
   getPageFrameWidth,
   isInsertTool,
   selectLivePages,
+  selectPreviewPages,
   isBoundsIntersecting,
   getSnappedPagePosition,
   getViewportBounds,
@@ -275,6 +276,9 @@ export default function Canvas({
   const [mountedPageIds, setMountedPageIds] = React.useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [previewPageIds, setPreviewPageIds] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const pendingWheelRef = React.useRef<{
     panX: number;
     panY: number;
@@ -353,29 +357,35 @@ export default function Canvas({
   // `selectLivePages` needs their slot for a page nearer the viewport.
   // On open, the pages on screen mount first and the overscan follows one
   // tick later, so the visible frames do not wait on offscreen ones.
+  // On-screen pages past the live budget get a still preview in the same pass,
+  // so a zoomed out canvas shows designs instead of blank shells.
   React.useEffect(() => {
     // Before the first measure the viewport is empty and the camera has not
     // fit the pages yet, so any pick would be the wrong pages.
     if (viewportSize.width === 0) return;
-    const timeoutId = window.setTimeout(
-      () =>
-        setMountedPageIds((current) => {
-          const bounds = pageLayouts.map((pageLayout) => pageLayout.bounds);
-          let next = selectLivePages(bounds, viewportBounds, current);
-          if (current.size === 0) {
-            const onScreen = new Set(
-              bounds
-                .filter((page) => next.has(page.pageId) && isBoundsIntersecting(page, viewportBounds))
-                .map((page) => page.pageId),
-            );
-            if (onScreen.size > 0) next = onScreen;
-          }
-          const unchanged =
-            next.size === current.size && [...next].every((pageId) => current.has(pageId));
-          return unchanged ? current : next;
-        }),
-      mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS,
-    );
+    const timeoutId = window.setTimeout(() => {
+      const bounds = pageLayouts.map((pageLayout) => pageLayout.bounds);
+      const previews = selectPreviewPages(bounds, viewportBounds);
+      setPreviewPageIds((current) =>
+        previews.size === current.size && [...previews].every((pageId) => current.has(pageId))
+          ? current
+          : previews,
+      );
+      setMountedPageIds((current) => {
+        let next = selectLivePages(bounds, viewportBounds, current);
+        if (current.size === 0) {
+          const onScreen = new Set(
+            bounds
+              .filter((page) => next.has(page.pageId) && isBoundsIntersecting(page, viewportBounds))
+              .map((page) => page.pageId),
+          );
+          if (onScreen.size > 0) next = onScreen;
+        }
+        const unchanged =
+          next.size === current.size && [...next].every((pageId) => current.has(pageId));
+        return unchanged ? current : next;
+      });
+    }, mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS);
     return () => window.clearTimeout(timeoutId);
   }, [mountedPageIds.size, pageLayouts, viewportBounds, viewportSize.width]);
 
@@ -999,7 +1009,9 @@ export default function Canvas({
           {pageLayouts.map((pageLayout) => {
             const renderMode: PageRenderMode = mountedPageIds.has(pageLayout.page.id)
               ? "live"
-              : "shell";
+              : previewPageIds.has(pageLayout.page.id)
+                ? "preview"
+                : "shell";
 
             return (
               <div

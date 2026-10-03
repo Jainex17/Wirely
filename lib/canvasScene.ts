@@ -50,7 +50,7 @@ export interface SnapResult {
   guides: SnapGuide[];
 }
 
-export type PageRenderMode = "live" | "shell";
+export type PageRenderMode = "live" | "preview" | "shell";
 
 /**
  * Move drags pages, hand pans, element picks an element inside a page, pen
@@ -266,6 +266,33 @@ export const selectLivePages = (
     if (live.size < limit && mounted.has(page.pageId)) live.add(page.pageId);
   }
   return live;
+};
+
+// A preview is the compiled page in a frame with scripts off: it costs layout
+// and paint once, then nothing, so a zoomed out canvas can show far more pages
+// than the live budget allows. Live pages count against this budget too.
+export const MAX_PREVIEW_PAGES = 48;
+
+/**
+ * Which pages show a still preview: the pages on screen nearest the viewport
+ * centre, up to `limit`. A page that also gets a live frame renders live.
+ * Offscreen pages are left out, so zooming back in drops previews nobody sees.
+ */
+export const selectPreviewPages = (
+  pages: readonly PageBounds[],
+  viewportBounds: Bounds,
+  limit = MAX_PREVIEW_PAGES,
+) => {
+  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
+  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
+  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
+  return new Set(
+    pages
+      .filter((page) => isBoundsIntersecting(page, viewportBounds))
+      .sort((a, b) => distance(a) - distance(b))
+      .slice(0, limit)
+      .map((page) => page.pageId),
+  );
 };
 
 export const getDefaultPageX = (

@@ -8,6 +8,7 @@ import {
   getEdgePanVelocity,
   getPageBounds,
   selectLivePages,
+  selectPreviewPages,
   getSnappedPagePosition,
   getViewportBounds,
   clipToFirstScreen,
@@ -91,6 +92,16 @@ describe("canvasScene helpers", () => {
       "far",
     ]);
     expect(selectLivePages(pages, viewportBounds, new Set(["far"]), 3).has("far")).toBe(false);
+  });
+
+  it("previews only on-screen pages, nearest first, up to the budget", () => {
+    const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
+    const page = (pageId: string, x: number) =>
+      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
+    const pages = [page("far", 20_000), page("mid", 200), page("near", -200), page("edge", 1_000)];
+
+    expect([...selectPreviewPages(pages, viewportBounds)]).toEqual(["near", "mid"]);
+    expect([...selectPreviewPages(pages, viewportBounds, 1)]).toEqual(["near"]);
   });
 
   it("snaps page positions to nearby page edges and centers", () => {

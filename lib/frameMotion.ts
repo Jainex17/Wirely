@@ -22,6 +22,19 @@ export const FRAME_MOTION_FOUND = "wirely-motion-found";
 // load), their animations start late too. These passes catch them.
 const SETTLE_PASSES_MS = [0, 60, 250, 700, 1500];
 
+/**
+ * Turns off every animation and transition with CSS alone, for a preview frame
+ * that runs no scripts. Elements show their resting style, which for an
+ * entrance animation is its end state.
+ */
+export const freezeFrameMotion = (html: string) => {
+  if (!html) return html;
+  const style =
+    "<style>*,*::before,*::after{animation:none!important;transition:none!important}</style>";
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${style}</head>`);
+  return `${style}${html}`;
+};
+
 export const injectFrameMotion = (html: string, reporterId: string) => {
   if (!html) return html;
 
