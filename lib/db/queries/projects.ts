@@ -257,10 +257,10 @@ export const listProjectPageChangesForUser = async ({
   since: Date;
 }) => {
   const db = getDb();
-  const project = await getProjectForUser(projectId, userId);
-  if (!project) return null;
-
-  const [idRows, changed] = await Promise.all([
+  // The editor polls this every few seconds, so the ownership check shares the
+  // round trip with the reads and a failed check drops what they returned.
+  const [project, idRows, changed] = await Promise.all([
+    getProjectForUser(projectId, userId),
     db
       .select({ id: projectPages.id })
       .from(projectPages)
@@ -277,6 +277,7 @@ export const listProjectPageChangesForUser = async ({
       .where(and(eq(projectPages.projectId, projectId), gt(projectPages.updatedAt, since)))
       .orderBy(asc(projectPages.sortOrder)),
   ]);
+  if (!project) return null;
 
   return { pageIds: idRows.map((row) => row.id), changed };
 };

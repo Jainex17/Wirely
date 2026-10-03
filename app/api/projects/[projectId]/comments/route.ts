@@ -23,13 +23,18 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const project = await getProjectForUser(projectId, sessionUser.id);
+    // Polled by the open editor, so the ownership check and the read share one
+    // round trip. A failed check drops what the read returned.
+    const [project, comments] = await Promise.all([
+      getProjectForUser(projectId, sessionUser.id),
+      listProjectComments(projectId),
+    ]);
     if (!project) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
     return NextResponse.json(
-      { comments: await listProjectComments(project.id) },
+      { comments },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
