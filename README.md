@@ -25,7 +25,7 @@ It uses the agent subscription you already pay for. Wirely is free and open sour
 - **Use your own images.** Upload images to the project's Assets folder in the pages panel, or
   ask your agent to upload one from your disk. Pages use them like any other image.
 - **Draw vector art.** The pen tool draws on any page, and on vector pages it also edits shapes.
-- **Build a clickable prototype.** Link pages together and click through them like a real app.
+- **Build a clickable prototype.** Put pages in order, by hand or through your agent, and step through them or present them full screen.
 - **Share for feedback.** Press C and click any element to comment on it, or send a review link
   so other people can pin comments. Your agent can read those comments too.
 - **Design for desktop and mobile.** Each page has its own device frame.
