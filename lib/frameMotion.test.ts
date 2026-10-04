@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { FRAME_MOTION_REPLAY, freezeFrameMotion, injectFrameMotion } from "@/lib/frameMotion";
+import { FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
 
 describe("injectFrameMotion", () => {
   it("injects a script that parses, before </body>", () => {
@@ -17,14 +17,5 @@ describe("injectFrameMotion", () => {
 
   it("leaves empty html alone", () => {
     expect(injectFrameMotion("", "frame-1")).toBe("");
-  });
-});
-
-describe("freezeFrameMotion", () => {
-  it("settles animations in the head, or at the top when there is no head", () => {
-    expect(freezeFrameMotion("<html><head></head><body></body></html>")).toMatch(
-      /<style>[^<]*animation-duration:0s!important[^<]*<\/style><\/head>/,
-    );
-    expect(freezeFrameMotion("<p>x</p>")).toMatch(/^<style>[^<]*animation-duration:0s!important/);
   });
 });

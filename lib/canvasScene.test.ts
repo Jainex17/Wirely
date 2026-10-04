@@ -1,14 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
-  CANVAS_TOP_OFFSET,
   PAGE_GAP,
+  movePagesWith,
   createBounds,
   createDefaultCamera,
   fitBounds,
   getEdgePanVelocity,
   getPageBounds,
-  selectLivePages,
-  selectPreviewPages,
   getSnappedPagePosition,
   getViewportBounds,
   clipToFirstScreen,
@@ -76,46 +74,6 @@ describe("canvasScene helpers", () => {
     expect(viewportBounds.right).toBeGreaterThanOrEqual(bounds.right);
     expect(viewportBounds.top).toBeLessThanOrEqual(bounds.top);
     expect(viewportBounds.bottom).toBeGreaterThanOrEqual(bounds.bottom);
-  });
-
-  it("makes live only the nearest pages in view, then keeps mounted ones with spare budget", () => {
-    const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
-    const page = (pageId: string, x: number) =>
-      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
-    const pages = [page("far", 20_000), page("mid", 200), page("near", -200), page("edge", 1_000)];
-
-    expect([...selectLivePages(pages, viewportBounds, new Set(), 2)]).toEqual(["near", "mid"]);
-    expect([...selectLivePages(pages, viewportBounds, new Set(["far"]), 4)]).toEqual([
-      "near",
-      "mid",
-      "edge",
-      "far",
-    ]);
-    expect(selectLivePages(pages, viewportBounds, new Set(["far"]), 3).has("far")).toBe(false);
-  });
-
-  it("previews only on-screen pages, nearest first, up to the budget", () => {
-    const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
-    const page = (pageId: string, x: number) =>
-      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
-    const pages = [page("far", 20_000), page("mid", 200), page("near", -200), page("edge", 1_000)];
-
-    expect([...selectPreviewPages(pages, viewportBounds)]).toEqual(["near", "mid"]);
-    expect([...selectPreviewPages(pages, viewportBounds, new Set(), 1)]).toEqual(["near"]);
-  });
-
-  it("keeps mounted frames near the viewport instead of swapping in nearer ones", () => {
-    const viewportBounds = createBounds(-600, -CANVAS_TOP_OFFSET, 600, 700);
-    const page = (pageId: string, x: number) =>
-      getPageBounds({ pageId, position: { x, y: 0 }, width: 400, height: 400 });
-    const pages = [page("mid", 200), page("near", -200), page("edge", 1_000)];
-
-    // A pan moved "near" closer to the centre than the frames already live.
-    expect([...selectLivePages(pages, viewportBounds, new Set(["mid", "edge"]), 2)]).toEqual([
-      "mid",
-      "edge",
-    ]);
-    expect([...selectPreviewPages(pages, viewportBounds, new Set(["mid"]), 1)]).toEqual(["mid"]);
   });
 
   it("snaps page positions to nearby page edges and centers", () => {
@@ -242,5 +200,17 @@ describe("canvas view helpers", () => {
     expect(positions.b).toEqual({ x: 1440 + PAGE_GAP, y: 0 });
     expect(positions.c).toEqual({ x: 0, y: 5000 + PAGE_GAP });
     expect(positions.d.y).toBe(5000 + PAGE_GAP);
+  });
+});
+
+describe("movePagesWith", () => {
+  it("moves every selected page by the dragged page's offset, keeping their layout", () => {
+    expect(
+      movePagesWith(
+        { a: { x: 0, y: 0 }, b: { x: 1600, y: 40 }, c: { x: -500, y: 900 } },
+        "a",
+        { x: 120, y: -30 },
+      ),
+    ).toEqual({ a: { x: 120, y: -30 }, b: { x: 1720, y: 10 }, c: { x: -380, y: 870 } });
   });
 });

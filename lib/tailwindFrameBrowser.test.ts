@@ -9,17 +9,17 @@ afterEach(() => {
 });
 
 describe("precompileFrameHtml", () => {
-  it("compiles a live frame's page before a background preview queued earlier", async () => {
+  it("compiles a live frame's page before an inert frame's page queued earlier", async () => {
     globalThis.fetch = (async () => Response.json({})) as unknown as typeof fetch;
     const finished: string[] = [];
     // Pages without the runtime script compile to themselves, so no stylesheet is needed.
-    const preview = precompileFrameHtml("<p>preview</p>", { background: true }).then(() =>
-      finished.push("preview"),
+    const inert = precompileFrameHtml("<p>inert</p>", { background: true }).then(() =>
+      finished.push("inert"),
     );
     const live = precompileFrameHtml("<p>live</p>").then(() => finished.push("live"));
-    await Promise.all([preview, live]);
+    await Promise.all([inert, live]);
 
-    expect(finished).toEqual(["live", "preview"]);
+    expect(finished).toEqual(["live", "inert"]);
   });
 });
 

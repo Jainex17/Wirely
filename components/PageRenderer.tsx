@@ -20,16 +20,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
+import { AGENT_CURSOR_ATTRIBUTE, buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
 import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
-import {
-  FRAME_MOTION_FOUND,
-  FRAME_MOTION_REPLAY,
-  freezeFrameMotion,
-  injectFrameMotion,
-} from "@/lib/frameMotion";
+import { FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
+import { hasPageMotion } from "@/lib/inertCss";
 import {
   injectNodePicker,
   NODE_EDIT_REQUEST_EVENT,
@@ -48,10 +44,20 @@ import {
   stampNodeIds,
 } from "@/lib/pageNodes";
 import type { InsertKind } from "@/lib/pageTree";
-import { commitPageEdit, moveElement } from "@/store/pageEdits";
+import { commitPageEdit, insertAsset, moveElement } from "@/store/pageEdits";
+import { ASSET_DRAG_TYPE, type DraggedAsset, parseAssetDrag } from "@/lib/assetDrag";
 import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
 import { hasTailwindRuntime, precompileFrameHtml } from "@/lib/tailwindFrameBrowser";
+import {
+  applyInertPreview,
+  findInertNode,
+  type InertFrame as InertFrameHandle,
+  inertElementBox,
+  inertNodeAt,
+  reportInertNode,
+} from "@/lib/inertPicker";
+import InertFrame from "./InertFrame";
 import { exportArtboardSvg } from "@/lib/vectorArtboard";
 import VectorEditLayer from "./VectorEditLayer";
 import GeneratingPreviewPlaceholder from "./GeneratingPreviewPlaceholder";
@@ -88,6 +94,8 @@ const AGENT_CURSOR_LINGER_MS = 3_000;
 // Each replay step reloads the frame, so steps come no faster than the frame
 // can repaint without flashing. Ten steps cap a replay near three seconds.
 const REVEAL_STEP_MS = 300;
+// How long keys stay blocked waiting for the live frame to start a text edit.
+const PENDING_EDIT_TIMEOUT_MS = 10_000;
 /** Where the design starts below the frame's top: the 50px title row plus the 4px column gap. */
 export const PAGE_FRAME_TOP = 54;
 
@@ -149,6 +157,11 @@ interface PageRendererProps {
   isSelected: boolean;
   frameHeight: number;
   renderMode: PageRenderMode;
+  /**
+   * Swaps this page to its live frame, the one page on the canvas that runs
+   * scripts, or with null sends it back to inert.
+   */
+  onLiveChange?: (pageId: string | null) => void;
   /** The element tool is active, so pointer moves and clicks pick elements in this page. */
   isElementMode: boolean;
   /** The pen tool is active. */
@@ -280,6 +293,7 @@ export default React.memo(function PageRenderer({
   isSelected,
   frameHeight,
   renderMode,
+  onLiveChange,
   isElementMode,
   isPenMode,
   isCommentMode,
@@ -370,18 +384,25 @@ export default React.memo(function PageRenderer({
   // Code dialog removed from the page toolbar for now.
   // const [isCodeDialogOpen, setIsCodeDialogOpen] = React.useState(false);
   const [nextPageTitle, setNextPageTitle] = React.useState(page.title);
-  const [iframeHeight, setIframeHeight] = React.useState(
+  // The page's full height, reported by the live frame or measured in the inert one.
+  const [contentHeight, setContentHeight] = React.useState(
     Math.max(currentDevice.height, frameHeight),
   );
-  const isLive = renderMode === "live";
-  const isPreview = renderMode === "preview";
+  // The element whose text the user is typing into, in the live frame. A page
+  // stays live until typing ends, so leaving it never drops the text.
+  const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
+  const isLive = renderMode === "live" || editingNodeId !== null;
+  const [hasLiveLoaded, setHasLiveLoaded] = React.useState(false);
+  if (!isLive && hasLiveLoaded) setHasLiveLoaded(false);
+  // Until the live frame loads, the inert frame under it answers the element tool.
+  const isLiveReady = isLive && hasLiveLoaded;
   const hasRawHtml =
     typeof page.iframeHtml === "string" && page.iframeHtml.trim().length > 0;
   // The cursor marker exists only in the srcdoc string. Stored page HTML,
   // exports, and the preview dialog all read page.iframeHtml, which never
   // carries it or a replay step.
   const cursorEdit = agentEdit && agentEdit.html === page.iframeHtml ? agentEdit : null;
-  const replayEdit = isLive && cursorEdit?.replay ? cursorEdit : null;
+  const replayEdit = cursorEdit?.replay ? cursorEdit : null;
   const revealSteps = React.useMemo(
     () => (replayEdit ? buildRevealSteps(replayEdit.previousHtml, replayEdit.html) : []),
     [replayEdit],
@@ -412,9 +433,8 @@ export default React.memo(function PageRenderer({
   // Stamped before sanitizing, so the ids match the ones the editor saves
   // when an element is picked, even where the sanitizer drops elements.
   const sanitizedHtml = React.useMemo(
-    () =>
-      hasRawHtml && (isLive || isPreview) ? sanitizeIframeHtml(stampNodeIds(displayedHtml)) : "",
-    [displayedHtml, hasRawHtml, isLive, isPreview],
+    () => (hasRawHtml ? sanitizeIframeHtml(stampNodeIds(displayedHtml)) : ""),
+    [displayedHtml, hasRawHtml],
   );
   const hasHtml = sanitizedHtml.trim().length > 0;
   const iframeReporterId = React.useMemo(
@@ -445,7 +465,7 @@ export default React.memo(function PageRenderer({
     html: string;
     reporterId: string;
   } | null>(null);
-  // A frame that scrolls out of the live set drops its page, so coming back
+  // A page that leaves live drops its compiled frame, so going live again
   // after an agent edit does not load the old page first and then reload.
   // The compile cache makes an unchanged page come back within a tick.
   if (!isLive && compiledFrame) setCompiledFrame(null);
@@ -460,38 +480,35 @@ export default React.memo(function PageRenderer({
       isCurrent = false;
     };
   }, [hasHtml, iframeReporterId, isLive, markedSrcDoc.html]);
-  // A preview runs no scripts, so it gets the compiled page with motion frozen
-  // in CSS and none of the live frame's picker, height, or motion scripts.
-  // When the page goes live, the preview stays underneath until the live frame
-  // loads, so the swap never shows a blank frame. A regenerating page clears
-  // its HTML, so the placeholder replaces the old preview. A failed compile
-  // keeps the shell, since this frame cannot run the Tailwind runtime.
-  const [stillSrcDoc, setStillSrcDoc] = React.useState<string | null>(null);
-  const [hasLiveLoaded, setHasLiveLoaded] = React.useState(false);
-  if (!isLive && hasLiveLoaded) setHasLiveLoaded(false);
-  if ((!hasHtml || renderMode === "shell" || hasLiveLoaded) && stillSrcDoc) setStillSrcDoc(null);
+  // Every page renders inert from the same compiled HTML the live frame loads,
+  // so going live finds it in the compile cache. The inert frame stays under
+  // the live one until it loads, so the swap never shows a blank frame. Inert
+  // compiles, agent reveal steps included, wait behind the live page's, so a
+  // busy canvas never delays the page the user is working on. A regenerating
+  // page clears its HTML, and a failed compile leaves the Tailwind runtime an
+  // inert frame cannot run; both show the placeholder, which offers live.
+  const isRevealStep = revealIndex >= 0 && revealIndex < revealSteps.length - 1;
+  const [inertHtml, setInertHtml] = React.useState<string | null>(null);
+  const [hasInertFailed, setHasInertFailed] = React.useState(false);
+  if (!hasHtml && (inertHtml || hasInertFailed)) {
+    setInertHtml(null);
+    setHasInertFailed(false);
+  }
   React.useEffect(() => {
-    if (!hasHtml || !isPreview) return;
+    if (!hasHtml) return;
     let isCurrent = true;
-    void precompileFrameHtml(canvasSrcDoc, { background: true }).then((html) => {
-      if (isCurrent && !hasTailwindRuntime(html)) setStillSrcDoc(freezeFrameMotion(html));
+    // A reveal step before the last is shown once, so it stays out of the cache.
+    void precompileFrameHtml(markedSrcDoc.html, { background: true, isTransient: isRevealStep }).then((html) => {
+      if (!isCurrent) return;
+      const failed = hasTailwindRuntime(html);
+      setInertHtml(failed ? null : html);
+      setHasInertFailed(failed);
     });
     return () => {
       isCurrent = false;
     };
-  }, [canvasSrcDoc, hasHtml, isPreview]);
-  // An empty sandbox runs no scripts at all, which is stricter than the live
-  // frame's allow-scripts.
-  const stillFrame = stillSrcDoc ? (
-    <iframe
-      title={page.title}
-      srcDoc={stillSrcDoc}
-      className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background"
-      sandbox=""
-      referrerPolicy="no-referrer"
-      scrolling="no"
-    />
-  ) : null;
+  }, [hasHtml, isRevealStep, markedSrcDoc.html]);
+  const [inertFrame, setInertFrame] = React.useState<InertFrameHandle | null>(null);
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -508,10 +525,11 @@ export default React.memo(function PageRenderer({
   const [cursorPoint, setCursorPoint] = React.useState<{ x: number; y: number } | null>(
     null,
   );
-  // The frame load that reported its own animations. Compared with the
-  // current id, so a rewritten page hides Replay until it reports again.
-  const [motionReporterId, setMotionReporterId] = React.useState<string | null>(null);
-  const hasMotion = isLive && motionReporterId === iframeReporterId;
+  // Replay shows when the compiled page has keyframes something uses. An inert
+  // page goes live to play them.
+  const motionHtml = inertHtml ?? compiledFrame?.html ?? null;
+  const hasMotion = React.useMemo(() => motionHtml !== null && hasPageMotion(motionHtml), [motionHtml]);
+  const replayOnLoadRef = React.useRef(false);
   const [expiredCursorEdit, setExpiredCursorEdit] = React.useState<AgentEdit | null>(null);
   React.useEffect(() => {
     if (!cursorEdit) return;
@@ -526,7 +544,7 @@ export default React.memo(function PageRenderer({
   }, [cursorEdit, replayMs]);
   const isPageIdle = status?.status === "completed" || status?.status === "failed";
   const showAgentCursor =
-    isLive &&
+    (isLive || inertFrame !== null) &&
     markedSrcDoc.found &&
     cursorPoint !== null &&
     cursorEdit !== null &&
@@ -536,15 +554,22 @@ export default React.memo(function PageRenderer({
     setNextPageTitle(page.title);
   }, [page.title]);
 
-  const pageHeight = hasHtml && isLive ? iframeHeight : Math.max(currentDevice.height, frameHeight);
+  const pageHeight = hasHtml ? contentHeight : Math.max(currentDevice.height, frameHeight);
 
   React.useEffect(() => {
-    setIframeHeight(Math.max(currentDevice.height, frameHeight));
-  }, [currentDevice.height, frameHeight]);
+    onMeasuredHeightChange?.(page.id, Math.max(currentDevice.height, contentHeight));
+  }, [currentDevice.height, contentHeight, onMeasuredHeightChange, page.id]);
 
-  React.useEffect(() => {
-    onMeasuredHeightChange?.(page.id, Math.max(currentDevice.height, iframeHeight));
-  }, [currentDevice.height, iframeHeight, onMeasuredHeightChange, page.id]);
+  // The live frame reports its own height, and the hidden inert one must not
+  // fight it.
+  const handleInertHeight = React.useCallback(
+    (height: number) => {
+      if (isLiveReady) return;
+      const bounded = Math.min(MAX_IFRAME_HEIGHT, Math.max(currentDevice.height, Math.ceil(height)));
+      setContentHeight((previous) => (previous === bounded ? previous : bounded));
+    },
+    [currentDevice.height, isLiveReady],
+  );
 
   const closeContextMenu = React.useCallback(() => {
     setContextMenuPosition(null);
@@ -925,6 +950,11 @@ export default React.memo(function PageRenderer({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
+            if (!isLiveReady) {
+              replayOnLoadRef.current = true;
+              onLiveChange?.(page.id);
+              return;
+            }
             // A sandboxed frame has an opaque origin, so "*" is the only
             // target that reaches it. The message carries nothing secret.
             iframeRef.current?.contentWindow?.postMessage({ type: FRAME_MOTION_REPLAY }, "*");
@@ -1131,24 +1161,57 @@ export default React.memo(function PageRenderer({
   const isPickPendingRef = React.useRef(false);
   const hoverFrameRef = React.useRef(0);
 
-  const postToFrame = React.useCallback((message: Record<string, unknown>) => {
-    // A sandboxed frame has an opaque origin, so "*" is the only target that
-    // reaches it. Nothing sent here is secret.
-    iframeRef.current?.contentWindow?.postMessage(message, "*");
-  }, []);
+  // Frame reports go through this ref, so an inert frame's answer reaches the
+  // same handler a live frame's message does.
+  const handleFrameDataRef = React.useRef<(data: unknown) => void>(() => {});
+  const postToFrame = React.useCallback(
+    (message: Record<string, unknown>) => {
+      if (isLiveReady) {
+        // A sandboxed frame has an opaque origin, so "*" is the only target
+        // that reaches it. Nothing sent here is secret.
+        iframeRef.current?.contentWindow?.postMessage(message, "*");
+        return;
+      }
+      if (!inertFrame) return;
+      const report = (intent: NodeReportIntent, element: Element | null) =>
+        handleFrameDataRef.current({
+          type: "wirely-node",
+          intent,
+          node: reportInertNode(inertFrame, element, intent),
+        });
+      if (message.type === "wirely-node-at" && typeof message.x === "number" && typeof message.y === "number") {
+        report(message.intent === "hover" ? "hover" : "pick", inertNodeAt(inertFrame, message.x, message.y));
+      } else if (message.type === "wirely-node-find") {
+        report("select", findInertNode(inertFrame, message.nodeId));
+      } else if (message.type === "wirely-node-preview") {
+        const element = findInertNode(inertFrame, message.nodeId);
+        if (!element) return;
+        applyInertPreview(element, message, inertFrame.viewport);
+        report("select", element);
+      }
+    },
+    [inertFrame, isLiveReady],
+  );
 
   const findSelectedNode = React.useCallback(() => {
     if (selectedNodeId) postToFrame({ type: "wirely-node-find", nodeId: selectedNodeId });
   }, [postToFrame, selectedNodeId]);
 
-  // The element whose text the user is typing into, in the frame itself.
-  const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
   // Set when an insert click is waiting for the frame to say what it hit.
   const isInsertPendingRef = React.useRef(false);
+  // A project image dropped on the page, while the frame finds the element under it.
+  const pendingAssetRef = React.useRef<DraggedAsset | null>(null);
   // Where a comment tool click landed, while the frame finds the element there.
   const commentPointRef = React.useRef<{ x: number; y: number } | null>(null);
-  // An element to start typing into once the frame reports it, after an insert.
+  // An element to start typing into once the live frame reports it, after a
+  // double click on an inert page or an insert. The ref is what frame reports
+  // read; the state blocks keys and shows the wait.
   const pendingEditRef = React.useRef<string | null>(null);
+  const [pendingEditId, setPendingEditId] = React.useState<string | null>(null);
+  const setPendingEdit = React.useCallback((nodeId: string | null) => {
+    pendingEditRef.current = nodeId;
+    setPendingEditId(nodeId);
+  }, []);
   // The page HTML when typing began. Text typed into a page that changed
   // since, by an agent or a poll, is dropped rather than written over it.
   const editStartHtmlRef = React.useRef<string | null>(null);
@@ -1157,23 +1220,66 @@ export default React.memo(function PageRenderer({
   const startTextEdit = React.useCallback(
     (nodeId: string) => {
       if (getNodeText(stampNodeIds(page.iframeHtml ?? ""), nodeId) === null) return false;
+      if (!isLiveReady) {
+        // Typing happens in the live frame, which starts once it loads and
+        // reports the element.
+        setPendingEdit(nodeId);
+        onLiveChange?.(page.id);
+        return true;
+      }
       setEditingNodeId(nodeId);
       editStartHtmlRef.current = page.iframeHtml ?? "";
       iframeRef.current?.focus();
       postToFrame({ type: "wirely-node-edit", nodeId });
       return true;
     },
-    [page.iframeHtml, postToFrame],
+    [isLiveReady, onLiveChange, page.id, page.iframeHtml, postToFrame, setPendingEdit],
   );
 
   React.useEffect(() => {
     const handleRequest = (event: Event) => {
       const { pageId, nodeId } = (event as CustomEvent<{ pageId: string; nodeId: string }>).detail;
-      if (pageId === page.id) pendingEditRef.current = nodeId;
+      if (pageId !== page.id) return;
+      // Live at once: the live frame compiles ahead of every inert page, so
+      // the new element is ready to type into sooner than an inert rebuild.
+      setPendingEdit(nodeId);
+      onLiveChange?.(page.id);
     };
     window.addEventListener(NODE_EDIT_REQUEST_EVENT, handleRequest);
     return () => window.removeEventListener(NODE_EDIT_REQUEST_EVENT, handleRequest);
-  }, [page.id]);
+  }, [onLiveChange, page.id, setPendingEdit]);
+
+  // Until typing starts in the live frame, keys would reach the editor's
+  // shortcuts, where Backspace deletes the element about to be edited. Escape
+  // gives up the wait, and so does a frame that never reports the element.
+  React.useEffect(() => {
+    if (!pendingEditId) return;
+    const block = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPendingEdit(null);
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const timeoutId = window.setTimeout(() => setPendingEdit(null), PENDING_EDIT_TIMEOUT_MS);
+    window.addEventListener("keydown", block, true);
+    return () => {
+      window.removeEventListener("keydown", block, true);
+      window.clearTimeout(timeoutId);
+    };
+  }, [pendingEditId, setPendingEdit]);
+
+  // A page that leaves live drops the Replay or edit that was waiting on its
+  // frame.
+  const wasLiveRef = React.useRef(isLive);
+  React.useEffect(() => {
+    if (wasLiveRef.current && !isLive) {
+      replayOnLoadRef.current = false;
+      setPendingEdit(null);
+    }
+    wasLiveRef.current = isLive;
+  }, [isLive, setPendingEdit]);
 
   const toPagePoint = React.useCallback(
     (clientX: number, clientY: number) => {
@@ -1187,16 +1293,33 @@ export default React.memo(function PageRenderer({
     [currentDevice.width],
   );
 
-  // Re-measured when the page grows, since images and fonts move elements.
+  // Re-measured when the page grows, since images and fonts move elements, and
+  // whenever a frame mounts or the page swaps between inert and live.
   React.useEffect(() => {
-    if (isLive) findSelectedNode();
-  }, [findSelectedNode, iframeHeight, isLive]);
+    if (isLive || inertFrame) findSelectedNode();
+  }, [contentHeight, findSelectedNode, inertFrame, isLive]);
+
+  // An inert frame has no reporter, so the agent cursor is measured here.
+  React.useEffect(() => {
+    if (!inertFrame || isLiveReady) return;
+    const box = inertElementBox(inertFrame, inertFrame.root.querySelector(`[${AGENT_CURSOR_ATTRIBUTE}]`));
+    if (box) setCursorPoint({ x: box.x, y: box.y });
+    // Measured again as images and fonts grow the page and move the element.
+  }, [contentHeight, inertFrame, isLiveReady]);
+
+  // Leaving the page while typing blurs the live frame, which saves the text
+  // and ends the edit, and only then lets the page go inert.
+  React.useEffect(() => {
+    if (renderMode === "live" || !editingNodeId) return;
+    iframeRef.current?.blur();
+    window.focus();
+  }, [editingNodeId, renderMode]);
 
   React.useEffect(() => () => window.cancelAnimationFrame(hoverFrameRef.current), []);
 
   // Holding Alt with an element picked measures from it to the hovered one.
   const [isAltHeld, setIsAltHeld] = React.useState(false);
-  const canMeasure = isLive && (isElementMode || isMoveMode) && selectedBox !== null;
+  const canMeasure = (isLive || inertFrame !== null) && (isElementMode || isMoveMode) && selectedBox !== null;
   React.useEffect(() => {
     if (!canMeasure) return;
     const handleKey = (event: KeyboardEvent) => {
@@ -1248,7 +1371,6 @@ export default React.memo(function PageRenderer({
   };
 
   React.useEffect(() => {
-    if (!isLive) return;
     const handlePreview = (event: Event) => {
       const { detail } = event as CustomEvent<NodePreview>;
       if (detail.pageId !== page.id) return;
@@ -1256,56 +1378,50 @@ export default React.memo(function PageRenderer({
     };
     window.addEventListener(NODE_PREVIEW_EVENT, handlePreview);
     return () => window.removeEventListener(NODE_PREVIEW_EVENT, handlePreview);
-  }, [isLive, page.id, postToFrame]);
+  }, [page.id, postToFrame]);
 
   const handleLoad = React.useCallback(() => {
     setHasLiveLoaded(true);
+    if (replayOnLoadRef.current) {
+      replayOnLoadRef.current = false;
+      iframeRef.current?.contentWindow?.postMessage({ type: FRAME_MOTION_REPLAY }, "*");
+    }
     // A reload drops any click the old document was answering, and any typing.
     isPickPendingRef.current = false;
     isInsertPendingRef.current = false;
+    pendingAssetRef.current = null;
     commentPointRef.current = null;
     setEditingNodeId(null);
-    findSelectedNode();
-  }, [findSelectedNode]);
-
-  React.useEffect(() => {
-    if (!isLive) return;
-    setIframeHeight(Math.max(currentDevice.height, frameHeight));
-  }, [
-    currentDevice.height,
-    frameHeight,
-    isLive,
-    page.id,
-    page.iframeHtml,
-  ]);
-
-  React.useEffect(() => {
-    if (!isLive) {
-      return;
+    // Straight to the frame that just loaded: postToFrame from this render may
+    // still point at the inert frame.
+    if (selectedNodeId) {
+      iframeRef.current?.contentWindow?.postMessage({ type: "wirely-node-find", nodeId: selectedNodeId }, "*");
     }
+  }, [selectedNodeId]);
 
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data;
+  React.useEffect(() => {
+    setContentHeight(Math.max(currentDevice.height, frameHeight));
+  }, [currentDevice.height, frameHeight, page.id, page.iframeHtml]);
+
+  const handleFrameData = React.useCallback(
+    (data: unknown) => {
       if (!data || typeof data !== "object") return;
 
       const payload = data as {
         type?: string;
-        id?: string;
         height?: number;
         x?: number;
         y?: number;
       };
-      if (payload.id !== iframeReporterId) return;
-      if (payload.type === FRAME_MOTION_FOUND) {
-        setMotionReporterId(iframeReporterId);
-        return;
-      }
       if (payload.type === "wirely-node") {
         const { intent, node: rawNode } = data as { intent?: unknown; node?: unknown };
         const node = parseReportedNode(rawNode);
         if (intent === "hover") {
           setHoverBox(node);
+        } else if (intent === "pick" && pendingAssetRef.current) {
+          const asset = pendingAssetRef.current;
+          pendingAssetRef.current = null;
+          if (projectId) insertAsset(projectId, page.id, asset, node ?? "end");
         } else if (intent === "pick" && isInsertPendingRef.current) {
           isInsertPendingRef.current = false;
           if (node) onInsertAt?.(page.id, node);
@@ -1333,7 +1449,7 @@ export default React.memo(function PageRenderer({
           setSelectedBox(node);
           onNodeReport?.(page.id, node, "select");
           if (pendingEditRef.current === node.nodeId) {
-            pendingEditRef.current = null;
+            setPendingEdit(null);
             startTextEdit(node.nodeId);
           }
         }
@@ -1375,27 +1491,37 @@ export default React.memo(function PageRenderer({
         MAX_IFRAME_HEIGHT,
         Math.max(currentDevice.height, Math.ceil(payload.height)),
       );
-      setIframeHeight((previous) =>
+      setContentHeight((previous) =>
         previous === boundedHeight ? previous : boundedHeight,
       );
-    };
+    },
+    [
+      currentDevice.height,
+      editingNodeId,
+      onInsertAt,
+      onNodeReport,
+      page.id,
+      projectId,
+      selectedNodeId,
+      setPendingEdit,
+      startTextEdit,
+    ],
+  );
+  React.useLayoutEffect(() => {
+    handleFrameDataRef.current = handleFrameData;
+  }, [handleFrameData]);
 
-    window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
+  React.useEffect(() => {
+    if (!isLive) return;
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as { id?: unknown } | null;
+      if (!data || typeof data !== "object" || data.id !== iframeReporterId) return;
+      handleFrameData(data);
     };
-  }, [
-    currentDevice.height,
-    editingNodeId,
-    iframeReporterId,
-    isLive,
-    onInsertAt,
-    onNodeReport,
-    page.id,
-    projectId,
-    selectedNodeId,
-    startTextEdit,
-  ]);
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [handleFrameData, iframeReporterId, isLive]);
 
   return (
     <>
@@ -1424,11 +1550,52 @@ export default React.memo(function PageRenderer({
             {page.title}
           </p>
           {statusBadge}
-          {isLive ? hoverToolbar : null}
+          {renderMode === "live" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 py-0.5 pl-2 pr-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />
+              Live
+              <button
+                type="button"
+                aria-label={`Stop running ${page.title}`}
+                title="Stop running scripts (Esc)"
+                className="rounded-full p-0.5 transition-colors hover:bg-emerald-500/20"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLiveChange?.(null);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+          {hoverToolbar}
         </div>
         <div className="relative">
           <div
             ref={frameRef}
+            // A project image dragged from the assets folder goes into the
+            // element under the drop. A vector page takes no <img>, so it
+            // refuses the drop rather than letting the canvas take it.
+            onDragOver={(event) => {
+              if (!projectId || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return;
+              event.stopPropagation();
+              if (page.deviceType === "vector") return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={(event) => {
+              const asset = parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE));
+              if (!asset || !projectId || page.deviceType === "vector") return;
+              event.preventDefault();
+              event.stopPropagation();
+              if (!hasHtml || (!isLiveReady && !inertFrame)) {
+                insertAsset(projectId, page.id, asset, "end");
+                return;
+              }
+              pendingAssetRef.current = asset;
+              postToFrame({ type: "wirely-node-at", intent: "pick", ...toPagePoint(event.clientX, event.clientY) });
+            }}
             className={cn(
               "relative overflow-hidden rounded-[var(--radius)] bg-transparent outline-solid transition-[outline-color] duration-150",
               isFocused ? "outline-sky-500" : "outline-transparent group-hover:outline-sky-500/60",
@@ -1442,9 +1609,18 @@ export default React.memo(function PageRenderer({
               height: `${pageHeight}px`,
             }}
           >
-            {/* Always this child slot, so React keeps one preview iframe through
-                the hand-off to live instead of remounting and reloading it. */}
-            {stillFrame}
+            {/* Always this child slot, so React keeps the inert frame mounted
+                through the hand-off to live and back. */}
+            {inertHtml ? (
+              <InertFrame
+                html={inertHtml}
+                width={currentDevice.width}
+                viewportHeight={currentDevice.height}
+                isHidden={isLiveReady}
+                onMount={setInertFrame}
+                onHeightChange={handleInertHeight}
+              />
+            ) : null}
             {hasHtml && isLive && measuredSrcDoc ? (
               <iframe
                 ref={iframeRef}
@@ -1454,7 +1630,7 @@ export default React.memo(function PageRenderer({
                 className={cn(
                   "relative h-full w-full border-0 bg-background",
                   editingNodeId ? "pointer-events-auto" : "pointer-events-none",
-                  stillSrcDoc && "opacity-0",
+                  inertHtml && !hasLiveLoaded && "opacity-0",
                 )}
                 style={{ overflow: "hidden" }}
                 loading="eager"
@@ -1462,12 +1638,27 @@ export default React.memo(function PageRenderer({
                 referrerPolicy="no-referrer"
                 scrolling="no"
               />
-            ) : stillFrame ? null : hasRawHtml ? (
-              // Offscreen, or on screen and waiting its turn to mount.
-              <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
+            ) : inertHtml ? null : hasRawHtml ? (
+              // Compiling, or a compile that failed, which the live frame can
+              // still show with the Tailwind runtime.
+              <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background px-8 text-center">
                 <div className="mt-5 rounded-full border border-border bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   {currentDevice.label}
                 </div>
+                {hasInertFailed ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onLiveChange?.(page.id);
+                    }}
+                  >
+                    Show live
+                  </Button>
+                ) : null}
               </div>
             ) : status && !isPageIdle ? (
               <GeneratingPreviewPlaceholder />
@@ -1484,9 +1675,20 @@ export default React.memo(function PageRenderer({
                 </p>
               </div>
             )}
+            {pendingEditId ? (
+              <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center">
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full bg-popover px-2.5 py-1 text-[11px] font-medium text-popover-foreground shadow-md"
+                  style={{ transform: "scale(var(--canvas-inverse-zoom, 1))", transformOrigin: "top center" }}
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Opening text editing
+                </span>
+              </div>
+            ) : null}
             {(isElementMode || isMoveMode || isCommentMode || insertKind) &&
             hasHtml &&
-            isLive &&
+            (isLive || inertFrame) &&
             !editingNodeId ? (
               <div
                 className={cn(
@@ -1549,7 +1751,7 @@ export default React.memo(function PageRenderer({
             hoverBox.nodeId !== selectedNodeId ? (
               <MeasureLines from={selectedBox} to={hoverBox} />
             ) : null}
-            {isMoveMode && isLive && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
+            {isMoveMode && (isLive || inertFrame) && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
               <ElementEditLayer
                 key={selectedBox.nodeId}
                 node={selectedBox}
@@ -1578,7 +1780,7 @@ export default React.memo(function PageRenderer({
                 onDoubleClick={() => startTextEdit(selectedBox.nodeId)}
               />
             ) : null}
-            {hasHtml && isLive && (isPenMode || (page.deviceType === "vector" && isElementMode)) ? (
+            {hasHtml && (isLive || inertFrame) && (isPenMode || (page.deviceType === "vector" && isElementMode)) ? (
               <VectorEditLayer
                 html={page.iframeHtml ?? ""}
                 width={currentDevice.width}
