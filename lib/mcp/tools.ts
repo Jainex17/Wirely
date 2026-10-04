@@ -141,9 +141,23 @@ const listProjects: ToolHandler = async (userId) => {
 
 const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const parsed = z
-    .object({ title: z.string().trim().min(1).max(TITLE_MAX_CHARS) })
+    .object({
+      title: z.string().trim().min(1).max(TITLE_MAX_CHARS),
+      kind: z.enum(["design", "html"]).default("design"),
+    })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  if (parsed.data.kind === "html") {
+    const { project, page } = await createProject(userId, parsed.data.title);
+    if (!page) return fail("The project was created without its first page. Call add_page to add one.");
+    return succeed(
+      `Created HTML project "${project.title}" (id: ${project.id}). It starts with an ` +
+        `empty page "Page 1" (id: ${page.id}).\n` +
+        `Open it in Wirely: ${origin}/wire/${project.id}\n` +
+        "Share this link with the user so they can watch the pages you write.",
+    );
+  }
 
   const { project } = await createProject(userId, parsed.data.title, {
     document: await createDesignDocument(),

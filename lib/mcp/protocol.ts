@@ -226,13 +226,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "create_project",
     description:
-      "Create a Wirely design project with no screens yet. Add screens with add_screen and edit " +
-      "them with the design tools. Returns the id and the editor URL; give that URL to the user " +
-      "so they can watch the project.",
+      "Create a Wirely project. A design project (the default) starts with no screens: add them " +
+      "with add_screen and edit them with the design tools. An HTML project starts with one empty " +
+      "page named \"Page 1\" that you write with add_page and update_page. Returns the id and the " +
+      "editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
       properties: {
         title: { type: "string", description: "Project name, shown on the home page." },
+        kind: {
+          type: "string",
+          enum: ["design", "html"],
+          description: "design for screens built from design nodes (default), html for HTML pages.",
+        },
       },
       required: ["title"],
       additionalProperties: false,

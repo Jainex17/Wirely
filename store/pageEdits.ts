@@ -102,12 +102,13 @@ export const commitPagesEdit = (
     changed.map(({ pageId, after }) => ({ pageId, html: after })),
   ).catch((error: unknown) => {
     logger.error("page_edit_save_failed", { pageIds: changed.map(({ pageId }) => pageId), projectId, error });
-    // Only put the old HTML back on pages nothing newer landed on since.
+    // The pages go back together or not at all. Putting back only the pages
+    // nothing newer landed on would, for a move, take the element off the
+    // target while the source keeps a later edit made without it.
     const latest = useEditorStore.getState();
-    for (const { pageId, before, after } of changed) {
-      if (latest.pages.find((page) => page.id === pageId)?.iframeHtml === after) {
-        latest.setPageHtml(pageId, before);
-      }
+    const htmlOf = (pageId: string) => latest.pages.find((page) => page.id === pageId)?.iframeHtml;
+    if (changed.every(({ pageId, after }) => htmlOf(pageId) === after)) {
+      for (const { pageId, before } of changed) latest.setPageHtml(pageId, before);
     }
     toast.error(failureMessage);
   });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { createAssetPage } from "@/store/pageEdits";
+import { commitPagesEdit, createAssetPage } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
 const asset = { id: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "Photo", width: 400, height: 300 };
@@ -48,5 +48,52 @@ describe("createAssetPage", () => {
     await createAssetPage("project", asset, { x: 0, y: 0 });
     expect(requests).toHaveLength(1);
     expect(pageIds()).toEqual(["page-1"]);
+  });
+});
+
+describe("commitPagesEdit", () => {
+  /** A server whose save fails once `fail` is called, so the test can act while it is in flight. */
+  const failingServer = () => {
+    let fail = () => {};
+    globalThis.fetch = (() =>
+      new Promise<Response>((resolve) => {
+        fail = () => resolve(new Response(null, { status: 500 }));
+      })) as unknown as typeof fetch;
+    return () => fail();
+  };
+
+  const twoPages = () =>
+    useEditorStore.setState({
+      ...useEditorStore.getInitialState(),
+      pages: [
+        { id: "source", title: "Source", sections: [], iframeHtml: "<p>moved</p>" },
+        { id: "target", title: "Target", sections: [], iframeHtml: "<div></div>" },
+      ],
+      pageStackOrder: ["source", "target"],
+    });
+  const htmlOf = (pageId: string) => useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml;
+  const move = () =>
+    commitPagesEdit("project", { source: () => "<p></p>", target: () => "<div>moved</div>" }, { record: false });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("puts every page back when a save fails", async () => {
+    twoPages();
+    const fail = failingServer();
+    move();
+    fail();
+    await settle();
+    expect(htmlOf("source")).toBe("<p>moved</p>");
+    expect(htmlOf("target")).toBe("<div></div>");
+  });
+
+  it("keeps the moved element when one page was edited again before the save failed", async () => {
+    twoPages();
+    const fail = failingServer();
+    move();
+    useEditorStore.getState().setPageHtml("source", "<p>later edit</p>");
+    fail();
+    await settle();
+    expect(htmlOf("source")).toBe("<p>later edit</p>");
+    expect(htmlOf("target")).toBe("<div>moved</div>");
   });
 });

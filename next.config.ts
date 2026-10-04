@@ -48,6 +48,10 @@ const nextConfig: NextConfig = {
       "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
       "./node_modules/@open-pencil/core/assets/**",
     ],
+    "/api/projects/*/design/generate": [
+      "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
+      "./node_modules/@open-pencil/core/assets/**",
+    ],
     "/api/projects/*/document/thumbnail": [
       "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
       "./node_modules/@open-pencil/core/assets/**",

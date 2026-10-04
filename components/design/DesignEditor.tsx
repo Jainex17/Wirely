@@ -106,20 +106,24 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
           // Frame every screen once the canvas has its size.
           requestAnimationFrame(() => created.zoomToFit());
         });
+        // The conflict choice acts on this editor, so it goes away with it.
+        let conflictToast: string | number | null = null;
         const stopSync = startDocumentSync(projectId, created, version, {
           onStatus: setSaveStatus,
-          onConflict: ({ keepMine, loadTheirs }) =>
-            toast("An agent changed this project while you were editing.", {
+          onConflict: ({ keepMine, loadTheirs }) => {
+            conflictToast = toast("An agent changed this project while you were editing.", {
               duration: Number.POSITIVE_INFINITY,
               action: { label: "Keep my edits", onClick: keepMine },
               cancel: { label: "Load theirs", onClick: loadTheirs },
-            }),
+            });
+          },
         });
         const stopClipboard = bindDesignClipboard(created);
         const stopDrawIntoScreens = bindDrawIntoScreens(created);
         const stopSelection = startSelectionReporting(projectId, created);
         setEditor(created);
         teardown = () => {
+          if (conflictToast !== null) toast.dismiss(conflictToast);
           stopClipboard();
           stopDrawIntoScreens();
           stopSelection();
