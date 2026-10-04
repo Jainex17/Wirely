@@ -1,9 +1,11 @@
 "use client";
 
 import React from "react";
-import { type DropTarget, findDropTarget, snapElementBox } from "@/lib/canvasDrag";
+import { createPortal } from "react-dom";
+import { snapElementBox } from "@/lib/canvasDrag";
 import type { SnapGuide } from "@/lib/canvasScene";
 import type { ReportedNode } from "@/lib/nodePicker";
+import { type CanvasDrop, findCanvasDrop, useDropIndicator } from "@/store/canvasDrop";
 
 type Point = { x: number; y: number };
 type ResizeEdge = "right" | "bottom" | "corner";
@@ -21,41 +23,50 @@ type Gesture = {
   /** Past the drag threshold. Until then a release is a click and changes nothing. */
   moved: boolean;
 } & (
-  | { kind: "move"; drop: DropTarget | null; offset: Point }
+  | {
+      kind: "move";
+      drop: CanvasDrop | null;
+      /** The element's box on screen when the gesture began, and the pointer then, for the ghost. */
+      screen: { rect: DOMRect; pointer: Point; current: Point };
+    }
   | { kind: "resize"; edge: ResizeEdge }
 );
 
-const THIN_LINE = "calc(2px * var(--canvas-inverse-zoom, 1))";
 const GUIDE_LINE = "calc(1px * var(--canvas-inverse-zoom, 1))";
 
 // A press that travels less than this in page px is a click, not a drag.
 const DRAG_THRESHOLD_PX = 4;
 
 interface ElementEditLayerProps {
+  pageId: string;
   node: ReportedNode;
   /** Maps a pointer's client position to page px inside the frame. */
   toPagePoint: (clientX: number, clientY: number) => Point;
   onPreviewStyle: (style: Record<string, string>) => void;
   onCommitStyle: (style: Record<string, string>) => void;
-  onMove: (targetId: string, position: "before" | "after") => void;
+  /** A drop anywhere on the canvas. `copy` is true when Alt was held at release. */
+  onDrop: (drop: CanvasDrop, copy: boolean) => void;
   /** A click that did not drag, passed through so a child can be picked. */
   onClick: (point: Point) => void;
   onDoubleClick: () => void;
 }
 
 /**
- * Handles on the picked element, in page px over the frame: drag it to
- * reorder it among its siblings, or to move it when it is absolutely
- * positioned, and drag an edge or the corner to resize it. Moves and resizes
- * snap to the siblings' and parent's edges and centers. Previews go to the
- * frame as inline styles and the result is saved on release.
+ * Handles on the picked element, in page px over the frame: drag it anywhere
+ * on the canvas, into another element on this page or onto another page, and
+ * hold Alt to copy it instead. An absolutely positioned element moves by its
+ * offsets while it stays over its own page. Drag an edge or the corner to
+ * resize it. Moves and resizes snap to the siblings' and parent's edges and
+ * centers. Previews go to the frame as inline styles and the result is saved
+ * on release.
  */
 export default function ElementEditLayer({
+  pageId,
   node,
   toPagePoint,
   onPreviewStyle,
   onCommitStyle,
-  onMove,
+  onDrop,
   onClick,
   onDoubleClick,
 }: ElementEditLayerProps) {
@@ -116,7 +127,7 @@ export default function ElementEditLayer({
       const guides = snap.guides.filter((guide) =>
         guide.orientation === "vertical" ? useX : useY,
       );
-      return { style, guides, offset: { x: dx, y: dy } };
+      return { style, guides };
     }
     const snap = layout
       ? snapElementBox(
@@ -131,8 +142,12 @@ export default function ElementEditLayer({
       left: `${Math.round(origin.left + offset.x)}px`,
       top: `${Math.round(origin.top + offset.y)}px`,
     };
-    return { style, guides: snap.guides, offset };
+    return { style, guides: snap.guides };
   };
+
+  const setDrop = useDropIndicator((state) => state.setDrop);
+  // Clears the drop line if the layer goes away mid drag.
+  React.useEffect(() => () => setDrop(null), [setDrop]);
 
   const handleMove = (event: React.PointerEvent) => {
     if (!gesture) return;
@@ -149,19 +164,26 @@ export default function ElementEditLayer({
       return;
     }
 
-    if (layout?.isAbsolute) {
-      const { style, guides, offset } = resolve(gesture, point);
+    const drop = findCanvasDrop(event.clientX, event.clientY, { pageId, nodeId: node.nodeId });
+    const current = { x: event.clientX, y: event.clientY };
+    // Over its own page, an absolute element moves by its offsets.
+    if (layout?.isAbsolute && (!drop || drop.pageId === pageId)) {
+      const { style, guides } = resolve(gesture, point);
       onPreviewStyle(style);
-      setGesture({ ...gesture, moved: true, offset, guides });
+      setDrop(null);
+      setGesture({ ...gesture, moved: true, guides, drop: null, screen: { ...gesture.screen, current } });
       return;
     }
-    const drop = layout ? findDropTarget(layout.siblings, node.nodeId, layout.axis, point) : null;
-    setGesture({ ...gesture, moved: true, drop, offset: { x: dx, y: dy } });
+    // Off its own page, an absolute element leaves its offsets behind.
+    if (layout?.isAbsolute) onPreviewStyle({ left: "", top: "" });
+    setDrop(drop);
+    setGesture({ ...gesture, moved: true, guides: [], drop, screen: { ...gesture.screen, current } });
   };
 
   const handleUp = (event: React.PointerEvent) => {
     if (!gesture) return;
     setGesture(null);
+    setDrop(null);
     const point = toPagePoint(event.clientX, event.clientY);
     const moved = gesture.moved || movedRef.current;
 
@@ -173,16 +195,17 @@ export default function ElementEditLayer({
       onClick(point);
       return;
     }
-    if (layout?.isAbsolute) {
+    if (gesture.drop) {
+      onDrop(gesture.drop, event.altKey);
+    } else if (layout?.isAbsolute) {
       onCommitStyle(resolve(gesture, point).style);
-    } else if (gesture.drop) {
-      onMove(gesture.drop.targetId, gesture.drop.position);
     }
   };
 
   const handleCancel = () => {
     if (!gesture) return;
     setGesture(null);
+    setDrop(null);
     // Puts back whatever the preview changed.
     if (gesture.kind === "resize") onPreviewStyle({ width: "", height: "" });
     else if (layout?.isAbsolute) onPreviewStyle({ left: "", top: "" });
@@ -218,7 +241,11 @@ export default function ElementEditLayer({
             ...startOf(event),
             kind: "move",
             drop: null,
-            offset: { x: 0, y: 0 },
+            screen: {
+              rect: event.currentTarget.getBoundingClientRect(),
+              pointer: { x: event.clientX, y: event.clientY },
+              current: { x: event.clientX, y: event.clientY },
+            },
           })
         }
         onPointerMove={handleMove}
@@ -249,35 +276,23 @@ export default function ElementEditLayer({
           }
         />
       ))}
-      {gesture?.kind === "move" && gesture.moved && !layout?.isAbsolute ? (
-        <>
-          {/* A ghost of the element follows the pointer while it reorders. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute z-30 bg-sky-500/10 outline-dashed outline-sky-500"
-            style={{
-              left: node.x + gesture.offset.x,
-              top: node.y + gesture.offset.y,
-              width: node.width,
-              height: node.height,
-              outlineWidth: "calc(1px * var(--canvas-inverse-zoom, 1))",
-            }}
-          />
-          {gesture.drop ? (
+      {gesture?.kind === "move" && gesture.moved && gesture.drop
+        ? // A ghost of the element follows the pointer across pages, so it
+          // sits on the document, outside every page frame's clipping.
+          createPortal(
             <div
               aria-hidden
-              className="pointer-events-none absolute z-30 bg-sky-500"
+              className="pointer-events-none fixed z-50 bg-sky-500/10 outline-dashed outline-1 outline-sky-500"
               style={{
-                left: gesture.drop.line.x,
-                top: gesture.drop.line.y,
-                // The line's thin side stays 2 screen px at any zoom.
-                width: gesture.drop.line.width <= 2 ? THIN_LINE : gesture.drop.line.width,
-                height: gesture.drop.line.height <= 2 ? THIN_LINE : gesture.drop.line.height,
+                left: gesture.screen.rect.left + gesture.screen.current.x - gesture.screen.pointer.x,
+                top: gesture.screen.rect.top + gesture.screen.current.y - gesture.screen.pointer.y,
+                width: gesture.screen.rect.width,
+                height: gesture.screen.rect.height,
               }}
-            />
-          ) : null}
-        </>
-      ) : null}
+            />,
+            document.body,
+          )
+        : null}
     </>
   );
 }

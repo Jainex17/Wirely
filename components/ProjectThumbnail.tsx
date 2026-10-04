@@ -22,7 +22,8 @@ type PreviewFrame = PreviewPage & { srcDoc: string };
 
 type PreviewState =
   | { status: "idle" | "loading" | "failed" }
-  | { status: "ready"; frames: PreviewFrame[] };
+  | { status: "ready"; frames: PreviewFrame[] }
+  | { status: "image"; url: string };
 
 /**
  * A home card's view of its canvas: the top screen of the first few pages side
@@ -50,7 +51,11 @@ export default function ProjectThumbnail({ projectId }: { projectId: string }) {
         try {
           const response = await fetch(`/api/projects/${projectId}/preview`);
           if (!response.ok) throw new Error(`Preview failed with ${response.status}`);
-          const payload = (await response.json()) as { pages?: PreviewPage[] };
+          const payload = (await response.json()) as { pages?: PreviewPage[]; thumbnailUrl?: string };
+          if (payload.thumbnailUrl) {
+            if (!cancelled) setState({ status: "image", url: payload.thumbnailUrl });
+            return;
+          }
           const pages = (payload.pages ?? []).filter((page) => page.htmlContent?.trim());
           const frames = await Promise.all(
             pages.map(async (page) => ({
@@ -87,6 +92,16 @@ export default function ProjectThumbnail({ projectId }: { projectId: string }) {
         <p className="absolute inset-0 grid place-items-center text-xs text-muted-foreground">
           {state.status === "failed" ? "Preview unavailable" : "Empty canvas"}
         </p>
+      ) : null}
+      {state.status === "image" ? (
+        // A design project's canvas, rendered on the server. A 204 for an
+        // empty canvas shows nothing over the dots.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={state.url}
+          alt=""
+          className="absolute inset-0 h-full w-full object-contain transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]"
+        />
       ) : null}
       {frames.length > 0 ? (
         <div className="absolute inset-0 flex items-center justify-center gap-2 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]">

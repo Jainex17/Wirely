@@ -6,6 +6,7 @@ import {
   createProjectPageForUser,
   listProjectPageChangesForUser,
   listProjectPagesForUser,
+  updateProjectPagesHtmlForUser,
 } from "@/lib/db/queries/projects";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
@@ -20,6 +21,13 @@ type CreateProjectPageRequestBody = {
   deviceType?: string | null;
   htmlContent?: string | null;
 };
+
+type UpdateProjectPagesRequestBody = {
+  pages?: Array<{ id?: unknown; htmlContent?: unknown }> | null;
+};
+
+// An edit that touches several pages, today an element moved between two.
+const MAX_PAGES_PER_UPDATE = 2;
 
 // Matches the page update route, so a page can be created with any HTML it
 // could later be saved with.
@@ -127,5 +135,60 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     logger.error("projects_pages_create_failed", { error });
     return NextResponse.json({ error: "Failed to create page." }, { status: 500 });
+  }
+}
+
+/**
+ * Saves several pages' HTML at once, all or nothing. The canvas uses it when
+ * an element moves from one page to another, so a failed save never leaves the
+ * element on neither page.
+ */
+export async function PATCH(request: Request, context: RouteContext) {
+  try {
+    const sessionUser = await getRequestSessionUser();
+    if (!sessionUser) {
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    }
+
+    const { projectId } = await context.params;
+    const parsed = await readJsonBodyWithLimit<UpdateProjectPagesRequestBody>(
+      request,
+      PAGE_CREATE_MAX_BYTES * MAX_PAGES_PER_UPDATE,
+    );
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const entries = Array.isArray(parsed.data.pages) ? parsed.data.pages : [];
+    const pages = entries.flatMap((entry) =>
+      typeof entry?.id === "string" && typeof entry.htmlContent === "string"
+        ? [{ pageId: entry.id, htmlContent: entry.htmlContent }]
+        : [],
+    );
+    const isUnique = new Set(pages.map((page) => page.pageId)).size === pages.length;
+    if (
+      pages.length === 0 ||
+      pages.length !== entries.length ||
+      pages.length > MAX_PAGES_PER_UPDATE ||
+      !isUnique
+    ) {
+      return NextResponse.json(
+        { error: `Send 1 to ${MAX_PAGES_PER_UPDATE} distinct pages, each with an id and htmlContent.` },
+        { status: 400 },
+      );
+    }
+
+    const updated = await updateProjectPagesHtmlForUser({
+      projectId,
+      userId: sessionUser.id,
+      pages,
+    });
+    if (!updated) {
+      return NextResponse.json({ error: "Page not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ pages: updated });
+  } catch (error) {
+    logger.error("projects_pages_batch_update_failed", { error });
+    return NextResponse.json({ error: "Failed to update pages." }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getRequestSessionUser } from "@/lib/auth/session";
+import { getProjectDocumentVersionForUser } from "@/lib/db/queries/projectDocuments";
 import { listProjectPreviewPages } from "@/lib/db/queries/projects";
 import { logger } from "@/lib/logger";
 import { isUuid } from "@/lib/projectComments";
@@ -17,9 +18,10 @@ interface RouteContext {
 }
 
 /**
- * The first pages of a project with their HTML, for the thumbnail on its home
- * card. Home lists titles only and each card fetches this once it scrolls into
- * view, so the home page never carries every project's HTML.
+ * The first pages of a project with their HTML, or for a design project the
+ * URL of its rendered canvas, for the thumbnail on its home card. Home lists
+ * titles only and each card fetches this once it scrolls into view, so the
+ * home page never carries every project's HTML.
  */
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -31,6 +33,16 @@ export async function GET(_request: Request, context: RouteContext) {
     const { projectId } = await context.params;
     if (!isUuid(projectId)) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    // A design project has no HTML pages: its card shows a rendered PNG of
+    // the canvas, addressed by version so the browser caches each one.
+    const documentVersion = await getProjectDocumentVersionForUser(projectId, sessionUser.id);
+    if (documentVersion !== null) {
+      return NextResponse.json({
+        pages: [],
+        thumbnailUrl: `/api/projects/${projectId}/document/thumbnail?v=${documentVersion}`,
+      });
     }
 
     const pages = await listProjectPreviewPages({

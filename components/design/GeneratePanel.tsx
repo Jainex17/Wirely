@@ -1,0 +1,220 @@
+"use client";
+
+import { Check, Loader2, Sparkles, X } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { DesignGenerationEvent } from "@/lib/design/generation";
+import { cn } from "@/lib/utils";
+
+export interface GenerateModel {
+  id: string;
+  label: string;
+  tier: "free" | "paid";
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+type Step = { label: string; status: "running" | "done" | "failed" };
+
+const PROMPT_KEY = (projectId: string) => `wirePrompt:${projectId}`;
+const MODEL_KEY = (projectId: string) => `wireModel:${projectId}`;
+
+/**
+ * Generate tab: describe screens and a model on the user's own key builds
+ * them on the canvas with the design tools. Screens appear as each one is
+ * saved; the list here shows what the model is doing meanwhile. A prompt typed
+ * on the home page runs once when the project opens.
+ */
+export default function GeneratePanel({
+  projectId,
+  models,
+  initialMessages,
+}: {
+  projectId: string;
+  models: GenerateModel[];
+  initialMessages: ChatMessage[];
+}) {
+  const [messages, setMessages] = useState(initialMessages.filter((message) => message.role !== "system"));
+  const [prompt, setPrompt] = useState("");
+  const [modelId, setModelId] = useState(models[0]?.id ?? "");
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  const run = useCallback(
+    async (text: string, model: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || isRunning) return;
+      setIsRunning(true);
+      setSteps([]);
+      setPrompt("");
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: trimmed }]);
+      const finish = (content: string) =>
+        setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content }]);
+      try {
+        const response = await fetch(`/api/projects/${projectId}/design/generate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prompt: trimmed, modelName: model || undefined }),
+        });
+        if (!response.ok || !response.body) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          finish(payload?.error ?? "Generation could not start. Try again.");
+          return;
+        }
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line) as DesignGenerationEvent;
+            if (event.type === "tool") setSteps((current) => [...current, { label: event.label, status: "running" }]);
+            if (event.type === "tool-result") {
+              setSteps((current) => {
+                const index = current.findLastIndex((step) => step.status === "running");
+                return index === -1
+                  ? current
+                  : current.map((step, at) => (at === index ? { ...step, status: event.ok ? "done" : "failed" } : step));
+              });
+            }
+            if (event.type === "done") finish(event.summary);
+            if (event.type === "error") finish(event.message);
+          }
+        }
+      } catch {
+        finish("The connection dropped. Screens finished so far are saved.");
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [isRunning, projectId],
+  );
+
+  // A prompt from the home page runs once, then is forgotten.
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PROMPT_KEY(projectId));
+    if (!pending) return;
+    const pendingModel = sessionStorage.getItem(MODEL_KEY(projectId)) ?? "";
+    sessionStorage.removeItem(PROMPT_KEY(projectId));
+    sessionStorage.removeItem(MODEL_KEY(projectId));
+    const model = models.some((entry) => entry.id === pendingModel) ? pendingModel : (models[0]?.id ?? "");
+    void run(pending, model);
+    // Runs on mount only: `run` changes identity while it runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, steps]);
+
+  if (models.length === 0) {
+    return (
+      <div className="space-y-2 p-3 text-xs text-muted-foreground">
+        <p>Connect your coding agent to design here, or add a model key to generate in Wirely.</p>
+        <Link href="/setting?tab=providers" className="text-sky-500 hover:underline">
+          Add a key in Providers
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col text-xs">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {messages.length === 0 && !isRunning ? (
+          <p className="text-muted-foreground">
+            Describe the screens you want, like &ldquo;three directions for a habit tracker dashboard, web&rdquo; or
+            &ldquo;a mobile onboarding flow&rdquo;.
+          </p>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={cn(
+              "rounded-lg px-2.5 py-2 leading-relaxed",
+              message.role === "user" ? "ml-6 bg-sky-600/20" : "mr-6 bg-background/60",
+            )}
+          >
+            {message.content}
+          </div>
+        ))}
+        {steps.length > 0 ? (
+          <ul className="space-y-1 rounded-lg bg-background/40 px-2.5 py-2">
+            {steps.map((step, index) => (
+              <li key={index} className="flex items-center gap-1.5 text-muted-foreground">
+                {step.status === "running" ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : step.status === "done" ? (
+                  <Check className="h-3 w-3 text-emerald-500" />
+                ) : (
+                  <X className="h-3 w-3 text-rose-500" />
+                )}
+                {step.label}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {isRunning && steps.length === 0 ? (
+          <p className="flex items-center gap-1.5 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Planning the screens…
+          </p>
+        ) : null}
+        <div ref={endRef} />
+      </div>
+      <form
+        className="space-y-1.5 border-t border-border p-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run(prompt, modelId);
+        }}
+      >
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void run(prompt, modelId);
+            }
+          }}
+          rows={3}
+          placeholder="Describe a screen or a change…"
+          aria-label="Describe the screens to design"
+          className="w-full resize-none rounded-md border border-border bg-background/60 p-2 outline-none focus:ring-1 focus:ring-sky-600"
+        />
+        <div className="flex items-center gap-1.5">
+          <select
+            aria-label="Model"
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+            className="min-w-0 flex-1 rounded-md bg-background/60 px-1.5 py-1 outline-none"
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+                {model.tier === "free" ? " · free" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={isRunning || !prompt.trim()}
+            className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white disabled:opacity-50"
+          >
+            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generate
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

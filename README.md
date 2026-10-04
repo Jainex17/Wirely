@@ -10,6 +10,11 @@ It uses the agent subscription you already pay for. Wirely is free and open sour
 
 ## What you can do
 
+- **Design screens like in Figma.** A new project is a canvas of web and mobile screens built from
+  frames, text, shapes, and auto layout. Select, move, and resize
+  anything, drag a layer from one screen into another, copy and paste between screens, and Cmd+Z
+  undoes it. Your agent builds and edits the same screens through MCP. Projects made before this
+  keep the HTML page editor the rest of this list describes.
 - **Watch designs appear live.** Pages fill in on the canvas as your agent writes them.
 - **Compare directions.** Ask for several options and see them next to each other.
 - **Edit like a design tool.** Pick any element to change its text, colors, size, spacing, and

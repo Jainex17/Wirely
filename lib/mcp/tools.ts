@@ -39,8 +39,16 @@ import {
 } from "@/lib/db/queries/reviews";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
+import { createDesignDocument } from "@/lib/design/document";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
-import type { ToolCallResult, ToolContent } from "@/lib/mcp/protocol";
+import {
+  describeDesignSelection,
+  designHandlerFor,
+  getDesignReference,
+  isDesignOnlyTool,
+} from "@/lib/mcp/designTools";
+import type { ToolCallResult } from "@/lib/mcp/protocol";
+import { fail, succeed, text } from "@/lib/mcp/results";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
@@ -65,9 +73,6 @@ import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
 
-const text = (value: string): ToolContent => ({ type: "text", text: value });
-const succeed = (value: string): ToolCallResult => ({ content: [text(value)] });
-const fail = (value: string): ToolCallResult => ({ content: [text(value)], isError: true });
 
 const formatIssues = (issues: z.ZodError["issues"]) =>
   issues
@@ -140,12 +145,14 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
-  const { project, page } = await createProject(userId, parsed.data.title);
+  const { project } = await createProject(userId, parsed.data.title, {
+    document: await createDesignDocument(),
+  });
   return succeed(
-    `Created project "${project.title}" (id: ${project.id}). It starts with an ` +
-      `empty page "Page 1" (id: ${page.id}).\n` +
+    `Created design project "${project.title}" (id: ${project.id}). It has no screens yet.\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
-      "Share this link with the user so they can watch the pages you write.",
+      "Share this link with the user so they can watch the screens you build. Call " +
+      "get_design_reference once, then add screens with add_screen.",
   );
 };
 
@@ -188,6 +195,7 @@ const addPage: ToolHandler = async (userId, args) => {
 
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
+  if (project.kind === "design") return fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
 
   // A copy reuses HTML that was sanitized when it was stored, so the agent
   // spends a few patches on a variant instead of the whole document.
@@ -749,6 +757,9 @@ const getSelection: ToolHandler = async (userId, args, origin) => {
     if (!isMissingRelationError(error)) throw error;
     selection = null;
   }
+  if (selection && !selection.pageId && selection.nodeId) {
+    return describeDesignSelection(userId, { ...selection, nodeId: selection.nodeId });
+  }
   if (!selection?.pageId) {
     return fail(
       "The user has not selected anything on the canvas yet. Ask them to click a page or " +
@@ -845,6 +856,7 @@ const importUrl: ToolHandler = async (userId, args) => {
 
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
+  if (project.kind === "design") return fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
 
   const deviceType = parsed.data.deviceType ?? "desktop";
   let imported: Awaited<ReturnType<typeof importUrlHtml>>;
@@ -945,20 +957,47 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 /** Guards the `tools/list` catalog and the dispatch table against drifting apart. */
 export const TOOL_NAMES = Object.keys(TOOL_HANDLERS).sort();
 
+const DESIGN_PROJECT_MESSAGE =
+  "is a design project: its screens are design nodes, not HTML pages. Use add_screen for a new " +
+  "screen and the design tools (render, set_fill, set_layout, update_node, and others) to edit " +
+  "one. list_pages lists its screens.";
+
+// Tools whose answer depends on the kind of project, so the call looks it up
+// first. Other page tools find no pages in a design project and say so.
+const KIND_DEPENDENT_TOOLS = new Set(["list_pages", "get_page", "get_page_png", "delete_page"]);
+
+/**
+ * The handler for a call. A design project answers the shared page tools for
+ * its screens and runs design tools on its document; an HTML project keeps
+ * the page tools and refuses design tools with a message saying which fit.
+ */
+const resolveHandler = async (userId: string, name: string, args: ToolArgs): Promise<ToolHandler | ToolCallResult> => {
+  if (name === "get_design_reference") return getDesignReference;
+  if ((isDesignOnlyTool(name) || KIND_DEPENDENT_TOOLS.has(name)) && typeof args.projectId === "string") {
+    const project = await getProjectForUser(args.projectId, userId);
+    if (project?.kind === "design") return designHandlerFor(name) ?? fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
+    if (project && isDesignOnlyTool(name)) {
+      return fail(
+        `"${project.title}" is an HTML project from before design projects. Edit it with add_page, ` +
+          "patch_page, and edit_element, or call create_project for a design project.",
+      );
+    }
+    if (!project && isDesignOnlyTool(name)) return fail("Project not found. Use list_projects for valid ids.");
+  }
+  if (isDesignOnlyTool(name)) return fail(`${name} needs the projectId of a design project.`);
+  return TOOL_HANDLERS[name] ?? fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
+};
+
 export const callTool = async (
   userId: string,
   name: string,
   args: ToolArgs,
   origin: string,
 ): Promise<ToolCallResult> => {
-  const handler = TOOL_HANDLERS[name];
-  if (!handler) {
-    return fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
-  }
-
   let result: HandlerResult;
   try {
-    result = await handler(userId, args, origin);
+    const handler = await resolveHandler(userId, name, args);
+    result = typeof handler === "function" ? await handler(userId, args, origin) : handler;
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });
     result = fail("The tool failed on the server. It has been logged; try again.");

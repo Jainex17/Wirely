@@ -3,7 +3,8 @@ import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
-import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel } from "@/lib/wireModels";
+import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel, WIRE_MODEL_OPTIONS } from "@/lib/wireModels";
+import DesignEditor from "@/components/design/DesignEditorLoader";
 import WireEditor from "./WireEditor";
 
 export const metadata: Metadata = {
@@ -34,6 +35,30 @@ export default async function WirePage({ params }: WirePageProps) {
 
   if (!projectDetail) {
     notFound();
+  }
+
+  if (projectDetail.project.kind === "design") {
+    // The models in-app generation can run: enabled, with their provider's key saved.
+    const keyPresence = {
+      google: aiSettings.hasGoogleApiKey,
+      openrouter: aiSettings.hasOpenRouterApiKey,
+      zai: aiSettings.hasZaiApiKey,
+    };
+    const models = WIRE_MODEL_OPTIONS.filter(
+      (option) => aiSettings.enabledModelIds.includes(option.id) && keyPresence[option.provider],
+    ).map((option) => ({ id: option.id, label: option.label, tier: option.tier }));
+    return (
+      <DesignEditor
+        projectId={resolvedParams.id}
+        projectTitle={projectDetail.project.title}
+        models={models}
+        initialMessages={projectDetail.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+        }))}
+      />
+    );
   }
 
   const initialPages =

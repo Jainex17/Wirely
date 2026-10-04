@@ -25,6 +25,7 @@ import {
   rpcError,
   rpcResult,
 } from "@/lib/mcp/protocol";
+import { DESIGN_CATALOG } from "@/lib/mcp/designTools";
 import { callTool } from "@/lib/mcp/tools";
 
 export const runtime = "nodejs";
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
         );
 
       case "tools/list":
-        return json(rpcResult(id, { tools: MCP_TOOLS }));
+        return json(rpcResult(id, { tools: [...MCP_TOOLS, ...DESIGN_CATALOG] }));
 
       case "tools/call": {
         const name = typeof params.name === "string" ? params.name : "";

@@ -30,8 +30,16 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * one block.
  */
 export const MCP_INSTRUCTIONS = [
-  "Wirely is a canvas the user watches live while you write pages.",
+  "Wirely is a design canvas the user watches live while you build screens.",
   "After create_project, give the user the editor URL it returns.",
+  "A design project's screens are design nodes, like frames in Figma. Call get_design_reference " +
+    "once, then add each screen with add_screen (desktop or mobile) as design JSX. Edit with the " +
+    "design tools: get_page_tree or get_jsx for node ids, render with parent_id or replace_id to " +
+    "add or swap a part, and set_fill, set_layout, set_text, update_node, and batch_update for " +
+    "small changes, instead of rebuilding a screen.",
+  "The page tools below (add_page, patch_page, edit_element, get_page_outline, and the HTML " +
+    "rules) are for older HTML projects only. list_pages, get_page, get_page_png, and " +
+    "delete_page work for both kinds.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -211,14 +219,16 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_projects",
     description:
-      "List the user's Wirely projects. A project is one design file: a canvas of pages (screens).",
+      "List the user's Wirely projects. A project is one design file: a canvas of screens. Design " +
+      "projects hold screens built from design nodes; older HTML projects hold HTML pages.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "create_project",
     description:
-      "Create a Wirely project. It starts with one empty page named \"Page 1\". " +
-      "Returns both ids and the editor URL; give that URL to the user so they can open the project.",
+      "Create a Wirely design project with no screens yet. Add screens with add_screen and edit " +
+      "them with the design tools. Returns the id and the editor URL; give that URL to the user " +
+      "so they can watch the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -231,8 +241,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_pages",
     description:
-      "List the pages (screens) in a project with their titles, device types, and " +
-      "HTML sizes. Does not return the HTML itself; use get_page for that.",
+      "List the screens in a project. In a design project: each screen's id, name, device, " +
+      "and size. In an HTML project: each page's title, device type, and HTML size.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID },
@@ -317,8 +327,10 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "get_page",
     description:
-      "Return a page's full HTML source so it can be read or revised, or with nodeId just " +
-      "one element's exact source, ready to use as patch_page's oldString.",
+      "In a design project, return a screen (pageId is its screen id) as React with Tailwind " +
+      "classes, the spec to rebuild it in the user's codebase. In an HTML project, return a " +
+      "page's full HTML source, or with nodeId just one element's exact source, ready to use " +
+      "as patch_page's oldString.",
     inputSchema: {
       type: "object",
       properties: {
@@ -405,8 +417,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "get_page_png",
     description:
-      "Render a page exactly as the Wirely preview does and return a PNG screenshot. " +
-      "Use it to look at a screen and iterate on it visually.",
+      "Render a screen (a design project's screen id or an HTML page id) as the canvas shows " +
+      "it and return a PNG. Use it to look at a screen and iterate on it visually.",
     inputSchema: {
       type: "object",
       properties: {
@@ -560,7 +572,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "delete_page",
     description:
-      "Delete a page from a project. The last remaining page cannot be deleted.",
+      "Delete a screen from a design project, or a page from an HTML project, where the last " +
+      "remaining page cannot be deleted.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID, pageId: PAGE_ID, note: NOTE },

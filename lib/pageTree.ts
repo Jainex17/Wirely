@@ -294,3 +294,64 @@ export const INSERT_MARKUP = {
 } as const;
 
 export type InsertKind = keyof typeof INSERT_MARKUP;
+
+const NODE_ID_ATTRIBUTE_PATTERN = /\sdata-wirely-id\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+
+/** The element's markup with its node ids removed, so wherever it lands it gets new ones. */
+export const copyNodeMarkup = (html: string, nodeId: string) => {
+  const source = stampNodeIds(html);
+  const span = findNodeSpan(source, nodeId);
+  return span ? source.slice(span.start, span.end).replace(NODE_ID_ATTRIBUTE_PATTERN, "") : null;
+};
+
+/** Copies the element next to or into `targetId` on the same page. Returns the page and the copy's id. */
+export const copyNode = (html: string, nodeId: string, targetId: string, position: InsertPosition) => {
+  const markup = copyNodeMarkup(html, nodeId);
+  return markup === null ? null : insertNode(html, targetId, position, markup);
+};
+
+// The icon font the generation prompts link. Its glyphs draw through
+// ::before, so an icon moved to a page without the link would draw nothing.
+const ICON_STYLESHEET_LINK =
+  /<link\b[^>]*href\s*=\s*["']https:\/\/cdn\.jsdelivr\.net\/npm\/bootstrap-icons[^"']*["'][^>]*>/i;
+
+/** `to` with the icon font link `from` has, when it lacks one. */
+export const carryIconStylesheet = (from: string, to: string) => {
+  const link = ICON_STYLESHEET_LINK.exec(from)?.[0];
+  if (!link || ICON_STYLESHEET_LINK.test(to)) return to;
+  const at = /<\/head>/i.exec(to)?.index ?? /<body\b/i.exec(to)?.index;
+  if (at !== undefined) return to.slice(0, at) + link + to.slice(at);
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(to)?.[0] ?? "";
+  return doctype + link + to.slice(doctype.length);
+};
+
+export type DropTarget = { nodeId: string; position: InsertPosition } | "end";
+
+/**
+ * Moves or copies an element from one page to another. `markup` is the
+ * element made self-contained by `freezeElement`, since the source page's CSS
+ * does not reach the target. Returns both pages and the new element's id, or
+ * null when the element or the target is gone.
+ */
+export const transferNode = ({
+  sourceHtml,
+  targetHtml,
+  nodeId,
+  target,
+  markup,
+  copy,
+}: {
+  sourceHtml: string;
+  targetHtml: string;
+  nodeId: string;
+  target: DropTarget;
+  markup: string;
+  copy: boolean;
+}) => {
+  const source = copy ? stampNodeIds(sourceHtml) : removeNode(sourceHtml, nodeId);
+  if (source === null || !findNodeSpan(stampNodeIds(sourceHtml), nodeId)) return null;
+  const inserted =
+    target === "end" ? appendToPage(targetHtml, markup) : insertNode(targetHtml, target.nodeId, target.position, markup);
+  if (!inserted) return null;
+  return { source, target: carryIconStylesheet(sourceHtml, inserted.html), newId: inserted.newId };
+};

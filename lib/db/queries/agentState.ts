@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import {
@@ -57,9 +57,14 @@ export const setDesignTokens = async (projectId: string, tokens: DesignTokens) =
 };
 
 /** Remembers the page and element the user picked. Callers check ownership. */
+/**
+ * Remembers the user's pick. An HTML project's is a page and maybe an element
+ * in it; a design project's is the ids of its selected layers, comma joined,
+ * with no page.
+ */
 export const saveCanvasSelection = async (
   projectId: string,
-  pageId: string,
+  pageId: string | null,
   nodeId: string | null,
 ) => {
   const selection = { selectedPageId: pageId, selectedNodeId: nodeId, selectedAt: new Date() };
@@ -88,7 +93,8 @@ export const getCanvasSelection = async (userId: string, projectId?: string) => 
       and(
         eq(projects.userId, userId),
         eq(projects.status, "active"),
-        isNotNull(projectAgentState.selectedPageId),
+        // A design project's selection has node ids and no page.
+        or(isNotNull(projectAgentState.selectedPageId), isNotNull(projectAgentState.selectedNodeId)),
         projectId ? eq(projects.id, projectId) : undefined,
       ),
     )

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, sql, TransactionRollbackError } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
@@ -6,6 +6,7 @@ import { applyDesignTokens } from "@/lib/designTokens";
 import {
   conversationMessages,
   conversations,
+  projectDocuments,
   projectPages,
   projects,
   type ConversationRole,
@@ -13,26 +14,40 @@ import {
 } from "@/lib/db/schema";
 import type { PageDeviceType } from "@/lib/types";
 
-export const createProject = async (userId: string, title: string) => {
+/**
+ * Creates a project with its conversation. Given a design document it is a
+ * design project holding that document, with no HTML pages; without one it is
+ * an HTML project with one empty page.
+ */
+export const createProject = async (
+  userId: string,
+  title: string,
+  { document }: { document?: Uint8Array } = {},
+) => {
   const db = getDb();
 
   const [project] = await db
     .insert(projects)
-    .values({ userId, title })
+    .values({ userId, title, kind: document ? "design" : "html" })
     .returning();
 
   if (!project) {
     throw new Error("Unable to create project.");
   }
 
-  const [page] = await db
-    .insert(projectPages)
-    .values({
-      projectId: project.id,
-      title: "Page 1",
-      sortOrder: 0,
-    })
-    .returning();
+  let page: typeof projectPages.$inferSelect | null = null;
+  if (document) {
+    await db.insert(projectDocuments).values({ projectId: project.id, data: Buffer.from(document) });
+  } else {
+    [page] = await db
+      .insert(projectPages)
+      .values({
+        projectId: project.id,
+        title: "Page 1",
+        sortOrder: 0,
+      })
+      .returning();
+  }
 
   const [conversation] = await db
     .insert(conversations)
@@ -375,6 +390,61 @@ export const updateProjectPageForUser = async ({
       ),
     )
     .returning();
+
+  if (!updated) return null;
+  await touchProjectUpdatedAt(projectId);
+  return updated;
+};
+
+/**
+ * Writes several pages' HTML in one transaction, so an element moved from one
+ * page to another is never saved on neither page or on both. Returns the
+ * updated pages, or null when the project or any page is not the user's.
+ */
+export const updateProjectPagesHtmlForUser = async ({
+  projectId,
+  userId,
+  pages,
+}: {
+  projectId: string;
+  userId: string;
+  pages: Array<{ pageId: string; htmlContent: string }>;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return null;
+
+  const tokens = await getDesignTokens(projectId);
+  const writes = pages.map(({ pageId, htmlContent }) => ({
+    pageId,
+    html: applyDesignTokens(htmlContent, tokens),
+  }));
+  // Version snapshots sit outside the transaction. One left behind by a
+  // failed write holds HTML the page still has, which is harmless.
+  for (const { pageId, html } of writes) {
+    await snapshotPageBeforeWrite({ projectId, pageId, nextHtml: html });
+  }
+
+  const updated = await db.transaction(async (tx) => {
+    const rows = [];
+    for (const { pageId, html } of writes) {
+      const [row] = await tx
+        .update(projectPages)
+        .set({ htmlContent: html, updatedAt: new Date() })
+        .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+        .returning();
+      if (!row) {
+        tx.rollback();
+        return null;
+      }
+      rows.push(row);
+    }
+    return rows;
+  }).catch((error: unknown) => {
+    // Drizzle signals tx.rollback() by throwing, which here means a page was missing.
+    if (error instanceof TransactionRollbackError) return null;
+    throw error;
+  });
 
   if (!updated) return null;
   await touchProjectUpdatedAt(projectId);

@@ -12,6 +12,11 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
+// "html" projects hold generated HTML pages, one per row in project_pages.
+// "design" projects hold one node document in project_documents, a scene of
+// frames that the canvas, MCP agents, and in-app generation edit with design
+// tools. New projects are design projects; html ones keep their editor.
+export const projectKindEnum = pgEnum("project_kind", ["html", "design"]);
 export const conversationRoleEnum = pgEnum("conversation_role", [
   "system",
   "user",
@@ -99,6 +104,7 @@ export const projects = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     status: projectStatusEnum("status").default("active").notNull(),
+    kind: projectKindEnum("kind").default("html").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -541,3 +547,17 @@ export type GenerationRunStatus = (typeof generationRunStatusEnum.enumValues)[nu
 export type GenerationOutputKind = (typeof generationOutputKindEnum.enumValues)[number];
 export type GenerationOutputStatus =
   (typeof generationOutputStatusEnum.enumValues)[number];
+
+/**
+ * A design project's document: the whole scene as .fig bytes, the format the
+ * design engine reads and writes. `version` goes up on every save, so a writer
+ * that read an older version is refused instead of overwriting newer work.
+ */
+export const projectDocuments = pgTable("project_documents", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  data: bytea("data").notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
