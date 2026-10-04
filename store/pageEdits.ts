@@ -196,8 +196,16 @@ export const createAssetPage = async (projectId: string, asset: DraggedAsset, ce
   try {
     await persistPageHtml(projectId, pageId, html);
   } catch (error) {
-    // The page exists on the server but empty, so it goes rather than stay a blank page.
     logger.error("asset_page_save_failed", { projectId, pageId, error });
+    // The page exists on the server but empty, so it goes rather than stay a
+    // blank page. Every edit replaces the page's HTML in the store, so other
+    // HTML means the user has changed it since, and possibly saved it; then
+    // the page stays.
+    const current = useEditorStore.getState().pages.find((page) => page.id === pageId);
+    if (current?.iframeHtml !== html) {
+      toast.error("Could not save the image. Your later changes are kept.");
+      return;
+    }
     useEditorStore.getState().deletePage(pageId);
     fetch(`/api/projects/${projectId}/pages/${pageId}`, { method: "DELETE" }).catch((deleteError: unknown) =>
       logger.error("asset_page_rollback_failed", { projectId, pageId, error: deleteError }),
