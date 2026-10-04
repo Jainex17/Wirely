@@ -163,7 +163,8 @@ export const insertAsset = (
 /**
  * Makes a dropped project image its own page: a vector page the size of the
  * image, centred on the drop point, the same kind of page an agent's add_page
- * makes for artwork that is not a screen.
+ * makes for artwork that is not a screen. The pages API creates a page empty,
+ * so a failed save of its image deletes it again.
  */
 export const createAssetPage = async (projectId: string, asset: DraggedAsset, center: { x: number; y: number }) => {
   const { beginSaving, endSaving } = useEditorStore.getState();
@@ -191,5 +192,16 @@ export const createAssetPage = async (projectId: string, asset: DraggedAsset, ce
   state.createPage(asset.name, undefined, pageId, "vector");
   state.setPagePosition(pageId, { x: center.x - width / 2, y: center.y - height / 2 });
   state.setFocusedPage(pageId);
-  commitPageEdit(projectId, pageId, () => html, { record: false });
+  state.setPageHtml(pageId, html);
+  try {
+    await persistPageHtml(projectId, pageId, html);
+  } catch (error) {
+    // The page exists on the server but empty, so it goes rather than stay a blank page.
+    logger.error("asset_page_save_failed", { projectId, pageId, error });
+    useEditorStore.getState().deletePage(pageId);
+    fetch(`/api/projects/${projectId}/pages/${pageId}`, { method: "DELETE" }).catch((deleteError: unknown) =>
+      logger.error("asset_page_rollback_failed", { projectId, pageId, error: deleteError }),
+    );
+    toast.error("Could not add the image. Try again.");
+  }
 };

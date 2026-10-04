@@ -196,6 +196,12 @@ const isAppliedStyle = (style: Element) =>
  * which the caller also links from the document. `win` is the window to build in, which tests swap for jsdom.
  */
 export const buildInertPage = (html: string, viewport: InertViewport, win: WindowLike = window) => {
+  // Parsing raw HTML here loads nothing. A DOMParser document has no browsing
+  // context, so scripts never run, an <img> waits for its document to become
+  // fully active before fetching, which never happens, and a <link> or a
+  // stylesheet's @import fetches only once browsing-context connected. Only
+  // the sanitized fragment ever enters the editor's document. DOMPurify parses
+  // the same way for the same reason.
   const doc = new win.DOMParser().parseFromString(html, "text/html");
   const css = Array.from(doc.querySelectorAll("style"))
     .filter(isAppliedStyle)

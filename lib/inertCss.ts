@@ -357,6 +357,9 @@ const formatPx = (value: number) => `${Math.round(value * 1000) / 1000}px`;
 
 const isSignificant = (token: Token) => token.type !== "ws" && token.type !== "comment";
 
+/** A custom property name that reads back as the same single ident, with nothing to escape. */
+const CUSTOM_PROPERTY_NAME = /^--[A-Za-z0-9_-]+$/;
+
 /**
  * Reads an `@property` rule starting at the at-keyword: the property, whether
  * it inherits, its initial value as source text, and the index of its closing
@@ -366,7 +369,9 @@ const readPropertyRule = (tokens: Token[], start: number) => {
   let k = start + 1;
   while (k < tokens.length && !isSignificant(tokens[k])) k += 1;
   const nameToken = tokens[k];
-  if (nameToken?.type !== "ident" || !nameToken.name.startsWith("--")) return null;
+  // The name is decoded, and it is written back into a new declaration, so an
+  // escaped `;` or `:` in it would start a declaration of the page's choosing.
+  if (nameToken?.type !== "ident" || !CUSTOM_PROPERTY_NAME.test(nameToken.name)) return null;
   k += 1;
   while (k < tokens.length && !isSignificant(tokens[k])) k += 1;
   if (tokens[k]?.text !== "{") return null;
@@ -385,6 +390,10 @@ const readPropertyRule = (tokens: Token[], start: number) => {
       const [first] = declaration.filter(isSignificant);
       const colon = declaration.findIndex((token) => token.text === ":");
       if (first?.type === "ident" && first.name.toLowerCase() === descriptor && colon >= 0) {
+        // An unclosed string or url() would run on past the declaration it is moved into.
+        if (declaration.some((token) => token.type === "bad-string" || (token.type === "url" && token.bad))) {
+          return null;
+        }
         return declaration
           .slice(colon + 1)
           .map((token) => token.text)
@@ -584,7 +593,7 @@ export const inertCustomPropertyResets = (customProperties: Set<string>) =>
   customProperties.size === 0
     ? ""
     : `@layer ${INERT_BASE_LAYER}{:where(${HTML_SELECTOR}){${[...customProperties]
-        .filter((name) => /^--[\w-]+$/.test(name))
+        .filter((name) => CUSTOM_PROPERTY_NAME.test(name))
         .map((name) => `${name}:initial`)
         .join(";")}}}`;
 

@@ -1586,9 +1586,13 @@ export default React.memo(function PageRenderer({
             }}
             onDrop={(event) => {
               const asset = parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE));
-              if (!asset || !projectId || page.deviceType === "vector") return;
+              if (!asset || !projectId) return;
               event.preventDefault();
               event.stopPropagation();
+              if (page.deviceType === "vector") {
+                toast.error("Images go on screen pages. Drop it on a page or on empty canvas.");
+                return;
+              }
               if (!hasHtml || (!isLiveReady && !inertFrame)) {
                 insertAsset(projectId, page.id, asset, "end");
                 return;

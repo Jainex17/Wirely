@@ -148,6 +148,31 @@ describe("sanitizeInertCss", () => {
   });
 });
 
+describe("escaped names", () => {
+  it("drops an @property whose decoded name or value would break out of its declaration", () => {
+    // Every character a name cannot hold is escaped, so the tokenizer reads one
+    // ident that decodes to `--x;background-image:url(https://evil.example/pixel);--safe`.
+    const escape = (value: string) =>
+      value.replace(/[^a-zA-Z0-9-]/g, (char) => `\\${char.charCodeAt(0).toString(16)} `);
+    const name = escape("--x;background-image:url(https://evil.example/pixel);--safe");
+    const output = css(`@property ${name}{syntax:'*';inherits:false;initial-value:0}.a{color:red}`);
+    // The rule is renamed, so the browser drops it, and no declaration is made from the name.
+    expect(output.startsWith("@wirely-dropped ")).toBe(true);
+    expect(output).not.toContain("@layer");
+    expect(output).not.toContain("url(");
+    expect(css("@property --a{syntax:'*';inherits:false;initial-value:\"abc\n}.a{color:red}")).not.toContain("--a:");
+    expect(css("@property --a{syntax:'*';inherits:false;initial-value:1px}")).toBe(
+      "@layer wirely-ua{*,::before,::after,::backdrop{--a:1px}:where([data-wirely-html]){}}",
+    );
+  });
+
+  it("resets only custom property names that read back unchanged", () => {
+    const names = new Set<string>();
+    sanitizeInertCss(".a{color:var(--ok);--x\\3b color\\3a red:1px}", desktop, names);
+    expect(inertCustomPropertyResets(names)).toBe("@layer wirely-ua{:where([data-wirely-html]){--ok:initial}}");
+  });
+});
+
 describe("page root font size", () => {
   it("reads rem from the page's root font size, and media query em and rem as 16px", () => {
     expect(css(".a{padding:1.5rem}")).toBe(".a{padding:24px}");
