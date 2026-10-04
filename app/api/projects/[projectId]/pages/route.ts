@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { isPageDeviceType } from "@/lib/types";
+import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { prepareArtboardHtml } from "@/lib/vectorArtboard";
 import {
   createProjectPageForUser,
   listProjectPageChangesForUser,
@@ -16,7 +18,12 @@ interface RouteContext {
 type CreateProjectPageRequestBody = {
   title?: string | null;
   deviceType?: string | null;
+  htmlContent?: string | null;
 };
+
+// Matches the page update route, so a page can be created with any HTML it
+// could later be saved with.
+const PAGE_CREATE_MAX_BYTES = 600_000;
 
 /**
  * Page timestamps come from both the app server clock and the database clock,
@@ -80,7 +87,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const { projectId } = await context.params;
-    const parsed = await readJsonBodyWithLimit<CreateProjectPageRequestBody>(request);
+    const parsed = await readJsonBodyWithLimit<CreateProjectPageRequestBody>(
+      request,
+      PAGE_CREATE_MAX_BYTES,
+    );
     if (!parsed.ok) {
       return parsed.response;
     }
@@ -92,12 +102,21 @@ export async function POST(request: Request, context: RouteContext) {
     const deviceType = isPageDeviceType(body.deviceType)
       ? body.deviceType
       : undefined;
+    // Sent with the create so a page never exists on the server without the
+    // content it was created for. Cleaned the same way the MCP add_page does.
+    const htmlContent =
+      typeof body.htmlContent === "string"
+        ? sanitizeIframeHtml(
+            deviceType === "vector" ? prepareArtboardHtml(body.htmlContent) : body.htmlContent,
+          )
+        : undefined;
 
     const page = await createProjectPageForUser({
       projectId,
       userId: sessionUser.id,
       title,
       deviceType,
+      htmlContent,
     });
 
     if (!page) {

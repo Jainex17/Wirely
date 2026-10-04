@@ -169,16 +169,20 @@ export const insertAsset = (
 export const createAssetPage = async (projectId: string, asset: DraggedAsset, center: { x: number; y: number }) => {
   const { beginSaving, endSaving } = useEditorStore.getState();
   beginSaving();
-  let pageId: string;
+  // The page is created with its image in one request, so a failure leaves
+  // nothing behind to roll back.
+  let page: { id: string; htmlContent: string };
   try {
     const response = await fetch(`/api/projects/${projectId}/pages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: asset.name, deviceType: "vector" }),
+      body: JSON.stringify({ title: asset.name, deviceType: "vector", htmlContent: assetArtboardHtml(asset) }),
     });
-    const payload = (await response.json().catch(() => null)) as { page?: { id: string } } | null;
+    const payload = (await response.json().catch(() => null)) as {
+      page?: { id: string; htmlContent: string };
+    } | null;
     if (!response.ok || !payload?.page) throw new Error(`Page creation failed with status ${response.status}`);
-    pageId = payload.page.id;
+    page = payload.page;
   } catch (error) {
     logger.error("asset_page_create_failed", { projectId, error });
     toast.error("Could not add the image. Try again.");
@@ -186,30 +190,10 @@ export const createAssetPage = async (projectId: string, asset: DraggedAsset, ce
   } finally {
     endSaving();
   }
-  const html = assetArtboardHtml(asset);
-  const { width, height } = readArtboardSize(html);
+  const { width, height } = readArtboardSize(page.htmlContent);
   const state = useEditorStore.getState();
-  state.createPage(asset.name, undefined, pageId, "vector");
-  state.setPagePosition(pageId, { x: center.x - width / 2, y: center.y - height / 2 });
-  state.setFocusedPage(pageId);
-  state.setPageHtml(pageId, html);
-  try {
-    await persistPageHtml(projectId, pageId, html);
-  } catch (error) {
-    logger.error("asset_page_save_failed", { projectId, pageId, error });
-    // The page exists on the server but empty, so it goes rather than stay a
-    // blank page. Every edit replaces the page's HTML in the store, so other
-    // HTML means the user has changed it since, and possibly saved it; then
-    // the page stays.
-    const current = useEditorStore.getState().pages.find((page) => page.id === pageId);
-    if (current?.iframeHtml !== html) {
-      toast.error("Could not save the image. Your later changes are kept.");
-      return;
-    }
-    useEditorStore.getState().deletePage(pageId);
-    fetch(`/api/projects/${projectId}/pages/${pageId}`, { method: "DELETE" }).catch((deleteError: unknown) =>
-      logger.error("asset_page_rollback_failed", { projectId, pageId, error: deleteError }),
-    );
-    toast.error("Could not add the image. Try again.");
-  }
+  state.createPage(asset.name, undefined, page.id, "vector");
+  state.setPagePosition(page.id, { x: center.x - width / 2, y: center.y - height / 2 });
+  state.setFocusedPage(page.id);
+  state.setPageHtml(page.id, page.htmlContent);
 };
