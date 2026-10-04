@@ -5,17 +5,22 @@
  * put back if the save fails.
  */
 import { toast } from "@/components/ui/sonner";
+import { assetArtboardHtml, assetImageMarkup, type DraggedAsset } from "@/lib/assetDrag";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
 import { stampNodeIds } from "@/lib/pageNodes";
 import {
+  appendToPage,
   duplicateNode,
+  insertAtNode,
+  insertNode,
   type InsertPosition,
   moveNode,
   removeNode,
   setNodeHidden,
   wrapNode,
 } from "@/lib/pageTree";
+import { readArtboardSize } from "@/lib/vectorArtboard";
 import { useEditorStore } from "@/store/useEditorStore";
 
 /** Saves page HTML, counted in the editor's saving indicator. Throws when the save fails. */
@@ -120,3 +125,75 @@ export const moveElement = (
   commitPageEdit(projectId, pageId, (html) => moveNode(html, nodeId, targetId, position), {
     invalidMessage: "An element cannot go there. Drop it next to or into another element.",
   });
+
+/**
+ * Drops a project image into a page and picks it: relative to a layer from the
+ * layers panel, at the end of a page dropped on in the pages panel, or at the
+ * element under the drop on the canvas.
+ */
+export const insertAsset = (
+  projectId: string,
+  pageId: string,
+  asset: DraggedAsset,
+  target: { nodeId: string; position: InsertPosition } | { nodeId: string; isSvg: boolean } | "end",
+) => {
+  let newId: string | null = null;
+  const markup = assetImageMarkup(asset);
+  const next = commitPageEdit(
+    projectId,
+    pageId,
+    (html) => {
+      const result =
+        target === "end"
+          ? appendToPage(html, markup)
+          : "position" in target
+            ? insertNode(html, target.nodeId, target.position, markup)
+            : insertAtNode(html, target, markup);
+      newId = result?.newId ?? null;
+      return result?.html ?? null;
+    },
+    { invalidMessage: "The image cannot go there. Drop it on another element." },
+  );
+  if (next === null || !newId) return;
+  const { setFocusedPage, setSelectedNode } = useEditorStore.getState();
+  setFocusedPage(pageId);
+  setSelectedNode({ pageId, nodeId: newId, tag: "img", color: null, background: null });
+};
+
+/**
+ * Makes a dropped project image its own page: a vector page the size of the
+ * image, centred on the drop point, the same kind of page an agent's add_page
+ * makes for artwork that is not a screen. The pages API creates a page empty,
+ * so a failed save of its image deletes it again.
+ */
+export const createAssetPage = async (projectId: string, asset: DraggedAsset, center: { x: number; y: number }) => {
+  const { beginSaving, endSaving } = useEditorStore.getState();
+  beginSaving();
+  // The page is created with its image in one request, so a failure leaves
+  // nothing behind to roll back.
+  let page: { id: string; htmlContent: string };
+  try {
+    const response = await fetch(`/api/projects/${projectId}/pages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: asset.name, deviceType: "vector", htmlContent: assetArtboardHtml(asset) }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      page?: { id: string; htmlContent: string };
+    } | null;
+    if (!response.ok || !payload?.page) throw new Error(`Page creation failed with status ${response.status}`);
+    page = payload.page;
+  } catch (error) {
+    logger.error("asset_page_create_failed", { projectId, error });
+    toast.error("Could not add the image. Try again.");
+    return;
+  } finally {
+    endSaving();
+  }
+  const { width, height } = readArtboardSize(page.htmlContent);
+  const state = useEditorStore.getState();
+  state.createPage(asset.name, undefined, page.id, "vector");
+  state.setPagePosition(page.id, { x: center.x - width / 2, y: center.y - height / 2 });
+  state.setFocusedPage(page.id);
+  state.setPageHtml(page.id, page.htmlContent);
+};

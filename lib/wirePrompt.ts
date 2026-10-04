@@ -260,6 +260,7 @@ HTML:
 - Include ${ELEMENTS_CDN} in <head>.
 - For dashboard/chart UIs, include ${CHARTJS_CDN} in <head>.
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
+- Keep all content visible without JavaScript: the canvas shows pages with scripts off, so never hide content until a script or IntersectionObserver reveals it.
 - Include <meta name="viewport" content="width=device-width, initial-scale=1.0">.
 - Set explicit base styling on <body> with Tailwind classes, including background and text color (do not rely on parent/container background).
 - Do not include <style> tags.

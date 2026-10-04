@@ -19,7 +19,8 @@ import AssetsFolder from "@/components/AssetsFolder";
 import LayerTree from "@/components/LayerTree";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { runElementAction } from "@/store/pageEdits";
+import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
+import { insertAsset, runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
@@ -114,6 +115,19 @@ export default function PagesPanel({
             event.dataTransfer.effectAllowed = "move";
           }}
           onDragEnd={() => setDropGroupId(undefined)}
+          // A project image dropped on a page row goes at the end of the page.
+          onDragOver={(event) => {
+            if (page.deviceType === "vector" || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDrop={(event) => {
+            const asset = page.deviceType === "vector" ? null : parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE));
+            if (!asset) return;
+            event.preventDefault();
+            event.stopPropagation();
+            insertAsset(projectId, page.id, asset, "end");
+          }}
           onClick={() => focusPage(page.id)}
           className={cn(
             "flex h-7 w-full cursor-default items-center gap-1.5 pr-3 text-xs font-medium transition-colors",
@@ -144,6 +158,7 @@ export default function PagesPanel({
             pageId={page.id}
             html={page.iframeHtml ?? ""}
             baseDepth={depth + 1}
+            acceptsImages={page.deviceType !== "vector"}
           />
         ) : null}
       </div>

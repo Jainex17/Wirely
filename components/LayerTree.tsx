@@ -20,8 +20,9 @@ import {
   type LayerKind,
   setNodeHidden,
 } from "@/lib/pageTree";
+import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
 import { cn } from "@/lib/utils";
-import { commitPageEdit, moveElement } from "@/store/pageEdits";
+import { commitPageEdit, insertAsset, moveElement } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
 // The page id is part of the type because dragover can read only the types,
@@ -51,10 +52,13 @@ export default function LayerTree({
   pageId,
   html,
   baseDepth,
+  acceptsImages,
 }: {
   projectId: string;
   pageId: string;
   html: string;
+  /** False on a vector page, where an <img> cannot go inside the SVG. */
+  acceptsImages: boolean;
   /** Tree levels above the page's first layer, for the row indent. */
   baseDepth: number;
 }) {
@@ -147,7 +151,8 @@ export default function LayerTree({
               event.dataTransfer.effectAllowed = "move";
             }}
             onDragOver={(event) => {
-              if (!event.dataTransfer.types.includes(dragType)) return;
+              const types = event.dataTransfer.types;
+              if (!types.includes(dragType) && !(acceptsImages && types.includes(ASSET_DRAG_TYPE))) return;
               event.preventDefault();
               event.stopPropagation();
               const position = dropPosition(event, layer);
@@ -157,6 +162,15 @@ export default function LayerTree({
             }}
             onDragLeave={() => setDrop((current) => (current?.id === layer.id ? null : current))}
             onDrop={(event) => {
+              // A project image dragged from the assets folder goes in here.
+              const asset = acceptsImages ? parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE)) : null;
+              if (asset) {
+                event.preventDefault();
+                event.stopPropagation();
+                setDrop(null);
+                insertAsset(projectId, pageId, asset, { nodeId: layer.id, position: dropPosition(event, layer) });
+                return;
+              }
               const draggedId = event.dataTransfer.getData(dragType);
               if (!draggedId) return;
               event.preventDefault();

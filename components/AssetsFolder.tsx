@@ -3,6 +3,7 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
 import { ChevronDown, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
+import { ASSET_DRAG_TYPE, type DraggedAsset } from "@/lib/assetDrag";
 import { assetPath } from "@/lib/assetPaths";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
@@ -48,7 +49,8 @@ const formatSize = (bytes: number) =>
 /**
  * The project's images, as a folder in the pages panel. The user uploads files
  * here or asks their agent to, and pages use them by path. Clicking one copies
- * its path for a prompt.
+ * its path for a prompt; dragging one drops it onto a page, a layer, or empty
+ * canvas.
  */
 export default function AssetsFolder({ projectId }: { projectId: string }) {
   const [isOpen, setIsOpen] = useState(true);
@@ -225,6 +227,17 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
             assets.map((asset) => (
               <div
                 key={asset.id}
+                draggable
+                onDragStart={(event) => {
+                  const dragged: DraggedAsset = {
+                    id: asset.id,
+                    name: asset.name,
+                    width: asset.width,
+                    height: asset.height,
+                  };
+                  event.dataTransfer.setData(ASSET_DRAG_TYPE, JSON.stringify(dragged));
+                  event.dataTransfer.effectAllowed = "copy";
+                }}
                 className="group flex h-8 items-center gap-2 pl-8 pr-2 text-xs text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
               >
                 <button
@@ -238,6 +251,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
                     src={assetPath(asset.id)}
                     alt=""
                     loading="lazy"
+                    draggable={false}
                     className="h-6 w-6 shrink-0 rounded-sm border border-border object-cover"
                   />
                   <span className="truncate">{asset.name}</span>

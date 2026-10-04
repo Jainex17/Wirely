@@ -12,6 +12,7 @@
 import {
   ARTBOARD_MARKER,
   findNodeSpan,
+  getNodeText,
   isSelfClosing,
   OPAQUE_TAGS,
   readNodeId,
@@ -217,6 +218,34 @@ export const insertNode = (
   if (at === null) return null;
   const next = stampNodeIds(source.slice(0, at) + markup + source.slice(at));
   const newId = idAt(next, at);
+  return newId ? { html: next, newId } : null;
+};
+
+/**
+ * Inserts `markup` where a click or drop on an element puts it: inside a
+ * container, after an element with no children of its own (a void tag, text,
+ * or SVG). Returns the page and the new element's id.
+ */
+export const insertAtNode = (html: string, node: { nodeId: string; isSvg: boolean }, markup: string) => {
+  const source = stampNodeIds(html);
+  const span = findNodeSpan(source, node.nodeId);
+  if (!span) return null;
+  const isVoid = span.end === span.openEnd;
+  const holdsText = getNodeText(source, node.nodeId) !== null;
+  return insertNode(source, node.nodeId, isVoid || holdsText || node.isSvg ? "after" : "inside", markup);
+};
+
+/**
+ * Adds `markup` at the end of the page, after its last top-level element, or
+ * as the whole body of a page with none yet. Returns the page and the new
+ * element's id.
+ */
+export const appendToPage = (html: string, markup: string) => {
+  const last = buildLayerTree(html).at(-1);
+  if (last) return insertNode(html, last.id, "after", markup);
+  if (html.trim()) return null;
+  const next = stampNodeIds(`<!doctype html><html><head><meta charset="utf-8"></head><body>${markup}</body></html>`);
+  const newId = buildLayerTree(next)[0]?.id;
   return newId ? { html: next, newId } : null;
 };
 

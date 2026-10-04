@@ -120,7 +120,8 @@ const sanitizeUnsafeNavigation = (value: string) =>
 const parseAttributeValue = (value: string) =>
   value.replace(/^['"]|['"]$/g, "").trim();
 
-const isAllowedImageUrl = (value: string) => {
+/** True for an image a page may load: the allowlisted hosts, a project asset, or a data or blob URL. */
+export const isAllowedImageUrl = (value: string) => {
   if (!value) return false;
   if (value.startsWith("data:") || value.startsWith("blob:")) return true;
   if (ASSET_PATH_PATTERN.test(value)) return true;

@@ -43,6 +43,8 @@ export const MCP_INSTRUCTIONS = [
     "returned source as oldString, and keep its data-wirely-id attribute.",
   "Give each page one short entrance animation that plays once. The canvas shows pages " +
     "settled and plays their motion when the user clicks Replay. Never loop an animation.",
+  "Keep all content visible without JavaScript. The canvas shows pages with scripts off, so " +
+    "never hide content until a script or IntersectionObserver reveals it.",
   "For an icon, logo, illustration, social card, or any artwork that is not a screen, send " +
     "one SVG file as the html of add_page: an <svg> root with xmlns, a viewBox, and width and " +
     "height in px for the artboard size. It becomes a vector page the user can edit with the " +

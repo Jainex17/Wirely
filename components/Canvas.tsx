@@ -25,19 +25,19 @@ import {
   getPageFrameHeight,
   getPageFrameWidth,
   isInsertTool,
-  selectLivePages,
-  selectPreviewPages,
-  isBoundsIntersecting,
+  movePagesWith,
   getSnappedPagePosition,
-  getViewportBounds,
   placeMissingPages,
   unionBounds,
   getPageFrameSize,
   type PageFrameDevice,
   resolvePageFrameDevice,
   scaleFromZoom,
+  viewportToScene,
   zoomAtViewportPoint,
 } from "@/lib/canvasScene";
+import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
+import { createAssetPage } from "@/store/pageEdits";
 
 const DEVICE_LABELS = {
   desktop: "Desktop",
@@ -89,9 +89,6 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 };
 
 const DRAG_START_THRESHOLD_PX = 4;
-// Pages mount once the camera has been still this long, so a pan or zoom
-// never builds iframes mid-gesture. The first batch mounts without waiting.
-const LIVE_PAGE_MOUNT_DELAY_MS = 120;
 const LAYOUT_SAVE_IDLE_MS = 700;
 // Scene pixels between a group's frame and its pages. The top leaves room for
 // the 50px page title row.
@@ -104,6 +101,8 @@ interface PointerDragState {
   startClientX: number;
   startClientY: number;
   initialPosition: ScenePoint;
+  /** Every page the drag moves, the dragged one included, where it started. */
+  initialPositions: Record<string, ScenePoint>;
   initialCamera: CameraState;
   hasMoved: boolean;
 }
@@ -273,12 +272,9 @@ export default function Canvas({
   const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
-  const [mountedPageIds, setMountedPageIds] = React.useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const [previewPageIds, setPreviewPageIds] = React.useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  // The one page running as a live iframe. It goes live on a double click, a
+  // text edit, or Replay, and back to inert on Escape or a click on another page.
+  const [livePageId, setLivePageId] = React.useState<string | null>(null);
   const pendingWheelRef = React.useRef<{
     panX: number;
     panY: number;
@@ -344,50 +340,6 @@ export default function Canvas({
       }),
     [pageBoundsById, pageGroups],
   );
-
-  const viewportBounds = React.useMemo(
-    () => getViewportBounds(camera, viewportSize),
-    [camera, viewportSize],
-  );
-
-  // Picks the live pages once the camera settles, all in one batch. Mounting
-  // one page per tick kept the main thread free but made a ten page project
-  // take seconds to fill in. Frames stay mounted after they scroll away,
-  // because rebuilding them re-runs Tailwind, until the live budget in
-  // `selectLivePages` needs their slot for a page nearer the viewport.
-  // On open, the pages on screen mount first and the overscan follows one
-  // tick later, so the visible frames do not wait on offscreen ones.
-  // On-screen pages past the live budget get a still preview in the same pass,
-  // so a zoomed out canvas shows designs instead of blank shells.
-  React.useEffect(() => {
-    // Before the first measure the viewport is empty and the camera has not
-    // fit the pages yet, so any pick would be the wrong pages.
-    if (viewportSize.width === 0) return;
-    const timeoutId = window.setTimeout(() => {
-      const bounds = pageLayouts.map((pageLayout) => pageLayout.bounds);
-      setPreviewPageIds((current) => {
-        const previews = selectPreviewPages(bounds, viewportBounds, current);
-        return previews.size === current.size && [...previews].every((pageId) => current.has(pageId))
-          ? current
-          : previews;
-      });
-      setMountedPageIds((current) => {
-        let next = selectLivePages(bounds, viewportBounds, current);
-        if (current.size === 0) {
-          const onScreen = new Set(
-            bounds
-              .filter((page) => next.has(page.pageId) && isBoundsIntersecting(page, viewportBounds))
-              .map((page) => page.pageId),
-          );
-          if (onScreen.size > 0) next = onScreen;
-        }
-        const unchanged =
-          next.size === current.size && [...next].every((pageId) => current.has(pageId));
-        return unchanged ? current : next;
-      });
-    }, mountedPageIds.size === 0 ? 0 : LIVE_PAGE_MOUNT_DELAY_MS);
-    return () => window.clearTimeout(timeoutId);
-  }, [mountedPageIds.size, pageLayouts, viewportBounds, viewportSize.width]);
 
   React.useEffect(() => {
     const assigned = placeMissingPages(
@@ -673,11 +625,13 @@ export default function Canvas({
   );
 
   // Capture phase, so shift-click toggles the selection before the page's own
-  // focus handler replaces it with just this page.
+  // focus handler replaces it with just this page. Any press on another page
+  // sends the live page back to inert.
   const handlePagePointerDownCapture = React.useCallback(
     (pageId: string) => (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!event.shiftKey || activeTool !== "select" || event.button !== 0) return;
       if (isFromPortal(event)) return;
+      setLivePageId((current) => (current === pageId ? current : null));
+      if (!event.shiftKey || activeTool !== "select" || event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
@@ -742,17 +696,22 @@ export default function Canvas({
       setSelectedPageIds((current) => (current.includes(pageId) ? current : [pageId]));
       bringPageToFront(pageId);
 
+      // Pressing a page in a multi-page selection drags the whole selection.
+      const movingPageIds = selectedPageIds.includes(pageId) ? selectedPageIds : [pageId];
+      const startOf = (id: string) =>
+        pageBoundsById[id] ? { x: pageBoundsById[id].left, y: pageBoundsById[id].top } : null;
       pageDragStateRef.current = {
         pageId,
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        initialPosition: pageBoundsById[pageId]
-          ? {
-              x: pageBoundsById[pageId].left,
-              y: pageBoundsById[pageId].top,
-            }
-          : { x: 0, y: 0 },
+        initialPosition: startOf(pageId) ?? { x: 0, y: 0 },
+        initialPositions: Object.fromEntries(
+          movingPageIds.flatMap((id) => {
+            const start = startOf(id);
+            return start ? [[id, start]] : [];
+          }),
+        ),
         initialCamera: useEditorStore.getState().camera,
         hasMoved: false,
       };
@@ -763,6 +722,7 @@ export default function Canvas({
       bringPageToFront,
       isSpacePanning,
       pageBoundsById,
+      selectedPageIds,
       setFocusedPage,
     ],
   );
@@ -806,12 +766,15 @@ export default function Canvas({
             pageBoundsById[pageId]?.height ??
             draggedLayout?.frameHeight ??
             0,
-          otherPages: pageLayouts.map((pageLayout) => pageLayout.bounds),
+          // Pages moving along would otherwise snap to where they started.
+          otherPages: pageLayouts
+            .map((pageLayout) => pageLayout.bounds)
+            .filter((bounds) => !(bounds.pageId in dragState.initialPositions)),
           scale,
           disabled: isSnapDisabled,
         });
 
-        setPagePosition(pageId, snapped.position);
+        setPagePositions(movePagesWith(dragState.initialPositions, pageId, snapped.position));
         setSnapGuides(snapped.guides);
       };
 
@@ -825,7 +788,7 @@ export default function Canvas({
       pageLayouts,
       panAtEdge,
       scale,
-      setPagePosition,
+      setPagePositions,
     ],
   );
 
@@ -874,7 +837,10 @@ export default function Canvas({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedPageIds([]);
-        if (!isEditableTarget(event.target)) setSelectedNode(null);
+        if (!isEditableTarget(event.target)) {
+          setSelectedNode(null);
+          setLivePageId(null);
+        }
       }
       if (event.key.toLowerCase() !== "g" || !(event.metaKey || event.ctrlKey)) return;
       if (isEditableTarget(event.target) || selectedPageIds.length === 0) return;
@@ -947,6 +913,17 @@ export default function Canvas({
     }
   }, [stopEdgePan]);
 
+  // Not from the pen, comment, or insert tools, where a double click means
+  // something on the page itself.
+  const handlePageDoubleClick = React.useCallback(
+    (pageId: string) => (event: React.MouseEvent<HTMLDivElement>) => {
+      if (activeTool !== "select" && activeTool !== "element") return;
+      if (!event.currentTarget.contains(event.target as Node) || isEditableTarget(event.target)) return;
+      setLivePageId(pageId);
+    },
+    [activeTool],
+  );
+
   const handlePageContextEdit = React.useCallback(
     (pageId: string) => {
       setFocusedPage(pageId);
@@ -970,6 +947,26 @@ export default function Canvas({
       onPointerMove={handleCanvasPointerMove}
       onPointerUp={stopCanvasInteraction}
       onPointerCancel={stopCanvasInteraction}
+      // A project image dropped on empty canvas becomes its own page there.
+      // Drops on a page are taken by the page.
+      onDragOver={(event) => {
+        if (!projectId || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(event) => {
+        const asset = parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE));
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!asset || !projectId || !rect) return;
+        event.preventDefault();
+        const { camera, viewportSize } = useEditorStore.getState();
+        const center = viewportToScene(
+          { x: event.clientX - rect.left, y: event.clientY - rect.top },
+          camera,
+          viewportSize,
+        );
+        void createAssetPage(projectId, asset, center);
+      }}
       style={CANVAS_BACKGROUND_STYLES[canvasBackground]}
     >
       <div className="pointer-events-none absolute inset-0 canvas-dots" />
@@ -1007,11 +1004,7 @@ export default function Canvas({
             />
           ))}
           {pageLayouts.map((pageLayout) => {
-            const renderMode: PageRenderMode = mountedPageIds.has(pageLayout.page.id)
-              ? "live"
-              : previewPageIds.has(pageLayout.page.id)
-                ? "preview"
-                : "shell";
+            const renderMode: PageRenderMode = livePageId === pageLayout.page.id ? "live" : "inert";
 
             return (
               <div
@@ -1033,6 +1026,7 @@ export default function Canvas({
                 onPointerMove={handlePagePointerMove(pageLayout.page.id)}
                 onPointerUp={stopPageDrag(pageLayout.page.id)}
                 onPointerCancel={stopPageDrag(pageLayout.page.id)}
+                onDoubleClick={handlePageDoubleClick(pageLayout.page.id)}
               >
                 <PageRenderer
                   page={pageLayout.page}
@@ -1050,6 +1044,7 @@ export default function Canvas({
                   isSelected={selectedPageIds.includes(pageLayout.page.id)}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
+                  onLiveChange={setLivePageId}
                   isElementMode={activeTool === "element" && !isSpacePanning}
                   isPenMode={activeTool === "pen" && !isSpacePanning}
                   isCommentMode={activeTool === "comment" && !isSpacePanning}

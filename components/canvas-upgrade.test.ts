@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "fs";
 
 describe("canvas workspace wiring", () => {
-  it("uses shell rendering for offscreen pages and reports live page heights", () => {
+  it("renders one page live and reports page heights", () => {
     const source = readFileSync("components/PageRenderer.tsx", "utf8");
 
     expect(source.includes('renderMode === "live"')).toBe(true);

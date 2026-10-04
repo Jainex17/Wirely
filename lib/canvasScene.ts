@@ -50,7 +50,8 @@ export interface SnapResult {
   guides: SnapGuide[];
 }
 
-export type PageRenderMode = "live" | "preview" | "shell";
+/** One page at a time is live: a sandboxed iframe running its scripts. Every other page is inert DOM. */
+export type PageRenderMode = "live" | "inert";
 
 /**
  * Move drags pages, hand pans, element picks an element inside a page, pen
@@ -112,7 +113,6 @@ export const MAX_FIT_ZOOM = 100;
 export const ZOOM_STEPS = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 export const CANVAS_TOP_OFFSET = 100;
 export const PAGE_GAP = 120;
-export const LIVE_PAGE_OVERSCAN_SCENE_PX = 800;
 
 const MIN_FIT_PADDING = 48;
 const SNAP_DISTANCE_SCREEN_PX = 8;
@@ -183,14 +183,6 @@ export const getViewportBounds = (
   return createBounds(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y);
 };
 
-export const expandBounds = (bounds: Bounds, amount: number): Bounds =>
-  createBounds(
-    bounds.left - amount,
-    bounds.top - amount,
-    bounds.right + amount,
-    bounds.bottom + amount,
-  );
-
 export const unionBounds = (boundsList: Bounds[]): Bounds | null => {
   if (boundsList.length === 0) {
     return null;
@@ -237,76 +229,28 @@ export const getPageBounds = ({
 export const isBoundsIntersecting = (a: Bounds, b: Bounds) =>
   a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom;
 
-// Each live page is a full document running Tailwind in its own iframe, so
-// memory and CPU grow with this number, not with the project's page count.
-export const MAX_LIVE_PAGES = 12;
-
-const byDistanceFromCenter = (pages: readonly PageBounds[], viewportBounds: Bounds) => {
-  const centerX = (viewportBounds.left + viewportBounds.right) / 2;
-  const centerY = (viewportBounds.top + viewportBounds.bottom) / 2;
-  const distance = (page: PageBounds) => Math.hypot(page.centerX - centerX, page.centerY - centerY);
-  return [...pages].sort((a, b) => distance(a) - distance(b));
-};
-
 /**
- * Which pages get a live iframe once the camera settles. Frames already
- * mounted near the viewport keep their slot first, so a small pan or a page
- * drag does not swap frames and reload them. New pages near the viewport take
- * what is left, nearest the centre first, then mounted frames further away.
- * Everything else renders as a preview or a shell.
+ * Where every page in a drag goes once the dragged page lands at
+ * `draggedPosition`: all of them shift by the same amount, so a multi-page
+ * selection keeps its layout.
  */
-export const selectLivePages = (
-  pages: readonly PageBounds[],
-  viewportBounds: Bounds,
-  mounted: ReadonlySet<string>,
-  limit = MAX_LIVE_PAGES,
-) => {
-  const nearby = expandBounds(viewportBounds, LIVE_PAGE_OVERSCAN_SCENE_PX);
-  const ordered = byDistanceFromCenter(pages, viewportBounds);
-  const isNearby = (page: PageBounds) => isBoundsIntersecting(page, nearby);
-  const live = new Set<string>();
-  const fill = (accept: (page: PageBounds) => boolean) => {
-    for (const page of ordered) {
-      if (live.size < limit && accept(page)) live.add(page.pageId);
-    }
+export const movePagesWith = (
+  initialPositions: Readonly<Record<string, ScenePoint>>,
+  draggedPageId: string,
+  draggedPosition: ScenePoint,
+): Record<string, ScenePoint> => {
+  const origin = initialPositions[draggedPageId] ?? draggedPosition;
+  const deltaX = draggedPosition.x - origin.x;
+  const deltaY = draggedPosition.y - origin.y;
+  return {
+    ...Object.fromEntries(
+      Object.entries(initialPositions).map(([pageId, position]) => [
+        pageId,
+        { x: position.x + deltaX, y: position.y + deltaY },
+      ]),
+    ),
+    [draggedPageId]: draggedPosition,
   };
-  fill((page) => mounted.has(page.pageId) && isNearby(page));
-  fill(isNearby);
-  fill((page) => mounted.has(page.pageId));
-  return live;
-};
-
-// A preview is the compiled page in a frame with scripts off: it costs layout
-// and paint once, then nothing, so a zoomed out canvas can show far more pages
-// than the live budget allows. Live pages count against this budget too.
-export const MAX_PREVIEW_PAGES = 48;
-
-/**
- * Which pages show a still preview: current previews still on screen, then new
- * on-screen pages nearest the centre, then current previews just off screen,
- * up to `limit`. Keeping the current ones first stops a pan from reloading
- * frames that are still visible. A page that also gets a live frame renders
- * live.
- */
-export const selectPreviewPages = (
-  pages: readonly PageBounds[],
-  viewportBounds: Bounds,
-  current: ReadonlySet<string> = new Set(),
-  limit = MAX_PREVIEW_PAGES,
-) => {
-  const nearby = expandBounds(viewportBounds, LIVE_PAGE_OVERSCAN_SCENE_PX);
-  const ordered = byDistanceFromCenter(pages, viewportBounds);
-  const isOnScreen = (page: PageBounds) => isBoundsIntersecting(page, viewportBounds);
-  const previews = new Set<string>();
-  const fill = (accept: (page: PageBounds) => boolean) => {
-    for (const page of ordered) {
-      if (previews.size < limit && accept(page)) previews.add(page.pageId);
-    }
-  };
-  fill((page) => current.has(page.pageId) && isOnScreen(page));
-  fill(isOnScreen);
-  fill((page) => current.has(page.pageId) && isBoundsIntersecting(page, nearby));
-  return previews;
 };
 
 export const getDefaultPageX = (

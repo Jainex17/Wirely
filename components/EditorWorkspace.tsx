@@ -15,8 +15,8 @@ import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
 import { isPageDeviceType } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
-import { findNodeSpan, getNodeText, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
-import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertNode } from "@/lib/pageTree";
+import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
+import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertAtNode } from "@/lib/pageTree";
 import { commitPageEdit, type ElementAction, runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
@@ -321,12 +321,7 @@ export default function EditorWorkspace({
       const kind = activeTool;
       let newId: string | null = null;
       const next = commitPageEdit(projectId, pageId, (html) => {
-        const span = findNodeSpan(html, node.nodeId);
-        if (!span) return null;
-        const isVoid = span.end === span.openEnd;
-        const holdsText = getNodeText(html, node.nodeId) !== null;
-        const position = isVoid || holdsText || node.isSvg ? "after" : "inside";
-        const result = insertNode(html, node.nodeId, position, INSERT_MARKUP[kind]);
+        const result = insertAtNode(html, node, INSERT_MARKUP[kind]);
         newId = result?.newId ?? null;
         return result?.html ?? null;
       });

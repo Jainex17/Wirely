@@ -2,10 +2,11 @@
  * Keeps a page's own animations still on the canvas until the user asks to
  * see them.
  *
- * A canvas holds many live frames. Letting each one play its entrance motion
- * on every load, or loop a spinner forever, is noise and repaint cost. This
- * script finishes every CSS animation and transition as it starts, so a frame
- * shows its end state, and pauses loops that have no end. The editor's Replay
+ * A canvas holds many pages. Letting each one play its entrance motion on
+ * every load, or loop a spinner forever, is noise and repaint cost. Inert
+ * frames settle motion with `SETTLED_MOTION_CSS`. In the live frame, this
+ * script finishes every CSS animation and transition as it starts, so the
+ * frame shows its end state, and pauses loops that have no end. The editor's Replay
  * button posts `FRAME_MOTION_REPLAY`, and the script restarts everything it
  * held from the beginning, in place, with no reload.
  *
@@ -23,19 +24,14 @@ export const FRAME_MOTION_FOUND = "wirely-motion-found";
 const SETTLE_PASSES_MS = [0, 60, 250, 700, 1500];
 
 /**
- * Settles every animation and transition with CSS alone, for a preview frame
- * that runs no scripts. Each animation runs once in zero time, so an element
- * that starts hidden and fades in with `forwards` shows its end state, as it
- * does after `injectFrameMotion` finishes it in a live frame. Loops run once
- * and stop.
+ * Settles every animation and transition with CSS alone, for an inert canvas
+ * frame that runs no scripts. Each animation runs once in zero time, so an
+ * element that starts hidden and fades in with `forwards` shows its end state,
+ * as it does after `injectFrameMotion` finishes it in a live frame. Loops run
+ * once and stop.
  */
-export const freezeFrameMotion = (html: string) => {
-  if (!html) return html;
-  const style =
-    "<style>*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important}</style>";
-  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${style}</head>`);
-  return `${style}${html}`;
-};
+export const SETTLED_MOTION_CSS =
+  "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important}";
 
 export const injectFrameMotion = (html: string, reporterId: string) => {
   if (!html) return html;

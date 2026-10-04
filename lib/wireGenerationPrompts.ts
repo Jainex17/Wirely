@@ -445,6 +445,7 @@ HTML:
 - Include ${TAILWIND_CDN} in <head>.
 - Include ${ELEMENTS_CDN} in <head>.
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
+- Keep all content visible without JavaScript: the canvas shows pages with scripts off, so never hide content until a script or IntersectionObserver reveals it.
 - Include ${CHARTJS_CDN} only when the artifact genuinely needs charts.
 - Include viewport meta and explicit background/text classes on <body>. Use only default Tailwind palette colors (stone, zinc, emerald, …); invented names like bg-cream or text-bark generate no CSS.
 - Do not use <style> tags or inline style attributes.
@@ -533,6 +534,7 @@ HTML:
 - Include ${TAILWIND_CDN} in <head>.
 - Include ${ELEMENTS_CDN} in <head>.
 - Include ${BOOTSTRAP_ICONS_CDN} in <head>.
+- Keep all content visible without JavaScript: the canvas shows pages with scripts off, so never hide content until a script or IntersectionObserver reveals it.
 - Include ${CHARTJS_CDN} only when the page genuinely needs charts.
 - Include viewport meta and explicit background/text classes on <body>. Use only default Tailwind palette colors (stone, zinc, emerald, …); invented names like bg-cream or text-bark generate no CSS.
 - Do not use <style> tags or inline style attributes.

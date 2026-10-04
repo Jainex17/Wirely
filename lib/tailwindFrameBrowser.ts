@@ -8,15 +8,17 @@ import type { TailwindSources } from "@/lib/tailwindFrame";
 
 let sources: Promise<TailwindSources> | null = null;
 
-// A page's HTML maps to one output, and replays and remounts ask again.
-const CACHE_LIMIT = 60;
+// A page's HTML maps to one output, and replays, remounts, and going live ask
+// again. Every page on the canvas compiles, so the limit covers a large
+// project, and the least recently used page goes first.
+const CACHE_LIMIT = 200;
 const cache = new Map<string, Promise<string>>();
 
 // Compiles run one at a time, each in its own task. A project opening with
 // six pages would otherwise compile them back to back in one long task and
 // freeze the editor; yielding between them also staggers the frame mounts.
-// Background work (still previews) waits behind every live frame's compile,
-// so a zoomed out canvas never delays the page the user is working on.
+// Background work (inert frames) waits behind the live frame's compile, so a
+// canvas full of pages never delays the page the user is working on.
 interface CompileJob {
   html: string;
   background: boolean;
@@ -38,17 +40,30 @@ const drain = async () => {
   isDraining = false;
 };
 
-const loadSources = () =>
-  (sources ??= fetch("/api/tailwind-sources")
-    .then((response) => {
+// A failed download would leave every page on its placeholder, so it tries
+// again a few times before giving up.
+const SOURCE_RETRY_DELAYS_MS = [500, 1_500, 4_000];
+
+const fetchSources = async (): Promise<TailwindSources> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch("/api/tailwind-sources");
       if (!response.ok) throw new Error(`Tailwind sources failed with status ${response.status}`);
-      return response.json() as Promise<TailwindSources>;
-    })
-    .catch((error: unknown) => {
-      // Lets the next frame try again rather than every frame failing for good.
-      sources = null;
-      throw error;
-    }));
+      return (await response.json()) as TailwindSources;
+    } catch (error) {
+      const delay = SOURCE_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+};
+
+const loadSources = () =>
+  (sources ??= fetchSources().catch((error: unknown) => {
+    // Lets the next frame try again rather than every frame failing for good.
+    sources = null;
+    throw error;
+  }));
 
 /**
  * Starts both downloads before the first frame asks, so they overlap the
@@ -62,12 +77,16 @@ export const warmTailwindFrame = () => {
 
 /**
  * Resolves to the page with compiled CSS, or to the page unchanged if
- * compiling fails. `background` puts the compile behind every other one.
+ * compiling fails. `background` puts the compile behind every other one, and
+ * `isTransient` keeps a page shown only once out of the cache.
  */
-export const precompileFrameHtml = (html: string, { background = false } = {}) => {
+export const precompileFrameHtml = (html: string, { background = false, isTransient = false } = {}) => {
   const cached = cache.get(html);
   if (cached) {
-    // A live frame asking for a page a preview queued takes over its place.
+    // Moved to the end, so eviction drops the least recently used page.
+    cache.delete(html);
+    cache.set(html, cached);
+    // A live frame asking for a page an inert frame queued takes over its place.
     if (!background) {
       const queued = jobs.find((job) => job.html === html);
       if (queued) queued.background = false;
@@ -90,7 +109,7 @@ export const precompileFrameHtml = (html: string, { background = false } = {}) =
           .then(resolve),
     });
   });
-  cache.set(html, result);
+  if (!isTransient) cache.set(html, result);
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value ?? "");
   void drain();
   return result;

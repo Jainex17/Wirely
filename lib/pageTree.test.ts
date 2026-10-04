@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { getNodeAttribute, getNodeHtml, removeNodeAttribute } from "@/lib/pageNodes";
 import {
+  appendToPage,
   buildLayerTree,
   duplicateNode,
+  insertAtNode,
   findLayerParent,
   insertNode,
   INSERT_MARKUP,
@@ -89,5 +91,28 @@ describe("structural edits", () => {
     const shown = removeNodeAttribute(source, "p", "hidden") ?? "";
     expect(getNodeAttribute(shown, "p", "class")).toBe("md:hidden x");
     expect(shown).toContain('<p data-wirely-id="p" class="md:hidden x">');
+  });
+});
+
+describe("insertAtNode", () => {
+  it("puts an insert inside a container and after an image, text, or SVG", () => {
+    const parentOf = (target: string, isSvg = false) => {
+      const result = insertAtNode(html, { nodeId: target, isSvg }, "<b>new</b>");
+      return findLayerParent(buildLayerTree(result?.html ?? ""), result?.newId ?? "");
+    };
+    expect(parentOf("u")).toBe("u");
+    expect(parentOf("i")).toBe("m");
+    expect(parentOf("h")).toBe("m");
+    expect(parentOf("s", true)).toBe("m");
+    expect(insertAtNode(html, { nodeId: "gone", isSvg: false }, "<b>new</b>")).toBe(null);
+  });
+});
+
+describe("appendToPage", () => {
+  it("adds after the last top-level element, or makes the body of an empty page", () => {
+    const appended = appendToPage(html, "<b>new</b>");
+    expect(buildLayerTree(appended?.html ?? "").map((layer) => layer.id)).toEqual(["m", appended?.newId ?? ""]);
+    const fresh = appendToPage("", "<b>new</b>");
+    expect(buildLayerTree(fresh?.html ?? "").map((layer) => [layer.id, layer.tag])).toEqual([[fresh?.newId ?? "", "b"]]);
   });
 });
