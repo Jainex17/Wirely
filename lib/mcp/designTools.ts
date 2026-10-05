@@ -138,7 +138,12 @@ const getScreenPng = async (userId: string, args: ToolArgs): Promise<ToolCallRes
   const scale = Math.min(1, PNG_MAX_SIDE_PX / Math.max(screen.width, screen.height, 1));
   const png = await renderScreenPng(document.graph, parsed.data.pageId, scale);
   if (!png) return fail("The screen rendered nothing. Check it has visible content.");
-  return { content: [{ type: "image", data: Buffer.from(png).toString("base64"), mimeType: "image/png" }] };
+  const image = { type: "image" as const, data: Buffer.from(png).toString("base64"), mimeType: "image/png" };
+  // Without this note an agent that asked for lint reads the bare image as a
+  // clean report.
+  return args.lint === true
+    ? { content: [text("Lint does not run on design screens yet. Check the image yourself."), image] }
+    : { content: [image] };
 };
 
 const deleteScreen = async (userId: string, args: ToolArgs): Promise<ToolCallResult> => {
