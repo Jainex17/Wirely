@@ -66,6 +66,21 @@ describe("createIdTranslator", () => {
   });
 });
 
+describe("delete replies", () => {
+  it("name the deleted node by the id the agent passed", async () => {
+    let graph = await emptyDocument();
+    await addScreen(graph, { name: "Home", device: "mobile", jsx: SCREEN_JSX });
+    graph = await readDesignDocument(await writeDesignDocument(graph));
+    const before = createIdTranslator(graph);
+    const node = [...graph.nodes.values()].find((entry) => entry.type === "TEXT")!;
+
+    const { result } = await runDesignTool(graph, "delete_node", before.argsToLocal({ id: node.source.id }));
+    assignNodeGuids(graph);
+
+    expect(before.resultToPublic(createIdTranslator(graph).resultToPublic(result))).toEqual({ deleted: node.source.id });
+  });
+});
+
 describe("addScreen", () => {
   it("places screens side by side at their device size and keeps that size after a reload", async () => {
     let graph = await emptyDocument();

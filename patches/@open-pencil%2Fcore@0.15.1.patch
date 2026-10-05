@@ -36,3 +36,62 @@ index b2bf6e72027587fb275683e25c55ea2126f1a133..c740b291a277ac8bfcc378053bd237bf
  }
  //#endregion
  export { createFigSessionWorker };
+diff --git a/dist/design-jsx/props-overrides.js b/dist/design-jsx/props-overrides.js
+index 4f46d34..be2e2e0 100644
+--- a/dist/design-jsx/props-overrides.js
++++ b/dist/design-jsx/props-overrides.js
+@@ -145,6 +145,11 @@ function applyStrokeOverride(props, o) {
+ 	const stroke = props.stroke ?? props.border ?? props.borderColor;
+ 	if (typeof stroke !== "string" && !isColor(stroke)) return;
+ 	o.strokes = [parseStroke(stroke, props.strokeWidth ?? props.borderWidth ?? 1)];
++	const dash = props.strokeDash === true ? [4, 4] : Array.isArray(props.strokeDash) ? props.strokeDash.filter((n) => typeof n === "number" && n >= 0) : [];
++	if (dash.length > 0) {
++		o.dashPattern = dash;
++		o.strokes = o.strokes.map((s) => ({ ...s, dashPattern: dash }));
++	}
+ }
+ function applyCornerOverrides(props, o) {
+ 	const rounded = props.rounded ?? props.cornerRadius ?? props.borderRadius;
+diff --git a/dist/design-jsx/renderer.js b/dist/design-jsx/renderer.js
+index a80ff52..2dc4567 100644
+--- a/dist/design-jsx/renderer.js
++++ b/dist/design-jsx/renderer.js
+@@ -329,6 +329,10 @@ async function renderNode(graph, tree, parentId) {
+ 		...propsToOverrides(props, isText, parentLayout),
+ 		...componentMetadata(props, nodeType, componentPropertyScope(graph, parentId))
+ 	};
++	if (!isText && tree.children.length === 0 && overrides.layoutGrow > 0) {
++		const cross = parentLayout === "HORIZONTAL" ? "height" : parentLayout === "VERTICAL" ? "width" : null;
++		if (cross && overrides[cross] === void 0 && overrides.layoutAlignSelf !== "STRETCH") overrides[cross] = 0;
++	}
+ 	if (isText) {
+ 		const childText = tree.children.filter((c) => typeof c === "string").join("");
+ 		const propText = props.text ?? props.characters ?? props.content ?? props.label ?? props.value ?? props.title;
+diff --git a/dist/layout/grid.js b/dist/layout/grid.js
+index a1e4d37..0055a23 100644
+--- a/dist/layout/grid.js
++++ b/dist/layout/grid.js
+@@ -1,6 +1,7 @@
+ import { resolveNodeLayoutDirection } from "../text/direction.js";
+ import { configureAbsoluteChild, createYogaNode, mapGridTrack } from "./yoga-helpers.js";
+-import { Direction, Display, Edge, Gutter } from "yoga-layout";
++import { estimateTextSize, getTextMeasurer } from "./text-measurement.js";
++import { Direction, Display, Edge, Gutter, MeasureMode } from "yoga-layout";
+ //#region src/layout/grid.ts
+ function configureAsGrid(yogaNode, node, direction) {
+ 	yogaNode.setDisplay(Display.Grid);
+@@ -27,6 +28,14 @@ function createGridChildNode(child) {
+ 			yogaChild.setGridRowStart(pos.row);
+ 			yogaChild.setGridRowEndSpan(pos.rowSpan);
+ 		}
++		if (child.type === "TEXT" && child.textAutoResize !== "NONE") {
++			if (child.textAutoResize === "HEIGHT") yogaChild.setWidth(child.width);
++			yogaChild.setMeasureFunc((width, widthMode) => {
++				const maxW = widthMode === MeasureMode.Undefined ? void 0 : width;
++				return getTextMeasurer()?.(child, maxW) ?? estimateTextSize(child, maxW);
++			});
++			return yogaChild;
++		}
+ 		const hasLayout = child.layoutMode !== "NONE";
+ 		const explicitStretch = child.layoutGrow > 0 || child.layoutAlignSelf === "STRETCH";
+ 		const inheritsContainerStretch = hasLayout && child.layoutAlignSelf === "AUTO";

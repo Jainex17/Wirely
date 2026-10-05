@@ -5,10 +5,78 @@
  * a document with them, and an MCP tool call loads, edits, and saves one.
  */
 import { BUILTIN_IO_FORMATS, IORegistry } from "@open-pencil/core/io";
-import { SceneGraph } from "@open-pencil/scene-graph";
+import { SceneGraph, type SceneNode } from "@open-pencil/scene-graph";
+import { z } from "zod";
 import { assignNodeGuids } from "@/lib/design/ids";
 
 const io = new IORegistry(BUILTIN_IO_FORMATS);
+
+// The .fig writer drops grid layout: a grid frame reads back with no layout
+// and no padding, and its cells collapse. Each grid frame and grid cell keeps
+// those fields in its plugin data, which .fig does save, and gets them back on
+// read.
+const GRID_PLUGIN_ID = "wirely";
+const GRID_KEY = "grid";
+const gridFields = (node: SceneNode) =>
+  node.layoutMode === "GRID"
+    ? {
+        layoutMode: node.layoutMode,
+        gridTemplateColumns: node.gridTemplateColumns,
+        gridTemplateRows: node.gridTemplateRows,
+        gridColumnGap: node.gridColumnGap,
+        gridRowGap: node.gridRowGap,
+        paddingTop: node.paddingTop,
+        paddingRight: node.paddingRight,
+        paddingBottom: node.paddingBottom,
+        paddingLeft: node.paddingLeft,
+      }
+    : {};
+
+const stashGridLayout = (graph: SceneGraph) => {
+  for (const node of graph.nodes.values()) {
+    const fields = { ...gridFields(node), ...(node.gridPosition ? { gridPosition: node.gridPosition } : {}) };
+    const others = node.pluginData.filter((entry) => !(entry.pluginId === GRID_PLUGIN_ID && entry.key === GRID_KEY));
+    node.pluginData =
+      Object.keys(fields).length > 0
+        ? [...others, { pluginId: GRID_PLUGIN_ID, key: GRID_KEY, value: JSON.stringify(fields) }]
+        : others;
+  }
+};
+
+// The editor uploads document bytes, so stored plugin data is untrusted: only
+// these fields, well formed, are restored, and anything else is ignored.
+const track = z.object({ sizing: z.enum(["FIXED", "FR", "AUTO"]), value: z.number() });
+const storedGridFields = z.object({
+  layoutMode: z.literal("GRID").optional(),
+  gridTemplateColumns: z.array(track).optional(),
+  gridTemplateRows: z.array(track).optional(),
+  gridColumnGap: z.number().optional(),
+  gridRowGap: z.number().optional(),
+  paddingTop: z.number().optional(),
+  paddingRight: z.number().optional(),
+  paddingBottom: z.number().optional(),
+  paddingLeft: z.number().optional(),
+  gridPosition: z
+    .object({ column: z.number(), row: z.number(), columnSpan: z.number(), rowSpan: z.number() })
+    .optional(),
+});
+
+const parseStoredGridFields = (value: string) => {
+  try {
+    const parsed = storedGridFields.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+};
+
+const restoreGridLayout = (graph: SceneGraph) => {
+  for (const node of graph.nodes.values()) {
+    const entry = node.pluginData.find((item) => item.pluginId === GRID_PLUGIN_ID && item.key === GRID_KEY);
+    const fields = entry ? parseStoredGridFields(entry.value) : null;
+    if (fields) Object.assign(node, fields);
+  }
+};
 
 /** The one page a new document has. Screens are its top-level frames. */
 export const SCREENS_PAGE_NAME = "Screens";
@@ -45,12 +113,14 @@ export const readDesignDocument = async (bytes: Uint8Array) => {
     node.source.format = null;
     node.derivedLayout = null;
   }
+  restoreGridLayout(graph);
   return graph;
 };
 
 /** The scene as .fig bytes. New nodes get their GUIDs first, so their ids last. */
 export const writeDesignDocument = async (graph: SceneGraph) => {
   assignNodeGuids(graph);
+  stashGridLayout(graph);
   const { data } = await io.writeDocument("fig", graph);
   if (!(data instanceof Uint8Array)) throw new Error("The design engine did not write binary .fig data.");
   return data;

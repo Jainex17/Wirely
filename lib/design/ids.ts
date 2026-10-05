@@ -33,7 +33,8 @@ export const assignNodeGuids = (graph: SceneGraph) => {
   }
 };
 
-const ID_KEY = /(?:^|_)ids?$|Ids?$|^(?:children|parent)$/;
+// "deleted" is the id a delete removed, which only the translator built before the delete still knows.
+const ID_KEY = /(?:^|_)ids?$|Ids?$|^(?:children|parent|deleted)$/;
 const NOT_A_NODE_KEY = /variable|collection|mode/i;
 
 const isIdKey = (key: string) => ID_KEY.test(key) && !NOT_A_NODE_KEY.test(key);

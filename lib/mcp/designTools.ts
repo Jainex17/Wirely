@@ -9,9 +9,11 @@
  * saved in between and otherwise runs the call again on the newer document.
  */
 import { selectionToJSX } from "@open-pencil/core/io";
+import type { SceneGraph } from "@open-pencil/scene-graph";
 import { z } from "zod";
-import { isScreenDevice, SCREEN_SIZES } from "@/lib/design/document";
+import { isScreenDevice, SCREEN_SIZES, screensPage } from "@/lib/design/document";
 import { assignNodeGuids, createIdTranslator } from "@/lib/design/ids";
+import { describeScreenProblems } from "@/lib/design/lint";
 import { editProjectDocument, readProjectDocument } from "@/lib/design/projectDocument";
 import {
   addScreen,
@@ -39,6 +41,15 @@ const formatIssues = (issues: z.ZodError["issues"]) =>
 
 const projectArgs = z.object({ projectId: z.string().trim().min(1) }).loose();
 
+/** The local id of the screen holding `nodeId`, or null when it sits outside every screen. */
+const screenContaining = (graph: SceneGraph, nodeId: string) => {
+  const pageId = screensPage(graph).id;
+  for (let node = graph.getNode(nodeId); node; node = node.parentId ? graph.getNode(node.parentId) : undefined) {
+    if (node.parentId === pageId) return node.id;
+  }
+  return null;
+};
+
 /** Runs one of the engine's design tools on the project's document. */
 const runEngineTool = async (userId: string, name: string, args: ToolArgs): Promise<ToolCallResult> => {
   const parsed = projectArgs.safeParse(args);
@@ -47,16 +58,22 @@ const runEngineTool = async (userId: string, name: string, args: ToolArgs): Prom
 
   try {
     const edit = await editProjectDocument(projectId, userId, async (graph) => {
-      const input = createIdTranslator(graph).argsToLocal(toolArgs);
+      const before = createIdTranslator(graph);
+      const input = before.argsToLocal(toolArgs);
       const { result, mutates } = await runDesignTool(graph, name, input);
       assignNodeGuids(graph);
-      return { value: createIdTranslator(graph).resultToPublic(result), changed: mutates };
+      // A deleted node is gone from the new translator, so its id comes from the old one.
+      const value = before.resultToPublic(createIdTranslator(graph).resultToPublic(result));
+      const id = (result as { id?: unknown } | null)?.id;
+      const screen = name === "render" && typeof id === "string" ? screenContaining(graph, id) : null;
+      return { value: { value, problems: screen ? describeScreenProblems(graph, screen) : null }, changed: mutates };
     });
     if (edit.status === "missing") return fail(MISSING);
     if (edit.status === "busy") return fail(BUSY);
-    const error = (edit.value as { error?: unknown } | null)?.error;
+    const { value, problems } = edit.value;
+    const error = (value as { error?: unknown } | null)?.error;
     if (typeof error === "string") return fail(error);
-    return succeed(JSON.stringify(edit.value ?? null));
+    return succeed(JSON.stringify(value ?? null) + (problems ? `\n${problems}` : ""));
   } catch (error) {
     if (error instanceof DesignToolInputError) return fail(`Invalid arguments. ${error.message}`);
     throw error;
@@ -76,10 +93,12 @@ const addScreenHandler = async (userId: string, args: ToolArgs): Promise<ToolCal
   const { projectId, name, jsx } = parsed.data;
   const device = isScreenDevice(parsed.data.device) ? parsed.data.device : "desktop";
 
-  type Added = Awaited<ReturnType<typeof addScreen>> | string;
+  type Added = (Awaited<ReturnType<typeof addScreen>> & { problems: string | null }) | string;
   const edit = await editProjectDocument<Added>(projectId, userId, async (graph) => {
     try {
-      return { value: await addScreen(graph, { name, device, jsx }), changed: true };
+      const added = await addScreen(graph, { name, device, jsx });
+      const screen = findScreen(graph, added.id);
+      return { value: { ...added, problems: screen ? describeScreenProblems(graph, screen.id) : null }, changed: true };
     } catch (error) {
       // The engine's reason the JSX did not render, for the agent to fix.
       return { value: error instanceof Error ? error.message : String(error), changed: false };
@@ -91,7 +110,8 @@ const addScreenHandler = async (userId: string, args: ToolArgs): Promise<ToolCal
   if (typeof screen === "string") return fail(`The JSX did not render: ${screen}`);
   return succeed(
     `Added ${screen.device} screen "${screen.name}" (id: ${screen.id}, ${screen.width}×${screen.height}). ` +
-      "Edit it with the design tools, passing node ids from get_page_tree or get_jsx.",
+      "Edit it with the design tools, passing node ids from get_page_tree or get_jsx." +
+      (screen.problems ? `\n${screen.problems}` : "\nLint found no problems."),
   );
 };
 
@@ -139,10 +159,8 @@ const getScreenPng = async (userId: string, args: ToolArgs): Promise<ToolCallRes
   const png = await renderScreenPng(document.graph, parsed.data.pageId, scale);
   if (!png) return fail("The screen rendered nothing. Check it has visible content.");
   const image = { type: "image" as const, data: Buffer.from(png).toString("base64"), mimeType: "image/png" };
-  // Without this note an agent that asked for lint reads the bare image as a
-  // clean report.
   return args.lint === true
-    ? { content: [text("Lint does not run on design screens yet. Check the image yourself."), image] }
+    ? { content: [text(describeScreenProblems(document.graph, screen.id) ?? "Lint found no problems."), image] }
     : { content: [image] };
 };
 
@@ -192,7 +210,8 @@ export const ADD_SCREEN_TOOL: McpToolDefinition = {
     `desktop ${SCREEN_SIZES.desktop.width}×${SCREEN_SIZES.desktop.height}, ` +
     `mobile ${SCREEN_SIZES.mobile.width}×${SCREEN_SIZES.mobile.height}, growing taller with its ` +
     "content. Text weight takes a number like 600, or normal, medium, or bold; other names fall back to " +
-    "400. Returns the screen id; get_page_tree lists its node ids for the design tools.",
+    "400. Returns the screen id and lint problems (contrast, tiny text, overflow, hidden or default-sized " +
+    "nodes) by node id; get_page_tree lists its node ids for the design tools.",
   inputSchema: {
     type: "object",
     properties: {
