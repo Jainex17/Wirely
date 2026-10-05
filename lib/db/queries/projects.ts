@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, sql, TransactionRollbackError } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
@@ -6,6 +6,7 @@ import { applyDesignTokens } from "@/lib/designTokens";
 import {
   conversationMessages,
   conversations,
+  projectDocuments,
   projectPages,
   projects,
   type ConversationRole,
@@ -13,26 +14,40 @@ import {
 } from "@/lib/db/schema";
 import type { PageDeviceType } from "@/lib/types";
 
-export const createProject = async (userId: string, title: string) => {
+/**
+ * Creates a project with its conversation. Given a design document it is a
+ * design project holding that document, with no HTML pages; without one it is
+ * an HTML project with one empty page.
+ */
+export const createProject = async (
+  userId: string,
+  title: string,
+  { document }: { document?: Uint8Array } = {},
+) => {
   const db = getDb();
 
   const [project] = await db
     .insert(projects)
-    .values({ userId, title })
+    .values({ userId, title, kind: document ? "design" : "html" })
     .returning();
 
   if (!project) {
     throw new Error("Unable to create project.");
   }
 
-  const [page] = await db
-    .insert(projectPages)
-    .values({
-      projectId: project.id,
-      title: "Page 1",
-      sortOrder: 0,
-    })
-    .returning();
+  let page: typeof projectPages.$inferSelect | null = null;
+  if (document) {
+    await db.insert(projectDocuments).values({ projectId: project.id, data: Buffer.from(document) });
+  } else {
+    [page] = await db
+      .insert(projectPages)
+      .values({
+        projectId: project.id,
+        title: "Page 1",
+        sortOrder: 0,
+      })
+      .returning();
+  }
 
   const [conversation] = await db
     .insert(conversations)
@@ -377,6 +392,70 @@ export const updateProjectPageForUser = async ({
     .returning();
 
   if (!updated) return null;
+  await touchProjectUpdatedAt(projectId);
+  return updated;
+};
+
+/**
+ * Writes several pages' HTML in one transaction, so an element moved from one
+ * page to another is never saved on neither page or on both. Each page is
+ * written only if it still holds `expectedHtmlContent`, the HTML the editor
+ * built the edit from, so a move never overwrites an agent's newer write.
+ * Returns the updated pages, "not_found" when the project or a page is not
+ * the user's, or "conflict" when a page changed since.
+ */
+export const updateProjectPagesHtmlForUser = async ({
+  projectId,
+  userId,
+  pages,
+}: {
+  projectId: string;
+  userId: string;
+  pages: Array<{ pageId: string; htmlContent: string; expectedHtmlContent: string }>;
+}) => {
+  const db = getDb();
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return "not_found" as const;
+
+  const tokens = await getDesignTokens(projectId);
+  const writes = pages.map(({ pageId, htmlContent, expectedHtmlContent }) => ({
+    pageId,
+    html: applyDesignTokens(htmlContent, tokens),
+    // The editor holds the HTML it last sent, while the row holds that HTML
+    // with the tokens applied, so either one means nothing changed since.
+    expected: [...new Set([expectedHtmlContent, applyDesignTokens(expectedHtmlContent, tokens)])],
+  }));
+  // Version snapshots sit outside the transaction. One left behind by a
+  // failed write holds HTML the page still has, which is harmless.
+  for (const { pageId, html } of writes) {
+    await snapshotPageBeforeWrite({ projectId, pageId, nextHtml: html });
+  }
+
+  let failure = "not_found" as "not_found" | "conflict";
+  const updated = await db.transaction(async (tx) => {
+    const rows = [];
+    for (const { pageId, html, expected } of writes) {
+      const isPage = and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId));
+      const [row] = await tx
+        .update(projectPages)
+        .set({ htmlContent: html, updatedAt: new Date() })
+        .where(and(isPage, inArray(projectPages.htmlContent, expected)))
+        .returning();
+      if (!row) {
+        const [existing] = await tx.select({ id: projectPages.id }).from(projectPages).where(isPage);
+        failure = existing ? "conflict" : "not_found";
+        tx.rollback();
+      }
+      rows.push(row);
+    }
+    return rows;
+  }).catch((error: unknown) => {
+    // Drizzle signals tx.rollback() by throwing.
+    if (error instanceof TransactionRollbackError) return null;
+    throw error;
+  });
+
+  if (!updated) return failure;
   await touchProjectUpdatedAt(projectId);
   return updated;
 };

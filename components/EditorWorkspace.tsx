@@ -17,7 +17,14 @@ import { isPageDeviceType } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
 import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertAtNode } from "@/lib/pageTree";
-import { commitPageEdit, type ElementAction, runElementAction } from "@/store/pageEdits";
+import {
+  commitPageEdit,
+  commitPagesEdit,
+  copySelectedElement,
+  type ElementAction,
+  pasteElement,
+  runElementAction,
+} from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
 
@@ -304,7 +311,11 @@ export default function EditorWorkspace({
       if (result === "stale") {
         toast.error("The page changed since that edit. Open the page's History to go further back.");
       } else if (result && projectId) {
-        commitPageEdit(projectId, result.pageId, () => result.html, { record: false });
+        commitPagesEdit(
+          projectId,
+          Object.fromEntries(result.map(({ pageId, html }) => [pageId, () => html])),
+          { record: false },
+        );
       }
     },
     [projectId],
@@ -457,8 +468,20 @@ export default function EditorWorkspace({
       const isArtboard =
         selectedNode?.tag === "svg" &&
         pages.find((page) => page.id === selectedNode.pageId)?.deviceType === "vector";
+      const isCommand = event.metaKey || event.ctrlKey;
+      // Copy, cut, and paste elements, between pages too. Without a picked
+      // element Cmd+C stays the browser's.
+      if (projectId && isCommand && !event.altKey && !event.shiftKey) {
+        const handled =
+          event.code === "KeyC" || event.code === "KeyX"
+            ? !!selectedNode && !isArtboard && copySelectedElement(projectId, event.code === "KeyX")
+            : event.code === "KeyV" && pasteElement(projectId);
+        if (handled) {
+          event.preventDefault();
+          return;
+        }
+      }
       if (projectId && selectedNode) {
-        const isCommand = event.metaKey || event.ctrlKey;
         const action: ElementAction | null =
           !isCommand && (event.key === "Delete" || event.key === "Backspace") && !isArtboard
             ? "delete"

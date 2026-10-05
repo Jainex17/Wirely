@@ -68,7 +68,7 @@ import {
   summarizeAssistantDetails,
 } from "@/lib/wireOutput";
 import { getRequestSessionUser } from "@/lib/auth/session";
-import { createRateLimiter } from "@/lib/rate-limit";
+import { createRateLimiter, getClientIp, withRateLimitHeaders } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
 import { selectWireStylePreset } from "@/lib/wirePrompt";
 import {
@@ -311,23 +311,6 @@ const validateRequestBody = (body: WireRequestBody) => {
   }
 
   return null;
-};
-
-const getClientIp = (request: Request) => {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const firstIp = forwardedFor.split(",")[0]?.trim();
-    if (firstIp) return firstIp;
-  }
-
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-};
-
-const withRateLimitHeaders = (response: Response, headers: Record<string, string>) => {
-  for (const [name, value] of Object.entries(headers)) {
-    response.headers.set(name, value);
-  }
-  return response;
 };
 
 const getErrorMessage = (error: unknown) => {

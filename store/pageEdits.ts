@@ -8,9 +8,13 @@ import { toast } from "@/components/ui/sonner";
 import { assetArtboardHtml, assetImageMarkup, type DraggedAsset } from "@/lib/assetDrag";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
+import { freezeElement } from "@/lib/nodeFreeze";
 import { stampNodeIds } from "@/lib/pageNodes";
 import {
   appendToPage,
+  carryIconStylesheet,
+  copyNode,
+  type DropTarget,
   duplicateNode,
   insertAtNode,
   insertNode,
@@ -18,66 +22,115 @@ import {
   moveNode,
   removeNode,
   setNodeHidden,
+  transferNode,
   wrapNode,
 } from "@/lib/pageTree";
 import { readArtboardSize } from "@/lib/vectorArtboard";
+import { getCanvasFrame } from "@/store/canvasDrop";
 import { useEditorStore } from "@/store/useEditorStore";
 
-/** Saves page HTML, counted in the editor's saving indicator. Throws when the save fails. */
-export const persistPageHtml = async (projectId: string, pageId: string, html: string) => {
+/**
+ * Saves one page through its own route, or several through the batch route,
+ * which writes all of them or none. Counted in the editor's saving indicator.
+ * Throws when the save fails.
+ */
+const persistPagesHtml = async (
+  projectId: string,
+  pages: Array<{ pageId: string; html: string; before: string }>,
+) => {
   const { beginSaving, endSaving } = useEditorStore.getState();
   beginSaving();
   try {
-    const response = await fetch(`/api/projects/${projectId}/pages/${pageId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ htmlContent: html }),
-    });
+    const [only] = pages;
+    const response =
+      pages.length === 1
+        ? await fetch(`/api/projects/${projectId}/pages/${only.pageId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ htmlContent: only.html }),
+          })
+        : await fetch(`/api/projects/${projectId}/pages`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pages: pages.map(({ pageId, html, before }) => ({
+                id: pageId,
+                htmlContent: html,
+                expectedHtmlContent: before,
+              })),
+            }),
+          });
     if (!response.ok) throw new Error(`Page save failed with status ${response.status}`);
   } finally {
     endSaving();
   }
 };
 
+interface CommitOptions {
+  /** False keeps the edit out of undo, for the id stamping save and for undo itself. */
+  record?: boolean;
+  failureMessage?: string;
+  invalidMessage?: string;
+}
+
 /**
- * Applies `edit` to the page's current HTML, stamped so node ids resolve,
- * then shows and saves the result. Returns the new HTML, or null when the
- * edit could not apply. `record: false` keeps it out of undo, for the id
- * stamping save and for undo itself.
+ * Applies an edit to each listed page's current HTML, stamped so node ids
+ * resolve, then shows and saves the results together. Returns the new HTML
+ * per page, or null when any edit could not apply, in which case no page
+ * changes. A failed save puts every page back.
  */
-export const commitPageEdit = (
+export const commitPagesEdit = (
   projectId: string,
-  pageId: string,
-  edit: (html: string) => string | null,
+  edits: Record<string, (html: string) => string | null>,
   {
     record = true,
     failureMessage = "Could not save the change. Try again.",
     invalidMessage = "This element changed on the page. Pick it again.",
-  } = {},
+  }: CommitOptions = {},
 ) => {
   const state = useEditorStore.getState();
-  const current = state.pages.find((page) => page.id === pageId)?.iframeHtml;
-  if (current === undefined) return null;
-  const next = edit(stampNodeIds(current));
-  if (next === null) {
-    toast.error(invalidMessage);
-    return null;
+  const changes: Array<{ pageId: string; before: string; after: string }> = [];
+  for (const [pageId, edit] of Object.entries(edits)) {
+    const before = state.pages.find((page) => page.id === pageId)?.iframeHtml;
+    if (before === undefined) return null;
+    const after = edit(stampNodeIds(before));
+    if (after === null) {
+      toast.error(invalidMessage);
+      return null;
+    }
+    changes.push({ pageId, before, after });
   }
-  if (next === current) return next;
+  const result = Object.fromEntries(changes.map(({ pageId, after }) => [pageId, after]));
+  const changed = changes.filter(({ before, after }) => before !== after);
+  if (changed.length === 0) return result;
 
-  state.setPageHtml(pageId, next);
-  if (record) htmlHistory.record({ pageId, before: current, after: next });
-  persistPageHtml(projectId, pageId, next).catch((error: unknown) => {
-    logger.error("page_edit_save_failed", { pageId, projectId, error });
-    // Only put the old HTML back if nothing newer landed since.
+  for (const { pageId, after } of changed) state.setPageHtml(pageId, after);
+  if (record) htmlHistory.record(changed);
+  persistPagesHtml(
+    projectId,
+    changed.map(({ pageId, before, after }) => ({ pageId, html: after, before })),
+  ).catch((error: unknown) => {
+    logger.error("page_edit_save_failed", { pageIds: changed.map(({ pageId }) => pageId), projectId, error });
+    // The pages go back together or not at all. Putting back only the pages
+    // nothing newer landed on would, for a move, take the element off the
+    // target while the source keeps a later edit made without it.
     const latest = useEditorStore.getState();
-    if (latest.pages.find((page) => page.id === pageId)?.iframeHtml === next) {
-      latest.setPageHtml(pageId, current);
+    const htmlOf = (pageId: string) => latest.pages.find((page) => page.id === pageId)?.iframeHtml;
+    if (changed.every(({ pageId, after }) => htmlOf(pageId) === after)) {
+      for (const { pageId, before } of changed) latest.setPageHtml(pageId, before);
     }
     toast.error(failureMessage);
   });
-  return next;
+  return result;
 };
+
+/** `commitPagesEdit` for one page. Returns its new HTML, or null when the edit could not apply. */
+export const commitPageEdit = (
+  projectId: string,
+  pageId: string,
+  edit: (html: string) => string | null,
+  options?: CommitOptions,
+) => commitPagesEdit(projectId, { [pageId]: edit }, options)?.[pageId] ?? null;
 
 export type ElementAction = "duplicate" | "delete" | "wrap" | "hide" | "show";
 
@@ -125,6 +178,139 @@ export const moveElement = (
   commitPageEdit(projectId, pageId, (html) => moveNode(html, nodeId, targetId, position), {
     invalidMessage: "An element cannot go there. Drop it next to or into another element.",
   });
+
+const pageHtml = (pageId: string) =>
+  useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml ?? null;
+
+const selectNew = (pageId: string, nodeId: string, tag: string) => {
+  const { setFocusedPage, setSelectedNode } = useEditorStore.getState();
+  setFocusedPage(pageId);
+  setSelectedNode({ pageId, nodeId, tag, color: null, background: null });
+};
+
+/**
+ * The element as markup that renders the same on any page, read from how the
+ * canvas drew it. Null when the page is not drawn yet or the element is gone.
+ */
+const frozenMarkup = (pageId: string, nodeId: string) => {
+  const html = pageHtml(pageId);
+  const frame = getCanvasFrame(pageId);
+  return html !== null && frame ? freezeElement(html, nodeId, frame.root) : null;
+};
+
+/**
+ * Moves or copies an element to a drop anywhere on the canvas, then picks it
+ * where it landed. On its own page the markup moves as it is, since the same
+ * CSS applies. To another page it goes self-contained, and both pages save
+ * together, so a failed save never loses or doubles it.
+ */
+export const dropElement = (
+  projectId: string,
+  from: { pageId: string; nodeId: string; tag: string },
+  to: { pageId: string; target: DropTarget },
+  copy: boolean,
+) => {
+  const invalidMessage = "An element cannot go there. Drop it next to or into another element.";
+  if (from.pageId === to.pageId) {
+    if (to.target === "end") return;
+    const { nodeId: targetId, position } = to.target;
+    if (!copy) {
+      moveElement(projectId, from.pageId, from.nodeId, targetId, position);
+      return;
+    }
+    let newId: string | null = null;
+    const next = commitPageEdit(
+      projectId,
+      from.pageId,
+      (html) => {
+        const result = copyNode(html, from.nodeId, targetId, position);
+        newId = result?.newId ?? null;
+        return result?.html ?? null;
+      },
+      { invalidMessage },
+    );
+    if (next !== null && newId) selectNew(from.pageId, newId, from.tag);
+    return;
+  }
+
+  const markup = frozenMarkup(from.pageId, from.nodeId);
+  const sourceHtml = pageHtml(from.pageId);
+  if (markup === null || sourceHtml === null) {
+    toast.error("This element changed on the page. Pick it again.");
+    return;
+  }
+  let newId: string | null = null;
+  const edits: Record<string, (html: string) => string | null> = {
+    [to.pageId]: (html) => {
+      const result = transferNode({
+        sourceHtml,
+        targetHtml: html,
+        nodeId: from.nodeId,
+        target: to.target,
+        markup,
+        copy: true,
+      });
+      newId = result?.newId ?? null;
+      return result?.target ?? null;
+    },
+  };
+  if (!copy) edits[from.pageId] = (html) => removeNode(html, from.nodeId);
+  const next = commitPagesEdit(projectId, edits, { invalidMessage });
+  if (next !== null && newId) selectNew(to.pageId, newId, from.tag);
+};
+
+/**
+ * The element Cmd+C or Cmd+X took, self-contained so it pastes the same into
+ * any page. Module state, so it outlives a switch between projects.
+ */
+let clipboard: { markup: string; sourceHtml: string; tag: string } | null = null;
+
+/** Copies the picked element, and with `cut` removes it. Returns whether anything was copied. */
+export const copySelectedElement = (projectId: string, cut: boolean) => {
+  const { selectedNode } = useEditorStore.getState();
+  if (!selectedNode) return false;
+  const { pageId, nodeId, tag } = selectedNode;
+  const markup = frozenMarkup(pageId, nodeId);
+  const sourceHtml = pageHtml(pageId);
+  if (markup === null || sourceHtml === null) return false;
+  clipboard = { markup, sourceHtml, tag };
+  // Also as text, so the element can be pasted into a prompt or a code editor.
+  void navigator.clipboard?.writeText(markup).catch(() => undefined);
+  if (cut) {
+    const next = commitPageEdit(projectId, pageId, (html) => removeNode(html, nodeId));
+    if (next !== null) useEditorStore.getState().setSelectedNode(null);
+  }
+  return true;
+};
+
+/**
+ * Pastes the copied element right after the picked element, as its sibling,
+ * or at the end of the focused page when nothing is picked. Returns whether
+ * anything was pasted.
+ */
+export const pasteElement = (projectId: string) => {
+  if (!clipboard) return false;
+  const { markup, sourceHtml, tag } = clipboard;
+  const { selectedNode, focusedPageId, pages } = useEditorStore.getState();
+  const pageId = selectedNode?.pageId ?? focusedPageId;
+  const page = pages.find((candidate) => candidate.id === pageId);
+  if (!pageId || !page || page.deviceType === "vector") return false;
+  let newId: string | null = null;
+  const next = commitPageEdit(
+    projectId,
+    pageId,
+    (html) => {
+      const result = selectedNode
+        ? insertNode(html, selectedNode.nodeId, "after", markup)
+        : appendToPage(html, markup);
+      newId = result?.newId ?? null;
+      return result ? carryIconStylesheet(sourceHtml, result.html) : null;
+    },
+    { invalidMessage: "The element cannot go there. Pick another element." },
+  );
+  if (next !== null && newId) selectNew(pageId, newId, tag);
+  return true;
+};
 
 /**
  * Drops a project image into a page and picks it: relative to a layer from the

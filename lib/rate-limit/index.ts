@@ -64,3 +64,21 @@ export const createRateLimiter = ({
   };
 };
 
+
+/** The caller's IP for a rate limit key, from the proxy headers the host sets. */
+export const getClientIp = (request: Request) => {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const firstIp = forwardedFor.split(",")[0]?.trim();
+    if (firstIp) return firstIp;
+  }
+
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+};
+
+export const withRateLimitHeaders = (response: Response, headers: Record<string, string>) => {
+  for (const [name, value] of Object.entries(headers)) {
+    response.headers.set(name, value);
+  }
+  return response;
+};

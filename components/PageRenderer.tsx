@@ -44,7 +44,8 @@ import {
   stampNodeIds,
 } from "@/lib/pageNodes";
 import type { InsertKind } from "@/lib/pageTree";
-import { commitPageEdit, insertAsset, moveElement } from "@/store/pageEdits";
+import { commitPageEdit, dropElement, insertAsset } from "@/store/pageEdits";
+import { registerCanvasFrame, useDropIndicator } from "@/store/canvasDrop";
 import { ASSET_DRAG_TYPE, type DraggedAsset, parseAssetDrag } from "@/lib/assetDrag";
 import { measureBetween } from "@/lib/elementMeasure";
 import ElementEditLayer from "./ElementEditLayer";
@@ -91,6 +92,8 @@ import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
 
 /** How long the agent cursor stays after the last change it points at. */
 const AGENT_CURSOR_LINGER_MS = 3_000;
+// A drop line's thickness, 2 screen px at any zoom.
+const DROP_LINE = "calc(2px * var(--canvas-inverse-zoom, 1))";
 // Each replay step reloads the frame, so steps come no faster than the frame
 // can repaint without flashing. Ten steps cap a replay near three seconds.
 const REVEAL_STEP_MS = 300;
@@ -509,6 +512,15 @@ export default React.memo(function PageRenderer({
     };
   }, [hasHtml, isRevealStep, markedSrcDoc.html]);
   const [inertFrame, setInertFrame] = React.useState<InertFrameHandle | null>(null);
+  // Lets an element dragged from any page find a drop on this one.
+  React.useEffect(() => {
+    if (!inertFrame) return;
+    registerCanvasFrame(page.id, { frame: inertFrame, isVector: page.deviceType === "vector" });
+    return () => registerCanvasFrame(page.id, null);
+  }, [inertFrame, page.deviceType, page.id]);
+  const dropIndicator = useDropIndicator((state) =>
+    state.drop?.pageId === page.id ? state.drop.indicator : null,
+  );
   const measuredSrcDoc = React.useMemo(
     () =>
       hasHtml && compiledFrame
@@ -1755,6 +1767,23 @@ export default React.memo(function PageRenderer({
             hoverBox.nodeId !== selectedNodeId ? (
               <MeasureLines from={selectedBox} to={hoverBox} />
             ) : null}
+            {dropIndicator ? (
+              <div
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute z-30",
+                  dropIndicator.kind === "line" ? "bg-sky-500" : "bg-sky-500/10 outline-dashed outline-sky-500",
+                )}
+                style={{
+                  left: dropIndicator.x,
+                  top: dropIndicator.y,
+                  // A line's thin side, and a box's outline, stay 2 screen px at any zoom.
+                  width: dropIndicator.kind === "line" && dropIndicator.width <= 2 ? DROP_LINE : dropIndicator.width,
+                  height: dropIndicator.kind === "line" && dropIndicator.height <= 2 ? DROP_LINE : dropIndicator.height,
+                  outlineWidth: DROP_LINE,
+                }}
+              />
+            ) : null}
             {isMoveMode && (isLive || inertFrame) && projectId && !editingNodeId && selectedBox?.nodeId === selectedNodeId && selectedBox ? (
               <ElementEditLayer
                 key={selectedBox.nodeId}
@@ -1774,8 +1803,14 @@ export default React.memo(function PageRenderer({
                     ),
                   )
                 }
-                onMove={(targetId, position) =>
-                  moveElement(projectId, page.id, selectedBox.nodeId, targetId, position)
+                pageId={page.id}
+                onDrop={(drop, copy) =>
+                  dropElement(
+                    projectId,
+                    { pageId: page.id, nodeId: selectedBox.nodeId, tag: selectedBox.tag },
+                    { pageId: drop.pageId, target: drop.target },
+                    copy,
+                  )
                 }
                 onClick={(point) => {
                   isPickPendingRef.current = true;

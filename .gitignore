@@ -40,3 +40,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# design engine assets, copied from node_modules by scripts/copy-design-assets.ts
+/public/canvaskit.wasm
+/public/Inter-*.ttf
+/public/NotoNaskhArabic-*.ttf

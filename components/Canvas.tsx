@@ -4,7 +4,7 @@ import React from "react";
 import { Ungroup } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { logger } from "@/lib/logger";
-import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
+import { CANVAS_BACKGROUND_COLORS, type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import CanvasCommentPins from "./CanvasCommentPins";
 import PageRenderer, { PAGE_FRAME_TOP } from "./PageRenderer";
@@ -77,12 +77,12 @@ const getCanvasFrame = (page: PageRecord, activeDevice: PageFrameDevice) => {
 const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = {
   dark: {},
   gray: {
-    backgroundColor: "#8e9097",
+    backgroundColor: CANVAS_BACKGROUND_COLORS.gray,
     ["--canvas-label" as string]: "#26282e",
     ["--canvas-label-strong" as string]: "#0e1014",
   },
   light: {
-    backgroundColor: "#eceef2",
+    backgroundColor: CANVAS_BACKGROUND_COLORS.light,
     ["--canvas-label" as string]: "#6b7180",
     ["--canvas-label-strong" as string]: "#0e1014",
   },
