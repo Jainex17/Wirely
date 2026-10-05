@@ -5,10 +5,49 @@
  * a document with them, and an MCP tool call loads, edits, and saves one.
  */
 import { BUILTIN_IO_FORMATS, IORegistry } from "@open-pencil/core/io";
-import { SceneGraph } from "@open-pencil/scene-graph";
+import { SceneGraph, type SceneNode } from "@open-pencil/scene-graph";
 import { assignNodeGuids } from "@/lib/design/ids";
 
 const io = new IORegistry(BUILTIN_IO_FORMATS);
+
+// The .fig writer drops grid layout: a grid frame reads back with no layout
+// and no padding, and its cells collapse. Each grid frame and grid cell keeps
+// those fields in its plugin data, which .fig does save, and gets them back on
+// read.
+const GRID_PLUGIN_ID = "wirely";
+const GRID_KEY = "grid";
+const gridFields = (node: SceneNode) =>
+  node.layoutMode === "GRID"
+    ? {
+        layoutMode: node.layoutMode,
+        gridTemplateColumns: node.gridTemplateColumns,
+        gridTemplateRows: node.gridTemplateRows,
+        gridColumnGap: node.gridColumnGap,
+        gridRowGap: node.gridRowGap,
+        paddingTop: node.paddingTop,
+        paddingRight: node.paddingRight,
+        paddingBottom: node.paddingBottom,
+        paddingLeft: node.paddingLeft,
+      }
+    : {};
+
+const stashGridLayout = (graph: SceneGraph) => {
+  for (const node of graph.nodes.values()) {
+    const fields = { ...gridFields(node), ...(node.gridPosition ? { gridPosition: node.gridPosition } : {}) };
+    const others = node.pluginData.filter((entry) => !(entry.pluginId === GRID_PLUGIN_ID && entry.key === GRID_KEY));
+    node.pluginData =
+      Object.keys(fields).length > 0
+        ? [...others, { pluginId: GRID_PLUGIN_ID, key: GRID_KEY, value: JSON.stringify(fields) }]
+        : others;
+  }
+};
+
+const restoreGridLayout = (graph: SceneGraph) => {
+  for (const node of graph.nodes.values()) {
+    const entry = node.pluginData.find((item) => item.pluginId === GRID_PLUGIN_ID && item.key === GRID_KEY);
+    if (entry) Object.assign(node, JSON.parse(entry.value) as Partial<SceneNode>);
+  }
+};
 
 /** The one page a new document has. Screens are its top-level frames. */
 export const SCREENS_PAGE_NAME = "Screens";
@@ -45,12 +84,14 @@ export const readDesignDocument = async (bytes: Uint8Array) => {
     node.source.format = null;
     node.derivedLayout = null;
   }
+  restoreGridLayout(graph);
   return graph;
 };
 
 /** The scene as .fig bytes. New nodes get their GUIDs first, so their ids last. */
 export const writeDesignDocument = async (graph: SceneGraph) => {
   assignNodeGuids(graph);
+  stashGridLayout(graph);
   const { data } = await io.writeDocument("fig", graph);
   if (!(data instanceof Uint8Array)) throw new Error("The design engine did not write binary .fig data.");
   return data;
