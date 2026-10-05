@@ -41,7 +41,9 @@ const layoutProblems = (graph: SceneGraph, rootId: string) =>
     if (
       node.type === "TEXT" &&
       parent &&
-      node.layoutPositioning !== "ABSOLUTE" &&
+      // Absolute text may hang outside its frame on purpose, like a badge,
+      // unless the frame clips it.
+      (node.layoutPositioning !== "ABSOLUTE" || parent.clipsContent) &&
       (node.x < -TOLERANCE_PX ||
         node.y < -TOLERANCE_PX ||
         node.x + node.width > parent.width + TOLERANCE_PX ||

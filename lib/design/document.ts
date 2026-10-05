@@ -6,6 +6,7 @@
  */
 import { BUILTIN_IO_FORMATS, IORegistry } from "@open-pencil/core/io";
 import { SceneGraph, type SceneNode } from "@open-pencil/scene-graph";
+import { z } from "zod";
 import { assignNodeGuids } from "@/lib/design/ids";
 
 const io = new IORegistry(BUILTIN_IO_FORMATS);
@@ -42,10 +43,38 @@ const stashGridLayout = (graph: SceneGraph) => {
   }
 };
 
+// The editor uploads document bytes, so stored plugin data is untrusted: only
+// these fields, well formed, are restored, and anything else is ignored.
+const track = z.object({ sizing: z.enum(["FIXED", "FR", "AUTO"]), value: z.number() });
+const storedGridFields = z.object({
+  layoutMode: z.literal("GRID").optional(),
+  gridTemplateColumns: z.array(track).optional(),
+  gridTemplateRows: z.array(track).optional(),
+  gridColumnGap: z.number().optional(),
+  gridRowGap: z.number().optional(),
+  paddingTop: z.number().optional(),
+  paddingRight: z.number().optional(),
+  paddingBottom: z.number().optional(),
+  paddingLeft: z.number().optional(),
+  gridPosition: z
+    .object({ column: z.number(), row: z.number(), columnSpan: z.number(), rowSpan: z.number() })
+    .optional(),
+});
+
+const parseStoredGridFields = (value: string) => {
+  try {
+    const parsed = storedGridFields.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+};
+
 const restoreGridLayout = (graph: SceneGraph) => {
   for (const node of graph.nodes.values()) {
     const entry = node.pluginData.find((item) => item.pluginId === GRID_PLUGIN_ID && item.key === GRID_KEY);
-    if (entry) Object.assign(node, JSON.parse(entry.value) as Partial<SceneNode>);
+    const fields = entry ? parseStoredGridFields(entry.value) : null;
+    if (fields) Object.assign(node, fields);
   }
 };
 

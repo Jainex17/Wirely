@@ -46,6 +46,23 @@ describe("design JSX defaults agents rely on", () => {
     expect(byName(reloaded, "Cell").width).toBe(cellWidth);
   });
 
+  it("reads a document whose stored grid data is malformed, keeping only valid grid fields", async () => {
+    const { graph } = await screenWith(`<Frame name="Grid" grid columns="1fr 1fr" w="fill"><Text>one</Text></Frame>`);
+    const bytes = await writeDesignDocument(graph);
+    const tampered = await readDesignDocument(bytes);
+    const grid = byName(tampered, "Grid");
+    const text = tampered.getNode(grid.childIds[0])!;
+    grid.pluginData = [{ pluginId: "wirely", key: "grid", value: "{not json" }];
+    text.pluginData = [{ pluginId: "wirely", key: "grid", value: JSON.stringify({ name: "Hijacked", gridRowGap: 4 }) }];
+    // Written without the grid stash, as an uploaded document could be.
+    const { IORegistry, BUILTIN_IO_FORMATS } = await import("@open-pencil/core/io");
+    const { data } = await new IORegistry(BUILTIN_IO_FORMATS).writeDocument("fig", tampered);
+
+    const reread = await readDesignDocument(data as Uint8Array);
+    expect(byName(reread, "Grid").layoutMode).toBe("NONE");
+    expect(byName(reread, "Text").gridRowGap).toBe(4);
+  });
+
   it("draws strokeDash as a dashed stroke that survives a save", async () => {
     const { graph } = await screenWith(
       `<Frame name="Dashed" w={100} h={40} stroke="#000000" strokeDash={[6, 2]} /><Frame name="Default" w={100} h={40} stroke="#000000" strokeDash />`,

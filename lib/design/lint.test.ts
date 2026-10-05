@@ -34,6 +34,15 @@ describe("lintScreen", () => {
     }
   });
 
+  it("flags absolute text a clipping frame cuts off, and allows it in a frame that does not clip", async () => {
+    const problems = await lint(
+      `<Frame name="Clips" w={80} h={40} overflow="hidden"><Text name="Cut" position="absolute" x={60} y={0} color="#111111">Cut off text</Text></Frame>` +
+        `<Frame name="Open" w={80} h={40}><Text name="Badge" position="absolute" x={60} y={0} color="#111111">Badge</Text></Frame>`,
+    );
+    expect(problems.some((line) => line.includes('"Cut"') && line.includes("clipped"))).toBe(true);
+    expect(problems.some((line) => line.includes('"Badge"'))).toBe(false);
+  });
+
   it("passes a clean screen with a spacer", async () => {
     const problems = await lint(
       `<Text color="#111111" size={16}>Fine</Text>` +
