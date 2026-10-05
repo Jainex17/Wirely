@@ -30,16 +30,17 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * one block.
  */
 export const MCP_INSTRUCTIONS = [
-  "Wirely is a design canvas the user watches live while you build screens.",
+  "Wirely is a canvas the user watches live while you write pages.",
   "After create_project, give the user the editor URL it returns.",
-  "A design project's screens are design nodes, like frames in Figma. Call get_design_reference " +
-    "once, then add each screen with add_screen (desktop or mobile) as design JSX. Edit with the " +
-    "design tools: get_page_tree or get_jsx for node ids, render with parent_id or replace_id to " +
-    "add or swap a part, and set_fill, set_layout, set_text, update_node, and batch_update for " +
-    "small changes, instead of rebuilding a screen.",
-  "The page tools below (add_page, patch_page, edit_element, get_page_outline, and the HTML " +
-    "rules) are for older HTML projects only. list_pages, get_page, get_page_png, and " +
-    "delete_page work for both kinds.",
+  "A project is an HTML project unless created with kind: \"design\". Only call create_project " +
+    "with kind: \"design\" when the user asks for a design project. A design project's screens " +
+    "are design nodes, like frames in Figma. Call get_design_reference once, then add each " +
+    "screen with add_screen (desktop or mobile) as design JSX. Edit with the design tools: " +
+    "get_page_tree or get_jsx for node ids, render with parent_id or replace_id to add or swap " +
+    "a part, and set_fill, set_layout, set_text, update_node, and batch_update for small " +
+    "changes, instead of rebuilding a screen.",
+  "add_page, patch_page, edit_element, get_page_outline, and the HTML rules are for HTML " +
+    "projects only. list_pages, get_page, get_page_png, and delete_page work for both kinds.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -219,17 +220,17 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_projects",
     description:
-      "List the user's Wirely projects. A project is one design file: a canvas of screens. Design " +
-      "projects hold screens built from design nodes; older HTML projects hold HTML pages.",
+      "List the user's Wirely projects. A project is one design file: a canvas of screens. HTML " +
+      "projects hold HTML pages; design projects hold screens built from design nodes.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "create_project",
     description:
-      "Create a Wirely project. A design project (the default) starts with no screens: add them " +
-      "with add_screen and edit them with the design tools. An HTML project starts with one empty " +
-      "page named \"Page 1\" that you write with add_page and update_page. Returns the id and the " +
-      "editor URL; give that URL to the user so they can watch the project.",
+      "Create a Wirely project. An HTML project (the default) starts with one empty page named " +
+      "\"Page 1\" that you write with add_page and update_page. A design project starts with no " +
+      "screens: add them with add_screen and edit them with the design tools. Returns the id and " +
+      "the editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -237,7 +238,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         kind: {
           type: "string",
           enum: ["design", "html"],
-          description: "design for screens built from design nodes (default), html for HTML pages.",
+          description: "html for HTML pages (default), design for screens built from design nodes.",
         },
       },
       required: ["title"],

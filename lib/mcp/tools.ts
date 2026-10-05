@@ -143,7 +143,7 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const parsed = z
     .object({
       title: z.string().trim().min(1).max(TITLE_MAX_CHARS),
-      kind: z.enum(["design", "html"]).default("design"),
+      kind: z.enum(["design", "html"]).default("html"),
     })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
@@ -992,8 +992,8 @@ const resolveHandler = async (userId: string, name: string, args: ToolArgs): Pro
     if (project?.kind === "design") return designHandlerFor(name) ?? fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
     if (project && isDesignOnlyTool(name)) {
       return fail(
-        `"${project.title}" is an HTML project from before design projects. Edit it with add_page, ` +
-          "patch_page, and edit_element, or call create_project for a design project.",
+        `"${project.title}" is an HTML project. Edit it with add_page, patch_page, and ` +
+          "edit_element, or call create_project with kind: \"design\" for a design project.",
       );
     }
     if (!project && isDesignOnlyTool(name)) return fail("Project not found. Use list_projects for valid ids.");

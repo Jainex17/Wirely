@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { createDesignDocument } from "@/lib/design/document";
 import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createProject, listProjectsForUser } from "@/lib/db/queries/projects";
@@ -214,8 +213,7 @@ export async function POST(request: Request) {
         modelName: requestedModel,
       }));
 
-    // New projects are design projects: screens built from design nodes.
-    const created = await createProject(sessionUser.id, title, { document: await createDesignDocument() });
+    const created = await createProject(sessionUser.id, title);
 
     return NextResponse.json(
       {
