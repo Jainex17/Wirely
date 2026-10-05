@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, gt, sql, TransactionRollbackError } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, sql, TransactionRollbackError } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
@@ -398,8 +398,11 @@ export const updateProjectPageForUser = async ({
 
 /**
  * Writes several pages' HTML in one transaction, so an element moved from one
- * page to another is never saved on neither page or on both. Returns the
- * updated pages, or null when the project or any page is not the user's.
+ * page to another is never saved on neither page or on both. Each page is
+ * written only if it still holds `expectedHtmlContent`, the HTML the editor
+ * built the edit from, so a move never overwrites an agent's newer write.
+ * Returns the updated pages, "not_found" when the project or a page is not
+ * the user's, or "conflict" when a page changed since.
  */
 export const updateProjectPagesHtmlForUser = async ({
   projectId,
@@ -408,16 +411,19 @@ export const updateProjectPagesHtmlForUser = async ({
 }: {
   projectId: string;
   userId: string;
-  pages: Array<{ pageId: string; htmlContent: string }>;
+  pages: Array<{ pageId: string; htmlContent: string; expectedHtmlContent: string }>;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
-  if (!project) return null;
+  if (!project) return "not_found" as const;
 
   const tokens = await getDesignTokens(projectId);
-  const writes = pages.map(({ pageId, htmlContent }) => ({
+  const writes = pages.map(({ pageId, htmlContent, expectedHtmlContent }) => ({
     pageId,
     html: applyDesignTokens(htmlContent, tokens),
+    // The editor holds the HTML it last sent, while the row holds that HTML
+    // with the tokens applied, so either one means nothing changed since.
+    expected: [...new Set([expectedHtmlContent, applyDesignTokens(expectedHtmlContent, tokens)])],
   }));
   // Version snapshots sit outside the transaction. One left behind by a
   // failed write holds HTML the page still has, which is harmless.
@@ -425,28 +431,31 @@ export const updateProjectPagesHtmlForUser = async ({
     await snapshotPageBeforeWrite({ projectId, pageId, nextHtml: html });
   }
 
+  let failure = "not_found" as "not_found" | "conflict";
   const updated = await db.transaction(async (tx) => {
     const rows = [];
-    for (const { pageId, html } of writes) {
+    for (const { pageId, html, expected } of writes) {
+      const isPage = and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId));
       const [row] = await tx
         .update(projectPages)
         .set({ htmlContent: html, updatedAt: new Date() })
-        .where(and(eq(projectPages.projectId, projectId), eq(projectPages.id, pageId)))
+        .where(and(isPage, inArray(projectPages.htmlContent, expected)))
         .returning();
       if (!row) {
+        const [existing] = await tx.select({ id: projectPages.id }).from(projectPages).where(isPage);
+        failure = existing ? "conflict" : "not_found";
         tx.rollback();
-        return null;
       }
       rows.push(row);
     }
     return rows;
   }).catch((error: unknown) => {
-    // Drizzle signals tx.rollback() by throwing, which here means a page was missing.
+    // Drizzle signals tx.rollback() by throwing.
     if (error instanceof TransactionRollbackError) return null;
     throw error;
   });
 
-  if (!updated) return null;
+  if (!updated) return failure;
   await touchProjectUpdatedAt(projectId);
   return updated;
 };

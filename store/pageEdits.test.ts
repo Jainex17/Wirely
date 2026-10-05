@@ -76,6 +76,18 @@ describe("commitPagesEdit", () => {
     commitPagesEdit("project", { source: () => "<p></p>", target: () => "<div>moved</div>" }, { record: false });
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+  it("saves both pages only if they still hold the HTML the move started from", async () => {
+    twoPages();
+    const requests = fakeServer(200);
+    move();
+    await settle();
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body?.pages).toEqual([
+      { id: "source", htmlContent: "<p></p>", expectedHtmlContent: "<p>moved</p>" },
+      { id: "target", htmlContent: "<div>moved</div>", expectedHtmlContent: "<div></div>" },
+    ]);
+  });
+
   it("puts every page back when a save fails", async () => {
     twoPages();
     const fail = failingServer();

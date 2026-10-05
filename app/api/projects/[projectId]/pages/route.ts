@@ -23,7 +23,7 @@ type CreateProjectPageRequestBody = {
 };
 
 type UpdateProjectPagesRequestBody = {
-  pages?: Array<{ id?: unknown; htmlContent?: unknown }> | null;
+  pages?: Array<{ id?: unknown; htmlContent?: unknown; expectedHtmlContent?: unknown }> | null;
 };
 
 // An edit that touches several pages, today an element moved between two.
@@ -141,7 +141,8 @@ export async function POST(request: Request, context: RouteContext) {
 /**
  * Saves several pages' HTML at once, all or nothing. The canvas uses it when
  * an element moves from one page to another, so a failed save never leaves the
- * element on neither page.
+ * element on neither page. Answers 409 when a page no longer holds its
+ * expectedHtmlContent.
  */
 export async function PATCH(request: Request, context: RouteContext) {
   try {
@@ -153,15 +154,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { projectId } = await context.params;
     const parsed = await readJsonBodyWithLimit<UpdateProjectPagesRequestBody>(
       request,
-      PAGE_CREATE_MAX_BYTES * MAX_PAGES_PER_UPDATE,
+      // Each page carries its new HTML and the HTML it replaces.
+      PAGE_CREATE_MAX_BYTES * MAX_PAGES_PER_UPDATE * 2,
     );
     if (!parsed.ok) {
       return parsed.response;
     }
     const entries = Array.isArray(parsed.data.pages) ? parsed.data.pages : [];
     const pages = entries.flatMap((entry) =>
-      typeof entry?.id === "string" && typeof entry.htmlContent === "string"
-        ? [{ pageId: entry.id, htmlContent: entry.htmlContent }]
+      typeof entry?.id === "string" &&
+      typeof entry.htmlContent === "string" &&
+      typeof entry.expectedHtmlContent === "string"
+        ? [{ pageId: entry.id, htmlContent: entry.htmlContent, expectedHtmlContent: entry.expectedHtmlContent }]
         : [],
     );
     const isUnique = new Set(pages.map((page) => page.pageId)).size === pages.length;
@@ -172,7 +176,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       !isUnique
     ) {
       return NextResponse.json(
-        { error: `Send 1 to ${MAX_PAGES_PER_UPDATE} distinct pages, each with an id and htmlContent.` },
+        {
+          error: `Send 1 to ${MAX_PAGES_PER_UPDATE} distinct pages, each with an id, htmlContent, and expectedHtmlContent.`,
+        },
         { status: 400 },
       );
     }
@@ -182,8 +188,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       userId: sessionUser.id,
       pages,
     });
-    if (!updated) {
+    if (updated === "not_found") {
       return NextResponse.json({ error: "Page not found." }, { status: 404 });
+    }
+    if (updated === "conflict") {
+      return NextResponse.json({ error: "A page changed since this edit. Nothing was saved." }, { status: 409 });
     }
 
     return NextResponse.json({ pages: updated });

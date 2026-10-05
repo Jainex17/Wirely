@@ -34,7 +34,10 @@ import { useEditorStore } from "@/store/useEditorStore";
  * which writes all of them or none. Counted in the editor's saving indicator.
  * Throws when the save fails.
  */
-const persistPagesHtml = async (projectId: string, pages: Array<{ pageId: string; html: string }>) => {
+const persistPagesHtml = async (
+  projectId: string,
+  pages: Array<{ pageId: string; html: string; before: string }>,
+) => {
   const { beginSaving, endSaving } = useEditorStore.getState();
   beginSaving();
   try {
@@ -49,7 +52,13 @@ const persistPagesHtml = async (projectId: string, pages: Array<{ pageId: string
         : await fetch(`/api/projects/${projectId}/pages`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pages: pages.map(({ pageId, html }) => ({ id: pageId, htmlContent: html })) }),
+            body: JSON.stringify({
+              pages: pages.map(({ pageId, html, before }) => ({
+                id: pageId,
+                htmlContent: html,
+                expectedHtmlContent: before,
+              })),
+            }),
           });
     if (!response.ok) throw new Error(`Page save failed with status ${response.status}`);
   } finally {
@@ -99,7 +108,7 @@ export const commitPagesEdit = (
   if (record) htmlHistory.record(changed);
   persistPagesHtml(
     projectId,
-    changed.map(({ pageId, after }) => ({ pageId, html: after })),
+    changed.map(({ pageId, before, after }) => ({ pageId, html: after, before })),
   ).catch((error: unknown) => {
     logger.error("page_edit_save_failed", { pageIds: changed.map(({ pageId }) => pageId), projectId, error });
     // The pages go back together or not at all. Putting back only the pages
