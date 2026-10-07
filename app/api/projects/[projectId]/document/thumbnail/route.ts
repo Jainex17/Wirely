@@ -14,7 +14,7 @@ const THUMBNAIL_WIDTH = 640;
 const THUMBNAIL_HEIGHT = 400;
 
 /**
- * A design project's canvas as a PNG for its home card, rendered on the
+ * A project's design canvas as a PNG for its home card, rendered on the
  * server with the design engine. The card asks with the document version in
  * the URL, so a rendered thumbnail never changes and the browser keeps it.
  */

@@ -1,5 +1,5 @@
 /**
- * Edits a design project's stored document on the server: load, change,
+ * Edits a project's stored design document on the server: load, change,
  * save. The save is refused when someone else saved first, the open editor or
  * another agent call, so the edit runs again on their version rather than
  * erasing it. Every change here is a tool call that can run again safely.
@@ -8,7 +8,11 @@ import { SkiaRenderer } from "@open-pencil/core/canvas";
 import { initCanvasKit } from "@open-pencil/core/io/formats/raster";
 import { computeAllLayouts, setTextMeasurer } from "@open-pencil/core/layout";
 import type { SceneGraph } from "@open-pencil/scene-graph";
-import { getProjectDocumentForUser, saveProjectDocumentForUser } from "@/lib/db/queries/projectDocuments";
+import {
+  getOrCreateProjectDocumentForUser,
+  getProjectDocumentForUser,
+  saveProjectDocumentForUser,
+} from "@/lib/db/queries/projectDocuments";
 import { readDesignDocument, writeDesignDocument } from "@/lib/design/document";
 
 const SAVE_ATTEMPTS = 3;
@@ -50,7 +54,8 @@ export const editProjectDocument = async <T>(
   edit: (graph: SceneGraph) => Promise<{ value: T; changed: boolean }>,
 ): Promise<DocumentEditResult<T>> => {
   for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt += 1) {
-    const stored = await getProjectDocumentForUser(projectId, userId);
+    // An agent's first design call makes the project's design canvas.
+    const stored = await getOrCreateProjectDocumentForUser(projectId, userId);
     if (!stored) return { status: "missing" };
     const graph = await readLaidOut(stored.data);
     const { value, changed } = await edit(graph);
@@ -68,7 +73,7 @@ export const editProjectDocument = async <T>(
   return { status: "busy" };
 };
 
-/** Reads a design project's document without changing it. */
+/** Reads a project's design document without changing it, or null when it has none yet. */
 export const readProjectDocument = async (projectId: string, userId: string) => {
   const stored = await getProjectDocumentForUser(projectId, userId);
   return stored ? { graph: await readLaidOut(stored.data), version: stored.version } : null;

@@ -18,8 +18,8 @@ interface RouteContext {
 }
 
 /**
- * The first pages of a project with their HTML, or for a design project the
- * URL of its rendered canvas, for the thumbnail on its home card. Home lists
+ * The first HTML pages of a project, or when none has content yet the URL of
+ * its rendered design canvas, for the thumbnail on its home card. Home lists
  * titles only and each card fetches this once it scrolls into view, so the
  * home page never carries every project's HTML.
  */
@@ -35,22 +35,22 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    // A design project has no HTML pages: its card shows a rendered PNG of
-    // the canvas, addressed by version so the browser caches each one.
-    const documentVersion = await getProjectDocumentVersionForUser(projectId, sessionUser.id);
-    if (documentVersion !== null) {
-      return NextResponse.json({
-        pages: [],
-        thumbnailUrl: `/api/projects/${projectId}/document/thumbnail?v=${documentVersion}`,
-      });
-    }
-
     const pages = await listProjectPreviewPages({
       projectId,
       userId: sessionUser.id,
       limit: PREVIEW_PAGE_LIMIT,
     });
-    return NextResponse.json({ pages }, { status: 200 });
+    if (pages.some((page) => page.htmlContent.trim())) return NextResponse.json({ pages }, { status: 200 });
+
+    // A project used only on its Design tab shows a rendered PNG of that
+    // canvas, addressed by version so the browser caches each one.
+    const documentVersion = await getProjectDocumentVersionForUser(projectId, sessionUser.id);
+    return NextResponse.json(
+      documentVersion === null
+        ? { pages }
+        : { pages: [], thumbnailUrl: `/api/projects/${projectId}/document/thumbnail?v=${documentVersion}` },
+      { status: 200 },
+    );
   } catch (error) {
     logger.error("projects_preview_failed", { error });
     return NextResponse.json({ error: "Failed to load the preview." }, { status: 500 });

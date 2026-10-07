@@ -8,7 +8,7 @@ import dynamic from "next/dynamic";
  */
 const DesignEditor = dynamic(() => import("@/components/design/DesignEditor"), {
   ssr: false,
-  loading: () => <div className="h-dvh w-full bg-[#1e1e1e]" />,
+  loading: () => <div className="h-full w-full bg-[#1e1e1e]" />,
 });
 
 export default DesignEditor;

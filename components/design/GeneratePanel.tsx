@@ -20,14 +20,11 @@ export interface ChatMessage {
 
 type Step = { label: string; status: "running" | "done" | "failed" };
 
-const PROMPT_KEY = (projectId: string) => `wirePrompt:${projectId}`;
-const MODEL_KEY = (projectId: string) => `wireModel:${projectId}`;
-
 /**
  * Generate tab: describe screens and a model on the user's own key builds
  * them on the canvas with the design tools. Screens appear as each one is
  * saved; the list here shows what the model is doing meanwhile. A prompt typed
- * on the home page runs once when the project opens.
+ * on the home page goes to the HTML tab's chat, not here.
  */
 export default function GeneratePanel({
   projectId,
@@ -98,19 +95,6 @@ export default function GeneratePanel({
     },
     [isRunning, projectId],
   );
-
-  // A prompt from the home page runs once, then is forgotten.
-  useEffect(() => {
-    const pending = sessionStorage.getItem(PROMPT_KEY(projectId));
-    if (!pending) return;
-    const pendingModel = sessionStorage.getItem(MODEL_KEY(projectId)) ?? "";
-    sessionStorage.removeItem(PROMPT_KEY(projectId));
-    sessionStorage.removeItem(MODEL_KEY(projectId));
-    const model = models.some((entry) => entry.id === pendingModel) ? pendingModel : (models[0]?.id ?? "");
-    void run(pending, model);
-    // Runs on mount only: `run` changes identity while it runs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });

@@ -344,7 +344,7 @@ export default function WireEditor({
         </div>
       </div>
 
-      <div className="editor-theme h-screen w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
+      <div className="editor-theme h-full w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
         {isPagesPanelCollapsed ? null : pagesPanel}
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">

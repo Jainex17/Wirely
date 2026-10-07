@@ -73,8 +73,8 @@ interface DesignEditorProps {
 }
 
 /**
- * The editor for a design project: a Figma-like canvas of screens built from
- * design nodes, with layers on the left and properties on the right. The
+ * A project's Design tab: a Figma-like canvas of screens built from design
+ * nodes, with layers on the left and properties on the right. The
  * document loads once, then saves as the user edits and reloads when an agent
  * changes it (see documentSync.ts).
  */
@@ -84,6 +84,13 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
   const [commands, setCommands] = useState<DesignCommands | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
+  // there too, as the HTML tab does.
+  useEffect(() => {
+    document.body.classList.add("editor-theme");
+    return () => document.body.classList.remove("editor-theme");
+  }, []);
 
   // Load, create the editor, mount the canvas, and sync, as one lifetime, so
   // a remount (React's development double run included) starts clean.
@@ -111,7 +118,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
         const stopSync = startDocumentSync(projectId, created, version, {
           onStatus: setSaveStatus,
           onConflict: ({ keepMine, loadTheirs }) => {
-            conflictToast = toast("An agent changed this project while you were editing.", {
+            conflictToast = toast("An agent changed this design while you were editing.", {
               duration: Number.POSITIVE_INFINITY,
               action: { label: "Keep my edits", onClick: keepMine },
               cancel: { label: "Load theirs", onClick: loadTheirs },
@@ -184,7 +191,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
   }, [editor, canvasBackground]);
 
   return (
-    <div className="editor-theme flex h-dvh w-full overflow-hidden bg-background text-foreground">
+    <div className="editor-theme flex h-full w-full overflow-hidden bg-background text-foreground">
       {editor ? <DesignSidebar editor={editor} projectTitle={projectTitle} /> : <SidebarPlaceholder title={projectTitle} />}
       <main
         className="relative min-w-0 flex-1 bg-background"
@@ -203,7 +210,6 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
         ) : null}
       </main>
       <RightPanel
-        projectId={projectId}
         design={editor ? <PropertiesPanel editor={editor} /> : null}
         generate={<GeneratePanel projectId={projectId} models={models} initialMessages={initialMessages} />}
       />
@@ -216,11 +222,8 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
  * stays mounted while hidden, so a run keeps streaming when the user switches
  * to Design to look at a screen.
  */
-function RightPanel({ projectId, design, generate }: { projectId: string; design: ReactNode; generate: ReactNode }) {
-  // A prompt carried over from the home page runs on open, so show its progress.
-  const [tab, setTab] = useState<"design" | "generate">(() =>
-    sessionStorage.getItem(`wirePrompt:${projectId}`) ? "generate" : "design",
-  );
+function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNode }) {
+  const [tab, setTab] = useState<"design" | "generate">("design");
   return (
     <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-sidebar">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 text-sm">
@@ -384,7 +387,7 @@ function EmptyHint({ editor }: { editor: Editor }) {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <p className="max-w-sm text-center text-sm text-muted-foreground">
-        No screens yet. Ask your agent to design one, or draw a frame with the Frame tool.
+        No screens yet. Draw a frame with the Frame tool, or ask your agent to design one or to make an HTML page editable.
       </p>
     </div>
   );

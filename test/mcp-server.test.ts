@@ -195,6 +195,18 @@ describe("tool dispatch", () => {
     expect(result.isError).toBe(true);
   });
 
+  it("tells an agent patching a design screen to use the design tools, without a database read", async () => {
+    const result = await callTool(
+      "user",
+      "patch_page",
+      { projectId: "p", pageId: "1:23", oldString: "a", newString: "b" },
+      "https://wirely.test",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("design tools") });
+  });
+
   it("rejects an empty oldString before reaching the database", async () => {
     const result = await callTool("user", "patch_page", {
       projectId: "p",

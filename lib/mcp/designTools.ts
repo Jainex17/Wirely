@@ -1,9 +1,9 @@
 /**
- * MCP handlers for design projects, whose screens are nodes in one document
- * rather than HTML pages. The design engine's own tools edit that document
- * (see lib/design/tools.ts), add_screen places a new web or mobile screen, and
- * a few page tools agents already know (list_pages, get_page, get_page_png,
- * delete_page) answer for screens instead of pages.
+ * MCP handlers for a project's design canvas, whose screens are nodes in one
+ * document rather than HTML pages. The design engine's own tools edit that
+ * document (see lib/design/tools.ts), add_screen places a new web or mobile
+ * screen, and get_page, get_page_png, and delete_page answer for a screen
+ * when given a screen id instead of a page id. list_pages lists both.
  *
  * Every write goes through editProjectDocument, which saves only if nobody
  * saved in between and otherwise runs the call again on the newer document.
@@ -33,7 +33,8 @@ const JSX_MAX_CHARS = 200_000;
 // get_page_png caps a screen's long side, like the HTML screenshot does.
 const PNG_MAX_SIDE_PX = 2_400;
 
-const MISSING = "Design project not found. Use list_projects for valid ids.";
+const MISSING = "Project not found. Use list_projects for valid ids.";
+const NO_SCREEN = "Screen not found. Use list_pages for screen ids.";
 const BUSY = "The document kept changing while saving. Try the call again.";
 
 const formatIssues = (issues: z.ZodError["issues"]) =>
@@ -115,17 +116,18 @@ const addScreenHandler = async (userId: string, args: ToolArgs): Promise<ToolCal
   );
 };
 
-const listScreensHandler = async (userId: string, args: ToolArgs): Promise<ToolCallResult> => {
+/** The screens on a project's design canvas, for list_pages. None when the canvas was never used. */
+export const listProjectScreens = async (projectId: string, userId: string) => {
+  const document = await readProjectDocument(projectId, userId);
+  return document ? describeScreens(document.graph) : [];
+};
+
+/** list_pages for in-app generation, which works on the design canvas only. */
+export const listScreensHandler = async (userId: string, args: ToolArgs): Promise<ToolCallResult> => {
   const parsed = projectArgs.safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
-  const document = await readProjectDocument(parsed.data.projectId, userId);
-  if (!document) return fail(MISSING);
-  const screens = describeScreens(document.graph);
-  return succeed(
-    screens.length > 0
-      ? JSON.stringify(screens)
-      : "This design project has no screens yet. Add one with add_screen.",
-  );
+  const screens = await listProjectScreens(parsed.data.projectId, userId);
+  return succeed(screens.length > 0 ? JSON.stringify(screens) : "The design canvas has no screens yet. Add one with add_screen.");
 };
 
 const screenArgs = z.object({ projectId: z.string().trim().min(1), pageId: z.string().trim().min(1) }).loose();
@@ -134,9 +136,8 @@ const getScreenCode = async (userId: string, args: ToolArgs): Promise<ToolCallRe
   const parsed = screenArgs.safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
   const document = await readProjectDocument(parsed.data.projectId, userId);
-  if (!document) return fail(MISSING);
-  const code = screenToCode(document.graph, parsed.data.pageId);
-  if (code === null) return fail("Screen not found. Use list_pages for screen ids.");
+  const code = document ? screenToCode(document.graph, parsed.data.pageId) : null;
+  if (code === null) return fail(NO_SCREEN);
   return {
     content: [
       text(
@@ -152,9 +153,8 @@ const getScreenPng = async (userId: string, args: ToolArgs): Promise<ToolCallRes
   const parsed = screenArgs.safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
   const document = await readProjectDocument(parsed.data.projectId, userId);
-  if (!document) return fail(MISSING);
-  const screen = findScreen(document.graph, parsed.data.pageId);
-  if (!screen) return fail("Screen not found. Use list_pages for screen ids.");
+  const screen = document ? findScreen(document.graph, parsed.data.pageId) : null;
+  if (!document || !screen) return fail(NO_SCREEN);
   const scale = Math.min(1, PNG_MAX_SIDE_PX / Math.max(screen.width, screen.height, 1));
   const png = await renderScreenPng(document.graph, parsed.data.pageId, scale);
   if (!png) return fail("The screen rendered nothing. Check it has visible content.");
@@ -175,36 +175,37 @@ const deleteScreen = async (userId: string, args: ToolArgs): Promise<ToolCallRes
   });
   if (edit.status === "missing") return fail(MISSING);
   if (edit.status === "busy") return fail(BUSY);
-  return edit.value === null
-    ? fail("Screen not found. Use list_pages for screen ids.")
-    : succeed(`Deleted screen "${edit.value}".`);
+  return edit.value === null ? fail(NO_SCREEN) : succeed(`Deleted screen "${edit.value}".`);
 };
 
-/** Page tools that answer for screens in a design project. */
+/** Page tools that answer for a screen when given a screen id. */
 const SCREEN_HANDLERS: Record<string, (userId: string, args: ToolArgs) => Promise<ToolCallResult>> = {
-  add_screen: addScreenHandler,
-  list_pages: listScreensHandler,
   get_page: getScreenCode,
   get_page_png: getScreenPng,
   delete_page: deleteScreen,
 };
 
-/**
- * The handler for `name` in a design project, or null when the tool only
- * works on HTML pages.
- */
-export const designHandlerFor = (name: string) => {
+/** The handler for one of the engine's design tools or add_screen, or null for any other tool. */
+export const designToolHandler = (name: string) => {
   if (isDesignToolName(name)) return (userId: string, args: ToolArgs) => runEngineTool(userId, name, args);
-  return SCREEN_HANDLERS[name] ?? null;
+  return name === "add_screen" ? addScreenHandler : null;
 };
 
-/** Whether `name` only makes sense in a design project. */
-export const isDesignOnlyTool = (name: string) => isDesignToolName(name) || name === "add_screen";
+/** The handler for a page tool given a screen id, or null when the tool only works on HTML pages. */
+export const screenHandlerFor = (name: string) => SCREEN_HANDLERS[name] ?? null;
+
+/**
+ * Whether a page id names a screen on the design canvas. A screen id is a
+ * node id like "1:23" (lib/design/ids.ts); an HTML page id is a UUID.
+ */
+export const isScreenId = (pageId: unknown) => typeof pageId === "string" && /^\d{1,10}:\d{1,10}$/.test(pageId);
 
 export const ADD_SCREEN_TOOL: McpToolDefinition = {
   name: "add_screen",
   description:
-    "Add a screen to a design project, to the right of the others. Write it as design JSX: one root " +
+    "Add a screen to the project's design canvas, to the right of the others. Design screens are " +
+    "built from nodes the user edits like Figma frames, on the project's Design tab; HTML pages " +
+    "(add_page) are on its HTML tab. Write it as design JSX: one root " +
     "<Frame> with auto layout (flex=\"col\"), padding, and gap, holding <Frame>, <Text>, <Rectangle>, " +
     "<Ellipse>, <Image>, <svg>, and <Icon> nodes. The root is sized to the device: " +
     `desktop ${SCREEN_SIZES.desktop.width}×${SCREEN_SIZES.desktop.height}, ` +
@@ -215,7 +216,7 @@ export const ADD_SCREEN_TOOL: McpToolDefinition = {
   inputSchema: {
     type: "object",
     properties: {
-      projectId: { type: "string", description: "A design project id from list_projects or create_project." },
+      projectId: { type: "string", description: "A project id from list_projects or create_project." },
       name: { type: "string", description: "Screen name shown on the canvas, like \"Dashboard / Option B · Card grid\"." },
       device: { type: "string", enum: ["desktop", "mobile"], description: "The screen's device size." },
       jsx: { type: "string", description: "The screen as design JSX with one root <Frame>." },
@@ -236,12 +237,12 @@ export const DESIGN_REFERENCE_TOOL: McpToolDefinition = {
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
-/** What tools/list adds for design projects, after the shared and HTML page tools. */
+/** What tools/list adds for the design canvas, after the shared and HTML page tools. */
 export const DESIGN_CATALOG: McpToolDefinition[] = [DESIGN_REFERENCE_TOOL, ADD_SCREEN_TOOL, ...DESIGN_MCP_TOOLS];
 
 /**
- * get_selection for a design project: the layers the user has selected in the
- * editor, by the ids the design tools take, with the screen each sits in and
+ * get_selection on the design canvas: the layers the user has selected in the
+ * Design tab, by the ids the design tools take, with the screen each sits in and
  * the selection as design JSX.
  */
 export const describeDesignSelection = async (
