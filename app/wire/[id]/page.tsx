@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
+import { getProjectDocumentVersionForUser } from "@/lib/db/queries/projectDocuments";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
 import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel, WIRE_MODEL_OPTIONS } from "@/lib/wireModels";
-import DesignEditor from "@/components/design/DesignEditorLoader";
-import WireEditor from "./WireEditor";
+import ProjectEditor from "./ProjectEditor";
 
 export const metadata: Metadata = {
   title: "Editor | Wirely",
@@ -14,10 +14,11 @@ export const metadata: Metadata = {
 
 interface WirePageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ view?: string | string[] }>;
 }
 
-export default async function WirePage({ params }: WirePageProps) {
-  const resolvedParams = await params;
+export default async function WirePage({ params, searchParams }: WirePageProps) {
+  const [resolvedParams, { view }] = await Promise.all([params, searchParams]);
   // Identity and AI settings share one users row, so read them together.
   const session = await getServerSessionUserWithAiSettings();
   if (!session) {
@@ -28,38 +29,30 @@ export default async function WirePage({ params }: WirePageProps) {
   // Taken before the read so a write that races the page load is still newer
   // than the editor's first change cursor.
   const pagesLoadedAt = new Date().toISOString();
-  const projectDetail = await getProjectDetailForUser(
-    resolvedParams.id,
-    sessionUser.id,
-  );
+  const [projectDetail, designVersion] = await Promise.all([
+    getProjectDetailForUser(resolvedParams.id, sessionUser.id),
+    getProjectDocumentVersionForUser(resolvedParams.id, sessionUser.id),
+  ]);
 
   if (!projectDetail) {
     notFound();
   }
 
-  if (projectDetail.project.kind === "design") {
-    // The models in-app generation can run: enabled, with their provider's key saved.
-    const keyPresence = {
-      google: aiSettings.hasGoogleApiKey,
-      openrouter: aiSettings.hasOpenRouterApiKey,
-      zai: aiSettings.hasZaiApiKey,
-    };
-    const models = WIRE_MODEL_OPTIONS.filter(
-      (option) => aiSettings.enabledModelIds.includes(option.id) && keyPresence[option.provider],
-    ).map((option) => ({ id: option.id, label: option.label, tier: option.tier }));
-    return (
-      <DesignEditor
-        projectId={resolvedParams.id}
-        projectTitle={projectDetail.project.title}
-        models={models}
-        initialMessages={projectDetail.messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-        }))}
-      />
-    );
-  }
+  // The models the Design tab's in-app generation can run: enabled, with
+  // their provider's key saved.
+  const keyPresence = {
+    google: aiSettings.hasGoogleApiKey,
+    openrouter: aiSettings.hasOpenRouterApiKey,
+    zai: aiSettings.hasZaiApiKey,
+  };
+  const designModels = WIRE_MODEL_OPTIONS.filter(
+    (option) => aiSettings.enabledModelIds.includes(option.id) && keyPresence[option.provider],
+  ).map((option) => ({ id: option.id, label: option.label, tier: option.tier }));
+  // A project used only on its Design tab, like one from before the tabs,
+  // opens there.
+  const isDesignOnly =
+    designVersion !== null && projectDetail.pages.every((page) => !page.htmlContent.trim());
+  const initialView = view === "design" || isDesignOnly ? "design" : "html";
 
   const initialPages =
     projectDetail.pages.length > 0
@@ -79,35 +72,39 @@ export default async function WirePage({ params }: WirePageProps) {
         ];
   const projectTitle = projectDetail.project.title;
   const initialModelName =
-    resolveRunnableWireModel(aiSettings.enabledModelIds, {
-      google: aiSettings.hasGoogleApiKey,
-      openrouter: aiSettings.hasOpenRouterApiKey,
-      zai: aiSettings.hasZaiApiKey,
-    }) ?? DEFAULT_WIRE_MODEL;
+    resolveRunnableWireModel(aiSettings.enabledModelIds, keyPresence) ?? DEFAULT_WIRE_MODEL;
+
+  const initialMessages = projectDetail.messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    planningSummary: message.planningSummary,
+    selectedModelName: message.selectedModelName,
+    plannerModelName: message.plannerModelName,
+    criticModelName: message.criticModelName,
+  }));
 
   return (
-    <WireEditor
-      wireId={resolvedParams.id}
-      sessionUser={{
-        name: sessionUser.name,
-        email: sessionUser.email,
-        avatarUrl: sessionUser.avatarUrl,
+    <ProjectEditor
+      initialView={initialView}
+      wire={{
+        wireId: resolvedParams.id,
+        sessionUser: {
+          name: sessionUser.name,
+          email: sessionUser.email,
+          avatarUrl: sessionUser.avatarUrl,
+        },
+        initialProject: { projectTitle, pages: initialPages },
+        pagesLoadedAt,
+        initialModelName,
+        initialMessages,
       }}
-      initialProject={{
+      design={{
+        projectId: resolvedParams.id,
         projectTitle,
-        pages: initialPages,
+        models: designModels,
+        initialMessages: initialMessages.map(({ id, role, content }) => ({ id, role, content })),
       }}
-      pagesLoadedAt={pagesLoadedAt}
-      initialModelName={initialModelName}
-      initialMessages={projectDetail.messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        planningSummary: message.planningSummary,
-        selectedModelName: message.selectedModelName,
-        plannerModelName: message.plannerModelName,
-        criticModelName: message.criticModelName,
-      }))}
     />
   );
 }

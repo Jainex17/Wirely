@@ -6,7 +6,6 @@ import { applyDesignTokens } from "@/lib/designTokens";
 import {
   conversationMessages,
   conversations,
-  projectDocuments,
   projectPages,
   projects,
   type ConversationRole,
@@ -15,39 +14,26 @@ import {
 import type { PageDeviceType } from "@/lib/types";
 
 /**
- * Creates a project with its conversation. Given a design document it is a
- * design project holding that document, with no HTML pages; without one it is
- * an HTML project with one empty page.
+ * Creates a project with its conversation and one empty HTML page. Its design
+ * canvas is made the first time it is used.
  */
-export const createProject = async (
-  userId: string,
-  title: string,
-  { document }: { document?: Uint8Array } = {},
-) => {
+export const createProject = async (userId: string, title: string) => {
   const db = getDb();
 
-  const [project] = await db
-    .insert(projects)
-    .values({ userId, title, kind: document ? "design" : "html" })
-    .returning();
+  const [project] = await db.insert(projects).values({ userId, title }).returning();
 
   if (!project) {
     throw new Error("Unable to create project.");
   }
 
-  let page: typeof projectPages.$inferSelect | null = null;
-  if (document) {
-    await db.insert(projectDocuments).values({ projectId: project.id, data: Buffer.from(document) });
-  } else {
-    [page] = await db
-      .insert(projectPages)
-      .values({
-        projectId: project.id,
-        title: "Page 1",
-        sortOrder: 0,
-      })
-      .returning();
-  }
+  const [page] = await db
+    .insert(projectPages)
+    .values({
+      projectId: project.id,
+      title: "Page 1",
+      sortOrder: 0,
+    })
+    .returning();
 
   const [conversation] = await db
     .insert(conversations)

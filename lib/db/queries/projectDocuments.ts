@@ -1,8 +1,9 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { projectDocuments, projects } from "@/lib/db/schema";
+import { createDesignDocument } from "@/lib/design/document";
 
-/** A design project's document and its version, or null when the project is not the user's or not a design project. */
+/** A project's design document and its version, or null when the project is not the user's or has no design yet. */
 export const getProjectDocumentForUser = async (projectId: string, userId: string) => {
   const db = getDb();
   const [row] = await db
@@ -12,6 +13,29 @@ export const getProjectDocumentForUser = async (projectId: string, userId: strin
     .where(and(eq(projectDocuments.projectId, projectId), eq(projects.userId, userId)))
     .limit(1);
   return row ? { data: new Uint8Array(row.data), version: row.version } : null;
+};
+
+/**
+ * The project's design document, made empty the first time it is needed: when
+ * the user opens the Design tab or an agent first builds a screen. Null only
+ * when the project is not the user's.
+ */
+export const getOrCreateProjectDocumentForUser = async (projectId: string, userId: string) => {
+  const existing = await getProjectDocumentForUser(projectId, userId);
+  if (existing) return existing;
+  const db = getDb();
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+    .limit(1);
+  if (!project) return null;
+  // Two first writes can race here; the second keeps the first one's document.
+  await db
+    .insert(projectDocuments)
+    .values({ projectId, data: Buffer.from(await createDesignDocument()) })
+    .onConflictDoNothing();
+  return getProjectDocumentForUser(projectId, userId);
 };
 
 /** Only the version, for the editor's poll that notices an agent's writes. */

@@ -10,7 +10,7 @@ import {
 } from "@/lib/design/generation";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
-import { DESIGN_CATALOG, designHandlerFor } from "@/lib/mcp/designTools";
+import { DESIGN_CATALOG, designToolHandler, listScreensHandler } from "@/lib/mcp/designTools";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { createRateLimiter, getClientIp, withRateLimitHeaders } from "@/lib/rate-limit";
 import { isUserApiKeyCryptoError } from "@/lib/security/userApiKeyCrypto";
@@ -40,7 +40,7 @@ const describeToolCall = (name: string, args: Record<string, unknown>) => {
 };
 
 /**
- * Generates screens in a design project on the user's own key: the model calls
+ * Generates screens on a project's design canvas on the user's own key: the model calls
  * the design tools, and each call saves to the project as it happens. The
  * response streams one JSON event per line for the editor's progress list.
  */
@@ -55,7 +55,7 @@ export async function POST(request: Request, context: { params: Promise<{ projec
 
   const { projectId } = await context.params;
   const project = await getProjectForUser(projectId, sessionUser.id);
-  if (!project || project.kind !== "design") return fail("Design project not found.", 404);
+  if (!project) return fail("Project not found.", 404);
 
   const parsed = await readJsonBodyWithLimit<{ prompt?: unknown; modelName?: unknown }>(request);
   if (!parsed.ok) return parsed.response;
@@ -98,7 +98,7 @@ export async function POST(request: Request, context: { params: Promise<{ projec
   }
 
   const tools = buildGenerationTools([...MCP_TOOLS, ...DESIGN_CATALOG], async (name, args) => {
-    const handler = designHandlerFor(name);
+    const handler = name === "list_pages" ? listScreensHandler : designToolHandler(name);
     if (!handler) return { content: [{ type: "text", text: `Unknown tool ${name}.` }], isError: true };
     return handler(sessionUser.id, { ...args, projectId });
   });

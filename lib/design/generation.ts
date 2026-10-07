@@ -1,5 +1,5 @@
 /**
- * In-app generation for design projects: a model on the user's own key builds
+ * In-app generation for the design canvas: a model on the user's own key builds
  * screens with the same tools an MCP agent gets. Every call runs through the
  * MCP design handlers, so each screen saves the moment it is added and shows
  * up in the open editor on its next poll, and a user editing at the same time

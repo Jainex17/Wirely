@@ -1,5 +1,5 @@
 /**
- * A design project's document, the scene of frames the canvas draws and design
+ * A project's design document, the scene of frames the Design tab draws and design
  * tools edit, kept as .fig bytes. The same functions run in the browser and on
  * the server, since the design engine has no DOM dependency: the editor loads
  * a document with them, and an MCP tool call loads, edits, and saves one.

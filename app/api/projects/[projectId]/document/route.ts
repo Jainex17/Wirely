@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import {
-  getProjectDocumentForUser,
+  getOrCreateProjectDocumentForUser,
   saveProjectDocumentForUser,
 } from "@/lib/db/queries/projectDocuments";
 import { logger } from "@/lib/logger";
@@ -18,14 +18,17 @@ interface RouteContext {
 const DOCUMENT_MAX_BYTES = 4_000_000;
 const VERSION_HEADER = "x-document-version";
 
-/** A design project's document as .fig bytes, with its version in a header. */
+/**
+ * The project's design document as .fig bytes, with its version in a header.
+ * The first open of the Design tab makes an empty one.
+ */
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const sessionUser = await getRequestSessionUser();
     if (!sessionUser) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
     const { projectId } = await context.params;
-    const document = await getProjectDocumentForUser(projectId, sessionUser.id);
+    const document = await getOrCreateProjectDocumentForUser(projectId, sessionUser.id);
     if (!document) return NextResponse.json({ error: "Document not found." }, { status: 404 });
 
     return new Response(Buffer.from(document.data), {

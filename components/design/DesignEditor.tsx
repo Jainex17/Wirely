@@ -67,23 +67,32 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(naviga
 interface DesignEditorProps {
   projectId: string;
   projectTitle: string;
+  /** The switch to the project's HTML tab. */
+  viewTabs: ReactNode;
   /** Models in-app generation can run on the user's keys. */
   models: GenerateModel[];
   initialMessages: ChatMessage[];
 }
 
 /**
- * The editor for a design project: a Figma-like canvas of screens built from
- * design nodes, with layers on the left and properties on the right. The
+ * A project's Design tab: a Figma-like canvas of screens built from design
+ * nodes, with layers on the left and properties on the right. The
  * document loads once, then saves as the user edits and reloads when an agent
  * changes it (see documentSync.ts).
  */
-export default function DesignEditor({ projectId, projectTitle, models, initialMessages }: DesignEditorProps) {
+export default function DesignEditor({ projectId, projectTitle, viewTabs, models, initialMessages }: DesignEditorProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [commands, setCommands] = useState<DesignCommands | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
+  // there too, as the HTML tab does.
+  useEffect(() => {
+    document.body.classList.add("editor-theme");
+    return () => document.body.classList.remove("editor-theme");
+  }, []);
 
   // Load, create the editor, mount the canvas, and sync, as one lifetime, so
   // a remount (React's development double run included) starts clean.
@@ -111,7 +120,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
         const stopSync = startDocumentSync(projectId, created, version, {
           onStatus: setSaveStatus,
           onConflict: ({ keepMine, loadTheirs }) => {
-            conflictToast = toast("An agent changed this project while you were editing.", {
+            conflictToast = toast("An agent changed this design while you were editing.", {
               duration: Number.POSITIVE_INFINITY,
               action: { label: "Keep my edits", onClick: keepMine },
               cancel: { label: "Load theirs", onClick: loadTheirs },
@@ -191,6 +200,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
         style={canvasBackground === "dark" ? undefined : { backgroundColor: CANVAS_BACKGROUND_COLORS[canvasBackground] }}
       >
         <div ref={canvasRef} className="absolute inset-0" />
+        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">{viewTabs}</div>
         {loadError ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{loadError}</div>
         ) : null}
@@ -203,7 +213,6 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
         ) : null}
       </main>
       <RightPanel
-        projectId={projectId}
         design={editor ? <PropertiesPanel editor={editor} /> : null}
         generate={<GeneratePanel projectId={projectId} models={models} initialMessages={initialMessages} />}
       />
@@ -216,11 +225,8 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
  * stays mounted while hidden, so a run keeps streaming when the user switches
  * to Design to look at a screen.
  */
-function RightPanel({ projectId, design, generate }: { projectId: string; design: ReactNode; generate: ReactNode }) {
-  // A prompt carried over from the home page runs on open, so show its progress.
-  const [tab, setTab] = useState<"design" | "generate">(() =>
-    sessionStorage.getItem(`wirePrompt:${projectId}`) ? "generate" : "design",
-  );
+function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNode }) {
+  const [tab, setTab] = useState<"design" | "generate">("design");
   return (
     <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-sidebar">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 text-sm">
@@ -384,7 +390,7 @@ function EmptyHint({ editor }: { editor: Editor }) {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <p className="max-w-sm text-center text-sm text-muted-foreground">
-        No screens yet. Ask your agent to design one, or draw a frame with the Frame tool.
+        No screens yet. Draw a frame with the Frame tool, or ask your agent to design one or to make an HTML page editable.
       </p>
     </div>
   );

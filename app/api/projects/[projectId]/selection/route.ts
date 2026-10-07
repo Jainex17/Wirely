@@ -31,15 +31,15 @@ export async function PUT(request: Request, context: RouteContext) {
     if (!parsed.ok) return parsed.response;
     const { projectId } = await context.params;
 
-    // A design project sends the ids of its selected layers.
+    // The Design tab sends the ids of its selected layers.
     if (Array.isArray(parsed.data.nodeIds)) {
       const nodeIds = parsed.data.nodeIds;
       if (nodeIds.length > MAX_SELECTED_LAYERS || !nodeIds.every((id) => typeof id === "string" && DESIGN_NODE_ID.test(id))) {
         return NextResponse.json({ error: "nodeIds must be layer ids." }, { status: 400 });
       }
       const project = await getProjectForUser(projectId, sessionUser.id);
-      if (!project || project.kind !== "design") {
-        return NextResponse.json({ error: "Design project not found." }, { status: 404 });
+      if (!project) {
+        return NextResponse.json({ error: "Project not found." }, { status: 404 });
       }
       await saveCanvasSelection(projectId, null, nodeIds.length > 0 ? nodeIds.join(",") : null);
       return new Response(null, { status: 204 });

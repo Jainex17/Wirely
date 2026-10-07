@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { PageDeviceType } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
@@ -45,6 +45,8 @@ interface WireEditorProps {
   /** Server time the initial pages were read, the first change cursor. */
   pagesLoadedAt: string;
   initialModelName: WireModelName;
+  /** The switch to the project's Design tab. */
+  viewTabs: ReactNode;
   initialMessages: Array<
     Message &
       WireConversationModelUsage & {
@@ -69,6 +71,7 @@ export default function WireEditor({
   initialProject,
   pagesLoadedAt,
   initialModelName,
+  viewTabs,
   initialMessages,
 }: WireEditorProps) {
   const { signOut } = useClerk();
@@ -349,6 +352,7 @@ export default function WireEditor({
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
+            <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">{viewTabs}</div>
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
               <DesignTokensDialog projectId={wireId} />
               <ShareProjectButton projectId={wireId} />

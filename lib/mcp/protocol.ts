@@ -32,15 +32,18 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
   "After create_project, give the user the editor URL it returns.",
-  "A project is an HTML project unless created with kind: \"design\". Only call create_project " +
-    "with kind: \"design\" when the user asks for a design project. A design project's screens " +
-    "are design nodes, like frames in Figma. Call get_design_reference once, then add each " +
-    "screen with add_screen (desktop or mobile) as design JSX. Edit with the design tools: " +
-    "get_page_tree or get_jsx for node ids, render with parent_id or replace_id to add or swap " +
-    "a part, and set_fill, set_layout, set_text, update_node, and batch_update for small " +
-    "changes, instead of rebuilding a screen.",
-  "add_page, patch_page, edit_element, get_page_outline, and the HTML rules are for HTML " +
-    "projects only. list_pages, get_page, get_page_png, and delete_page work for both kinds.",
+  "A project has two tabs. The HTML tab holds HTML pages (add_page), the default for every " +
+    "mock. The Design tab holds screens built from design nodes the user edits like Figma " +
+    "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
+    "or asks, in chat or in a comment, to make an HTML page editable: then read the page with " +
+    "get_page and rebuild it with add_screen, keeping the HTML page. For design screens, call " +
+    "get_design_reference once, then edit with the design tools: get_page_tree or get_jsx for " +
+    "node ids, render with parent_id or replace_id to add or swap a part, and set_fill, " +
+    "set_layout, set_text, update_node, and batch_update for small changes, instead of " +
+    "rebuilding a screen.",
+  "list_pages lists both: HTML pages by UUID and design screens by node id like \"1:23\". " +
+    "get_page, get_page_png, and delete_page take either. patch_page, edit_element, " +
+    "get_page_outline, set_prototype_flow, and the HTML rules are for HTML pages only.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -220,26 +223,20 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_projects",
     description:
-      "List the user's Wirely projects. A project is one design file: a canvas of screens. HTML " +
-      "projects hold HTML pages; design projects hold screens built from design nodes.",
+      "List the user's Wirely projects. A project is one design file with two tabs: HTML pages, " +
+      "and design screens built from design nodes.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "create_project",
     description:
-      "Create a Wirely project. An HTML project (the default) starts with one empty page named " +
-      "\"Page 1\" that you write with add_page and update_page. A design project starts with no " +
-      "screens: add them with add_screen and edit them with the design tools. Returns the id and " +
-      "the editor URL; give that URL to the user so they can watch the project.",
+      "Create a Wirely project. It starts with one empty HTML page named \"Page 1\" that you " +
+      "write with update_page, and an empty Design tab for add_screen. Returns the id and the " +
+      "editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
       properties: {
         title: { type: "string", description: "Project name, shown on the home page." },
-        kind: {
-          type: "string",
-          enum: ["design", "html"],
-          description: "html for HTML pages (default), design for screens built from design nodes.",
-        },
       },
       required: ["title"],
       additionalProperties: false,
@@ -248,8 +245,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_pages",
     description:
-      "List the screens in a project. In a design project: each screen's id, name, device, " +
-      "and size. In an HTML project: each page's title, device type, and HTML size.",
+      "List a project's HTML pages (id, title, device type, HTML size) and its design screens " +
+      "(node id, name, device, size), each with its kind.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID },
@@ -334,10 +331,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "get_page",
     description:
-      "In a design project, return a screen (pageId is its screen id) as React with Tailwind " +
-      "classes, the spec to rebuild it in the user's codebase. In an HTML project, return a " +
-      "page's full HTML source, or with nodeId just one element's exact source, ready to use " +
-      "as patch_page's oldString.",
+      "Return an HTML page's full HTML source, or with nodeId just one element's exact source, " +
+      "ready to use as patch_page's oldString. Given a design screen id, return the screen as " +
+      "React with Tailwind classes, the spec to rebuild it in the user's codebase.",
     inputSchema: {
       type: "object",
       properties: {
@@ -424,7 +420,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "get_page_png",
     description:
-      "Render a screen (a design project's screen id or an HTML page id) as the canvas shows " +
+      "Render an HTML page or a design screen (by its page id or screen id) as the canvas shows " +
       "it and return a PNG. Use it to look at a screen and iterate on it visually.",
     inputSchema: {
       type: "object",
@@ -579,8 +575,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "delete_page",
     description:
-      "Delete a screen from a design project, or a page from an HTML project, where the last " +
-      "remaining page cannot be deleted.",
+      "Delete an HTML page, or a design screen by its screen id. The last remaining HTML page " +
+      "cannot be deleted.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID, pageId: PAGE_ID, note: NOTE },

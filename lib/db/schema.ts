@@ -12,10 +12,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
-// "html" projects hold generated HTML pages, one per row in project_pages.
-// "design" projects hold one node document in project_documents, a scene of
-// frames that the canvas, MCP agents, and in-app generation edit with design
-// tools. New projects are design projects; html ones keep their editor.
+// No longer read. A project used to be one kind or the other; now every
+// project has HTML pages in project_pages and, once used, a design canvas in
+// project_documents, shown as two tabs of one editor. Drop the column once the
+// code that stopped writing it is deployed everywhere.
 export const projectKindEnum = pgEnum("project_kind", ["html", "design"]);
 export const conversationRoleEnum = pgEnum("conversation_role", [
   "system",
@@ -549,7 +549,7 @@ export type GenerationOutputStatus =
   (typeof generationOutputStatusEnum.enumValues)[number];
 
 /**
- * A design project's document: the whole scene as .fig bytes, the format the
+ * A project's design canvas: the whole scene as .fig bytes, the format the
  * design engine reads and writes. `version` goes up on every save, so a writer
  * that read an older version is refused instead of overwriting newer work.
  */

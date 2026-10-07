@@ -1,6 +1,6 @@
 /**
  * The design tools an MCP agent or in-app generation uses to build and edit a
- * design project's screens. They are the design engine's own tools, run
+ * screens on a project's design canvas. They are the design engine's own tools, run
  * headless against the project's document, so an agent builds nodes the same
  * way the editor does. Each takes the engine's arguments plus `projectId`.
  *
@@ -103,7 +103,7 @@ const tidySchema = (value: unknown): unknown => {
 /** The engine's design JSX guide for agents, under Wirely's own title. */
 export const DESIGN_REFERENCE = JSX_REFERENCE.replace(/^# .*\n/, "# Wirely design JSX\n");
 
-const PROJECT_ID = { type: "string", description: "A design project id from list_projects or create_project." };
+const PROJECT_ID = { type: "string", description: "A project id from list_projects or create_project." };
 
 // Arguments the engine's own server uses to write output to a local file.
 // Wirely runs tools in memory and returns their output, so it never offers them.
@@ -120,7 +120,7 @@ export const DESIGN_MCP_TOOLS: McpToolDefinition[] = DESIGN_TOOL_NAMES.flatMap((
   return [
     {
       name,
-      description: `${tool.description} Works on a design project.`,
+      description: `${tool.description} Works on the project's design canvas.`,
       inputSchema: {
         type: "object",
         properties: {

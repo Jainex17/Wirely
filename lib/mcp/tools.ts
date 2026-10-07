@@ -39,13 +39,14 @@ import {
 } from "@/lib/db/queries/reviews";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
-import { createDesignDocument } from "@/lib/design/document";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import {
   describeDesignSelection,
-  designHandlerFor,
+  designToolHandler,
   getDesignReference,
-  isDesignOnlyTool,
+  isScreenId,
+  listProjectScreens,
+  screenHandlerFor,
 } from "@/lib/mcp/designTools";
 import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
@@ -140,33 +141,16 @@ const listProjects: ToolHandler = async (userId) => {
 };
 
 const createProjectHandler: ToolHandler = async (userId, args, origin) => {
-  const parsed = z
-    .object({
-      title: z.string().trim().min(1).max(TITLE_MAX_CHARS),
-      kind: z.enum(["design", "html"]).default("html"),
-    })
-    .safeParse(args);
+  const parsed = z.object({ title: z.string().trim().min(1).max(TITLE_MAX_CHARS) }).safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
 
-  if (parsed.data.kind === "html") {
-    const { project, page } = await createProject(userId, parsed.data.title);
-    if (!page) return fail("The project was created without its first page. Call add_page to add one.");
-    return succeed(
-      `Created HTML project "${project.title}" (id: ${project.id}). It starts with an ` +
-        `empty page "Page 1" (id: ${page.id}).\n` +
-        `Open it in Wirely: ${origin}/wire/${project.id}\n` +
-        "Share this link with the user so they can watch the pages you write.",
-    );
-  }
-
-  const { project } = await createProject(userId, parsed.data.title, {
-    document: await createDesignDocument(),
-  });
+  const { project, page } = await createProject(userId, parsed.data.title);
+  if (!page) return fail("The project was created without its first page. Call add_page to add one.");
   return succeed(
-    `Created design project "${project.title}" (id: ${project.id}). It has no screens yet.\n` +
+    `Created project "${project.title}" (id: ${project.id}). Its HTML tab starts with an empty ` +
+      `page "Page 1" (id: ${page.id}); its Design tab starts empty.\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
-      "Share this link with the user so they can watch the screens you build. Call " +
-      "get_design_reference once, then add screens with add_screen.",
+      "Share this link with the user so they can watch the pages you write.",
   );
 };
 
@@ -177,18 +161,23 @@ const listPages: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const pages = await listProjectPagesForUser({ projectId: project.id, userId });
+  const [pages, screens] = await Promise.all([
+    listProjectPagesForUser({ projectId: project.id, userId }),
+    listProjectScreens(project.id, userId),
+  ]);
   return succeed(
-    JSON.stringify(
-      pages.map((page) => ({
+    JSON.stringify([
+      ...pages.map((page) => ({
         id: page.id,
+        kind: "html",
         title: page.title,
         deviceType: page.deviceType,
         sortOrder: page.sortOrder,
         htmlBytes: Buffer.byteLength(page.htmlContent ?? "", "utf8"),
         updatedAt: page.updatedAt.toISOString(),
       })),
-    ),
+      ...screens.map((screen) => ({ ...screen, kind: "design" })),
+    ]),
   );
 };
 
@@ -209,7 +198,6 @@ const addPage: ToolHandler = async (userId, args) => {
 
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
-  if (project.kind === "design") return fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
 
   // A copy reuses HTML that was sanitized when it was stored, so the agent
   // spends a few patches on a variant instead of the whole document.
@@ -870,7 +858,6 @@ const importUrl: ToolHandler = async (userId, args) => {
 
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
-  if (project.kind === "design") return fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
 
   const deviceType = parsed.data.deviceType ?? "desktop";
   let imported: Awaited<ReturnType<typeof importUrlHtml>>;
@@ -971,34 +958,36 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 /** Guards the `tools/list` catalog and the dispatch table against drifting apart. */
 export const TOOL_NAMES = Object.keys(TOOL_HANDLERS).sort();
 
-const DESIGN_PROJECT_MESSAGE =
-  "is a design project: its screens are design nodes, not HTML pages. Use add_screen for a new " +
-  "screen and the design tools (render, set_fill, set_layout, update_node, and others) to edit " +
-  "one. list_pages lists its screens.";
+// Page tools that read or write a page's HTML. Given a screen id they get the
+// screen version of the tool, when there is one, or a message saying which fit.
+const HTML_PAGE_TOOLS = new Set([
+  "get_page",
+  "get_page_png",
+  "delete_page",
+  "get_page_changes",
+  "get_page_outline",
+  "patch_page",
+  "edit_element",
+  "update_page",
+]);
 
-// Tools whose answer depends on the kind of project, so the call looks it up
-// first. Other page tools find no pages in a design project and say so.
-const KIND_DEPENDENT_TOOLS = new Set(["list_pages", "get_page", "get_page_png", "delete_page"]);
+const SCREEN_ID_MESSAGE =
+  "is a screen on the Design tab: it is design nodes, not HTML. Edit it with the design tools " +
+  "(render, set_fill, set_layout, set_text, update_node, and others), passing node ids from " +
+  "get_page_tree. get_page returns it as code and get_page_png renders it.";
 
 /**
- * The handler for a call. A design project answers the shared page tools for
- * its screens and runs design tools on its document; an HTML project keeps
- * the page tools and refuses design tools with a message saying which fit.
+ * The handler for a call, chosen from the arguments alone so a bad call never
+ * costs a database read. A page id names an HTML page and a node id like
+ * "1:23" names a screen on the design canvas.
  */
-const resolveHandler = async (userId: string, name: string, args: ToolArgs): Promise<ToolHandler | ToolCallResult> => {
+const resolveHandler = (name: string, args: ToolArgs): ToolHandler | ToolCallResult => {
   if (name === "get_design_reference") return getDesignReference;
-  if ((isDesignOnlyTool(name) || KIND_DEPENDENT_TOOLS.has(name)) && typeof args.projectId === "string") {
-    const project = await getProjectForUser(args.projectId, userId);
-    if (project?.kind === "design") return designHandlerFor(name) ?? fail(`"${project.title}" ${DESIGN_PROJECT_MESSAGE}`);
-    if (project && isDesignOnlyTool(name)) {
-      return fail(
-        `"${project.title}" is an HTML project. Edit it with add_page, patch_page, and ` +
-          "edit_element, or call create_project with kind: \"design\" for a design project.",
-      );
-    }
-    if (!project && isDesignOnlyTool(name)) return fail("Project not found. Use list_projects for valid ids.");
+  const designTool = designToolHandler(name);
+  if (designTool) return designTool;
+  if (HTML_PAGE_TOOLS.has(name) && isScreenId(args.pageId)) {
+    return screenHandlerFor(name) ?? fail(`Screen ${String(args.pageId)} ${SCREEN_ID_MESSAGE}`);
   }
-  if (isDesignOnlyTool(name)) return fail(`${name} needs the projectId of a design project.`);
   return TOOL_HANDLERS[name] ?? fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
 };
 
@@ -1010,7 +999,7 @@ export const callTool = async (
 ): Promise<ToolCallResult> => {
   let result: HandlerResult;
   try {
-    const handler = await resolveHandler(userId, name, args);
+    const handler = resolveHandler(name, args);
     result = typeof handler === "function" ? await handler(userId, args, origin) : handler;
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });
