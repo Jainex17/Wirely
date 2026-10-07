@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, FileCode2, PencilRuler } from "lucide-react";
+import { ArrowLeft, LayoutTemplate, PencilRuler } from "lucide-react";
 import Link from "next/link";
 import { type ComponentProps, type ReactNode, useEffect, useState } from "react";
 import DesignEditor from "@/components/design/DesignEditorLoader";
@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 import { type CanvasView as EditorView, useEditorStore } from "@/store/useEditorStore";
 import WireEditor from "./WireEditor";
 
-const VIEWS: Array<{ view: EditorView; label: string; Icon: typeof FileCode2 }> = [
-  { view: "html", label: "HTML", Icon: FileCode2 },
-  { view: "design", label: "Design", Icon: PencilRuler },
+const VIEWS: Array<{ view: EditorView; label: string; Icon: typeof LayoutTemplate }> = [
+  { view: "html", label: "Prototype", Icon: LayoutTemplate },
+  { view: "design", label: "Editor", Icon: PencilRuler },
 ];
 
 /**
@@ -70,7 +70,7 @@ interface ProjectEditorProps {
 }
 
 /**
- * One project, two canvases: HTML pages on one tab, design screens on the other.
+ * One project, two canvases: HTML pages on Prototype, design screens on Editor.
  * Each tab mounts the first time it is opened and then stays mounted, hidden
  * while the other is on screen, so switching back is instant: the canvas,
  * sidebars, and chat are as the user left them, with no reload. The hidden tab
@@ -86,8 +86,8 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
   const changeView = (next: EditorView) => {
     setView(next);
     setOpened((current) => (current.has(next) ? current : new Set(current).add(next)));
-    // Both tabs are written explicitly, so a project that defaults to Design
-    // still reloads on HTML when that is what the user picked.
+    // Both tabs are written explicitly, so a project that defaults to Editor
+    // still reloads on Prototype when that is what the user picked.
     const url = new URL(window.location.href);
     url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);

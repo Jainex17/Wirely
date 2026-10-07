@@ -64,7 +64,7 @@ export interface AgentEdit {
 
 export type CanvasBackground = "dark" | "gray" | "light";
 
-/** The project tab on screen: HTML pages or design screens. */
+/** The project tab on screen: HTML pages on Prototype, design screens on Editor. */
 export type CanvasView = "html" | "design";
 
 /** Canvas colors for the gray and light backgrounds. Dark keeps the editor theme's own background. */

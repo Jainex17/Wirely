@@ -32,8 +32,8 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
   "After create_project, give the user the editor URL it returns.",
-  "A project has two tabs. The HTML tab holds HTML pages (add_page), the default for every " +
-    "mock. The Design tab holds screens built from design nodes the user edits like Figma " +
+  "A project has two tabs. The Prototype tab holds HTML pages (add_page), the default for every " +
+    "mock. The Editor tab holds screens built from design nodes the user edits like Figma " +
     "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
     "or asks, in chat or in a comment, to make an HTML page editable: then read the page with " +
     "get_page and rebuild it with add_screen, keeping the HTML page. For design screens, call " +
@@ -231,7 +231,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "create_project",
     description:
       "Create a Wirely project. It starts with one empty HTML page named \"Page 1\" that you " +
-      "write with update_page, and an empty Design tab for add_screen. Returns the id and the " +
+      "write with update_page, and an empty Editor tab for add_screen. Returns the id and the " +
       "editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
