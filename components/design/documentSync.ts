@@ -151,8 +151,8 @@ export const startDocumentSync = (
   window.addEventListener("beforeunload", warnBeforeLeaving);
 
   return () => {
-    // Switching to the HTML tab unmounts the editor with the newest edit
-    // still inside its debounce window. Send it now, or it goes with the
+    // Leaving the project unmounts the editor with the newest edit still
+    // inside its debounce window. Send it now, or it goes with the
     // timer; an edit that lands while a save is already out is flushed by
     // that save's finish instead. The graph stays readable after the
     // editor's dispose, so a save in flight when teardown reaches it still

@@ -153,6 +153,7 @@ export default function DesignEditor({ projectId, models, initialMessages }: Des
     if (!editor || !commands) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target) || editor.state.editingTextId) return;
+      if (useEditorStore.getState().canvasView !== "design") return;
       const commandId = findCommandForKey(EDITOR_COMMAND_METADATA, event, IS_MAC);
       if (commandId) {
         const command = commands.commands[commandId];
@@ -223,7 +224,7 @@ export default function DesignEditor({ projectId, models, initialMessages }: Des
 function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNode }) {
   const [tab, setTab] = useState<"design" | "generate">("design");
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-sidebar">
+    <aside className="flex w-72 shrink-0 flex-col border-l border-sidebar-border bg-sidebar">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 text-sm">
         {(["design", "generate"] as const).map((name) => (
           <button
@@ -246,7 +247,7 @@ function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNo
 }
 
 function SidebarPlaceholder() {
-  return <aside className="w-60 shrink-0 border-r border-border bg-sidebar" />;
+  return <aside className="w-60 shrink-0 border-r border-sidebar-border bg-sidebar" />;
 }
 
 function TopBar({ editor, saveStatus }: { editor: Editor; saveStatus: SaveStatus }) {

@@ -78,7 +78,7 @@ export default function WireEditor({
   // Collapsing either side panel gives the canvas that width. Each toggle stays
   // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
-  const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(true);
+  const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"chat" | "design" | "activity">("chat");
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);

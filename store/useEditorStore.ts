@@ -64,6 +64,9 @@ export interface AgentEdit {
 
 export type CanvasBackground = "dark" | "gray" | "light";
 
+/** The project tab on screen: HTML pages or design screens. */
+export type CanvasView = "html" | "design";
+
 /** Canvas colors for the gray and light backgrounds. Dark keeps the editor theme's own background. */
 export const CANVAS_BACKGROUND_COLORS = { gray: "#8e9097", light: "#eceef2" } as const;
 
@@ -120,6 +123,12 @@ export interface ProjectState {
 }
 
 export interface EditorState extends CanvasState, ProjectState {
+  /**
+   * Both tabs stay mounted once opened, so their window shortcuts check this
+   * and stay quiet while the other tab is on screen.
+   */
+  canvasView: CanvasView;
+  setCanvasView: (view: CanvasView) => void;
   setCamera: (camera: CameraState) => void;
   panBy: (delta: Point2D) => void;
   zoomAtViewportPoint: (viewportPoint: Point2D, zoom: number) => void;
@@ -420,6 +429,8 @@ export const useEditorStore = create<EditorState>()(
     (set) => ({
       ...DEFAULT_CANVAS_STATE,
       ...generateEmptyState(),
+      canvasView: "html",
+      setCanvasView: (canvasView) => set({ canvasView }),
 
       setCamera: (camera) =>
         set({

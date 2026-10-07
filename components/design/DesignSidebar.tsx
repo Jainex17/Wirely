@@ -63,9 +63,12 @@ export default function DesignSidebar({ editor }: { editor: Editor }) {
   const activeScreenId = selectedIds[0] ? (screenOf(editor, selectedIds[0])?.id ?? null) : null;
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sm">
-      <section className="shrink-0 border-b border-border py-2">
-        <h2 className="px-3 pb-1 text-xs font-medium text-muted-foreground">Screens</h2>
+    <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm">
+      <section className="shrink-0 border-b border-border pb-2">
+        <h2 className="flex h-9 items-center gap-1 px-3 text-[11px] font-semibold text-foreground">
+          Screens
+          <span className="font-normal tabular-nums text-muted-foreground">{screens.length}</span>
+        </h2>
         {screens.length === 0 ? <p className="px-3 py-1 text-xs text-muted-foreground">No screens yet.</p> : null}
         <ul className="max-h-56 overflow-y-auto">
           {screens.map((screen) => (
