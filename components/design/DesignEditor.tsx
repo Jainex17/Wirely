@@ -200,13 +200,14 @@ export default function DesignEditor({ projectId, projectTitle, viewTabs, models
         style={canvasBackground === "dark" ? undefined : { backgroundColor: CANVAS_BACKGROUND_COLORS[canvasBackground] }}
       >
         <div ref={canvasRef} className="absolute inset-0" />
-        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">{viewTabs}</div>
         {loadError ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{loadError}</div>
         ) : null}
+        {/* The way back to the HTML tab, while the design loads or when it failed to. */}
+        {editor ? null : <div className="absolute right-3 top-3 z-20">{viewTabs}</div>}
         {editor ? (
           <>
-            <TopBar editor={editor} saveStatus={saveStatus} />
+            <TopBar editor={editor} saveStatus={saveStatus} viewTabs={viewTabs} />
             <Toolbar editor={editor} />
             <EmptyHint editor={editor} />
           </>
@@ -263,13 +264,14 @@ function SidebarPlaceholder({ title }: { title: string }) {
   );
 }
 
-function TopBar({ editor, saveStatus }: { editor: Editor; saveStatus: SaveStatus }) {
+function TopBar({ editor, saveStatus, viewTabs }: { editor: Editor; saveStatus: SaveStatus; viewTabs: ReactNode }) {
   const zoom = useEditorValue(editor, (current) => current.state.zoom);
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-end gap-2 px-3">
       <span className="pointer-events-auto self-center rounded-md bg-sidebar/90 px-2 py-1 text-xs text-muted-foreground">
         {SAVE_LABELS[saveStatus]}
       </span>
+      {viewTabs}
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-sidebar p-0.5 text-xs">
         <IconButton label="Zoom out" onClick={() => editor.zoomToLevel(editor.state.zoom / 1.25)}>
           <Minus className="h-3.5 w-3.5" />

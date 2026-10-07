@@ -352,8 +352,8 @@ export default function WireEditor({
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
-            <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">{viewTabs}</div>
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              {viewTabs}
               <DesignTokensDialog projectId={wireId} />
               <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
