@@ -1,5 +1,6 @@
 "use client";
 
+import { FileCode2, PencilRuler } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import DesignEditor from "@/components/design/DesignEditorLoader";
 import { cn } from "@/lib/utils";
@@ -7,17 +8,24 @@ import WireEditor from "./WireEditor";
 
 export type EditorView = "html" | "design";
 
-const VIEW_LABELS: Record<EditorView, string> = { html: "HTML", design: "Design" };
+const VIEWS: Array<{ view: EditorView; label: string; Icon: typeof FileCode2 }> = [
+  { view: "html", label: "HTML", Icon: FileCode2 },
+  { view: "design", label: "Design", Icon: PencilRuler },
+];
 
-/** The tab switch at the top of both canvases. */
+/**
+ * The strip across the top of the project, one file-style tab for each canvas.
+ * It sits outside both editors, so it stays up while the design module loads
+ * and when it fails to.
+ */
 function ViewTabs({ view, onChange }: { view: EditorView; onChange: (view: EditorView) => void }) {
   return (
     <div
       role="tablist"
       aria-label="Canvas"
-      className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-sidebar p-0.5 text-xs shadow-lg"
+      className="editor-theme flex h-11 shrink-0 items-end gap-1 border-b border-sidebar-border bg-sidebar px-3 pt-1.5"
     >
-      {(Object.keys(VIEW_LABELS) as EditorView[]).map((option) => (
+      {VIEWS.map(({ view: option, label, Icon }) => (
         <button
           key={option}
           type="button"
@@ -25,11 +33,14 @@ function ViewTabs({ view, onChange }: { view: EditorView; onChange: (view: Edito
           aria-selected={view === option}
           onClick={() => onChange(option)}
           className={cn(
-            "rounded-md px-3 py-1 font-medium transition-colors",
-            view === option ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground",
+            "mb-1 flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors",
+            view === option
+              ? "bg-foreground/10 text-foreground"
+              : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
           )}
         >
-          {VIEW_LABELS[option]}
+          <Icon className="h-4 w-4" />
+          {label}
         </button>
       ))}
     </div>
@@ -38,8 +49,8 @@ function ViewTabs({ view, onChange }: { view: EditorView; onChange: (view: Edito
 
 interface ProjectEditorProps {
   initialView: EditorView;
-  wire: Omit<ComponentProps<typeof WireEditor>, "viewTabs">;
-  design: Omit<ComponentProps<typeof DesignEditor>, "viewTabs">;
+  wire: ComponentProps<typeof WireEditor>;
+  design: ComponentProps<typeof DesignEditor>;
 }
 
 /**
@@ -58,6 +69,12 @@ export default function ProjectEditor({ initialView, wire, design }: ProjectEdit
     url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);
   };
-  const tabs = <ViewTabs view={view} onChange={changeView} />;
-  return view === "design" ? <DesignEditor {...design} viewTabs={tabs} /> : <WireEditor {...wire} viewTabs={tabs} />;
+  return (
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
+      <ViewTabs view={view} onChange={changeView} />
+      <div className="min-h-0 flex-1">
+        {view === "design" ? <DesignEditor {...design} /> : <WireEditor {...wire} />}
+      </div>
+    </div>
+  );
 }

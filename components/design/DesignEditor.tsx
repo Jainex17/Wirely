@@ -4,7 +4,7 @@ import { createDefaultEditorState, createEditor, type Editor, EDITOR_TOOLS, type
 import { EDITOR_COMMAND_METADATA } from "@open-pencil/vue";
 import { ArrowLeft, ChevronUp, Circle, Columns3, Contrast, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Plus, Scan, Square, Type } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { reactive } from "vue";
 import { toast } from "@/components/ui/sonner";
 import { type DesignCommands, mountDesignCanvas } from "@/components/design/designCanvas";
@@ -67,13 +67,9 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(naviga
 interface DesignEditorProps {
   projectId: string;
   projectTitle: string;
-  /** The switch to the project's HTML tab. */
-  viewTabs: ReactNode;
   /** Models in-app generation can run on the user's keys. */
   models: GenerateModel[];
   initialMessages: ChatMessage[];
-  /** Fired when this module mounts, so its loader can drop the fallback that holds the tab switch. */
-  onModuleReady?: () => void;
 }
 
 /**
@@ -82,16 +78,12 @@ interface DesignEditorProps {
  * document loads once, then saves as the user edits and reloads when an agent
  * changes it (see documentSync.ts).
  */
-export default function DesignEditor({ projectId, projectTitle, viewTabs, models, initialMessages, onModuleReady }: DesignEditorProps) {
+export default function DesignEditor({ projectId, projectTitle, models, initialMessages }: DesignEditorProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [commands, setCommands] = useState<DesignCommands | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Before paint, so the loader's fallback and this module's own switch
-  // never both show.
-  useLayoutEffect(() => onModuleReady?.(), [onModuleReady]);
 
   // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
   // there too, as the HTML tab does.
@@ -199,7 +191,7 @@ export default function DesignEditor({ projectId, projectTitle, viewTabs, models
   }, [editor, canvasBackground]);
 
   return (
-    <div className="editor-theme flex h-dvh w-full overflow-hidden bg-background text-foreground">
+    <div className="editor-theme flex h-full w-full overflow-hidden bg-background text-foreground">
       {editor ? <DesignSidebar editor={editor} projectTitle={projectTitle} /> : <SidebarPlaceholder title={projectTitle} />}
       <main
         className="relative min-w-0 flex-1 bg-background"
@@ -209,11 +201,9 @@ export default function DesignEditor({ projectId, projectTitle, viewTabs, models
         {loadError ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{loadError}</div>
         ) : null}
-        {/* The way back to the HTML tab, while the design loads or when it failed to. */}
-        {editor ? null : <div className="absolute right-3 top-3 z-20">{viewTabs}</div>}
         {editor ? (
           <>
-            <TopBar editor={editor} saveStatus={saveStatus} viewTabs={viewTabs} />
+            <TopBar editor={editor} saveStatus={saveStatus} />
             <Toolbar editor={editor} />
             <EmptyHint editor={editor} />
           </>
@@ -270,14 +260,13 @@ function SidebarPlaceholder({ title }: { title: string }) {
   );
 }
 
-function TopBar({ editor, saveStatus, viewTabs }: { editor: Editor; saveStatus: SaveStatus; viewTabs: ReactNode }) {
+function TopBar({ editor, saveStatus }: { editor: Editor; saveStatus: SaveStatus }) {
   const zoom = useEditorValue(editor, (current) => current.state.zoom);
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-end gap-2 px-3">
       <span className="pointer-events-auto self-center rounded-md bg-sidebar/90 px-2 py-1 text-xs text-muted-foreground">
         {SAVE_LABELS[saveStatus]}
       </span>
-      {viewTabs}
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-sidebar p-0.5 text-xs">
         <IconButton label="Zoom out" onClick={() => editor.zoomToLevel(editor.state.zoom / 1.25)}>
           <Minus className="h-3.5 w-3.5" />
