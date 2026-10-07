@@ -62,11 +62,12 @@ export const startDocumentSync = (
     saveTimer = setTimeout(() => void save(), delay);
   };
 
-  const save = async () => {
+  const save = async (force = false) => {
     saveTimer = null;
     if (stopped || saving || !dirty || inConflict) return;
-    // A drag or a text edit in progress saves when it ends.
-    if (editor.isInteractiveEditing()) return scheduleSave();
+    // A drag or a text edit in progress saves when it ends. A forced save
+    // comes from teardown, where no end is coming, so it saves through.
+    if (!force && editor.isInteractiveEditing()) return scheduleSave();
     saving = true;
     dirty = false;
     onStatus("saving");
@@ -142,10 +143,18 @@ export const startDocumentSync = (
   window.addEventListener("beforeunload", warnBeforeLeaving);
 
   return () => {
+    // Switching to the HTML tab unmounts the editor with the newest edit
+    // still inside its debounce window. Send it now, or it goes with the
+    // timer. The graph stays readable after the editor's dispose, so a save
+    // in flight when teardown reaches it still serializes.
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (dirty && !saving && !inConflict) void save(true);
     stopped = true;
     stopHistory();
     clearInterval(pollTimer);
-    if (saveTimer) clearTimeout(saveTimer);
     window.removeEventListener("beforeunload", warnBeforeLeaving);
   };
 };
