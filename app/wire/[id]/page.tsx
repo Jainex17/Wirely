@@ -49,10 +49,11 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
     (option) => aiSettings.enabledModelIds.includes(option.id) && keyPresence[option.provider],
   ).map((option) => ({ id: option.id, label: option.label, tier: option.tier }));
   // A project used only on its Design tab, like one from before the tabs,
-  // opens there.
+  // opens there — unless the URL names a tab, which is the user's last
+  // explicit choice and wins over that default.
   const isDesignOnly =
     designVersion !== null && projectDetail.pages.every((page) => !page.htmlContent.trim());
-  const initialView = view === "design" || isDesignOnly ? "design" : "html";
+  const initialView = view === "design" || (view !== "html" && isDesignOnly) ? "design" : "html";
 
   const initialPages =
     projectDetail.pages.length > 0

@@ -52,9 +52,10 @@ export default function ProjectEditor({ initialView, wire, design }: ProjectEdit
   const [view, setView] = useState(initialView);
   const changeView = (next: EditorView) => {
     setView(next);
+    // Both tabs are written explicitly, so a project that defaults to Design
+    // still reloads on HTML when that is what the user picked.
     const url = new URL(window.location.href);
-    if (next === "design") url.searchParams.set("view", "design");
-    else url.searchParams.delete("view");
+    url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);
   };
   const tabs = <ViewTabs view={view} onChange={changeView} />;
