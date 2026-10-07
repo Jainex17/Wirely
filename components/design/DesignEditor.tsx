@@ -4,7 +4,7 @@ import { createDefaultEditorState, createEditor, type Editor, EDITOR_TOOLS, type
 import { EDITOR_COMMAND_METADATA } from "@open-pencil/vue";
 import { ArrowLeft, ChevronUp, Circle, Columns3, Contrast, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Plus, Scan, Square, Type } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { reactive } from "vue";
 import { toast } from "@/components/ui/sonner";
 import { type DesignCommands, mountDesignCanvas } from "@/components/design/designCanvas";
@@ -72,6 +72,8 @@ interface DesignEditorProps {
   /** Models in-app generation can run on the user's keys. */
   models: GenerateModel[];
   initialMessages: ChatMessage[];
+  /** Fired when this module mounts, so its loader can drop the fallback that holds the tab switch. */
+  onModuleReady?: () => void;
 }
 
 /**
@@ -80,12 +82,16 @@ interface DesignEditorProps {
  * document loads once, then saves as the user edits and reloads when an agent
  * changes it (see documentSync.ts).
  */
-export default function DesignEditor({ projectId, projectTitle, viewTabs, models, initialMessages }: DesignEditorProps) {
+export default function DesignEditor({ projectId, projectTitle, viewTabs, models, initialMessages, onModuleReady }: DesignEditorProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [commands, setCommands] = useState<DesignCommands | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Before paint, so the loader's fallback and this module's own switch
+  // never both show.
+  useLayoutEffect(() => onModuleReady?.(), [onModuleReady]);
 
   // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
   // there too, as the HTML tab does.
