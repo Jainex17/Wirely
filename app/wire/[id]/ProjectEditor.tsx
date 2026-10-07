@@ -23,7 +23,7 @@ function ViewTabs({ view, onChange }: { view: EditorView; onChange: (view: Edito
     <div
       role="tablist"
       aria-label="Canvas"
-      className="editor-theme flex h-11 shrink-0 items-end gap-1 border-b border-sidebar-border bg-sidebar px-3 pt-1.5"
+      className="editor-theme flex h-9 shrink-0 border-b border-sidebar-border bg-background"
     >
       {VIEWS.map(({ view: option, label, Icon }) => (
         <button
@@ -33,13 +33,15 @@ function ViewTabs({ view, onChange }: { view: EditorView; onChange: (view: Edito
           aria-selected={view === option}
           onClick={() => onChange(option)}
           className={cn(
-            "mb-1 flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors",
+            // The open tab covers the strip's bottom border, so it sits flush
+            // with the editor under it instead of above a line.
+            "-mb-px flex min-w-24 items-center gap-1.5 border-r border-sidebar-border px-3.5 text-xs font-medium transition-colors",
             view === option
-              ? "bg-foreground/10 text-foreground"
-              : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+              ? "bg-sidebar text-foreground"
+              : "text-muted-foreground hover:bg-sidebar/50 hover:text-foreground",
           )}
         >
-          <Icon className="h-4 w-4" />
+          <Icon className="h-3.5 w-3.5" />
           {label}
         </button>
       ))}
