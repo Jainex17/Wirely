@@ -88,6 +88,7 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
   return (
     <ProjectEditor
       initialView={initialView}
+      projectTitle={projectTitle}
       wire={{
         wireId: resolvedParams.id,
         sessionUser: {
@@ -102,7 +103,6 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
       }}
       design={{
         projectId: resolvedParams.id,
-        projectTitle,
         models: designModels,
         initialMessages: initialMessages.map(({ id, role, content }) => ({ id, role, content })),
       }}

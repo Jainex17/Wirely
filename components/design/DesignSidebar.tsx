@@ -3,7 +3,6 @@
 import type { Editor } from "@open-pencil/core/editor";
 import type { SceneNode } from "@open-pencil/scene-graph";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -19,7 +18,6 @@ import {
   Square,
   Type,
 } from "lucide-react";
-import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { shallowEqual, useEditorValue } from "@/components/design/useEditorValue";
 import { SCREEN_SIZES } from "@/lib/design/document";
@@ -52,7 +50,7 @@ const screenOf = (editor: Editor, id: string) => {
  * The left panel: the project's screens, then the layers of the screen the
  * selection is in, the way Figma lists frames and their layers.
  */
-export default function DesignSidebar({ editor, projectTitle }: { editor: Editor; projectTitle: string }) {
+export default function DesignSidebar({ editor }: { editor: Editor }) {
   const screens = useEditorValue(
     editor,
     (current) =>
@@ -66,12 +64,6 @@ export default function DesignSidebar({ editor, projectTitle }: { editor: Editor
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sm">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Link href="/" aria-label="Back to projects" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <span className="truncate font-medium">{projectTitle}</span>
-      </div>
       <section className="shrink-0 border-b border-border py-2">
         <h2 className="px-3 pb-1 text-xs font-medium text-muted-foreground">Screens</h2>
         {screens.length === 0 ? <p className="px-3 py-1 text-xs text-muted-foreground">No screens yet.</p> : null}
