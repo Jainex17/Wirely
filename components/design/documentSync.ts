@@ -64,9 +64,11 @@ export const startDocumentSync = (
 
   const save = async (force = false) => {
     saveTimer = null;
-    if (stopped || saving || !dirty || inConflict) return;
+    if (saving || !dirty || inConflict) return;
     // A drag or a text edit in progress saves when it ends. A forced save
-    // comes from teardown, where no end is coming, so it saves through.
+    // comes from teardown, where no end is coming, so it saves through —
+    // stopped or not.
+    if (stopped && !force) return;
     if (!force && editor.isInteractiveEditing()) return scheduleSave();
     saving = true;
     dirty = false;
@@ -107,7 +109,13 @@ export const startDocumentSync = (
       scheduleSave(RETRY_DELAY_MS);
     } finally {
       saving = false;
-      if (dirty && !inConflict && !saveTimer) scheduleSave();
+      if (dirty && !inConflict && !saveTimer) {
+        // An edit that landed while this save ran is still only in the
+        // editor, and teardown may have happened since: the debounce would
+        // fire into a stopped sync, so it goes out now.
+        if (stopped) void save(true);
+        else scheduleSave();
+      }
     }
   };
 
@@ -145,8 +153,10 @@ export const startDocumentSync = (
   return () => {
     // Switching to the HTML tab unmounts the editor with the newest edit
     // still inside its debounce window. Send it now, or it goes with the
-    // timer. The graph stays readable after the editor's dispose, so a save
-    // in flight when teardown reaches it still serializes.
+    // timer; an edit that lands while a save is already out is flushed by
+    // that save's finish instead. The graph stays readable after the
+    // editor's dispose, so a save in flight when teardown reaches it still
+    // serializes.
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
