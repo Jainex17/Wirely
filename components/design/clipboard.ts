@@ -11,13 +11,15 @@
 import type { Editor } from "@open-pencil/core/editor";
 import { extractImageFilesFromClipboard } from "@open-pencil/vue";
 import { isTypingTarget } from "@/components/design/keyboard";
+import { useEditorStore } from "@/store/useEditorStore";
 
 type Payload = Awaited<ReturnType<Editor["prepareCopy"]>>;
 
 let lastCopy: Payload | null = null;
 
-const isEditingText = (editor: Editor, event: Event) =>
-  isTypingTarget(event.target) || editor.state.editingTextId !== null;
+/** The event is for a text field, the text being edited, or the Prototype tab, so the canvas leaves it alone. */
+const isNotForCanvas = (editor: Editor, event: Event) =>
+  isTypingTarget(event.target) || editor.state.editingTextId !== null || useEditorStore.getState().canvasView !== "design";
 
 const hasPageTextSelection = () => (window.getSelection()?.toString() ?? "") !== "";
 
@@ -48,19 +50,19 @@ const pastePoint = (editor: Editor) => {
 /** Listens for clipboard events on the window. Returns the function that stops listening. */
 export const bindDesignClipboard = (editor: Editor) => {
   const onCopy = (event: ClipboardEvent) => {
-    if (isEditingText(editor, event) || hasPageTextSelection() || editor.state.selectedIds.size === 0) return;
+    if (isNotForCanvas(editor, event) || hasPageTextSelection() || editor.state.selectedIds.size === 0) return;
     event.preventDefault();
     void copySelection(editor);
   };
 
   const onCut = (event: ClipboardEvent) => {
-    if (isEditingText(editor, event) || editor.state.selectedIds.size === 0) return;
+    if (isNotForCanvas(editor, event) || editor.state.selectedIds.size === 0) return;
     event.preventDefault();
     void copySelection(editor).then((copied) => copied && editor.deleteSelected());
   };
 
   const onPaste = (event: ClipboardEvent) => {
-    if (isEditingText(editor, event)) return;
+    if (isNotForCanvas(editor, event)) return;
     event.preventDefault();
     const point = pastePoint(editor);
 

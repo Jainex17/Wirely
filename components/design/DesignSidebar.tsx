@@ -3,7 +3,6 @@
 import type { Editor } from "@open-pencil/core/editor";
 import type { SceneNode } from "@open-pencil/scene-graph";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -19,7 +18,6 @@ import {
   Square,
   Type,
 } from "lucide-react";
-import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { shallowEqual, useEditorValue } from "@/components/design/useEditorValue";
 import { SCREEN_SIZES } from "@/lib/design/document";
@@ -52,7 +50,7 @@ const screenOf = (editor: Editor, id: string) => {
  * The left panel: the project's screens, then the layers of the screen the
  * selection is in, the way Figma lists frames and their layers.
  */
-export default function DesignSidebar({ editor, projectTitle }: { editor: Editor; projectTitle: string }) {
+export default function DesignSidebar({ editor }: { editor: Editor }) {
   const screens = useEditorValue(
     editor,
     (current) =>
@@ -65,15 +63,12 @@ export default function DesignSidebar({ editor, projectTitle }: { editor: Editor
   const activeScreenId = selectedIds[0] ? (screenOf(editor, selectedIds[0])?.id ?? null) : null;
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sm">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Link href="/" aria-label="Back to projects" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <span className="truncate font-medium">{projectTitle}</span>
-      </div>
-      <section className="shrink-0 border-b border-border py-2">
-        <h2 className="px-3 pb-1 text-xs font-medium text-muted-foreground">Screens</h2>
+    <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm">
+      <section className="shrink-0 border-b border-border pb-2">
+        <h2 className="flex h-9 items-center gap-1 px-3 text-[11px] font-semibold text-foreground">
+          Screens
+          <span className="font-normal tabular-nums text-muted-foreground">{screens.length}</span>
+        </h2>
         {screens.length === 0 ? <p className="px-3 py-1 text-xs text-muted-foreground">No screens yet.</p> : null}
         <ul className="max-h-56 overflow-y-auto">
           {screens.map((screen) => (

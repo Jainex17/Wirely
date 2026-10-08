@@ -1,9 +1,7 @@
 "use client";
 
 import { type DragEvent, type ReactNode, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   ChevronRight,
   Copy,
   Frame,
@@ -17,7 +15,6 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import AssetsFolder from "@/components/AssetsFolder";
 import LayerTree from "@/components/LayerTree";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
 import { insertAsset, runElementAction } from "@/store/pageEdits";
@@ -27,28 +24,24 @@ const PAGE_DRAG_TYPE = "application/x-wirely-page";
 
 interface PagesPanelProps {
   projectId: string;
-  projectTitle: string;
   isCollapsed: boolean;
   onToggle: () => void;
   footer: ReactNode;
 }
 
 /**
- * The editor's left column: project title, one tree of every page on the
- * canvas with each page's layers nested under it, and the account menu.
- * Clicking a page pans the canvas to it at the current zoom; dragging it onto
- * a group moves it in or out. The focused page opens by default. Collapsed,
- * the column shrinks to a floating title card over the canvas so the toggle
- * back stays in the same corner.
+ * The editor's left column: one tree of every page on the canvas with each
+ * page's layers nested under it, and the account menu. Clicking a page pans
+ * the canvas to it at the current zoom; dragging it onto a group moves it in or
+ * out. The focused page opens by default. Collapsed, the column shrinks to a
+ * floating button over the canvas, in the corner where its toggle was.
  */
 export default function PagesPanel({
   projectId,
-  projectTitle,
   isCollapsed,
   onToggle,
   footer,
 }: PagesPanelProps) {
-  const router = useRouter();
   const { pages, pageGroups, focusedPageId, selectedNode, focusPage, focusPages, movePageToGroup } =
     useEditorStore(
       useShallow((state) => ({
@@ -165,71 +158,44 @@ export default function PagesPanel({
     );
   };
 
-  const titleRow = (
-    <div className="flex h-12 shrink-0 items-center gap-1 px-2">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 shrink-0"
-        onClick={() => router.push("/")}
-        aria-label="Back to home"
-        title="Back to home"
-      >
-        <ArrowLeft className="h-4 w-4" />
-      </Button>
-      <h1 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-        {projectTitle}
-      </h1>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 shrink-0"
-        onClick={onToggle}
-        aria-label={isCollapsed ? "Show pages panel" : "Hide pages panel"}
-        aria-expanded={!isCollapsed}
-        title={isCollapsed ? "Show pages panel" : "Hide pages panel"}
-      >
-        {isCollapsed ? (
-          <PanelLeftOpen className="h-4 w-4" />
-        ) : (
-          <PanelLeftClose className="h-4 w-4" />
-        )}
-      </Button>
-    </div>
+  const toggle = (
+    <HeaderButton label={isCollapsed ? "Show pages panel" : "Hide pages panel"} onClick={onToggle}>
+      {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+    </HeaderButton>
   );
 
   if (isCollapsed) {
     return (
-      <div className="absolute left-3 top-3 z-30 w-64 rounded-lg border border-sidebar-border bg-sidebar">
-        {titleRow}
+      <div className="absolute left-3 top-3 z-30 rounded-lg border border-sidebar-border bg-sidebar p-0.5">
+        {toggle}
       </div>
     );
   }
 
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
-      <div className="border-b border-sidebar-border">{titleRow}</div>
-      <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-2">
+      <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-1.5">
         <span className="text-[11px] font-semibold text-foreground">Pages</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
-        {selectedNode ? (
-          <div className="ml-auto flex items-center">
-            <HeaderButton label="Duplicate element (Cmd+D)" onClick={() => runElementAction(projectId, "duplicate")}>
-              <Copy className="h-3.5 w-3.5" />
-            </HeaderButton>
-            <HeaderButton
-              label="Wrap element in frame (Cmd+Alt+G)"
-              onClick={() => runElementAction(projectId, "wrap")}
-            >
-              <Frame className="h-3.5 w-3.5" />
-            </HeaderButton>
-            <HeaderButton label="Delete element (Delete)" onClick={() => runElementAction(projectId, "delete")}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </HeaderButton>
-          </div>
-        ) : null}
+        <div className="ml-auto flex items-center">
+          {selectedNode ? (
+            <div className="mr-1 flex items-center border-r border-sidebar-border pr-1">
+              <HeaderButton label="Duplicate element (Cmd+D)" onClick={() => runElementAction(projectId, "duplicate")}>
+                <Copy className="h-3.5 w-3.5" />
+              </HeaderButton>
+              <HeaderButton
+                label="Wrap element in frame (Cmd+Alt+G)"
+                onClick={() => runElementAction(projectId, "wrap")}
+              >
+                <Frame className="h-3.5 w-3.5" />
+              </HeaderButton>
+              <HeaderButton label="Delete element (Delete)" onClick={() => runElementAction(projectId, "delete")}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </HeaderButton>
+            </div>
+          ) : null}
+          {toggle}
+        </div>
       </div>
       <nav role="tree" aria-label="Pages and layers" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
         {pageGroups.map((group) => (

@@ -440,7 +440,7 @@ export default function EditorWorkspace({
     // the selected one, Shift+0 goes to 100%. Digits match on `code` because
     // Shift turns the `key` for 1 into "!".
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) {
+      if (isEditableTarget(event.target) || useEditorStore.getState().canvasView !== "html") {
         return;
       }
 

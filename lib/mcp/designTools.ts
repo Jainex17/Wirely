@@ -204,8 +204,8 @@ export const ADD_SCREEN_TOOL: McpToolDefinition = {
   name: "add_screen",
   description:
     "Add a screen to the project's design canvas, to the right of the others. Design screens are " +
-    "built from nodes the user edits like Figma frames, on the project's Design tab; HTML pages " +
-    "(add_page) are on its HTML tab. Write it as design JSX: one root " +
+    "built from nodes the user edits like Figma frames, on the project's Editor tab; HTML pages " +
+    "(add_page) are on its Prototype tab. Write it as design JSX: one root " +
     "<Frame> with auto layout (flex=\"col\"), padding, and gap, holding <Frame>, <Text>, <Rectangle>, " +
     "<Ellipse>, <Image>, <svg>, and <Icon> nodes. The root is sized to the device: " +
     `desktop ${SCREEN_SIZES.desktop.width}×${SCREEN_SIZES.desktop.height}, ` +
@@ -242,7 +242,7 @@ export const DESIGN_CATALOG: McpToolDefinition[] = [DESIGN_REFERENCE_TOOL, ADD_S
 
 /**
  * get_selection on the design canvas: the layers the user has selected in the
- * Design tab, by the ids the design tools take, with the screen each sits in and
+ * Editor tab, by the ids the design tools take, with the screen each sits in and
  * the selection as design JSX.
  */
 export const describeDesignSelection = async (

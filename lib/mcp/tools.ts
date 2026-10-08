@@ -147,8 +147,8 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const { project, page } = await createProject(userId, parsed.data.title);
   if (!page) return fail("The project was created without its first page. Call add_page to add one.");
   return succeed(
-    `Created project "${project.title}" (id: ${project.id}). Its HTML tab starts with an empty ` +
-      `page "Page 1" (id: ${page.id}); its Design tab starts empty.\n` +
+    `Created project "${project.title}" (id: ${project.id}). Its Prototype tab starts with an empty ` +
+      `page "Page 1" (id: ${page.id}); its Editor tab starts empty.\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
       "Share this link with the user so they can watch the pages you write.",
   );
@@ -972,7 +972,7 @@ const HTML_PAGE_TOOLS = new Set([
 ]);
 
 const SCREEN_ID_MESSAGE =
-  "is a screen on the Design tab: it is design nodes, not HTML. Edit it with the design tools " +
+  "is a screen on the Editor tab: it is design nodes, not HTML. Edit it with the design tools " +
   "(render, set_fill, set_layout, set_text, update_node, and others), passing node ids from " +
   "get_page_tree. get_page returns it as code and get_page_png renders it.";
 

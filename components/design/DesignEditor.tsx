@@ -2,8 +2,7 @@
 
 import { createDefaultEditorState, createEditor, type Editor, EDITOR_TOOLS, type Tool, TOOL_SHORTCUTS } from "@open-pencil/core/editor";
 import { EDITOR_COMMAND_METADATA } from "@open-pencil/vue";
-import { ArrowLeft, ChevronUp, Circle, Columns3, Contrast, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Plus, Scan, Square, Type } from "lucide-react";
-import Link from "next/link";
+import { ChevronUp, Circle, Columns3, Contrast, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Plus, Scan, Square, Type } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { reactive } from "vue";
 import { toast } from "@/components/ui/sonner";
@@ -66,7 +65,6 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(naviga
 
 interface DesignEditorProps {
   projectId: string;
-  projectTitle: string;
   /** Models in-app generation can run on the user's keys. */
   models: GenerateModel[];
   initialMessages: ChatMessage[];
@@ -78,7 +76,7 @@ interface DesignEditorProps {
  * document loads once, then saves as the user edits and reloads when an agent
  * changes it (see documentSync.ts).
  */
-export default function DesignEditor({ projectId, projectTitle, models, initialMessages }: DesignEditorProps) {
+export default function DesignEditor({ projectId, models, initialMessages }: DesignEditorProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [commands, setCommands] = useState<DesignCommands | null>(null);
@@ -155,6 +153,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
     if (!editor || !commands) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target) || editor.state.editingTextId) return;
+      if (useEditorStore.getState().canvasView !== "design") return;
       const commandId = findCommandForKey(EDITOR_COMMAND_METADATA, event, IS_MAC);
       if (commandId) {
         const command = commands.commands[commandId];
@@ -192,7 +191,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
 
   return (
     <div className="editor-theme flex h-full w-full overflow-hidden bg-background text-foreground">
-      {editor ? <DesignSidebar editor={editor} projectTitle={projectTitle} /> : <SidebarPlaceholder title={projectTitle} />}
+      {editor ? <DesignSidebar editor={editor} /> : <SidebarPlaceholder />}
       <main
         className="relative min-w-0 flex-1 bg-background"
         style={canvasBackground === "dark" ? undefined : { backgroundColor: CANVAS_BACKGROUND_COLORS[canvasBackground] }}
@@ -225,7 +224,7 @@ export default function DesignEditor({ projectId, projectTitle, models, initialM
 function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNode }) {
   const [tab, setTab] = useState<"design" | "generate">("design");
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-l border-border bg-sidebar">
+    <aside className="flex w-72 shrink-0 flex-col border-l border-sidebar-border bg-sidebar">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 text-sm">
         {(["design", "generate"] as const).map((name) => (
           <button
@@ -247,17 +246,8 @@ function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNo
   );
 }
 
-function SidebarPlaceholder({ title }: { title: string }) {
-  return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar">
-      <div className="flex h-12 items-center gap-2 border-b border-border px-3">
-        <Link href="/" aria-label="Back to projects" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <span className="truncate text-sm font-medium">{title}</span>
-      </div>
-    </aside>
-  );
+function SidebarPlaceholder() {
+  return <aside className="w-60 shrink-0 border-r border-sidebar-border bg-sidebar" />;
 }
 
 function TopBar({ editor, saveStatus }: { editor: Editor; saveStatus: SaveStatus }) {
