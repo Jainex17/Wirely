@@ -1,78 +1,41 @@
 "use client";
 
-import { memo, type ReactNode } from "react";
+import { memo } from "react";
 import {
   ChevronUp,
   Columns3,
-  Contrast,
   Frame,
   Hand,
   LayoutGrid,
   Maximize,
   MessageCircle,
-  Minus,
   MousePointer2,
   PenTool,
-  Plus,
   Scan,
   Square,
   SquareDashedMousePointer,
   Type,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import {
+  CanvasBackgroundMenu,
+  menuTriggerClass,
+  ToolbarDivider,
+  ToolButton,
+  toolbarClass,
+  ZoomControls,
+} from "@/components/EditorChrome";
 import { type CanvasTool, MAX_CANVAS_ZOOM, MIN_CANVAS_ZOOM } from "@/lib/canvasScene";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
-import { type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
-
-const BACKGROUND_LABELS: Record<CanvasBackground, string> = {
-  dark: "Dark",
-  gray: "Gray",
-  light: "Light",
-};
-
-const menuTriggerClass =
-  "flex h-8 items-center gap-0.5 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
-
-function RailButton({
-  label,
-  isActive = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  isActive?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={isActive}
-      title={label}
-      className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-        isActive
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+import { useEditorStore } from "@/store/useEditorStore";
 
 interface CanvasToolbarProps {
   activeTool: CanvasTool;
@@ -84,18 +47,9 @@ interface CanvasToolbarProps {
  * the canvas re-renders on every pan frame and these props rarely change.
  */
 export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasToolbarProps) {
-  const {
-    canvasBackground,
-    focusedPageId,
-    setCanvasBackground,
-    arrangePages,
-    fitAllPages,
-    fitPage,
-  } = useEditorStore(
+  const { focusedPageId, arrangePages, fitAllPages, fitPage } = useEditorStore(
     useShallow((state) => ({
-      canvasBackground: state.canvasBackground,
       focusedPageId: state.focusedPageId,
-      setCanvasBackground: state.setCanvasBackground,
       arrangePages: state.arrangePages,
       fitAllPages: state.fitAllPages,
       fitPage: state.fitPage,
@@ -104,70 +58,79 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
 
   return (
     <div
-      className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-sidebar p-1 shadow-xl"
+      className={toolbarClass}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
-      <RailButton
+      <ToolButton
         label="Move (V)"
+        detail="Select pages and drag them around"
         isActive={activeTool === "select"}
         onClick={() => onToolChange("select")}
       >
         <MousePointer2 className="h-4 w-4" />
-      </RailButton>
-      <RailButton
+      </ToolButton>
+      <ToolButton
         label="Hand (H)"
+        detail="Pan the canvas. Hold Space for the same."
         isActive={activeTool === "grab"}
         onClick={() => onToolChange("grab")}
       >
         <Hand className="h-4 w-4" />
-      </RailButton>
-      <RailButton
+      </ToolButton>
+      <ToolButton
         label="Element (E)"
+        detail="Pick an element inside a page to edit or prompt on it"
         isActive={activeTool === "element"}
         onClick={() => onToolChange("element")}
       >
         <SquareDashedMousePointer className="h-4 w-4" />
-      </RailButton>
-      <RailButton
+      </ToolButton>
+      <ToolButton
         label="Pen (P)"
+        detail="Draw a vector path on a page"
         isActive={activeTool === "pen"}
         onClick={() => onToolChange("pen")}
       >
         <PenTool className="h-4 w-4" />
-      </RailButton>
-      <RailButton
-        label="Comment (C), click an element to comment on it"
+      </ToolButton>
+      <ToolButton
+        label="Comment (C)"
+        detail="Click an element to leave a comment on it"
         isActive={activeTool === "comment"}
         onClick={() => onToolChange("comment")}
       >
         <MessageCircle className="h-4 w-4" />
-      </RailButton>
-      <div className="mx-1 h-5 w-px bg-border" />
-      <RailButton
-        label="Frame (F), click in a page to add one"
+      </ToolButton>
+      <ToolbarDivider />
+      <ToolButton
+        label="Frame (F)"
+        detail="Click in a page to add a frame"
         isActive={activeTool === "frame"}
         onClick={() => onToolChange("frame")}
       >
         <Frame className="h-4 w-4" />
-      </RailButton>
-      <RailButton
+      </ToolButton>
+      <ToolButton
         label="Rectangle (R)"
+        detail="Click in a page to add a box"
         isActive={activeTool === "rectangle"}
         onClick={() => onToolChange("rectangle")}
       >
         <Square className="h-4 w-4" />
-      </RailButton>
-      <RailButton
+      </ToolButton>
+      <ToolButton
         label="Text (T)"
+        detail="Click in a page to add text"
         isActive={activeTool === "text"}
         onClick={() => onToolChange("text")}
       >
         <Type className="h-4 w-4" />
-      </RailButton>
-      <div className="mx-1 h-5 w-px bg-border" />
+      </ToolButton>
+      <ToolbarDivider />
       <DropdownMenu>
-        <DropdownMenuTrigger className={menuTriggerClass} aria-label="Arrange and zoom" title="Arrange and zoom">
+        <DropdownMenuTrigger className={menuTriggerClass} aria-label="Arrange and zoom"
+          data-tip-detail="Line pages up in a row or grid, or fit them in view">
           <LayoutGrid className="h-4 w-4" />
           <ChevronUp className="h-3 w-3" />
         </DropdownMenuTrigger>
@@ -200,34 +163,12 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className={menuTriggerClass}
-          aria-label={`Canvas background: ${BACKGROUND_LABELS[canvasBackground]}`}
-          title="Canvas background"
-        >
-          <Contrast className="h-4 w-4" />
-          <ChevronUp className="h-3 w-3" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="center" sideOffset={8} className="w-44">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">Canvas background</DropdownMenuLabel>
-          <DropdownMenuRadioGroup
-            value={canvasBackground}
-            onValueChange={(value) => setCanvasBackground(value as CanvasBackground)}
-          >
-            {(Object.keys(BACKGROUND_LABELS) as CanvasBackground[]).map((background) => (
-              <DropdownMenuRadioItem key={background} value={background}>
-                {BACKGROUND_LABELS[background]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <CanvasBackgroundMenu />
     </div>
   );
 });
 
-/** Zoom out, zoom to fit, and zoom in, for the canvas's top-right corner. */
+/** The zoom controls for the Prototype canvas's top-right corner. */
 export function CanvasZoomControls() {
   const { zoom, stepZoom, fitAllPages } = useEditorStore(
     useShallow((state) => ({
@@ -236,40 +177,14 @@ export function CanvasZoomControls() {
       fitAllPages: state.fitAllPages,
     })),
   );
-  const buttonClass =
-    "flex h-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30";
-
   return (
-    <div className="flex items-center rounded-lg border border-border bg-sidebar p-0.5 shadow-lg">
-      <button
-        type="button"
-        onClick={() => stepZoom(-1)}
-        disabled={zoom <= MIN_CANVAS_ZOOM}
-        className={cn(buttonClass, "w-7")}
-        aria-label="Zoom out (-)"
-        title="Zoom out (-)"
-      >
-        <Minus className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={fitAllPages}
-        className={cn(buttonClass, "min-w-12 px-1.5 text-xs font-medium tabular-nums text-foreground")}
-        aria-label="Zoom to fit (Shift+1)"
-        title="Zoom to fit (Shift+1)"
-      >
-        {Math.round(zoom)}%
-      </button>
-      <button
-        type="button"
-        onClick={() => stepZoom(1)}
-        disabled={zoom >= MAX_CANVAS_ZOOM}
-        className={cn(buttonClass, "w-7")}
-        aria-label="Zoom in (+)"
-        title="Zoom in (+)"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    <ZoomControls
+      zoom={zoom}
+      canZoomOut={zoom > MIN_CANVAS_ZOOM}
+      canZoomIn={zoom < MAX_CANVAS_ZOOM}
+      onZoomOut={() => stepZoom(-1)}
+      onFit={fitAllPages}
+      onZoomIn={() => stepZoom(1)}
+    />
   );
 }

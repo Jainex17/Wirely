@@ -6,14 +6,13 @@ import {
   Copy,
   Frame,
   Monitor,
-  PanelLeftClose,
-  PanelLeftOpen,
   PenTool,
   Smartphone,
   Trash2,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import AssetsFolder from "@/components/AssetsFolder";
+import { FloatingPanelToggle, PanelToggle } from "@/components/EditorChrome";
 import LayerTree from "@/components/LayerTree";
 import { cn } from "@/lib/utils";
 import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
@@ -21,6 +20,8 @@ import { insertAsset, runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
+
+const DEVICE_LABELS = { desktop: "Desktop page", mobile: "Mobile page", vector: "Vector page" } as const;
 
 interface PagesPanelProps {
   projectId: string;
@@ -122,6 +123,8 @@ export default function PagesPanel({
             insertAsset(projectId, page.id, asset, "end");
           }}
           onClick={() => focusPage(page.id)}
+          data-tip={page.title}
+          data-tip-detail={`${DEVICE_LABELS[page.deviceType ?? "desktop"]}. Click to go to it, drag it onto a group to move it.`}
           className={cn(
             "flex h-7 w-full cursor-default items-center gap-1.5 pr-3 text-xs font-medium transition-colors",
             isCurrent
@@ -158,19 +161,9 @@ export default function PagesPanel({
     );
   };
 
-  const toggle = (
-    <HeaderButton label={isCollapsed ? "Show pages panel" : "Hide pages panel"} onClick={onToggle}>
-      {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-    </HeaderButton>
-  );
+  const toggle = <PanelToggle side="left" name="pages panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
 
-  if (isCollapsed) {
-    return (
-      <div className="absolute left-3 top-3 z-30 rounded-lg border border-sidebar-border bg-sidebar p-0.5">
-        {toggle}
-      </div>
-    );
-  }
+  if (isCollapsed) return <FloatingPanelToggle className="left-3">{toggle}</FloatingPanelToggle>;
 
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
@@ -180,16 +173,17 @@ export default function PagesPanel({
         <div className="ml-auto flex items-center">
           {selectedNode ? (
             <div className="mr-1 flex items-center border-r border-sidebar-border pr-1">
-              <HeaderButton label="Duplicate element (Cmd+D)" onClick={() => runElementAction(projectId, "duplicate")}>
+              <HeaderButton label="Duplicate element (Cmd+D)" detail="Places a copy right after it" onClick={() => runElementAction(projectId, "duplicate")}>
                 <Copy className="h-3.5 w-3.5" />
               </HeaderButton>
               <HeaderButton
-                label="Wrap element in frame (Cmd+Alt+G)"
+                label="Wrap in frame (Cmd+Alt+G)"
+                detail="Puts the element inside a new div"
                 onClick={() => runElementAction(projectId, "wrap")}
               >
                 <Frame className="h-3.5 w-3.5" />
               </HeaderButton>
-              <HeaderButton label="Delete element (Delete)" onClick={() => runElementAction(projectId, "delete")}>
+              <HeaderButton label="Delete element (Delete)" detail="Cmd+Z brings it back" onClick={() => runElementAction(projectId, "delete")}>
                 <Trash2 className="h-3.5 w-3.5" />
               </HeaderButton>
             </div>
@@ -207,6 +201,8 @@ export default function PagesPanel({
             <button
               type="button"
               onClick={() => focusPages(group.pageIds)}
+              data-tip={group.name}
+              data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
               className="flex h-7 w-full items-center gap-1.5 pl-2 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
             >
               <span className="w-4 shrink-0" />
@@ -229,27 +225,19 @@ export default function PagesPanel({
         </div>
       </nav>
       <AssetsFolder projectId={projectId} />
-      <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
-        {footer}
-        <a
-          href="https://github.com/Jainex17/Wirely/issues"
-          target="_blank"
-          rel="noreferrer"
-          className="ml-auto px-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          Feedback
-        </a>
-      </div>
+      {footer}
     </aside>
   );
 }
 
 function HeaderButton({
   label,
+  detail,
   onClick,
   children,
 }: {
   label: string;
+  detail: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -258,7 +246,7 @@ function HeaderButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      title={label}
+      data-tip-detail={detail}
       className="rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
     >
       {children}

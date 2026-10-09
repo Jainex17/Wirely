@@ -194,7 +194,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
           disabled={!canUpload}
           onClick={() => inputRef.current?.click()}
           aria-label="Upload images"
-          title="Upload images"
+          data-tip="Upload images"
           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -243,7 +243,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   onClick={() => void copyPath(asset)}
-                  title="Copy path"
+                  data-tip="Copy path"
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- served from this app, already compressed */}
@@ -263,7 +263,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
                   type="button"
                   onClick={() => void remove(asset)}
                   aria-label={`Delete ${asset.name}`}
-                  title="Delete"
+                  data-tip="Delete"
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

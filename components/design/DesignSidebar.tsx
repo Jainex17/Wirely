@@ -3,7 +3,6 @@
 import type { Editor } from "@open-pencil/core/editor";
 import type { SceneNode } from "@open-pencil/scene-graph";
 import {
-  ChevronDown,
   ChevronRight,
   Circle,
   Component,
@@ -19,25 +18,32 @@ import {
   Type,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import AssetsFolder from "@/components/AssetsFolder";
+import { AccountFooter, FloatingPanelToggle, PanelToggle } from "@/components/EditorChrome";
+import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import { shallowEqual, useEditorValue } from "@/components/design/useEditorValue";
 import { SCREEN_SIZES } from "@/lib/design/document";
 import { cn } from "@/lib/utils";
 
-const TYPE_ICONS: Partial<Record<SceneNode["type"], ReactNode>> = {
-  FRAME: <Frame className="h-3.5 w-3.5" />,
-  SECTION: <Frame className="h-3.5 w-3.5" />,
-  GROUP: <Frame className="h-3.5 w-3.5" />,
-  TEXT: <Type className="h-3.5 w-3.5" />,
-  RECTANGLE: <Square className="h-3.5 w-3.5" />,
-  ELLIPSE: <Circle className="h-3.5 w-3.5" />,
-  LINE: <Minus className="h-3.5 w-3.5" />,
-  VECTOR: <PenTool className="h-3.5 w-3.5" />,
-  COMPONENT: <Component className="h-3.5 w-3.5" />,
-  INSTANCE: <Component className="h-3.5 w-3.5" />,
+const TYPE_ICONS: Partial<Record<SceneNode["type"], typeof Frame>> = {
+  FRAME: Frame,
+  SECTION: Frame,
+  GROUP: Frame,
+  TEXT: Type,
+  RECTANGLE: Square,
+  ELLIPSE: Circle,
+  LINE: Minus,
+  VECTOR: PenTool,
+  COMPONENT: Component,
+  INSTANCE: Component,
 };
 
-const nodeIcon = (node: SceneNode) =>
-  node.fills.some((fill) => fill.type === "IMAGE") ? <ImageIcon className="h-3.5 w-3.5" /> : (TYPE_ICONS[node.type] ?? <Square className="h-3.5 w-3.5" />);
+function NodeIcon({ node, className }: { node: SceneNode; className: string }) {
+  const Icon = node.fills.some((fill) => fill.type === "IMAGE") ? ImageIcon : (TYPE_ICONS[node.type] ?? Square);
+  return <Icon className={className} />;
+}
+
+const typeName = (type: string) => type.charAt(0) + type.slice(1).toLowerCase();
 
 /** The top-level frame holding `id`, which is the screen it belongs to. */
 const screenOf = (editor: Editor, id: string) => {
@@ -46,64 +52,144 @@ const screenOf = (editor: Editor, id: string) => {
   return node ?? null;
 };
 
+const indent = (depth: number) => 8 + depth * 12;
+
 /**
- * The left panel: the project's screens, then the layers of the screen the
- * selection is in, the way Figma lists frames and their layers.
+ * The Editor tab's left column, laid out like the Prototype tab's pages
+ * panel: one tree of every screen with its layers nested under it, the
+ * project's assets, and the account menu. The screen holding the selection
+ * opens by default. Collapsed, it shrinks to a button over the canvas.
  */
-export default function DesignSidebar({ editor }: { editor: Editor }) {
+export default function DesignSidebar({
+  editor,
+  projectId,
+  user,
+  isCollapsed,
+  onToggle,
+}: {
+  editor: Editor | null;
+  projectId: string;
+  user: UserAccountMenuUser;
+  isCollapsed: boolean;
+  onToggle: () => void;
+}) {
+  const toggle = <PanelToggle side="left" name="screens panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
+  if (isCollapsed) return <FloatingPanelToggle className="left-3">{toggle}</FloatingPanelToggle>;
+  return (
+    <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+      {editor ? <ScreenTree editor={editor} toggle={toggle} /> : <div className="min-h-0 flex-1" />}
+      <AssetsFolder projectId={projectId} />
+      <AccountFooter user={user} />
+    </aside>
+  );
+}
+
+function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
   const screens = useEditorValue(
     editor,
     (current) =>
       current
         .getChildren(current.state.currentPageId)
-        .map((node) => ({ id: node.id, name: node.name, width: node.width, type: node.type })),
+        .map((node) => ({
+          id: node.id,
+          name: node.name,
+          width: node.width,
+          height: node.height,
+          type: node.type,
+          visible: node.visible,
+        })),
     (a, b) => a.length === b.length && a.every((screen, index) => shallowEqual(screen, b[index])),
   );
   const selectedIds = useEditorValue(editor, (current) => [...current.state.selectedIds], arraysEqual);
   const activeScreenId = selectedIds[0] ? (screenOf(editor, selectedIds[0])?.id ?? null) : null;
+  // Screens the user opened or closed. The rest are open only while active.
+  const [openById, setOpenById] = useState<Record<string, boolean>>({});
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sm">
-      <section className="shrink-0 border-b border-border pb-2">
-        <h2 className="flex h-9 items-center gap-1 px-3 text-[11px] font-semibold text-foreground">
-          Screens
-          <span className="font-normal tabular-nums text-muted-foreground">{screens.length}</span>
-        </h2>
+    <>
+      <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-1.5">
+        <span className="text-[11px] font-semibold text-foreground">Screens</span>
+        <span className="text-[11px] tabular-nums text-muted-foreground">{screens.length}</span>
+        <div className="ml-auto flex items-center">{toggle}</div>
+      </div>
+      <nav role="tree" aria-label="Screens and layers" className="min-h-0 flex-1 overflow-y-auto pb-2">
         {screens.length === 0 ? <p className="px-3 py-1 text-xs text-muted-foreground">No screens yet.</p> : null}
-        <ul className="max-h-56 overflow-y-auto">
-          {screens.map((screen) => (
-            <li key={screen.id}>
-              <RenamableRow
-                name={screen.name}
-                icon={
-                  screen.type !== "FRAME" ? (
-                    (TYPE_ICONS[screen.type] ?? <Square className="h-3.5 w-3.5" />)
-                  ) : screen.width === SCREEN_SIZES.mobile.width ? (
-                    <Smartphone className="h-3.5 w-3.5" />
-                  ) : (
-                    <Monitor className="h-3.5 w-3.5" />
-                  )
-                }
-                isSelected={activeScreenId === screen.id}
-                onSelect={() => {
+        {screens.map((screen) => {
+          const isActive = activeScreenId === screen.id;
+          const isOpen = openById[screen.id] ?? isActive;
+          const Icon =
+            screen.type !== "FRAME"
+              ? (TYPE_ICONS[screen.type] ?? Square)
+              : screen.width === SCREEN_SIZES.mobile.width
+                ? Smartphone
+                : Monitor;
+          return (
+            <div key={screen.id}>
+              <div
+                role="treeitem"
+                aria-selected={isActive}
+                aria-expanded={isOpen}
+                data-tip={screen.name}
+                data-tip-detail={`${Math.round(screen.width)} × ${Math.round(screen.height)}. Click to go to it, double-click to rename.`}
+                onClick={() => {
                   editor.select([screen.id]);
                   editor.zoomToSelection();
                 }}
-                onRename={(name) => editor.renameNode(screen.id, name)}
-              />
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="min-h-0 flex-1 overflow-y-auto py-2">
-        <h2 className="px-3 pb-1 text-xs font-medium text-muted-foreground">Layers</h2>
-        {activeScreenId ? (
-          <LayerRow editor={editor} id={activeScreenId} depth={0} selectedIds={selectedIds} />
-        ) : (
-          <p className="px-3 py-1 text-xs text-muted-foreground">Select a screen to see its layers.</p>
-        )}
-      </section>
-    </aside>
+                className={cn(
+                  "group flex h-7 w-full cursor-default items-center gap-1.5 pr-2 text-xs font-medium transition-colors",
+                  isActive ? "text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+                  selectedIds.includes(screen.id) && "bg-primary/15",
+                  !screen.visible && "opacity-50",
+                )}
+                style={{ paddingLeft: indent(0) }}
+              >
+                <button
+                  type="button"
+                  aria-label={isOpen ? `Hide layers of ${screen.name}` : `Show layers of ${screen.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setOpenById((current) => ({ ...current, [screen.id]: !isOpen }));
+                  }}
+                  className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+                >
+                  <ChevronRight className={cn("h-3 w-3 transition-transform", isOpen && "rotate-90")} />
+                </button>
+                <Icon className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary")} />
+                <InlineName name={screen.name} onRename={(name) => editor.renameNode(screen.id, name)} />
+                <VisibilityButton
+                  isVisible={screen.visible}
+                  name="screen"
+                  onToggle={() => editor.toggleNodeVisibility(screen.id)}
+                />
+              </div>
+              {isOpen ? <ScreenLayers editor={editor} screenId={screen.id} selectedIds={selectedIds} /> : null}
+            </div>
+          );
+        })}
+      </nav>
+    </>
+  );
+}
+
+/** A screen's children, topmost first, the way Figma lists layers. */
+function ScreenLayers({ editor, screenId, selectedIds }: { editor: Editor; screenId: string; selectedIds: string[] }) {
+  const childIds = useEditorValue(editor, (current) => current.getNode(screenId)?.childIds ?? [], arraysEqual, [screenId]);
+  if (childIds.length === 0) {
+    return (
+      <p className="py-1 text-xs text-muted-foreground" style={{ paddingLeft: indent(1) + 20 }}>
+        No layers yet
+      </p>
+    );
+  }
+  return (
+    <div role="group">
+      {childIds
+        .slice()
+        .reverse()
+        .map((childId) => (
+          <LayerRow key={childId} editor={editor} id={childId} depth={1} selectedIds={selectedIds} />
+        ))}
+    </div>
   );
 }
 
@@ -122,9 +208,18 @@ function LayerRow({
     editor,
     (current) => {
       const found = current.getNode(id);
-      return found ? { name: found.name, visible: found.visible, childIds: found.childIds, node: found } : null;
+      return found
+        ? { name: found.name, visible: found.visible, width: found.width, height: found.height, childIds: found.childIds, node: found }
+        : null;
     },
-    (a, b) => !!a && !!b && a.name === b.name && a.visible === b.visible && arraysEqual(a.childIds, b.childIds),
+    (a, b) =>
+      !!a &&
+      !!b &&
+      a.name === b.name &&
+      a.visible === b.visible &&
+      a.width === b.width &&
+      a.height === b.height &&
+      arraysEqual(a.childIds, b.childIds),
     [id],
   );
   // Selecting a layer inside a screen opens its parents.
@@ -134,46 +229,46 @@ function LayerRow({
     }
     return false;
   });
-  const [isOpen, setIsOpen] = useState(depth === 0);
+  const [isOpen, setIsOpen] = useState(false);
   if (!node) return null;
   const hasChildren = node.childIds.length > 0;
   const isExpanded = isOpen || isOnSelectedPath;
+  const isSelected = selectedIds.includes(id);
 
   return (
     <>
       <div
+        role="treeitem"
+        aria-selected={isSelected}
+        aria-expanded={hasChildren ? isExpanded : undefined}
+        data-tip={node.name}
+        data-tip-detail={`${typeName(node.node.type)}, ${Math.round(node.width)} × ${Math.round(node.height)}. Shift-click to add to the selection.`}
         className={cn(
-          "group flex h-7 cursor-default items-center gap-1 pr-2",
-          selectedIds.includes(id) ? "bg-sky-600/30 text-foreground" : "hover:bg-accent",
+          "group flex h-7 cursor-default items-center gap-1.5 pr-2 text-xs",
+          isSelected ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
           !node.visible && "opacity-50",
         )}
-        style={{ paddingLeft: 8 + depth * 12 }}
+        style={{ paddingLeft: indent(depth) }}
         onClick={(event) => editor.select([id], event.shiftKey)}
       >
-        <button
-          type="button"
-          aria-label={isExpanded ? "Collapse" : "Expand"}
-          className={cn("flex h-4 w-4 items-center justify-center text-muted-foreground", !hasChildren && "invisible")}
-          onClick={(event) => {
-            event.stopPropagation();
-            setIsOpen(!isExpanded);
-          }}
-        >
-          {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        </button>
-        <span className="text-muted-foreground">{nodeIcon(node.node)}</span>
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+            className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsOpen(!isExpanded);
+            }}
+          >
+            <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+        <NodeIcon node={node.node} className={cn("h-3.5 w-3.5 shrink-0", isSelected && "text-primary")} />
         <InlineName name={node.name} onRename={(name) => editor.renameNode(id, name)} />
-        <button
-          type="button"
-          aria-label={node.visible ? "Hide layer" : "Show layer"}
-          className="ml-auto hidden text-muted-foreground hover:text-foreground group-hover:block"
-          onClick={(event) => {
-            event.stopPropagation();
-            editor.toggleNodeVisibility(id);
-          }}
-        >
-          {node.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-        </button>
+        <VisibilityButton isVisible={node.visible} name="layer" onToggle={() => editor.toggleNodeVisibility(id)} />
       </div>
       {isExpanded
         ? node.childIds
@@ -185,27 +280,20 @@ function LayerRow({
   );
 }
 
-function RenamableRow({
-  name,
-  icon,
-  isSelected,
-  onSelect,
-  onRename,
-}: {
-  name: string;
-  icon: ReactNode;
-  isSelected: boolean;
-  onSelect: () => void;
-  onRename: (name: string) => void;
-}) {
+/** Hides or shows a screen or layer. Always shown while hidden, so the way back is visible. */
+function VisibilityButton({ isVisible, name, onToggle }: { isVisible: boolean; name: string; onToggle: () => void }) {
   return (
-    <div
-      className={cn("flex h-7 cursor-default items-center gap-2 px-3", isSelected ? "bg-sky-600/30" : "hover:bg-accent")}
-      onClick={onSelect}
+    <button
+      type="button"
+      aria-label={`${isVisible ? "Hide" : "Show"} ${name}`}
+      className={cn("rounded p-0.5 hover:bg-foreground/10", isVisible ? "invisible group-hover:visible" : "visible")}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
     >
-      <span className="text-muted-foreground">{icon}</span>
-      <InlineName name={name} onRename={onRename} />
-    </div>
+      {isVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+    </button>
   );
 }
 
@@ -229,7 +317,7 @@ function InlineName({ name, onRename }: { name: string; onRename: (name: string)
       autoFocus
       value={draft}
       aria-label="Layer name"
-      className="min-w-0 flex-1 rounded border border-sky-600 bg-background px-1 text-sm outline-none"
+      className="min-w-0 flex-1 rounded border border-primary bg-background px-1 text-xs outline-none"
       onChange={(event) => setDraft(event.target.value)}
       onClick={(event) => event.stopPropagation()}
       onBlur={commit}

@@ -74,7 +74,7 @@ export function CommentCard({
           <button
             type="button"
             onClick={onToggleResolved}
-            title={isResolved ? "Reopen" : "Resolve"}
+            data-tip={isResolved ? "Reopen" : "Resolve"}
             aria-label={isResolved ? "Reopen comment" : "Resolve comment"}
             className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
@@ -85,7 +85,7 @@ export function CommentCard({
           <button
             type="button"
             onClick={onDelete}
-            title="Delete"
+            data-tip="Delete"
             aria-label="Delete comment"
             className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >

@@ -1767,7 +1767,7 @@ export default function WirePromptSidebar({
                 className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-accent"
                 onClick={handleStopGeneration}
                 aria-label="Stop generating"
-                title="Stop generating"
+                data-tip="Stop generating"
               >
                 <Square className="h-3.5 w-3.5" />
               </Button>

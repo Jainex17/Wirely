@@ -2,15 +2,30 @@
 
 import { ArrowLeft, LayoutTemplate, PencilRuler } from "lucide-react";
 import Link from "next/link";
-import { type ComponentProps, type ReactNode, useEffect, useState } from "react";
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useState } from "react";
 import DesignEditor from "@/components/design/DesignEditorLoader";
+import HoverTips from "@/components/HoverTips";
 import { cn } from "@/lib/utils";
 import { type CanvasView as EditorView, useEditorStore } from "@/store/useEditorStore";
 import WireEditor from "./WireEditor";
 
-const VIEWS: Array<{ view: EditorView; label: string; Icon: typeof LayoutTemplate }> = [
-  { view: "html", label: "Prototype", Icon: LayoutTemplate },
-  { view: "design", label: "Editor", Icon: PencilRuler },
+// Alt plus the tab's number switches to it. Neither canvas binds Alt+digit,
+// and matching on `code` keeps it working where Alt+1 types a character.
+const VIEWS: Array<{ view: EditorView; label: string; detail: string; code: string; Icon: typeof LayoutTemplate }> = [
+  {
+    view: "html",
+    label: "Prototype",
+    detail: "HTML pages your agent writes. Click through them as a prototype.",
+    code: "Digit1",
+    Icon: LayoutTemplate,
+  },
+  {
+    view: "design",
+    label: "Editor",
+    detail: "Screens made of layers you edit by hand, like Figma frames.",
+    code: "Digit2",
+    Icon: PencilRuler,
+  },
 ];
 
 /**
@@ -32,19 +47,20 @@ function TopBar({
       <Link
         href="/"
         aria-label="Back to projects"
-        title="Back to projects"
         className="flex h-full w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
       </Link>
       <h1 className="max-w-60 truncate pr-3 font-medium text-foreground">{projectTitle}</h1>
       <div role="tablist" aria-label="Canvas" className="flex h-full border-l border-sidebar-border">
-        {VIEWS.map(({ view: option, label, Icon }) => (
+        {VIEWS.map(({ view: option, label, detail, code, Icon }) => (
           <button
             key={option}
             type="button"
             role="tab"
             aria-selected={view === option}
+            data-tip={`${label} (Alt+${code.slice(-1)})`}
+            data-tip-detail={detail}
             onClick={() => onChange(option)}
             className={cn(
               "flex items-center gap-1.5 border-r border-sidebar-border px-3 font-medium transition-colors",
@@ -83,7 +99,7 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
   useEffect(() => {
     useEditorStore.getState().setCanvasView(view);
   }, [view]);
-  const changeView = (next: EditorView) => {
+  const changeView = useCallback((next: EditorView) => {
     setView(next);
     setOpened((current) => (current.has(next) ? current : new Set(current).add(next)));
     // Both tabs are written explicitly, so a project that defaults to Editor
@@ -91,7 +107,18 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
     const url = new URL(window.location.href);
     url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);
-  };
+  }, []);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
+      const next = VIEWS.find((option) => option.code === event.code);
+      if (!next) return;
+      event.preventDefault();
+      changeView(next.view);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [changeView]);
   const tabPanel = (option: EditorView, editor: ReactNode) =>
     opened.has(option) ? (
       <div inert={view !== option} className={cn("absolute inset-0", view !== option && "invisible")}>
@@ -105,6 +132,7 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
         {tabPanel("html", <WireEditor {...wire} />)}
         {tabPanel("design", <DesignEditor {...design} />)}
       </div>
+      <HoverTips />
     </div>
   );
 }

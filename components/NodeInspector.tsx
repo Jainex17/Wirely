@@ -216,7 +216,7 @@ function NodeInspectorCard({
         type="button"
         onClick={() => void copyLink()}
         disabled={!exists}
-        title="Copy element link for your agent"
+        data-tip="Copy element link for your agent"
         aria-label="Copy element link"
         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
       >
@@ -225,7 +225,7 @@ function NodeInspectorCard({
       <button
         type="button"
         onClick={() => useEditorStore.getState().setSelectedNode(null)}
-        title="Clear selection (Esc)"
+        data-tip="Clear selection (Esc)"
         aria-label="Clear element selection"
         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
       >
@@ -389,7 +389,7 @@ function ColorRow({
         <button
           type="button"
           onClick={onReset}
-          title={`Remove the ${label.toLowerCase()} set here`}
+          data-tip={`Remove the ${label.toLowerCase()} set here`}
           aria-label={`Reset ${label.toLowerCase()}`}
           className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
@@ -447,7 +447,7 @@ function StyleField({
         : "");
 
   return (
-    <label title={fieldTitle(label, isInline)} className={FIELD_CLASS}>
+    <label data-tip={fieldTitle(label, isInline)} className={FIELD_CLASS}>
       <span
         className={`flex w-3 shrink-0 justify-center ${isInline ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"}`}
       >
@@ -492,7 +492,7 @@ function ShadowField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label title={fieldTitle("Shadow", inline !== undefined)} className={FIELD_CLASS}>
+    <label data-tip={fieldTitle("Shadow", inline !== undefined)} className={FIELD_CLASS}>
       <Square
         className={`h-3 w-3 shrink-0 ${inline !== undefined ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"}`}
       />
@@ -540,7 +540,7 @@ function GradientField({
   };
   const stop = (key: "from" | "to", label: string) =>
     gradient ? (
-      <label className={SWATCH_CLASS} style={{ background: gradient[key] }} title={label}>
+      <label className={SWATCH_CLASS} style={{ background: gradient[key] }} data-tip={label}>
         <input
           type="color"
           value={gradient[key]}
@@ -558,7 +558,7 @@ function GradientField({
       />
       <select
         value={gradient?.kind ?? (isCustom ? "custom" : "")}
-        title={fieldTitle("Gradient", inline !== undefined)}
+        data-tip={fieldTitle("Gradient", inline !== undefined)}
         onChange={(event) => {
           const kind = event.target.value;
           update(
@@ -589,7 +589,7 @@ function GradientField({
           step={15}
           value={gradient.angle}
           aria-label="Gradient angle in degrees"
-          title="Angle in degrees"
+          data-tip="Angle in degrees"
           onChange={(event) => {
             const angle = Math.round(Number(event.target.value));
             if (Number.isFinite(angle) && angle >= 0 && angle <= 360) update({ ...gradient, angle });
@@ -612,7 +612,7 @@ function WeightField({
 }) {
   const shown = inline ?? (computed !== undefined ? String(computed) : "");
   return (
-    <label title={fieldTitle("Font weight", inline !== undefined)} className={FIELD_CLASS}>
+    <label data-tip={fieldTitle("Font weight", inline !== undefined)} className={FIELD_CLASS}>
       <span
         className={`w-3 shrink-0 text-center font-semibold ${inline !== undefined ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"}`}
       >

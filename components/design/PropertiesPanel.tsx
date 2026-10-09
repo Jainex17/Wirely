@@ -397,7 +397,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 
 function IconToggle({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick} className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+    <button type="button" aria-label={label} data-tip={label} onClick={onClick} className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground">
       {children}
     </button>
   );
@@ -537,7 +537,7 @@ function Segment<T extends string>({
           key={option.value}
           type="button"
           aria-label={option.label}
-          title={option.label}
+          data-tip={option.label}
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn("rounded p-1", value === option.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}

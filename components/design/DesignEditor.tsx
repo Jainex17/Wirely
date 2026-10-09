@@ -2,8 +2,8 @@
 
 import { createDefaultEditorState, createEditor, type Editor, EDITOR_TOOLS, type Tool, TOOL_SHORTCUTS } from "@open-pencil/core/editor";
 import { EDITOR_COMMAND_METADATA } from "@open-pencil/vue";
-import { ChevronUp, Circle, Columns3, Contrast, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Plus, Scan, Square, Type } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ChevronUp, Circle, Columns3, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Scan, Square, Type } from "lucide-react";
+import { type DragEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { reactive } from "vue";
 import { toast } from "@/components/ui/sonner";
 import { type DesignCommands, mountDesignCanvas } from "@/components/design/designCanvas";
@@ -11,24 +11,35 @@ import { bindDesignClipboard } from "@/components/design/clipboard";
 import { bindDrawIntoScreens } from "@/components/design/drawIntoScreens";
 import { fetchDesignDocument, startDocumentSync, startSelectionReporting } from "@/components/design/documentSync";
 import { findCommandForKey, isTypingTarget } from "@/components/design/keyboard";
+import ChatPanel, { type ChatMessage, type ChatModel } from "@/components/design/ChatPanel";
 import DesignSidebar from "@/components/design/DesignSidebar";
-import GeneratePanel, { type ChatMessage, type GenerateModel } from "@/components/design/GeneratePanel";
 import PropertiesPanel from "@/components/design/PropertiesPanel";
 import { useEditorValue } from "@/components/design/useEditorValue";
+import {
+  CanvasBackgroundMenu,
+  menuTriggerClass,
+  PanelToggle,
+  SidePanelTabs,
+  ToolbarDivider,
+  ToolButton,
+  toolbarClass,
+  ZoomControls,
+} from "@/components/EditorChrome";
+import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
+import { assetPath } from "@/lib/assetPaths";
 import { arrangePagePositions, type PageArrangement } from "@/lib/canvasScene";
 import { screensPage } from "@/lib/design/document";
-import { cn } from "@/lib/utils";
-import { CANVAS_BACKGROUND_COLORS, type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
+import { CANVAS_BACKGROUND_COLORS, useEditorStore } from "@/store/useEditorStore";
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "offline";
 
@@ -51,8 +62,26 @@ const TOOL_ICONS: Partial<Record<Tool, ReactNode>> = {
 };
 
 // The bar shows each top-level tool plus the shapes from the rectangle flyout
-// Wirely's screens use most; the rest stay on their shortcuts.
-const TOOLBAR_TOOLS: Tool[] = ["SELECT", "FRAME", "RECTANGLE", "ELLIPSE", "LINE", "TEXT", "PEN", "HAND"];
+// Wirely's screens use most; the rest stay on their shortcuts. Pointing tools
+// come first and drawing tools after the divider, in the Prototype bar's order.
+const POINTING_TOOLS: Tool[] = ["SELECT", "HAND", "PEN"];
+const DRAWING_TOOLS: Tool[] = ["FRAME", "RECTANGLE", "ELLIPSE", "LINE", "TEXT"];
+
+const TOOL_DETAILS: Partial<Record<Tool, string>> = {
+  SELECT: "Select layers and drag them around",
+  FRAME: "Drag to draw a screen or a frame inside one",
+  RECTANGLE: "Drag to draw a box",
+  ELLIPSE: "Drag to draw a circle or oval",
+  LINE: "Drag to draw a line",
+  TEXT: "Click to add text",
+  PEN: "Click points to draw a vector path",
+  HAND: "Pan the canvas. Hold Space for the same.",
+};
+
+const RIGHT_TABS = [
+  { id: "chat", label: "Chat", detail: "Ask a model on your key to design or change screens" },
+  { id: "design", label: "Design", detail: "Edit the selected layer's size, fills, and layout" },
+] as const;
 
 const toolLabel = (tool: Tool) => {
   const definition = EDITOR_TOOLS.find((entry) => entry.key === tool || entry.flyout?.includes(tool));
@@ -65,23 +94,27 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(naviga
 
 interface DesignEditorProps {
   projectId: string;
+  sessionUser: UserAccountMenuUser;
   /** Models in-app generation can run on the user's keys. */
-  models: GenerateModel[];
+  models: ChatModel[];
   initialMessages: ChatMessage[];
 }
 
 /**
- * A project's Design tab: a Figma-like canvas of screens built from design
- * nodes, with layers on the left and properties on the right. The
- * document loads once, then saves as the user edits and reloads when an agent
- * changes it (see documentSync.ts).
+ * A project's Editor tab: a Figma-like canvas of screens built from design
+ * nodes, laid out like the Prototype tab, with screens and layers on the left
+ * and chat and properties on the right. The document loads once, then saves
+ * as the user edits and reloads when an agent changes it (see documentSync.ts).
  */
-export default function DesignEditor({ projectId, models, initialMessages }: DesignEditorProps) {
+export default function DesignEditor({ projectId, sessionUser, models, initialMessages }: DesignEditorProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [commands, setCommands] = useState<DesignCommands | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
+  const [rightTab, setRightTab] = useState<"chat" | "design">("chat");
 
   // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
   // there too, as the HTML tab does.
@@ -89,6 +122,7 @@ export default function DesignEditor({ projectId, models, initialMessages }: Des
     document.body.classList.add("editor-theme");
     return () => document.body.classList.remove("editor-theme");
   }, []);
+
 
   // Load, create the editor, mount the canvas, and sync, as one lifetime, so
   // a remount (React's development double run included) starts clean.
@@ -182,6 +216,15 @@ export default function DesignEditor({ projectId, models, initialMessages }: Des
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [commands, editor]);
 
+  // Selecting a layer opens its properties, as picking an element does on the
+  // Prototype tab.
+  useEffect(() => {
+    if (!editor) return;
+    return editor.onEditorEvent("selection:changed", (ids) => {
+      if (ids.length > 0) setRightTab("design");
+    });
+  }, [editor]);
+
   // The engine paints its own canvas, so it gets the chosen background too.
   const canvasBackground = useEditorStore((state) => state.canvasBackground);
   useEffect(() => {
@@ -189,112 +232,131 @@ export default function DesignEditor({ projectId, models, initialMessages }: Des
     if (editor && container) editor.setPageColor(cssColorOf(container));
   }, [editor, canvasBackground]);
 
+  // A project image dragged from the assets folder lands where it is dropped,
+  // the way a pasted image does.
+  const handleAssetDrop = (event: DragEvent) => {
+    const asset = parseAssetDrag(event.dataTransfer.getData(ASSET_DRAG_TYPE));
+    const container = canvasRef.current;
+    if (!asset || !editor || !container) return;
+    event.preventDefault();
+    const rect = container.getBoundingClientRect();
+    const { panX, panY, zoom } = editor.state;
+    const x = (event.clientX - rect.left - panX) / zoom;
+    const y = (event.clientY - rect.top - panY) / zoom;
+    void fetch(assetPath(asset.id))
+      .then((response) => {
+        if (!response.ok) throw new Error(`Asset fetch failed with status ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => editor.placeImageFiles([new File([blob], asset.name, { type: blob.type })], x, y))
+      .catch(() => toast.error(`Could not add ${asset.name}.`));
+  };
+
+  const rightToggle = (
+    <PanelToggle
+      side="right"
+      name="chat panel"
+      isCollapsed={isRightCollapsed}
+      onToggle={() => setIsRightCollapsed((collapsed) => !collapsed)}
+    />
+  );
+  const sidebar = (isCollapsed: boolean) => (
+    <DesignSidebar
+      editor={editor}
+      projectId={projectId}
+      user={sessionUser}
+      isCollapsed={isCollapsed}
+      onToggle={() => setIsLeftCollapsed(!isCollapsed)}
+    />
+  );
+
   return (
     <div className="editor-theme flex h-full w-full overflow-hidden bg-background text-foreground">
-      {editor ? <DesignSidebar editor={editor} /> : <SidebarPlaceholder />}
+      {isLeftCollapsed ? null : sidebar(false)}
       <main
         className="relative min-w-0 flex-1 bg-background"
         style={canvasBackground === "dark" ? undefined : { backgroundColor: CANVAS_BACKGROUND_COLORS[canvasBackground] }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) event.preventDefault();
+        }}
+        onDrop={handleAssetDrop}
       >
         <div ref={canvasRef} className="absolute inset-0" />
+        {isLeftCollapsed ? sidebar(true) : null}
         {loadError ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{loadError}</div>
         ) : null}
         {editor ? (
           <>
-            <TopBar editor={editor} saveStatus={saveStatus} />
+            <TopRight editor={editor} saveStatus={saveStatus} panelToggle={isRightCollapsed ? rightToggle : null} />
             <Toolbar editor={editor} />
             <EmptyHint editor={editor} />
           </>
         ) : null}
       </main>
-      <RightPanel
-        design={editor ? <PropertiesPanel editor={editor} /> : null}
-        generate={<GeneratePanel projectId={projectId} models={models} initialMessages={initialMessages} />}
-      />
+      {/* Kept mounted while collapsed, so a chat run keeps streaming. */}
+      <aside
+        className={
+          isRightCollapsed ? "hidden" : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
+        }
+      >
+        <SidePanelTabs tabs={RIGHT_TABS} active={rightTab} onChange={setRightTab} end={rightToggle} />
+        <div className={rightTab === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          <ChatPanel projectId={projectId} models={models} initialMessages={initialMessages} />
+        </div>
+        <div className={rightTab === "design" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          {editor ? <PropertiesPanel editor={editor} /> : null}
+        </div>
+      </aside>
     </div>
   );
 }
 
-/**
- * The right panel: the selected layer's properties, or generation. Generate
- * stays mounted while hidden, so a run keeps streaming when the user switches
- * to Design to look at a screen.
- */
-function RightPanel({ design, generate }: { design: ReactNode; generate: ReactNode }) {
-  const [tab, setTab] = useState<"design" | "generate">("design");
-  return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-sidebar-border bg-sidebar">
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2 text-sm">
-        {(["design", "generate"] as const).map((name) => (
-          <button
-            key={name}
-            type="button"
-            onClick={() => setTab(name)}
-            className={cn(
-              "rounded-md px-2.5 py-1 capitalize",
-              tab === name ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-      <div className={cn("min-h-0 flex-1 flex-col", tab === "design" ? "flex" : "hidden")}>{design}</div>
-      <div className={cn("min-h-0 flex-1 flex-col", tab === "generate" ? "flex" : "hidden")}>{generate}</div>
-    </aside>
-  );
-}
-
-function SidebarPlaceholder() {
-  return <aside className="w-60 shrink-0 border-r border-sidebar-border bg-sidebar" />;
-}
-
-function TopBar({ editor, saveStatus }: { editor: Editor; saveStatus: SaveStatus }) {
+/** Save status, zoom, and the chat panel's toggle while it is hidden, as on the Prototype tab. */
+function TopRight({ editor, saveStatus, panelToggle }: { editor: Editor; saveStatus: SaveStatus; panelToggle: ReactNode }) {
   const zoom = useEditorValue(editor, (current) => current.state.zoom);
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-end gap-2 px-3">
-      <span className="pointer-events-auto self-center rounded-md bg-sidebar/90 px-2 py-1 text-xs text-muted-foreground">
+    <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+      <span role="status" className="rounded-md bg-sidebar/90 px-2 py-1 text-xs text-muted-foreground">
         {SAVE_LABELS[saveStatus]}
       </span>
-      <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-sidebar p-0.5 text-xs">
-        <IconButton label="Zoom out" onClick={() => editor.zoomToLevel(editor.state.zoom / 1.25)}>
-          <Minus className="h-3.5 w-3.5" />
-        </IconButton>
-        <button
-          type="button"
-          className="min-w-12 rounded px-1.5 py-1 tabular-nums hover:bg-accent"
-          title="Zoom to fit (Shift+1)"
-          onClick={() => editor.zoomToFit()}
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <IconButton label="Zoom in" onClick={() => editor.zoomToLevel(editor.state.zoom * 1.25)}>
-          <Plus className="h-3.5 w-3.5" />
-        </IconButton>
-      </div>
+      <ZoomControls
+        zoom={zoom * 100}
+        onZoomOut={() => editor.zoomToLevel(editor.state.zoom / 1.25)}
+        onFit={() => editor.zoomToFit()}
+        onZoomIn={() => editor.zoomToLevel(editor.state.zoom * 1.25)}
+      />
+      {panelToggle ? (
+        <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">{panelToggle}</div>
+      ) : null}
     </div>
   );
 }
 
 function Toolbar({ editor }: { editor: Editor }) {
   const activeTool = useEditorValue(editor, (current) => current.state.activeTool);
+  const button = (tool: Tool) => (
+    <ToolButton
+      key={tool}
+      label={toolLabel(tool)}
+      detail={TOOL_DETAILS[tool]}
+      isActive={activeTool === tool}
+      onClick={() => editor.setTool(tool)}
+    >
+      {TOOL_ICONS[tool]}
+    </ToolButton>
+  );
   return (
-    <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-sidebar p-1 shadow-xl">
-      {TOOLBAR_TOOLS.map((tool) => (
-        <IconButton key={tool} label={toolLabel(tool)} isActive={activeTool === tool} onClick={() => editor.setTool(tool)}>
-          {TOOL_ICONS[tool]}
-        </IconButton>
-      ))}
-      <div className="mx-1 h-5 w-px bg-border" />
+    <div className={toolbarClass}>
+      {POINTING_TOOLS.map(button)}
+      <ToolbarDivider />
+      {DRAWING_TOOLS.map(button)}
+      <ToolbarDivider />
       <ArrangeMenu editor={editor} />
-      <BackgroundMenu />
+      <CanvasBackgroundMenu />
     </div>
   );
 }
-
-const menuTriggerClass =
-  "flex h-8 items-center gap-0.5 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
 
 /** Lines the screens up in a row or a grid, as one undo step, the way the HTML canvas arranges pages. */
 const arrangeScreens = (editor: Editor, arrangement: PageArrangement) => {
@@ -311,7 +373,11 @@ function ArrangeMenu({ editor }: { editor: Editor }) {
   const hasSelection = useEditorValue(editor, (current) => current.state.selectedIds.size > 0);
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className={menuTriggerClass} aria-label="Arrange and zoom" title="Arrange and zoom">
+      <DropdownMenuTrigger
+        className={menuTriggerClass}
+        aria-label="Arrange and zoom"
+        data-tip-detail="Line screens up in a row or grid, or fit them in view"
+      >
         <LayoutGrid className="h-4 w-4" />
         <ChevronUp className="h-3 w-3" />
       </DropdownMenuTrigger>
@@ -330,41 +396,13 @@ function ArrangeMenu({ editor }: { editor: Editor }) {
         <DropdownMenuItem onSelect={() => editor.zoomToFit()}>
           <Maximize className="h-4 w-4" />
           Fit all screens
+          <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem disabled={!hasSelection} onSelect={() => editor.zoomToSelection()}>
           <Scan className="h-4 w-4" />
           Fit selection
+          <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-const BACKGROUND_LABELS: Record<CanvasBackground, string> = { dark: "Dark", gray: "Gray", light: "Light" };
-
-/** Picks the canvas background. The choice is shared with the HTML canvas and kept in local storage. */
-function BackgroundMenu() {
-  const canvasBackground = useEditorStore((state) => state.canvasBackground);
-  const setCanvasBackground = useEditorStore((state) => state.setCanvasBackground);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={menuTriggerClass}
-        aria-label={`Canvas background: ${BACKGROUND_LABELS[canvasBackground]}`}
-        title="Canvas background"
-      >
-        <Contrast className="h-4 w-4" />
-        <ChevronUp className="h-3 w-3" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="center" sideOffset={8} className="w-44">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Canvas background</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={canvasBackground} onValueChange={(value) => setCanvasBackground(value as CanvasBackground)}>
-          {(Object.keys(BACKGROUND_LABELS) as CanvasBackground[]).map((background) => (
-            <DropdownMenuRadioItem key={background} value={background}>
-              {BACKGROUND_LABELS[background]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -380,34 +418,6 @@ function EmptyHint({ editor }: { editor: Editor }) {
         No screens yet. Draw a frame with the Frame tool, or ask your agent to design one or to make an HTML page editable.
       </p>
     </div>
-  );
-}
-
-export function IconButton({
-  label,
-  isActive = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  isActive?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      aria-pressed={isActive}
-      title={label}
-      className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-        isActive ? "bg-sky-600 text-white" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

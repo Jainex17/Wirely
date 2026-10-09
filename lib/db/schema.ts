@@ -291,33 +291,6 @@ export const projectPageVersions = pgTable(
   }),
 );
 
-/**
- * One MCP tool call an agent made against a project, for the sidebar's
- * activity tab. `pageId` has no foreign key so the row outlives a deleted page.
- */
-export const projectAgentActivity = pgTable(
-  "project_agent_activity",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    tool: text("tool").notNull(),
-    pageId: uuid("page_id"),
-    /** The error text an agent saw, or null when the call succeeded. */
-    error: text("error"),
-    /** What the call changed, from the agent's note or worked out from the call. */
-    detail: text("detail"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    projectCreatedIdx: index("project_agent_activity_project_created_idx").on(
-      table.projectId,
-      table.createdAt,
-    ),
-  }),
-);
-
 export const conversations = pgTable(
   "conversations",
   {

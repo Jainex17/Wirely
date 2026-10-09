@@ -3,22 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PageDeviceType } from "@/lib/types";
 import { useRouter } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
 import type { Message } from "ai";
 // Prototype flow hidden for now — re-enable together with the
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 // import { ArrowLeft, Cloud, Workflow } from "lucide-react";
 // import { ArrowLeft, Cloud } from "lucide-react";
-import { PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { X } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
-import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
+import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
-import AgentActivityPanel from "@/components/AgentActivityPanel";
 import CommentsPanel from "@/components/CommentsPanel";
 import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
+import { AccountFooter, PanelToggle, SidePanelTabs } from "@/components/EditorChrome";
 import ShareProjectButton from "@/components/ShareProjectButton";
 import DesignTokensDialog from "@/components/DesignTokensDialog";
 import type { ProjectComment } from "@/lib/projectComments";
@@ -53,6 +52,11 @@ interface WireEditorProps {
   >;
 }
 
+const SIDEBAR_TABS = [
+  { id: "chat", label: "Chat", detail: "Ask a model on your key to write or change pages" },
+  { id: "design", label: "Design", detail: "Edit the picked element's text, colors, and spacing" },
+] as const;
+
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
 
 const PAGE_SYNC_INTERVAL_MS = 2_500;
@@ -71,15 +75,13 @@ export default function WireEditor({
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
-  const { signOut } = useClerk();
   const router = useRouter();
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [promptFocusRequestKey, setPromptFocusRequestKey] = useState(0);
   // Collapsing either side panel gives the canvas that width. Each toggle stays
   // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
   const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<"chat" | "design" | "activity">("chat");
+  const [sidebarTab, setSidebarTab] = useState<"chat" | "design">("chat");
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -268,32 +270,12 @@ export default function WireEditor({
     router.prefetch("/");
   }, [router]);
 
-  const handleLogout = async () => {
-    if (isLoggingOut) return;
-    setIsLoggingOut(true);
-
-    try {
-      await signOut();
-    } finally {
-      router.push("/login");
-      router.refresh();
-      setIsLoggingOut(false);
-    }
-  };
-
   const pagesPanel = (
     <PagesPanel
       projectId={wireId}
       isCollapsed={isPagesPanelCollapsed}
       onToggle={() => setIsPagesPanelCollapsed((collapsed) => !collapsed)}
-      footer={
-        <UserAccountMenu
-          user={sessionUser}
-          isLoggingOut={isLoggingOut}
-          onLogout={handleLogout}
-          logoutDescription="You will need to sign in again to continue editing this wireframe."
-        />
-      }
+      footer={<AccountFooter user={sessionUser} />}
     />
   );
 
@@ -309,22 +291,12 @@ export default function WireEditor({
   );
 
   const promptPanelToggle = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8"
-      onClick={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
-      aria-label={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
-      aria-expanded={!isPromptPanelCollapsed}
-      title={isPromptPanelCollapsed ? "Show prompt panel" : "Hide prompt panel"}
-    >
-      {isPromptPanelCollapsed ? (
-        <PanelRightOpen className="h-4 w-4" />
-      ) : (
-        <PanelRightClose className="h-4 w-4" />
-      )}
-    </Button>
+    <PanelToggle
+      side="right"
+      name="chat panel"
+      isCollapsed={isPromptPanelCollapsed}
+      onToggle={() => setIsPromptPanelCollapsed((collapsed) => !collapsed)}
+    />
   );
 
   return (
@@ -408,41 +380,20 @@ export default function WireEditor({
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => setActiveTool("select")}
-                  aria-label="Close comments"
-                  title="Close comments (Esc)"
+                  aria-label="Close comments (Esc)"
                 >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
             ) : null}
-            <div
-              className={
-                isCommentMode
-                  ? "hidden"
-                  : "flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-2 pr-2"
-              }
-            >
-              <div role="tablist" className="flex items-center gap-0.5">
-                {(["chat", "design", "activity"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    role="tab"
-                    aria-selected={sidebarTab === tab}
-                    onClick={() => setSidebarTab(tab)}
-                    className={
-                      sidebarTab === tab
-                        ? "rounded-md bg-foreground/10 px-2.5 py-1 text-[13px] font-semibold text-foreground"
-                        : "rounded-md px-2.5 py-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-                    }
-                  >
-                    {{ chat: "Chat", design: "Design", activity: "Agent activity" }[tab]}
-                  </button>
-                ))}
-              </div>
-              {promptPanelToggle}
+            <div className={isCommentMode ? "hidden" : undefined}>
+              <SidePanelTabs
+                tabs={SIDEBAR_TABS}
+                active={sidebarTab}
+                onChange={setSidebarTab}
+                end={promptPanelToggle}
+              />
             </div>
-            {/* The chat stays mounted on the activity tab for the same reason. */}
             {isCommentMode ? (
               <div className="min-h-0 flex-1">
                 <CommentsPanel projectId={wireId} />
@@ -459,11 +410,6 @@ export default function WireEditor({
             {sidebarTab === "design" && !isCommentMode ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <NodeInspector projectId={wireId} variant="panel" />
-              </div>
-            ) : null}
-            {sidebarTab === "activity" && !isCommentMode ? (
-              <div className="min-h-0 flex-1">
-                <AgentActivityPanel projectId={wireId} isActive={isSidebarVisible} />
               </div>
             ) : null}
           </div>
