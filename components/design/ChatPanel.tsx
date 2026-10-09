@@ -1,12 +1,12 @@
 "use client";
 
-import { Check, Loader2, Sparkles, X } from "lucide-react";
+import { ArrowUp, Check, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesignGenerationEvent } from "@/lib/design/generation";
 import { cn } from "@/lib/utils";
 
-export interface GenerateModel {
+export interface ChatModel {
   id: string;
   label: string;
   tier: "free" | "paid";
@@ -21,18 +21,18 @@ export interface ChatMessage {
 type Step = { label: string; status: "running" | "done" | "failed" };
 
 /**
- * Generate tab: describe screens and a model on the user's own key builds
- * them on the canvas with the design tools. Screens appear as each one is
+ * Chat tab: describe screens and a model on the user's own key builds them
+ * on the canvas with the design tools. Screens appear as each one is
  * saved; the list here shows what the model is doing meanwhile. A prompt typed
  * on the home page goes to the HTML tab's chat, not here.
  */
-export default function GeneratePanel({
+export default function ChatPanel({
   projectId,
   models,
   initialMessages,
 }: {
   projectId: string;
-  models: GenerateModel[];
+  models: ChatModel[];
   initialMessages: ChatMessage[];
 }) {
   const [messages, setMessages] = useState(initialMessages.filter((message) => message.role !== "system"));
@@ -104,7 +104,7 @@ export default function GeneratePanel({
     return (
       <div className="space-y-2 p-3 text-xs text-muted-foreground">
         <p>Connect your coding agent to design here, or add a model key to generate in Wirely.</p>
-        <Link href="/setting?tab=providers" className="text-sky-500 hover:underline">
+        <Link href="/setting?tab=providers" className="text-primary hover:underline">
           Add a key in Providers
         </Link>
       </div>
@@ -125,7 +125,7 @@ export default function GeneratePanel({
             key={message.id}
             className={cn(
               "rounded-lg px-2.5 py-2 leading-relaxed",
-              message.role === "user" ? "ml-6 bg-sky-600/20" : "mr-6 bg-background/60",
+              message.role === "user" ? "ml-6 bg-primary/15" : "mr-6 bg-background/60",
             )}
           >
             {message.content}
@@ -173,11 +173,13 @@ export default function GeneratePanel({
           rows={3}
           placeholder="Describe a screen or a change…"
           aria-label="Describe the screens to design"
-          className="w-full resize-none rounded-md border border-border bg-background/60 p-2 outline-none focus:ring-1 focus:ring-sky-600"
+          className="w-full resize-none rounded-md border border-border bg-background/60 p-2 outline-none focus:ring-1 focus:ring-primary"
         />
         <div className="flex items-center gap-1.5">
           <select
             aria-label="Model"
+            data-tip="Model"
+            data-tip-detail="Runs on the key you saved in settings. Free models cost nothing."
             value={modelId}
             onChange={(event) => setModelId(event.target.value)}
             className="min-w-0 flex-1 rounded-md bg-background/60 px-1.5 py-1 outline-none"
@@ -192,10 +194,11 @@ export default function GeneratePanel({
           <button
             type="submit"
             disabled={isRunning || !prompt.trim()}
-            className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 font-medium text-white disabled:opacity-50"
+            aria-label="Send (Cmd+Enter)"
+            data-tip-detail="The model builds the screens on the canvas"
+            className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:opacity-50"
           >
-            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Generate
+            {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
           </button>
         </div>
       </form>

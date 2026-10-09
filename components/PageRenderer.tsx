@@ -943,7 +943,7 @@ export default React.memo(function PageRenderer({
         type="button"
         className={iconButtonClass}
         aria-label={`Preview ${page.title}`}
-        title="Preview"
+        data-tip="Preview"
         disabled={!hasPageContent}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
@@ -958,7 +958,7 @@ export default React.memo(function PageRenderer({
           type="button"
           className={iconButtonClass}
           aria-label={`Replay animations on ${page.title}`}
-          title="Replay animations"
+          data-tip="Replay animations"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -979,7 +979,7 @@ export default React.memo(function PageRenderer({
         type="button"
         className={iconButtonClass}
         aria-label="Copy for agent"
-        title="Copy for agent"
+        data-tip="Copy for agent"
         disabled={!hasPageContent}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
@@ -994,7 +994,7 @@ export default React.memo(function PageRenderer({
           type="button"
           className={iconButtonClass}
           aria-label="Copy image"
-          title="Copy image"
+          data-tip="Copy image"
           aria-busy={isCopyingImage}
           disabled={!hasPageContent || isCopyingImage}
           onPointerDown={(event) => event.stopPropagation()}
@@ -1014,7 +1014,7 @@ export default React.memo(function PageRenderer({
         type="button"
         className={iconButtonClass}
         aria-label={`More actions for ${page.title}`}
-        title="More"
+        data-tip="More"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={openToolbarContextMenu}
       >
@@ -1036,7 +1036,7 @@ export default React.memo(function PageRenderer({
     if (status.status === "failed") {
       return (
         <span
-          title={status.detail}
+          data-tip={status.detail}
           className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-destructive"
         >
           <X className="h-3 w-3" />
@@ -1569,7 +1569,7 @@ export default React.memo(function PageRenderer({
               <button
                 type="button"
                 aria-label={`Stop running ${page.title}`}
-                title="Stop running scripts (Esc)"
+                data-tip="Stop running scripts (Esc)"
                 className="rounded-full p-0.5 transition-colors hover:bg-emerald-500/20"
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
@@ -1878,7 +1878,7 @@ export default React.memo(function PageRenderer({
                   type="button"
                   onClick={() => void postComment()}
                   disabled={!commentDraft.body.trim() || isPostingComment}
-                  title="Post comment"
+                  data-tip="Post comment"
                   aria-label="Post comment"
                   className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white transition-transform hover:bg-violet-500 active:scale-95 disabled:opacity-50"
                 >
@@ -2048,7 +2048,7 @@ export default React.memo(function PageRenderer({
                     key={width}
                     type="button"
                     disabled={width > previewMaxWidth}
-                    title={
+                    data-tip={
                       width > previewMaxWidth
                         ? `${width}px is wider than this window`
                         : `${label}, ${width}px`

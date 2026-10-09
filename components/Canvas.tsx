@@ -1119,7 +1119,7 @@ export default function Canvas({
             event.stopPropagation();
             groupSelection();
           }}
-          title="Group selection (Ctrl+G)"
+          data-tip="Group selection (Ctrl+G)"
           className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow-lg hover:bg-accent"
         >
           Group {selectedPageIds.length} pages
@@ -1210,7 +1210,7 @@ function PageGroupFrame({
           type="button"
           onClick={onUngroup}
           aria-label={`Ungroup ${name}`}
-          title="Ungroup (Ctrl+Shift+G)"
+          data-tip="Ungroup (Ctrl+Shift+G)"
           className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
         >
           <Ungroup className="h-3.5 w-3.5" />

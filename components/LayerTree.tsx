@@ -223,8 +223,7 @@ export default function LayerTree({
             <span className="min-w-0 flex-1 truncate">{layer.label}</span>
             <button
               type="button"
-              aria-label={layer.hidden ? "Show" : "Hide"}
-              title={layer.hidden ? "Show" : "Hide"}
+              aria-label={layer.hidden ? "Show layer" : "Hide layer"}
               onClick={(event) => {
                 event.stopPropagation();
                 commitPageEdit(projectId, pageId, (source) =>

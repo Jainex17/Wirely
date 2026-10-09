@@ -75,6 +75,12 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
   const initialModelName =
     resolveRunnableWireModel(aiSettings.enabledModelIds, keyPresence) ?? DEFAULT_WIRE_MODEL;
 
+  const accountUser = {
+    name: sessionUser.name,
+    email: sessionUser.email,
+    avatarUrl: sessionUser.avatarUrl,
+  };
+
   const initialMessages = projectDetail.messages.map((message) => ({
     id: message.id,
     role: message.role,
@@ -91,11 +97,7 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
       projectTitle={projectTitle}
       wire={{
         wireId: resolvedParams.id,
-        sessionUser: {
-          name: sessionUser.name,
-          email: sessionUser.email,
-          avatarUrl: sessionUser.avatarUrl,
-        },
+        sessionUser: accountUser,
         initialProject: { projectTitle, pages: initialPages },
         pagesLoadedAt,
         initialModelName,
@@ -103,6 +105,7 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
       }}
       design={{
         projectId: resolvedParams.id,
+        sessionUser: accountUser,
         models: designModels,
         initialMessages: initialMessages.map(({ id, role, content }) => ({ id, role, content })),
       }}

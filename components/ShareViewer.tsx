@@ -12,6 +12,7 @@ import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
 import type { PageDeviceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useIsBrowser } from "@/hooks/useIsBrowser";
+import HoverTips from "@/components/HoverTips";
 
 // A review is live while people talk, so other reviewers' comments show up
 // without a reload. A hidden tab skips its ticks.
@@ -355,6 +356,7 @@ export default function ShareViewer({
           )}
         </aside>
       </div>
+      <HoverTips />
     </div>
   );
 }
