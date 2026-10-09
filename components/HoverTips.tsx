@@ -37,6 +37,8 @@ const readTip = (target: Element): Tip | null => {
   return { label, shortcut, detail, rect: target.getBoundingClientRect() };
 };
 
+const TIP_ID = "wirely-hover-tip";
+
 const TIP_TARGETS = "[data-tip], button[aria-label], a[aria-label], [role='tab'][aria-label]";
 
 /**
@@ -56,8 +58,18 @@ export default function HoverTips() {
     const hide = () => {
       window.clearTimeout(timer);
       if (current) closedAt = Date.now();
+      // Only this component sets it, so removing it never drops a React prop.
+      current?.removeAttribute("aria-describedby");
       current = null;
       setTip(null);
+    };
+
+    // Screen readers announce the tip as the control's description.
+    const show = (target: Element) => {
+      if (current !== target || !target.isConnected) return;
+      const next = readTip(target);
+      if (next) target.setAttribute("aria-describedby", TIP_ID);
+      setTip(next);
     };
 
     const onOver = (event: PointerEvent) => {
@@ -67,12 +79,18 @@ export default function HoverTips() {
       hide();
       if (!target || target.closest("[data-state='open']") === target) return;
       current = target;
-      const show = () => {
-        if (current !== target || !target.isConnected) return;
-        setTip(readTip(target));
-      };
-      if (Date.now() - closedAt < WARM_WINDOW_MS) show();
-      else timer = window.setTimeout(show, OPEN_DELAY_MS);
+      if (Date.now() - closedAt < WARM_WINDOW_MS) show(target);
+      else timer = window.setTimeout(() => show(target), OPEN_DELAY_MS);
+    };
+
+    // Tabbing to a control shows its tip at once. A mouse click also focuses
+    // it, which :focus-visible leaves out.
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target instanceof Element ? event.target.closest(TIP_TARGETS) : null;
+      if (!target || !(event.target as Element).matches(":focus-visible")) return;
+      hide();
+      current = target;
+      show(target);
     };
 
     // Leaving the window fires no pointerover, so the tip would stay up.
@@ -82,6 +100,8 @@ export default function HoverTips() {
 
     document.addEventListener("pointerover", onOver);
     document.addEventListener("pointerout", onOut);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", hide);
     document.addEventListener("pointerdown", hide, true);
     document.addEventListener("keydown", hide, true);
     window.addEventListener("blur", hide);
@@ -90,6 +110,8 @@ export default function HoverTips() {
       window.clearTimeout(timer);
       document.removeEventListener("pointerover", onOver);
       document.removeEventListener("pointerout", onOut);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", hide);
       document.removeEventListener("pointerdown", hide, true);
       document.removeEventListener("keydown", hide, true);
       window.removeEventListener("blur", hide);
@@ -110,6 +132,7 @@ export default function HoverTips() {
         : { left: centerX, transform: "translateX(-50%)" };
   return (
     <div
+      id={TIP_ID}
       role="tooltip"
       className="pointer-events-none fixed z-[300] max-w-64 rounded-md border border-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-lg"
       style={{

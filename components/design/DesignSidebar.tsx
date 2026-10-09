@@ -90,7 +90,14 @@ function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
     (current) =>
       current
         .getChildren(current.state.currentPageId)
-        .map((node) => ({ id: node.id, name: node.name, width: node.width, height: node.height, type: node.type })),
+        .map((node) => ({
+          id: node.id,
+          name: node.name,
+          width: node.width,
+          height: node.height,
+          type: node.type,
+          visible: node.visible,
+        })),
     (a, b) => a.length === b.length && a.every((screen, index) => shallowEqual(screen, b[index])),
   );
   const selectedIds = useEditorValue(editor, (current) => [...current.state.selectedIds], arraysEqual);
@@ -129,9 +136,10 @@ function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
                   editor.zoomToSelection();
                 }}
                 className={cn(
-                  "flex h-7 w-full cursor-default items-center gap-1.5 pr-3 text-xs font-medium transition-colors",
+                  "group flex h-7 w-full cursor-default items-center gap-1.5 pr-2 text-xs font-medium transition-colors",
                   isActive ? "text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
                   selectedIds.includes(screen.id) && "bg-primary/15",
+                  !screen.visible && "opacity-50",
                 )}
                 style={{ paddingLeft: indent(0) }}
               >
@@ -148,6 +156,11 @@ function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
                 </button>
                 <Icon className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary")} />
                 <InlineName name={screen.name} onRename={(name) => editor.renameNode(screen.id, name)} />
+                <VisibilityButton
+                  isVisible={screen.visible}
+                  name="screen"
+                  onToggle={() => editor.toggleNodeVisibility(screen.id)}
+                />
               </div>
               {isOpen ? <ScreenLayers editor={editor} screenId={screen.id} selectedIds={selectedIds} /> : null}
             </div>
@@ -255,17 +268,7 @@ function LayerRow({
         )}
         <NodeIcon node={node.node} className={cn("h-3.5 w-3.5 shrink-0", isSelected && "text-primary")} />
         <InlineName name={node.name} onRename={(name) => editor.renameNode(id, name)} />
-        <button
-          type="button"
-          aria-label={node.visible ? "Hide layer" : "Show layer"}
-          className={cn("rounded p-0.5 hover:bg-foreground/10", node.visible ? "invisible group-hover:visible" : "visible")}
-          onClick={(event) => {
-            event.stopPropagation();
-            editor.toggleNodeVisibility(id);
-          }}
-        >
-          {node.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-        </button>
+        <VisibilityButton isVisible={node.visible} name="layer" onToggle={() => editor.toggleNodeVisibility(id)} />
       </div>
       {isExpanded
         ? node.childIds
@@ -274,6 +277,23 @@ function LayerRow({
             .map((childId) => <LayerRow key={childId} editor={editor} id={childId} depth={depth + 1} selectedIds={selectedIds} />)
         : null}
     </>
+  );
+}
+
+/** Hides or shows a screen or layer. Always shown while hidden, so the way back is visible. */
+function VisibilityButton({ isVisible, name, onToggle }: { isVisible: boolean; name: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={`${isVisible ? "Hide" : "Show"} ${name}`}
+      className={cn("rounded p-0.5 hover:bg-foreground/10", isVisible ? "invisible group-hover:visible" : "visible")}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      {isVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+    </button>
   );
 }
 
