@@ -18,6 +18,7 @@ import {
   getProjectPageForUser,
   listProjectPagesForUser,
   listProjectsForUser,
+  PROJECT_HISTORY_LIMIT,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
 import { describeAgentCall } from "@/lib/agentActivity";
@@ -127,8 +128,15 @@ type HandlerResult = ToolCallResult & { activity?: { pageId?: string; detail?: s
 
 type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<HandlerResult>;
 
-const listProjects: ToolHandler = async (userId, _args, origin) => {
-  const projects = await listProjectsForUser(userId);
+const listProjects: ToolHandler = async (userId, args, origin) => {
+  const parsed = z.object({ query: z.string().trim().max(TITLE_MAX_CHARS).optional() }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const projects = await listProjectsForUser(
+    userId,
+    PROJECT_HISTORY_LIMIT,
+    parsed.data.query || undefined,
+  );
   return succeed(
     JSON.stringify(
       projects.map((project) => ({

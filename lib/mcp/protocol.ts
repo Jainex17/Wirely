@@ -35,9 +35,11 @@ export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +
     "or codebase you are working on, add the new pages to it with add_page, even when this is " +
-    "a new chat. Call create_project only when no project fits or the user asks for a new one, " +
-    "and name it after the product or codebase so a later chat can find it. Give the user the " +
-    "editor URL of the project you used, from list_projects or create_project.",
+    "a new chat. If none of the listed projects fits, call list_projects again with query set " +
+    "to the product or codebase name. Call create_project only when no project fits or the " +
+    "user asks for a new one, and name it after the product or codebase so a later chat can " +
+    "find it. Give the user the editor URL of the project you used, from list_projects or " +
+    "create_project.",
   "A project has two tabs. The Prototype tab holds HTML pages (add_page), the default for every " +
     "mock. The Editor tab holds screens built from design nodes the user edits like Figma " +
     "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
@@ -232,15 +234,25 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       "List the user's Wirely projects with their editor URLs, most recently updated first. A " +
       "project is one design file with two tabs: HTML pages, and design screens built from " +
       "design nodes. Call this before create_project and reuse a project for the same product " +
-      "or codebase.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      "or codebase. It returns at most 50; pass query to search all titles.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Only list projects whose title contains this text, ignoring case.",
+        },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: "create_project",
     description:
       "Create a Wirely project. Call list_projects first and only create one when no existing " +
-      "project is for the same product or codebase. It starts with one empty HTML page named " +
-      "\"Page 1\" that you write with update_page, and an empty Editor tab for add_screen. " +
+      "project is for the same product or codebase, or when the user asks for a new project. " +
+      "It starts with one empty HTML page named \"Page 1\" that you write with update_page, " +
+      "and an empty Editor tab for add_screen. " +
       "Returns the id and the editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
