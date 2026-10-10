@@ -27,11 +27,17 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  * the hand-off from canvas to the user's repo, where a raw HTML paste ignores
  * their stack and the user's own canvas tweaks would otherwise never reach
  * the code. The last line keeps an agent from resending a whole page to move
- * one block.
+ * one block. The project line stops a new chat from making a second project
+ * for a product that already has one: the server keeps no session, so only
+ * the agent can match the request to an existing project.
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
-  "After create_project, give the user the editor URL it returns.",
+  "Before create_project, call list_projects. If a project there is for the same product, app, " +
+    "or codebase you are working on, add the new pages to it with add_page, even when this is " +
+    "a new chat. Call create_project only when no project fits or the user asks for a new one, " +
+    "and name it after the product or codebase so a later chat can find it. Give the user the " +
+    "editor URL of the project you used, from list_projects or create_project.",
   "A project has two tabs. The Prototype tab holds HTML pages (add_page), the default for every " +
     "mock. The Editor tab holds screens built from design nodes the user edits like Figma " +
     "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
@@ -223,20 +229,28 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_projects",
     description:
-      "List the user's Wirely projects. A project is one design file with two tabs: HTML pages, " +
-      "and design screens built from design nodes.",
+      "List the user's Wirely projects with their editor URLs, most recently updated first. A " +
+      "project is one design file with two tabs: HTML pages, and design screens built from " +
+      "design nodes. Call this before create_project and reuse a project for the same product " +
+      "or codebase.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "create_project",
     description:
-      "Create a Wirely project. It starts with one empty HTML page named \"Page 1\" that you " +
-      "write with update_page, and an empty Editor tab for add_screen. Returns the id and the " +
-      "editor URL; give that URL to the user so they can watch the project.",
+      "Create a Wirely project. Call list_projects first and only create one when no existing " +
+      "project is for the same product or codebase. It starts with one empty HTML page named " +
+      "\"Page 1\" that you write with update_page, and an empty Editor tab for add_screen. " +
+      "Returns the id and the editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Project name, shown on the home page." },
+        title: {
+          type: "string",
+          description:
+            "Project name, shown on the home page. Use the product or codebase name, like " +
+            "\"Acme dashboard\", so a later chat can find and reuse it.",
+        },
       },
       required: ["title"],
       additionalProperties: false,

@@ -127,7 +127,7 @@ type HandlerResult = ToolCallResult & { activity?: { pageId?: string; detail?: s
 
 type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<HandlerResult>;
 
-const listProjects: ToolHandler = async (userId) => {
+const listProjects: ToolHandler = async (userId, _args, origin) => {
   const projects = await listProjectsForUser(userId);
   return succeed(
     JSON.stringify(
@@ -135,6 +135,7 @@ const listProjects: ToolHandler = async (userId) => {
         id: project.id,
         title: project.title,
         updatedAt: project.updatedAt.toISOString(),
+        url: `${origin}/wire/${project.id}`,
       })),
     ),
   );
