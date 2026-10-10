@@ -18,6 +18,7 @@ import {
   getProjectPageForUser,
   listProjectPagesForUser,
   listProjectsForUser,
+  PROJECT_HISTORY_LIMIT,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
 import { assetPath } from "@/lib/assetPaths";
@@ -118,14 +119,22 @@ type ToolArgs = Record<string, unknown>;
 /** `origin` is the app origin the request came in on, for building links back to the editor. */
 type ToolHandler = (userId: string, args: ToolArgs, origin: string) => Promise<ToolCallResult>;
 
-const listProjects: ToolHandler = async (userId) => {
-  const projects = await listProjectsForUser(userId);
+const listProjects: ToolHandler = async (userId, args, origin) => {
+  const parsed = z.object({ query: z.string().trim().max(TITLE_MAX_CHARS).optional() }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const projects = await listProjectsForUser(
+    userId,
+    PROJECT_HISTORY_LIMIT,
+    parsed.data.query || undefined,
+  );
   return succeed(
     JSON.stringify(
       projects.map((project) => ({
         id: project.id,
         title: project.title,
         updatedAt: project.updatedAt.toISOString(),
+        url: `${origin}/wire/${project.id}`,
       })),
     ),
   );

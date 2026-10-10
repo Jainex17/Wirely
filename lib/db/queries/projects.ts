@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, gt, inArray, sql, TransactionRollbackError } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, ilike, inArray, sql, TransactionRollbackError } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
@@ -47,9 +47,12 @@ export const createProject = async (userId: string, title: string) => {
 // report the true active total alongside it; the UI shows "50+" when capped.
 export const PROJECT_HISTORY_LIMIT = 50;
 
+// `titleQuery` narrows the list to titles containing it, so the MCP agent can
+// find a project that has fallen past the limit.
 export const listProjectsForUser = async (
   userId: string,
   limit: number = PROJECT_HISTORY_LIMIT,
+  titleQuery?: string,
 ) => {
   const db = getDb();
   return db
@@ -62,7 +65,13 @@ export const listProjectsForUser = async (
       totalActive: sql<number>`(count(*) over ())::int`,
     })
     .from(projects)
-    .where(and(eq(projects.userId, userId), eq(projects.status, "active")))
+    .where(
+      and(
+        eq(projects.userId, userId),
+        eq(projects.status, "active"),
+        titleQuery ? ilike(projects.title, `%${titleQuery.replace(/[\\%_]/g, "\\$&")}%`) : undefined,
+      ),
+    )
     .orderBy(desc(projects.updatedAt))
     .limit(limit);
 };
