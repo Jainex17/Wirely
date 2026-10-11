@@ -123,9 +123,6 @@ The code uses two names for the same thing in places. Be precise when you talk t
 - **Auth is Clerk, not Neon Auth.** `app/api/auth/[...path]/route.ts` is a deprecated stub that
   returns 410. `lib/auth/session.ts` is the only session entry point, and it upserts the Clerk user
   into the `users` table on the way through.
-- **`POST /api/projects/[projectId]/generate` fetches `/api/wire/[id]` over HTTP**, forwarding
-  cookies to itself. That costs a round trip and a second 60 second budget. If you touch that path,
-  collapsing it into a direct function call is welcome.
 - **`lib/sanitize.ts` is not the preview path.** Nothing imports it except one test. Page HTML goes
   through `sanitizeIframeHtml` in `lib/iframeSecurity.ts`. Do not reach for `lib/sanitize.ts` and
   assume you are protected.
