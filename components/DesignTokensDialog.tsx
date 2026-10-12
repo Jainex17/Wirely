@@ -71,16 +71,16 @@ export default function DesignTokensDialog({ projectId }: { projectId: string })
 
   return (
     <>
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 gap-1.5 px-2 text-xs"
+        aria-label="Design tokens"
+        data-tip="Design tokens"
+        data-tip-detail="CSS variables written into every page"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
         onClick={() => setOpen(true)}
       >
-        <Palette className="h-3.5 w-3.5" />
-        Tokens
-      </Button>
+        <Palette className="h-4 w-4" />
+      </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

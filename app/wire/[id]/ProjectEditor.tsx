@@ -1,98 +1,12 @@
 "use client";
 
-import { ArrowLeft, LayoutTemplate, PencilRuler, Play } from "lucide-react";
-import Link from "next/link";
-import { type ComponentProps, type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import DesignEditor from "@/components/design/DesignEditorLoader";
-import DesignTokensDialog from "@/components/DesignTokensDialog";
 import HoverTips from "@/components/HoverTips";
-import ShareProjectButton from "@/components/ShareProjectButton";
-import { Button } from "@/components/ui/button";
+import { CANVAS_VIEWS, ProjectChromeContext } from "@/components/ProjectChrome";
 import { cn } from "@/lib/utils";
 import { type CanvasView as EditorView, useEditorStore } from "@/store/useEditorStore";
 import WireEditor from "./WireEditor";
-
-// Alt plus the tab's number switches to it. Neither canvas binds Alt+digit,
-// and matching on `code` keeps it working where Alt+1 types a character.
-const VIEWS: Array<{ view: EditorView; label: string; detail: string; code: string; Icon: typeof LayoutTemplate }> = [
-  {
-    view: "html",
-    label: "Pages",
-    detail: "HTML pages your agent writes. Press Play to click through them.",
-    code: "Digit1",
-    Icon: LayoutTemplate,
-  },
-  {
-    view: "design",
-    label: "Editor",
-    detail: "Screens made of layers you edit by hand, like Figma frames.",
-    code: "Digit2",
-    Icon: PencilRuler,
-  },
-];
-
-/**
- * The one row across the top of the project: the way home, the project title,
- * a tab for each canvas, sized to its label, and the project-wide actions on
- * the right. It sits outside both editors,
- * so it stays up while the design module loads and when it fails to.
- */
-function TopBar({
-  projectId,
-  projectTitle,
-  view,
-  onChange,
-}: {
-  projectId: string;
-  projectTitle: string;
-  view: EditorView;
-  onChange: (view: EditorView) => void;
-}) {
-  return (
-    <header className="editor-theme flex h-9 shrink-0 items-center border-b border-sidebar-border bg-sidebar text-xs">
-      <Link
-        href="/"
-        aria-label="Back to projects"
-        className="flex h-full w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-      </Link>
-      <h1 className="max-w-60 truncate pr-3 font-medium text-foreground">{projectTitle}</h1>
-      <div role="tablist" aria-label="Canvas" className="flex h-full border-l border-sidebar-border">
-        {VIEWS.map(({ view: option, label, detail, code, Icon }) => (
-          <button
-            key={option}
-            type="button"
-            role="tab"
-            aria-selected={view === option}
-            data-tip={`${label} (Alt+${code.slice(-1)})`}
-            data-tip-detail={detail}
-            onClick={() => onChange(option)}
-            className={cn(
-              "flex items-center gap-1.5 border-r border-sidebar-border px-3 font-medium transition-colors",
-              view === option
-                ? "bg-background text-foreground"
-                : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="ml-auto flex items-center gap-1 pr-1.5">
-        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
-          <Link href={`/wire/${projectId}/prototype`} title="Click through the pages">
-            <Play className="h-3.5 w-3.5" />
-            Play
-          </Link>
-        </Button>
-        <DesignTokensDialog projectId={projectId} />
-        <ShareProjectButton projectId={projectId} />
-      </div>
-    </header>
-  );
-}
 
 interface ProjectEditorProps {
   initialView: EditorView;
@@ -124,10 +38,12 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
     url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);
   }, []);
+  // Alt plus the tab's number switches to it. Neither canvas binds Alt+digit,
+  // and matching on `code` keeps it working where Alt+1 types a character.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
-      const next = VIEWS.find((option) => option.code === event.code);
+      const next = CANVAS_VIEWS.find((option) => option.code === event.code);
       if (!next) return;
       event.preventDefault();
       changeView(next.view);
@@ -135,6 +51,11 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [changeView]);
+  // The panels in both editors read the title, the tab, and the switch from here.
+  const chrome = useMemo(
+    () => ({ projectId: wire.wireId, projectTitle, view, onViewChange: changeView }),
+    [wire.wireId, projectTitle, view, changeView],
+  );
   const tabPanel = (option: EditorView, editor: ReactNode) =>
     opened.has(option) ? (
       <div inert={view !== option} className={cn("absolute inset-0", view !== option && "invisible")}>
@@ -142,13 +63,12 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
       </div>
     ) : null;
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
-      <TopBar projectId={wire.wireId} projectTitle={projectTitle} view={view} onChange={changeView} />
-      <div className="relative min-h-0 flex-1">
+    <ProjectChromeContext value={chrome}>
+      <div className="relative h-dvh w-full overflow-hidden bg-background">
         {tabPanel("html", <WireEditor {...wire} />)}
         {tabPanel("design", <DesignEditor {...design} />)}
+        <HoverTips />
       </div>
-      <HoverTips />
-    </div>
+    </ProjectChromeContext>
   );
 }

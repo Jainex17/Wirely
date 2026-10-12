@@ -25,6 +25,7 @@ import {
   toolbarClass,
   ZoomControls,
 } from "@/components/EditorChrome";
+import { FloatingProjectActions, ProjectActionsBar } from "@/components/ProjectChrome";
 import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import {
   DropdownMenu,
@@ -260,6 +261,11 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
       onToggle={() => setIsRightCollapsed((collapsed) => !collapsed)}
     />
   );
+  const saveLabel = (
+    <span role="status" className="px-1 text-xs text-muted-foreground">
+      {SAVE_LABELS[saveStatus]}
+    </span>
+  );
   const sidebar = (isCollapsed: boolean) => (
     <DesignSidebar
       editor={editor}
@@ -288,7 +294,9 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
         ) : null}
         {editor ? (
           <>
-            <TopRight editor={editor} saveStatus={saveStatus} panelToggle={isRightCollapsed ? rightToggle : null} />
+            {isRightCollapsed ? (
+              <FloatingProjectActions toggle={rightToggle} zoom={<DesignZoom editor={editor} />} status={saveLabel} />
+            ) : null}
             <Toolbar editor={editor} />
             <EmptyHint editor={editor} />
           </>
@@ -300,7 +308,13 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
           isRightCollapsed ? "hidden" : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
         }
       >
-        <SidePanelTabs tabs={RIGHT_TABS} active={rightTab} onChange={setRightTab} end={rightToggle} />
+        <ProjectActionsBar toggle={rightToggle} status={saveLabel} />
+        <SidePanelTabs
+          tabs={RIGHT_TABS}
+          active={rightTab}
+          onChange={setRightTab}
+          end={editor ? <DesignZoom editor={editor} /> : null}
+        />
         <div className={rightTab === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
           <ChatPanel projectId={projectId} models={models} initialMessages={initialMessages} />
         </div>
@@ -312,24 +326,16 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
   );
 }
 
-/** Save status, zoom, and the chat panel's toggle while it is hidden, as on the Pages tab. */
-function TopRight({ editor, saveStatus, panelToggle }: { editor: Editor; saveStatus: SaveStatus; panelToggle: ReactNode }) {
+/** The zoom menu for the design canvas. The engine owns the zoom level. */
+function DesignZoom({ editor }: { editor: Editor }) {
   const zoom = useEditorValue(editor, (current) => current.state.zoom);
   return (
-    <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
-      <span role="status" className="rounded-md bg-sidebar/90 px-2 py-1 text-xs text-muted-foreground">
-        {SAVE_LABELS[saveStatus]}
-      </span>
-      <ZoomControls
-        zoom={zoom * 100}
-        onZoomOut={() => editor.zoomToLevel(editor.state.zoom / 1.25)}
-        onFit={() => editor.zoomToFit()}
-        onZoomIn={() => editor.zoomToLevel(editor.state.zoom * 1.25)}
-      />
-      {panelToggle ? (
-        <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">{panelToggle}</div>
-      ) : null}
-    </div>
+    <ZoomControls
+      zoom={zoom * 100}
+      onZoomOut={() => editor.zoomToLevel(editor.state.zoom / 1.25)}
+      onFit={() => editor.zoomToFit()}
+      onZoomIn={() => editor.zoomToLevel(editor.state.zoom * 1.25)}
+    />
   );
 }
 

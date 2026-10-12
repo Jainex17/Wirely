@@ -54,9 +54,9 @@ describe("prototype flow wiring", () => {
   });
 
   it("opens the play view from the editor", () => {
-    const source = read("app/wire/[id]/WireEditor.tsx");
+    const source = read("components/ProjectChrome.tsx");
 
-    expect(source.includes("href={`/wire/${wireId}/prototype`}")).toBe(true);
+    expect(source.includes("href={`/wire/${projectId}/prototype`}")).toBe(true);
   });
 });
 

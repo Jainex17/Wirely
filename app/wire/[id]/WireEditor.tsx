@@ -15,6 +15,7 @@ import WirePromptSidebar from "@/components/WirePromptSidebar";
 import CommentsPanel from "@/components/CommentsPanel";
 import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
+import { FloatingProjectActions, ProjectActionsBar } from "@/components/ProjectChrome";
 import { AccountFooter, PanelToggle, SidePanelTabs } from "@/components/EditorChrome";
 import type { ProjectComment } from "@/lib/projectComments";
 import { Button } from "@/components/ui/button";
@@ -316,14 +317,9 @@ export default function WireEditor({
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
-            <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
-              <CanvasZoomControls />
-              {!isSidebarVisible ? (
-                <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">
-                  {promptPanelToggle}
-                </div>
-              ) : null}
-            </div>
+            {!isSidebarVisible ? (
+              <FloatingProjectActions toggle={promptPanelToggle} zoom={<CanvasZoomControls />} />
+            ) : null}
             {/* Saving indicator hidden for now
             {isSaving ? (
               <div
@@ -353,19 +349,23 @@ export default function WireEditor({
                 : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
             }
           >
+            <ProjectActionsBar toggle={promptPanelToggle} />
             {isCommentMode ? (
               <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-3 pr-2">
                 <h2 className="text-[13px] font-semibold text-foreground">Comments</h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setActiveTool("select")}
-                  aria-label="Close comments (Esc)"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <CanvasZoomControls />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setActiveTool("select")}
+                    aria-label="Close comments (Esc)"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ) : null}
             <div className={isCommentMode ? "hidden" : undefined}>
@@ -373,7 +373,7 @@ export default function WireEditor({
                 tabs={SIDEBAR_TABS}
                 active={sidebarTab}
                 onChange={setSidebarTab}
-                end={promptPanelToggle}
+                end={<CanvasZoomControls />}
               />
             </div>
             {isCommentMode ? (

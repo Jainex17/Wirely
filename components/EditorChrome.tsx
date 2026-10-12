@@ -2,21 +2,23 @@
 
 /**
  * The pieces of editor chrome the Pages and Editor tabs share, so the two
- * canvases look and behave the same: the floating tool bar, zoom controls,
+ * canvases look and behave the same: the floating tool bar, the zoom menu,
  * the side panels' tab header and collapse toggles, and the account footer.
  */
 
 import { useClerk } from "@clerk/nextjs";
-import { ChevronUp, Contrast, Minus, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Contrast, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -94,7 +96,10 @@ export function CanvasBackgroundMenu() {
   );
 }
 
-/** Zoom out, zoom to fit, and zoom in, for the canvas's top-right corner. `zoom` is a percentage. */
+/**
+ * The zoom level as a menu, as in Figma's right panel: the percentage is the
+ * trigger, and the menu zooms in, out, or to fit. `zoom` is a percentage.
+ */
 export function ZoomControls({
   zoom,
   canZoomOut = true,
@@ -110,26 +115,30 @@ export function ZoomControls({
   onFit: () => void;
   onZoomIn: () => void;
 }) {
-  const buttonClass =
-    "flex h-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30";
   return (
-    <div className="flex items-center rounded-lg border border-border bg-sidebar p-0.5 shadow-lg">
-      <button type="button" onClick={onZoomOut} disabled={!canZoomOut} className={cn(buttonClass, "w-7")} aria-label="Zoom out (-)">
-        <Minus className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={onFit}
-        className={cn(buttonClass, "min-w-12 px-1.5 text-xs font-medium tabular-nums text-foreground")}
-        aria-label="Zoom to fit (Shift+1)"
-        data-tip-detail={`At ${Math.round(zoom)}% now. Click to fit everything.`}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Zoom"
+        className="flex h-7 items-center gap-0.5 rounded-md px-1.5 text-xs font-medium tabular-nums text-foreground transition-colors hover:bg-foreground/10 data-[state=open]:bg-foreground/10"
       >
         {Math.round(zoom)}%
-      </button>
-      <button type="button" onClick={onZoomIn} disabled={!canZoomIn} className={cn(buttonClass, "w-7")} aria-label="Zoom in (+)">
-        <Plus className="h-3.5 w-3.5" />
-      </button>
-    </div>
+        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-44">
+        <DropdownMenuItem disabled={!canZoomIn} onSelect={onZoomIn}>
+          Zoom in
+          <DropdownMenuShortcut>+</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!canZoomOut} onSelect={onZoomOut}>
+          Zoom out
+          <DropdownMenuShortcut>-</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onFit}>
+          Zoom to fit
+          <DropdownMenuShortcut>Shift+1</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -166,13 +175,6 @@ export function PanelToggle({
     </button>
   );
 }
-
-/** The collapsed form of a side panel: just its toggle, floating over the canvas corner. */
-export const FloatingPanelToggle = ({ className, children }: { className: string; children: ReactNode }) => (
-  <div className={cn("absolute top-3 z-30 rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg", className)}>
-    {children}
-  </div>
-);
 
 /** The right panel's header: its tabs, then whatever goes at the end, usually the panel toggle. */
 export function SidePanelTabs<Tab extends string>({

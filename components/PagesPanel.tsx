@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import AssetsFolder from "@/components/AssetsFolder";
-import { FloatingPanelToggle, PanelToggle } from "@/components/EditorChrome";
+import { PanelToggle } from "@/components/EditorChrome";
+import { FloatingProjectHeader, ProjectHeader } from "@/components/ProjectChrome";
 import LayerTree from "@/components/LayerTree";
 import { cn } from "@/lib/utils";
 import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
@@ -34,8 +35,8 @@ interface PagesPanelProps {
  * The editor's left column: one tree of every page on the canvas with each
  * page's layers nested under it, and the account menu. Clicking a page pans
  * the canvas to it at the current zoom; dragging it onto a group moves it in or
- * out. The focused page opens by default. Collapsed, the column shrinks to a
- * floating button over the canvas, in the corner where its toggle was.
+ * out. The focused page opens by default. Collapsed, the column shrinks to
+ * its project header, floating over the canvas corner.
  */
 export default function PagesPanel({
   projectId,
@@ -163,10 +164,11 @@ export default function PagesPanel({
 
   const toggle = <PanelToggle side="left" name="pages panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
 
-  if (isCollapsed) return <FloatingPanelToggle className="left-3">{toggle}</FloatingPanelToggle>;
+  if (isCollapsed) return <FloatingProjectHeader end={toggle} />;
 
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+      <ProjectHeader end={toggle} />
       <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-1.5">
         <span className="text-[11px] font-semibold text-foreground">Pages</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
@@ -188,7 +190,6 @@ export default function PagesPanel({
               </HeaderButton>
             </div>
           ) : null}
-          {toggle}
         </div>
       </div>
       <nav role="tree" aria-label="Pages and layers" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">

@@ -17,9 +17,10 @@ import {
   Square,
   Type,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import AssetsFolder from "@/components/AssetsFolder";
-import { AccountFooter, FloatingPanelToggle, PanelToggle } from "@/components/EditorChrome";
+import { AccountFooter, PanelToggle } from "@/components/EditorChrome";
+import { FloatingProjectHeader, ProjectHeader } from "@/components/ProjectChrome";
 import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import { shallowEqual, useEditorValue } from "@/components/design/useEditorValue";
 import { SCREEN_SIZES } from "@/lib/design/document";
@@ -58,7 +59,7 @@ const indent = (depth: number) => 8 + depth * 12;
  * The Editor tab's left column, laid out like the Pages tab's pages
  * panel: one tree of every screen with its layers nested under it, the
  * project's assets, and the account menu. The screen holding the selection
- * opens by default. Collapsed, it shrinks to a button over the canvas.
+ * opens by default. Collapsed, it shrinks to its project header over the canvas.
  */
 export default function DesignSidebar({
   editor,
@@ -74,17 +75,18 @@ export default function DesignSidebar({
   onToggle: () => void;
 }) {
   const toggle = <PanelToggle side="left" name="screens panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
-  if (isCollapsed) return <FloatingPanelToggle className="left-3">{toggle}</FloatingPanelToggle>;
+  if (isCollapsed) return <FloatingProjectHeader end={toggle} />;
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
-      {editor ? <ScreenTree editor={editor} toggle={toggle} /> : <div className="min-h-0 flex-1" />}
+      <ProjectHeader end={toggle} />
+      {editor ? <ScreenTree editor={editor} /> : <div className="min-h-0 flex-1" />}
       <AssetsFolder projectId={projectId} />
       <AccountFooter user={user} />
     </aside>
   );
 }
 
-function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
+function ScreenTree({ editor }: { editor: Editor }) {
   const screens = useEditorValue(
     editor,
     (current) =>
@@ -110,7 +112,6 @@ function ScreenTree({ editor, toggle }: { editor: Editor; toggle: ReactNode }) {
       <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-1.5">
         <span className="text-[11px] font-semibold text-foreground">Screens</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{screens.length}</span>
-        <div className="ml-auto flex items-center">{toggle}</div>
       </div>
       <nav role="tree" aria-label="Screens and layers" className="min-h-0 flex-1 overflow-y-auto pb-2">
         {screens.length === 0 ? <p className="px-3 py-1 text-xs text-muted-foreground">No screens yet.</p> : null}
