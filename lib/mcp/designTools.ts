@@ -205,7 +205,7 @@ export const ADD_SCREEN_TOOL: McpToolDefinition = {
   description:
     "Add a screen to the project's design canvas, to the right of the others. Design screens are " +
     "built from nodes the user edits like Figma frames, on the project's Editor tab; HTML pages " +
-    "(add_page) are on its Prototype tab. Write it as design JSX: one root " +
+    "(add_page) are on its Pages tab. Write it as design JSX: one root " +
     "<Frame> with auto layout (flex=\"col\"), padding, and gap, holding <Frame>, <Text>, <Rectangle>, " +
     "<Ellipse>, <Image>, <svg>, and <Icon> nodes. The root is sized to the device: " +
     `desktop ${SCREEN_SIZES.desktop.width}×${SCREEN_SIZES.desktop.height}, ` +

@@ -168,7 +168,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
   );
 });
 
-/** The zoom controls for the Prototype canvas's top-right corner. */
+/** The zoom controls for the Pages canvas's top-right corner. */
 export function CanvasZoomControls() {
   const { zoom, stepZoom, fitAllPages } = useEditorStore(
     useShallow((state) => ({

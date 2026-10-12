@@ -63,7 +63,7 @@ const TOOL_ICONS: Partial<Record<Tool, ReactNode>> = {
 
 // The bar shows each top-level tool plus the shapes from the rectangle flyout
 // Wirely's screens use most; the rest stay on their shortcuts. Pointing tools
-// come first and drawing tools after the divider, in the Prototype bar's order.
+// come first and drawing tools after the divider, in the Pages bar's order.
 const POINTING_TOOLS: Tool[] = ["SELECT", "HAND", "PEN"];
 const DRAWING_TOOLS: Tool[] = ["FRAME", "RECTANGLE", "ELLIPSE", "LINE", "TEXT"];
 
@@ -102,7 +102,7 @@ interface DesignEditorProps {
 
 /**
  * A project's Editor tab: a Figma-like canvas of screens built from design
- * nodes, laid out like the Prototype tab, with screens and layers on the left
+ * nodes, laid out like the Pages tab, with screens and layers on the left
  * and chat and properties on the right. The document loads once, then saves
  * as the user edits and reloads when an agent changes it (see documentSync.ts).
  */
@@ -217,7 +217,7 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
   }, [commands, editor]);
 
   // Selecting a layer opens its properties, as picking an element does on the
-  // Prototype tab.
+  // Pages tab.
   useEffect(() => {
     if (!editor) return;
     return editor.onEditorEvent("selection:changed", (ids) => {
@@ -312,7 +312,7 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
   );
 }
 
-/** Save status, zoom, and the chat panel's toggle while it is hidden, as on the Prototype tab. */
+/** Save status, zoom, and the chat panel's toggle while it is hidden, as on the Pages tab. */
 function TopRight({ editor, saveStatus, panelToggle }: { editor: Editor; saveStatus: SaveStatus; panelToggle: ReactNode }) {
   const zoom = useEditorValue(editor, (current) => current.state.zoom);
   return (

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The pieces of editor chrome the Prototype and Editor tabs share, so the two
+ * The pieces of editor chrome the Pages and Editor tabs share, so the two
  * canvases look and behave the same: the floating tool bar, zoom controls,
  * the side panels' tab header and collapse toggles, and the account footer.
  */

@@ -4,11 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { PageDeviceType } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import type { Message } from "ai";
-// Prototype flow hidden for now — re-enable together with the
+// The screen order dialog is hidden for now. Re-enable it together with the
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
-// import { ArrowLeft, Cloud, Workflow } from "lucide-react";
-// import { ArrowLeft, Cloud } from "lucide-react";
-import { X } from "lucide-react";
+import { Play, X } from "lucide-react";
+import Link from "next/link";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
@@ -321,6 +320,14 @@ export default function WireEditor({
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
+              <div className="rounded-lg border border-border bg-sidebar p-0.5 shadow-lg">
+                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
+                  <Link href={`/wire/${wireId}/prototype`} title="Click through the pages">
+                    <Play className="h-3.5 w-3.5" />
+                    Play
+                  </Link>
+                </Button>
+              </div>
               <DesignTokensDialog projectId={wireId} />
               <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
@@ -341,18 +348,6 @@ export default function WireEditor({
                 <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
               </div>
             ) : null}
-            */}
-            {/* Prototype flow hidden for now
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setIsPrototypeDialogOpen(true)}
-            >
-              <Workflow className="mr-1.5 h-4 w-4" />
-              Prototype
-            </Button>
             */}
             <EditorWorkspace
               sidebarMode="wire"

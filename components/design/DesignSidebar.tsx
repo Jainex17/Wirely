@@ -55,7 +55,7 @@ const screenOf = (editor: Editor, id: string) => {
 const indent = (depth: number) => 8 + depth * 12;
 
 /**
- * The Editor tab's left column, laid out like the Prototype tab's pages
+ * The Editor tab's left column, laid out like the Pages tab's pages
  * panel: one tree of every screen with its layers nested under it, the
  * project's assets, and the account menu. The screen holding the selection
  * opens by default. Collapsed, it shrinks to a button over the canvas.

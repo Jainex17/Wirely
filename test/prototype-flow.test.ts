@@ -1,6 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "fs";
-import { findNavigationMismatches, parseFlowInput } from "@/lib/prototypeFlow";
+import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { stripWirelyArtifacts } from "@/lib/agentPrompt";
+import { stampNodeIds } from "@/lib/pageNodes";
+import {
+  addPlayScript,
+  findNavigationMismatches,
+  PAGE_LINK_ATTRIBUTE,
+  parseFlowInput,
+  readPageLinks,
+  setPageLink,
+} from "@/lib/prototypeFlow";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -43,11 +53,10 @@ describe("prototype flow wiring", () => {
     expect(source.includes("DEVICE_WIDTHS")).toBe(true);
   });
 
-  it("exposes the prototype dialog from the editor header", () => {
+  it("opens the play view from the editor", () => {
     const source = read("app/wire/[id]/WireEditor.tsx");
 
-    expect(source.includes("PrototypeFlowDialog")).toBe(true);
-    expect(source.includes("setIsPrototypeDialogOpen(true)")).toBe(true);
+    expect(source.includes("href={`/wire/${wireId}/prototype`}")).toBe(true);
   });
 });
 
@@ -96,5 +105,54 @@ describe("findNavigationMismatches", () => {
         { title: "Logo", deviceType: "vector", html: "<svg></svg>" },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("page links", () => {
+  const html =
+    '<html><body><nav data-wirely-id="n1"><a href="#" data-wirely-id="a1">Pricing</a>' +
+    '<a href="#" data-wirely-id="a2">Docs</a></nav></body></html>';
+
+  it("links an element to a page and reads the link back with its text", () => {
+    const linked = setPageLink(html, "a1", "page-2") ?? "";
+    expect(linked).toContain(`<a href="#" data-wirely-id="a1" ${PAGE_LINK_ATTRIBUTE}="page-2">`);
+    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-2", label: "Pricing" }]);
+  });
+
+  it("retargets an existing link instead of adding a second one", () => {
+    const linked = setPageLink(setPageLink(html, "a1", "page-2") ?? "", "a1", "page-3") ?? "";
+    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-3", label: "Pricing" }]);
+  });
+
+  it("removes a link with a null target, leaving the element as it was", () => {
+    const linked = setPageLink(html, "a2", "page-2") ?? "";
+    expect(setPageLink(linked, "a2", null)).toBe(html);
+    expect(readPageLinks(html)).toEqual([]);
+  });
+
+  it("returns null for an element that is not on the page", () => {
+    expect(setPageLink(html, "zz", "page-2")).toBeNull();
+  });
+
+  it("resolves a node id from the outline on a page saved without ids", () => {
+    // get_page_outline stamps ids on the fly, so link_element has to stamp the same way.
+    const unstamped = '<html><body><main><a href="#">Start</a></main></body></html>';
+    const id = /<a data-wirely-id="([a-z0-9]+)"/.exec(stampNodeIds(unstamped))?.[1] ?? "";
+    expect(readPageLinks(setPageLink(unstamped, id, "page-2") ?? "")).toEqual([
+      { nodeId: id, targetPageId: "page-2", label: "Start" },
+    ]);
+  });
+
+  it("survives the sanitizer and is stripped from exported HTML", () => {
+    const linked = setPageLink(html, "a1", "page-2") ?? "";
+    expect(readPageLinks(sanitizeIframeHtml(linked))).toHaveLength(1);
+    expect(stripWirelyArtifacts(linked)).not.toContain(PAGE_LINK_ATTRIBUTE);
+  });
+});
+
+describe("addPlayScript", () => {
+  it("adds the click and key reporter before </body>", () => {
+    const played = addPlayScript("<html><body><p>Hi</p></body></html>");
+    expect(played).toMatch(/<p>Hi<\/p><script>[\s\S]*wirely-play-goto[\s\S]*<\/script><\/body>/);
   });
 });

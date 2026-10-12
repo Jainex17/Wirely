@@ -17,7 +17,7 @@ type Payload = Awaited<ReturnType<Editor["prepareCopy"]>>;
 
 let lastCopy: Payload | null = null;
 
-/** The event is for a text field, the text being edited, or the Prototype tab, so the canvas leaves it alone. */
+/** The event is for a text field, the text being edited, or the Pages tab, so the canvas leaves it alone. */
 const isNotForCanvas = (editor: Editor, event: Event) =>
   isTypingTarget(event.target) || editor.state.editingTextId !== null || useEditorStore.getState().canvasView !== "design";
 

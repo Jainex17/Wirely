@@ -14,8 +14,8 @@ import WireEditor from "./WireEditor";
 const VIEWS: Array<{ view: EditorView; label: string; detail: string; code: string; Icon: typeof LayoutTemplate }> = [
   {
     view: "html",
-    label: "Prototype",
-    detail: "HTML pages your agent writes. Click through them as a prototype.",
+    label: "Pages",
+    detail: "HTML pages your agent writes. Press Play to click through them.",
     code: "Digit1",
     Icon: LayoutTemplate,
   },
@@ -86,7 +86,7 @@ interface ProjectEditorProps {
 }
 
 /**
- * One project, two canvases: HTML pages on Prototype, design screens on Editor.
+ * One project, two canvases: HTML pages on Pages, design screens on Editor.
  * Each tab mounts the first time it is opened and then stays mounted, hidden
  * while the other is on screen, so switching back is instant: the canvas,
  * sidebars, and chat are as the user left them, with no reload. The hidden tab
@@ -103,7 +103,7 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
     setView(next);
     setOpened((current) => (current.has(next) ? current : new Set(current).add(next)));
     // Both tabs are written explicitly, so a project that defaults to Editor
-    // still reloads on Prototype when that is what the user picked.
+    // still reloads on Pages when that is what the user picked.
     const url = new URL(window.location.href);
     url.searchParams.set("view", next);
     window.history.replaceState(null, "", url);
