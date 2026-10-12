@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "fs";
+import { JSDOM } from "jsdom";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { stampNodeIds } from "@/lib/pageNodes";
@@ -8,6 +9,8 @@ import {
   findNavigationMismatches,
   PAGE_LINK_ATTRIBUTE,
   parseFlowInput,
+  PLAY_GOTO_MESSAGE,
+  PLAY_KEY_MESSAGE,
   readPageLinks,
   setPageLink,
 } from "@/lib/prototypeFlow";
@@ -151,8 +154,62 @@ describe("page links", () => {
 });
 
 describe("addPlayScript", () => {
-  it("adds the click and key reporter before </body>", () => {
-    const played = addPlayScript("<html><body><p>Hi</p></body></html>");
-    expect(played).toMatch(/<p>Hi<\/p><script>[\s\S]*wirely-play-goto[\s\S]*<\/script><\/body>/);
+  // Runs a page with the play script in jsdom. In a top-level window `parent`
+  // is the window itself, so its postMessage stands in for the viewer's.
+  const play = (body: string) => {
+    const messages: unknown[] = [];
+    const dom = new JSDOM(addPlayScript(`<html><body>${body}</body></html>`), {
+      runScripts: "dangerously",
+      beforeParse: (window) => {
+        window.postMessage = (message: unknown) => messages.push(message);
+      },
+    });
+    const click = (selector: string) => {
+      const event = new dom.window.MouseEvent("click", { bubbles: true, cancelable: true });
+      dom.window.document.querySelector(selector)!.dispatchEvent(event);
+      return event;
+    };
+    return { dom, messages, click };
+  };
+  const page = `<a id="hot" href="/pricing" ${PAGE_LINK_ATTRIBUTE}="page-2"><span id="inner">See pricing</span></a>
+    <a id="away" href="https://example.com">Docs</a><a id="hash" href="#faq">FAQ</a><p id="text">Hi</p>`;
+
+  it("sends the hotspot's target page when anything inside it is clicked", () => {
+    const { messages, click } = play(page);
+    expect(click("#inner").defaultPrevented).toBe(true);
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2" }]);
+  });
+
+  it("keeps an ordinary link from leaving Play, but lets a hash link scroll", () => {
+    const { messages, click } = play(page);
+    expect(click("#away").defaultPrevented).toBe(true);
+    expect(click("#hash").defaultPrevented).toBe(false);
+    expect(messages).toEqual([]);
+  });
+
+  it("outlines the hotspots after a missed click, then clears the outline", async () => {
+    const { dom, click } = play(page);
+    const root = dom.window.document.documentElement;
+    click("#text");
+    expect(root.classList.contains("wirely-hint")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    expect(root.classList.contains("wirely-hint")).toBe(false);
+  });
+
+  it("shows no outline on a page without hotspots", () => {
+    const { dom, click } = play('<p id="text">Hi</p>');
+    click("#text");
+    expect(dom.window.document.documentElement.classList.contains("wirely-hint")).toBe(false);
+  });
+
+  it("forwards arrow keys to the viewer and ignores other keys", () => {
+    const { dom, messages } = play(page);
+    for (const key of ["ArrowRight", "a", "ArrowLeft"]) {
+      dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key }));
+    }
+    expect(messages).toEqual([
+      { type: PLAY_KEY_MESSAGE, key: "ArrowRight" },
+      { type: PLAY_KEY_MESSAGE, key: "ArrowLeft" },
+    ]);
   });
 });
