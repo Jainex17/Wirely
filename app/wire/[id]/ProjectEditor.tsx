@@ -1,10 +1,13 @@
 "use client";
 
-import { ArrowLeft, LayoutTemplate, PencilRuler } from "lucide-react";
+import { ArrowLeft, LayoutTemplate, PencilRuler, Play } from "lucide-react";
 import Link from "next/link";
 import { type ComponentProps, type ReactNode, useCallback, useEffect, useState } from "react";
 import DesignEditor from "@/components/design/DesignEditorLoader";
+import DesignTokensDialog from "@/components/DesignTokensDialog";
 import HoverTips from "@/components/HoverTips";
+import ShareProjectButton from "@/components/ShareProjectButton";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { type CanvasView as EditorView, useEditorStore } from "@/store/useEditorStore";
 import WireEditor from "./WireEditor";
@@ -30,14 +33,17 @@ const VIEWS: Array<{ view: EditorView; label: string; detail: string; code: stri
 
 /**
  * The one row across the top of the project: the way home, the project title,
- * and a tab for each canvas, sized to its label. It sits outside both editors,
+ * a tab for each canvas, sized to its label, and the project-wide actions on
+ * the right. It sits outside both editors,
  * so it stays up while the design module loads and when it fails to.
  */
 function TopBar({
+  projectId,
   projectTitle,
   view,
   onChange,
 }: {
+  projectId: string;
   projectTitle: string;
   view: EditorView;
   onChange: (view: EditorView) => void;
@@ -73,6 +79,16 @@ function TopBar({
             {label}
           </button>
         ))}
+      </div>
+      <div className="ml-auto flex items-center gap-1 pr-1.5">
+        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
+          <Link href={`/wire/${projectId}/prototype`} title="Click through the pages">
+            <Play className="h-3.5 w-3.5" />
+            Play
+          </Link>
+        </Button>
+        <DesignTokensDialog projectId={projectId} />
+        <ShareProjectButton projectId={projectId} />
       </div>
     </header>
   );
@@ -127,7 +143,7 @@ export default function ProjectEditor({ initialView, projectTitle, wire, design 
     ) : null;
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
-      <TopBar projectTitle={projectTitle} view={view} onChange={changeView} />
+      <TopBar projectId={wire.wireId} projectTitle={projectTitle} view={view} onChange={changeView} />
       <div className="relative min-h-0 flex-1">
         {tabPanel("html", <WireEditor {...wire} />)}
         {tabPanel("design", <DesignEditor {...design} />)}

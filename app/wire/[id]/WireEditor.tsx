@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Message } from "ai";
 // The screen order dialog is hidden for now. Re-enable it together with the
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
-import { Play, X } from "lucide-react";
-import Link from "next/link";
+import { X } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
@@ -17,8 +16,6 @@ import CommentsPanel from "@/components/CommentsPanel";
 import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import { AccountFooter, PanelToggle, SidePanelTabs } from "@/components/EditorChrome";
-import ShareProjectButton from "@/components/ShareProjectButton";
-import DesignTokensDialog from "@/components/DesignTokensDialog";
 import type { ProjectComment } from "@/lib/projectComments";
 import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
@@ -320,16 +317,6 @@ export default function WireEditor({
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
             <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
-              <div className="rounded-lg border border-border bg-sidebar p-0.5 shadow-lg">
-                <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
-                  <Link href={`/wire/${wireId}/prototype`} title="Click through the pages">
-                    <Play className="h-3.5 w-3.5" />
-                    Play
-                  </Link>
-                </Button>
-              </div>
-              <DesignTokensDialog projectId={wireId} />
-              <ShareProjectButton projectId={wireId} />
               <CanvasZoomControls />
               {!isSidebarVisible ? (
                 <div className="rounded-lg border border-sidebar-border bg-sidebar p-0.5 shadow-lg">
