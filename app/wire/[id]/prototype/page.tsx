@@ -10,8 +10,8 @@ interface WirePrototypePageProps {
 }
 
 export const metadata: Metadata = {
-  title: "Prototype | Wirely",
-  description: "View the clickable prototype flow for this Wirely project.",
+  title: "Play | Wirely",
+  description: "Click through this Wirely project's pages.",
 };
 
 export default async function WirePrototypePage({

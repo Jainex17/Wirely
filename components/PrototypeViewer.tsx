@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { addPlayScript, PLAY_GOTO_MESSAGE, PLAY_KEY_MESSAGE } from "@/lib/prototypeFlow";
 import { useIsBrowser } from "@/hooks/useIsBrowser";
 
 type ViewerDevice = "desktop" | "mobile";
@@ -39,17 +40,6 @@ const DEVICE_WIDTHS: Record<ViewerDevice, number> = {
 };
 
 const MOBILE_HEIGHT = 812;
-
-/**
- * A click inside the sandboxed screen gives it the keyboard, so the arrow keys
- * would stop changing screens. The frame forwards them out by message instead
- * of the viewer reaching in, which the sandbox does not allow.
- */
-const forwardArrowKeys = (html: string) => {
-  if (!html) return html;
-  const script = `<script>document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){window.parent.postMessage({type:"wirely-prototype-key",key:event.key},"*");}});</script>`;
-  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${script}</body>`) : `${html}${script}`;
-};
 
 export default function PrototypeViewer({
   wireId,
@@ -89,7 +79,7 @@ export default function PrototypeViewer({
 
   const isBrowser = useIsBrowser();
   const srcDoc = React.useMemo(
-    () => (isBrowser ? forwardArrowKeys(sanitizeIframeHtml(currentPage.html ?? "")) : ""),
+    () => (isBrowser ? addPlayScript(sanitizeIframeHtml(currentPage.html ?? "")) : ""),
     [currentPage.html, isBrowser],
   );
 
@@ -110,20 +100,26 @@ export default function PrototypeViewer({
       }
     };
 
-    const handleFrameKey = (event: MessageEvent) => {
+    // The frame reports arrow keys, since a click inside it takes the keyboard,
+    // and hotspot clicks. A hotspot opens a page only when the viewer holds it.
+    const handleFrameMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { type?: string; key?: string } | null;
-      if (data?.type !== "wirely-prototype-key") return;
-      goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
+      const data = event.data as { type?: unknown; key?: unknown; pageId?: unknown } | null;
+      if (data?.type === PLAY_KEY_MESSAGE) {
+        goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
+      } else if (data?.type === PLAY_GOTO_MESSAGE) {
+        const index = pages.findIndex((page) => page.id === data.pageId);
+        if (index !== -1) goToIndex(index);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("message", handleFrameKey);
+    window.addEventListener("message", handleFrameMessage);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("message", handleFrameKey);
+      window.removeEventListener("message", handleFrameMessage);
     };
-  }, [currentIndex, goToIndex]);
+  }, [currentIndex, goToIndex, pages]);
 
   React.useEffect(() => {
     const sync = () => {
@@ -169,7 +165,7 @@ export default function PrototypeViewer({
                 {projectTitle}
               </p>
               <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                Prototype
+                Play
               </p>
             </div>
           </div>
@@ -279,7 +275,7 @@ export default function PrototypeViewer({
           <iframe
             ref={iframeRef}
             key={`${currentPage.id}-${device}`}
-            title={`${currentPage.title} prototype screen`}
+            title={`${currentPage.title} play screen`}
             srcDoc={srcDoc}
             className="h-full w-full rounded-[inherit] border-0 bg-background"
             sandbox="allow-scripts"
@@ -290,7 +286,7 @@ export default function PrototypeViewer({
 
       {isPresenting ? null : (
         <nav
-          aria-label="Prototype screens"
+          aria-label="Play screens"
           className="flex h-16 shrink-0 items-center gap-2 overflow-x-auto border-t border-border bg-card px-4"
         >
           {pages.map((page, index) => (

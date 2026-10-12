@@ -40,7 +40,7 @@ export const MCP_INSTRUCTIONS = [
     "user asks for a new one, and name it after the product or codebase so a later chat can " +
     "find it. Give the user the editor URL of the project you used, from list_projects or " +
     "create_project.",
-  "A project has two tabs. The Prototype tab holds HTML pages (add_page), the default for every " +
+  "A project has two tabs. The Pages tab holds HTML pages (add_page), the default for every " +
     "mock. The Editor tab holds screens built from design nodes the user edits like Figma " +
     "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
     "or asks, in chat or in a comment, to make an HTML page editable: then read the page with " +
@@ -51,7 +51,8 @@ export const MCP_INSTRUCTIONS = [
     "rebuilding a screen.",
   "list_pages lists both: HTML pages by UUID and design screens by node id like \"1:23\". " +
     "get_page, get_page_png, and delete_page take either. patch_page, edit_element, " +
-    "get_page_outline, set_prototype_flow, and the HTML rules are for HTML pages only.",
+    "get_page_outline, link_element, list_links, set_prototype_flow, and the HTML rules are " +
+    "for HTML pages only.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -104,8 +105,11 @@ export const MCP_INSTRUCTIONS = [
     "u_originY: 0.5, u_worldWidth: 0, u_worldHeight: 0 }, undefined, 0, 0). Give the element " +
     "a CSS background too: get_page_png has no WebGL and shows only that.",
   "For a multi-screen flow, call get_design_tokens first and write one nav block that every " +
-    "screen reuses with the same links in the same order. When the screens are done, call " +
-    "set_prototype_flow with them in order, and fix any navigation mismatch it reports.",
+    "screen reuses with the same links in the same order.",
+  "Never link pages unless the user asks to connect, link, or wire screens, or to make them " +
+    "clickable. Linking costs tool calls the user did not ask for. When they ask, call " +
+    "get_page_outline on each page for node ids, then link_element once per button, nav item, " +
+    "or card that should open another page, and give the user the play link it returns.",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -598,12 +602,49 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: "link_element",
+    description:
+      "Only when the user asks to connect or link screens. Make one element on an HTML page a " +
+      "hotspot: in the play view, clicking it opens targetPageId, like a Figma prototype " +
+      "connection. Take nodeId from get_page_outline. Pass targetPageId null to remove the " +
+      "link. Returns the play link to give the user.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        pageId: PAGE_ID,
+        nodeId: {
+          type: "string",
+          description: "The element to click, a node id from get_page_outline.",
+        },
+        targetPageId: {
+          type: ["string", "null"],
+          description: "The page the click opens, from list_pages. Null removes the link.",
+        },
+      },
+      required: ["projectId", "pageId", "nodeId", "targetPageId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_links",
+    description:
+      "List every element-to-page link in a project, as page, node id, element text, and the " +
+      "page it opens. Flags links whose target page was deleted.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "set_prototype_flow",
     description:
-      "Link screens into the project's clickable prototype, in the order a viewer steps " +
-      "through them. Pages left out are not in the prototype, so call it again with a " +
-      "different list to add or remove screens. Returns the prototype link to give the " +
-      "user, and lists screens whose <nav> links differ from the other screens of the " +
+      "Only when the user asks for a set screen order. Choose the screens the play view holds, " +
+      "in the order a viewer steps through them with the arrow keys. Pages left out are not " +
+      "in it, so call it again with a different list to add or remove screens. Returns the " +
+      "play link to give the user, and lists screens whose <nav> links differ from the other screens of the " +
       "same device type.",
     inputSchema: {
       type: "object",

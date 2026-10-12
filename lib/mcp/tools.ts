@@ -65,8 +65,16 @@ import {
   wrapNode,
 } from "@/lib/pageTree";
 import { formatCommentsForAgent, isUuid } from "@/lib/projectComments";
-import { upsertPrototypeFlowForProject } from "@/lib/db/queries/prototypeFlows";
-import { findNavigationMismatches, parseFlowInput } from "@/lib/prototypeFlow";
+import {
+  getPrototypeFlowForProject,
+  upsertPrototypeFlowForProject,
+} from "@/lib/db/queries/prototypeFlows";
+import {
+  findNavigationMismatches,
+  parseFlowInput,
+  readPageLinks,
+  setPageLink,
+} from "@/lib/prototypeFlow";
 import { isPageDeviceType } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 
@@ -147,7 +155,7 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const { project, page } = await createProject(userId, parsed.data.title);
   if (!page) return fail("The project was created without its first page. Call add_page to add one.");
   return succeed(
-    `Created project "${project.title}" (id: ${project.id}). Its Prototype tab starts with an empty ` +
+    `Created project "${project.title}" (id: ${project.id}). Its Pages tab starts with an empty ` +
       `page "Page 1" (id: ${page.id}); its Editor tab starts empty.\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
       "Share this link with the user so they can watch the pages you write.",
@@ -889,6 +897,8 @@ const importUrl: ToolHandler = async (userId, args) => {
   );
 };
 
+const playLink = (origin: string, projectId: string) => `${origin}/wire/${projectId}/prototype`;
+
 const setPrototypeFlow: ToolHandler = async (userId, args, origin) => {
   const parsed = z
     .object({ projectId: z.string().trim().min(1), pageIds: z.unknown(), startPageId: z.unknown() })
@@ -915,11 +925,93 @@ const setPrototypeFlow: ToolHandler = async (userId, args, origin) => {
 
   return succeed(
     `The prototype steps through ${flowPages.map((page) => `"${page.title}"`).join(", ")}.\n` +
-      `Give the user this link to play it: ${origin}/wire/${parsed.data.projectId}/prototype` +
+      `Give the user this link to play it: ${playLink(origin, parsed.data.projectId)}` +
       (mismatches.length > 0
         ? `\nNavigation differs between screens:\n${mismatches.join("\n")}`
         : ""),
   );
+};
+
+const linkElement: ToolHandler = async (userId, args, origin) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      pageId: z.string().trim().min(1),
+      nodeId: z.string().trim().min(1).max(16),
+      targetPageId: z.string().trim().min(1).nullable(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+  const { projectId, pageId, nodeId, targetPageId } = parsed.data;
+
+  let targetTitle = "";
+  if (targetPageId !== null) {
+    if (targetPageId === pageId) return fail("A page cannot link to itself.");
+    const target = isUuid(targetPageId)
+      ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
+      : null;
+    if (!target) return fail("Target page not found. Use list_pages for HTML page ids.");
+    targetTitle = target.title;
+  }
+
+  // Compare-and-swap like edit_element, so a user editing the same page at the
+  // same moment is not overwritten.
+  for (let attempt = 0; attempt < PATCH_ATTEMPTS; attempt += 1) {
+    const page = await getProjectPageForUser({ projectId, pageId, userId });
+    if (!page) return fail("Page not found. Use list_pages for valid ids.");
+
+    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId);
+    if (next === null) {
+      return fail(`Element ${nodeId} is not on "${page.title}". Call get_page_outline for current ids.`);
+    }
+    const html = sanitizeIframeHtml(next);
+    const updated = await updateProjectPageForUser({
+      projectId,
+      pageId,
+      userId,
+      htmlContent: html,
+      expectedHtmlContent: page.htmlContent,
+    });
+    if (!updated) continue;
+    await setAgentBaseline(updated.id, updated.htmlContent, page.htmlContent);
+
+    if (targetPageId === null) return succeed(`Removed the link from ${nodeId} on "${updated.title}".`);
+    const flow = await getPrototypeFlowForProject(projectId, userId);
+    const playable = flow?.pageIds ?? [];
+    const outsideFlow = !playable.includes(pageId) || !playable.includes(targetPageId);
+    return succeed(
+      `Clicking ${nodeId} on "${updated.title}" now opens "${targetTitle}".\n` +
+        `Give the user this link to play it: ${playLink(origin, projectId)}` +
+        (outsideFlow
+          ? "\nThe screen order saved with set_prototype_flow leaves out one of these pages, so " +
+            "this link does nothing in play until both pages are in it."
+          : ""),
+    );
+  }
+  return fail("The page kept changing while linking. Call get_page_outline and try again.");
+};
+
+const listLinks: ToolHandler = async (userId, args, origin) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const pages = await listProjectPagesForUser({ projectId: parsed.data.projectId, userId });
+  if (pages.length === 0) return fail("Project not found. Use list_projects for valid ids.");
+  const titleById = new Map(pages.map((page) => [page.id, page.title]));
+  const lines = pages.flatMap((page) =>
+    readPageLinks(page.htmlContent ?? "").map((link) => {
+      const target = titleById.get(link.targetPageId);
+      return (
+        `"${page.title}" (${page.id}) node ${link.nodeId}` +
+        (link.label ? ` "${link.label}"` : "") +
+        (target
+          ? ` opens "${target}" (${link.targetPageId})`
+          : ` opens a deleted page (${link.targetPageId}); relink or remove it`)
+      );
+    }),
+  );
+  if (lines.length === 0) return succeed("No elements are linked to other pages yet.");
+  return succeed(`${lines.join("\n")}\nPlay link: ${playLink(origin, parsed.data.projectId)}`);
 };
 
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
@@ -944,6 +1036,8 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_assets: listAssets,
   delete_page: deletePage,
   set_prototype_flow: setPrototypeFlow,
+  link_element: linkElement,
+  list_links: listLinks,
 };
 
 /** Guards the `tools/list` catalog and the dispatch table against drifting apart. */
@@ -960,6 +1054,7 @@ const HTML_PAGE_TOOLS = new Set([
   "patch_page",
   "edit_element",
   "update_page",
+  "link_element",
 ]);
 
 const SCREEN_ID_MESSAGE =

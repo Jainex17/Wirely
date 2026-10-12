@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Loader2, Share2 } from "lucide-react";
+import { Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -65,18 +65,9 @@ export default function ShareProjectButton({ projectId }: { projectId: string })
 
   return (
     <>
-      <div className="rounded-lg border border-border bg-sidebar p-0.5 shadow-lg">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 text-xs"
-          onClick={() => open(true)}
-        >
-          <Share2 className="h-3.5 w-3.5" />
-          Share
-        </Button>
-      </div>
+      <Button type="button" size="sm" className="h-7 px-3 text-xs font-semibold" onClick={() => open(true)}>
+        Share
+      </Button>
       <Dialog open={isOpen} onOpenChange={open}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

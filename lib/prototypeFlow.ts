@@ -1,8 +1,18 @@
 /**
  * Rules for a project's prototype flow, shared by the editor's save route and
  * the MCP `set_prototype_flow` tool, plus the navigation check an agent gets
- * back after it links screens into a flow.
+ * back after it links screens into a flow, and the element links the play
+ * view follows on click.
  */
+import {
+  findNodeSpan,
+  getNodeHtml,
+  readNodeId,
+  removeNodeAttribute,
+  scanTags,
+  setNodeAttribute,
+  stampNodeIds,
+} from "@/lib/pageNodes";
 
 export const MAX_FLOW_PAGE_COUNT = 50;
 
@@ -98,4 +108,84 @@ export const findNavigationMismatches = (
     }
   }
   return lines;
+};
+
+/**
+ * Marks an element as a hotspot: in the play view a click on it opens the page
+ * whose id it holds. The link lives on the element, so it moves, copies, and
+ * deletes with it, and `stripWirelyArtifacts` drops it from exported HTML.
+ */
+export const PAGE_LINK_ATTRIBUTE = "data-wirely-goto";
+const PAGE_LINK_PATTERN = new RegExp(`\\s${PAGE_LINK_ATTRIBUTE}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i");
+
+export interface PageLink {
+  nodeId: string;
+  targetPageId: string;
+  /** The element's visible text, cut short, so an agent can tell links apart. */
+  label: string;
+}
+
+const MAX_LINK_LABEL_CHARS = 40;
+
+const linkLabel = (html: string, nodeId: string) => {
+  const text = decodeText(getNodeHtml(html, nodeId) ?? "");
+  return text.length > MAX_LINK_LABEL_CHARS ? `${text.slice(0, MAX_LINK_LABEL_CHARS - 3)}...` : text;
+};
+
+/** Every hotspot on a page, in document order. */
+export const readPageLinks = (html: string): PageLink[] => {
+  const links: PageLink[] = [];
+  for (const tag of scanTags(html)) {
+    if (tag.isClosing) continue;
+    const nodeId = readNodeId(tag.attributes);
+    if (!nodeId) continue;
+    const match = PAGE_LINK_PATTERN.exec(tag.attributes);
+    const targetPageId = match?.[1] ?? match?.[2];
+    if (targetPageId) links.push({ nodeId, targetPageId, label: linkLabel(html, nodeId) });
+  }
+  return links;
+};
+
+/**
+ * Points the element at `targetPageId`, or removes its link when the target is
+ * null. Stamps ids first so a node id from get_page_outline resolves. Null when
+ * the element is not on the page.
+ */
+export const setPageLink = (html: string, nodeId: string, targetPageId: string | null) => {
+  const source = stampNodeIds(html);
+  if (!findNodeSpan(source, nodeId)) return null;
+  return targetPageId === null
+    ? removeNodeAttribute(source, nodeId, PAGE_LINK_ATTRIBUTE)
+    : setNodeAttribute(source, nodeId, PAGE_LINK_ATTRIBUTE, targetPageId);
+};
+
+/** The messages the play script posts out of the frame: a hotspot click and an arrow key. */
+export const PLAY_GOTO_MESSAGE = "wirely-play-goto";
+export const PLAY_KEY_MESSAGE = "wirely-prototype-key";
+
+/**
+ * The script the play view adds to each srcdoc, after sanitizing. The frame is
+ * sandboxed without allow-same-origin, so the viewer cannot read clicks in it.
+ * The script reports a hotspot click and arrow keys out by message. A click on
+ * an ordinary link is cancelled, so the frame does not navigate away from the
+ * page, and a click that misses every hotspot outlines them for a moment, as
+ * Figma does. The viewer only ever moves to a page it already holds, so a
+ * forged message from the page's own scripts can do no more than a click.
+ */
+export const addPlayScript = (html: string) => {
+  if (!html) return html;
+  const attr = JSON.stringify(PAGE_LINK_ATTRIBUTE);
+  const script =
+    `<script>(function(){var A=${attr},S="["+A+"]";` +
+    `var style=document.createElement("style");style.textContent=S+"{cursor:pointer}html.wirely-hint "+S+"{outline:2px solid #3b82f6;outline-offset:2px}";` +
+    `(document.head||document.documentElement).appendChild(style);var timer=0;` +
+    `document.addEventListener("click",function(event){var el=event.target instanceof Element?event.target:null;` +
+    `var hotspot=el&&el.closest(S);if(hotspot){event.preventDefault();event.stopPropagation();` +
+    `parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A)},"*");return;}` +
+    `var link=el&&el.closest("a[href]");if(link&&(link.getAttribute("href")||"").charAt(0)!=="#")event.preventDefault();` +
+    `if(!document.querySelector(S))return;var root=document.documentElement;root.classList.add("wirely-hint");` +
+    `clearTimeout(timer);timer=setTimeout(function(){root.classList.remove("wirely-hint");},600);},true);` +
+    `document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){` +
+    `parent.postMessage({type:${JSON.stringify(PLAY_KEY_MESSAGE)},key:event.key},"*");}});})();</script>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${script}</body>`) : `${html}${script}`;
 };
