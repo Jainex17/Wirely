@@ -87,6 +87,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
+import { downloadBlob, fileSlug } from "@/lib/download";
 import type { PageRenderMode } from "@/lib/canvasScene";
 import type { PageDeviceType } from "@/lib/types";
 import { type AgentEdit, type PageStatusRecord, useEditorStore } from "@/store/useEditorStore";
@@ -196,17 +197,6 @@ interface ContextMenuAction {
   destructive?: boolean;
   disabled?: boolean;
 }
-
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
 
 /** Narrowest the preview can be dragged. Below this nothing is readable. */
 export const MIN_PREVIEW_WIDTH = 280;
@@ -677,14 +667,7 @@ export default React.memo(function PageRenderer({
     setIsRenameDialogOpen(false);
   }, [nextPageTitle, onRenamePage, page.id]);
 
-  const slugifiedTitle = React.useMemo(
-    () =>
-      page.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "page",
-    [page.title],
-  );
+  const slugifiedTitle = React.useMemo(() => fileSlug(page.title, "page"), [page.title]);
 
   const copyForAgent = React.useCallback(async () => {
     if (!projectId) return;
