@@ -11,17 +11,22 @@ import {
   ArrowRight,
   Code,
   Download,
+  FileCode2,
   Image as ImageIcon,
+  Loader2,
   Minus,
   Plus,
   StretchHorizontal,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, use, useState } from "react";
 import { toast } from "@/components/ui/sonner";
+import { ProjectChromeContext } from "@/components/ProjectChrome";
+import { sendScreenToPages } from "@/components/design/sendToPages";
 import { useEditorValue } from "@/components/design/useEditorValue";
 import { type DesignExportFormat, exportDesignNodes } from "@/lib/design/document";
 import { downloadBlob, fileSlug } from "@/lib/download";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/store/useEditorStore";
 
 // ---- color helpers -------------------------------------------------------
 
@@ -451,8 +456,52 @@ function ExportSection({ editor, nodes }: { editor: Editor; nodes: SceneNode[] }
             <Code className="h-3.5 w-3.5" /> Copy code
           </button>
         </div>
+        {nodes.length === 1 && nodes[0].parentId === editor.state.currentPageId ? (
+          <SendToPagesButton editor={editor} screen={nodes[0]} />
+        ) : null}
       </div>
     </Section>
+  );
+}
+
+/**
+ * Copies a screen to the Pages tab as an HTML page and shows it there, so it
+ * can join prototypes, comments, and build checks. One way: later edits to
+ * the screen stay on this tab.
+ */
+function SendToPagesButton({ editor, screen }: { editor: Editor; screen: SceneNode }) {
+  const chrome = use(ProjectChromeContext);
+  const [isSending, setIsSending] = useState(false);
+  if (!chrome) return null;
+  const send = async () => {
+    setIsSending(true);
+    try {
+      const { pageId, imagesLeftOut } = await sendScreenToPages(chrome.projectId, editor, screen);
+      chrome.onViewChange("html");
+      useEditorStore.getState().focusPage(pageId);
+      if (imagesLeftOut > 0) {
+        toast.warning(`Sent "${screen.name}" to Pages without ${imagesLeftOut} image${imagesLeftOut === 1 ? "" : "s"} the project had no room for.`);
+      } else {
+        toast.success(`Sent "${screen.name}" to Pages.`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send the screen to Pages.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      disabled={isSending}
+      onClick={() => void send()}
+      data-tip="Send to Pages"
+      data-tip-detail="Copy this screen to the Pages tab as an HTML page, for prototypes, comments, and your agent. Later edits here do not carry over."
+      className={exportButtonClass}
+    >
+      {isSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCode2 className="h-3.5 w-3.5" />}
+      Send to Pages
+    </button>
   );
 }
 
