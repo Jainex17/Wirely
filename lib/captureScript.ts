@@ -329,7 +329,8 @@ const main = async () => {
         clip: { x: 0, y: 0, width, height: shotHeight, scale: 1 },
       });
       shots.push(Buffer.from(result.data, "base64"));
-      if (shots.at(-1).byteLength <= MAX_UPLOAD_BYTES - MAX_HTML_CHARS * 2 - Buffer.byteLength(styleMapJson)) break;
+      // A UTF-16 code unit takes at most 3 bytes in UTF-8, so this is the most the page can take.
+      if (shots.at(-1).byteLength <= MAX_UPLOAD_BYTES - MAX_HTML_CHARS * 3 - Buffer.byteLength(styleMapJson) - 10000) break;
     }
     const captured = await evaluate(
       cdp,
