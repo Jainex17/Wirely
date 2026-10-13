@@ -157,6 +157,8 @@ export default function PageCompareDialog() {
   const close = () => {
     setComparePageIds(null);
     resetHeights();
+    // The next open starts a new scroll area at the top, so the frames must too.
+    setScrollY(0);
     // A reload should not reopen a comparison the user closed.
     const url = new URL(window.location.href);
     if (url.searchParams.has("compare")) {
