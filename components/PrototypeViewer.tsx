@@ -13,7 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
-import { addPlayScript, PLAY_GOTO_MESSAGE, PLAY_KEY_MESSAGE } from "@/lib/prototypeFlow";
+import {
+  addPlayScript,
+  PLAY_GOTO_MESSAGE,
+  PLAY_KEY_MESSAGE,
+  parsePageTransition,
+  type PageTransition,
+} from "@/lib/prototypeFlow";
 import { useIsBrowser } from "@/hooks/useIsBrowser";
 
 type ViewerDevice = "desktop" | "mobile";
@@ -41,6 +47,39 @@ const DEVICE_WIDTHS: Record<ViewerDevice, number> = {
 
 const MOBILE_HEIGHT = 812;
 
+const TRANSITION_MS = 280;
+
+/** What the incoming and outgoing screens do during a transition. */
+const TRANSITION_FRAMES: Record<
+  Exclude<PageTransition, "instant">,
+  { enter: Keyframe[]; leave: Keyframe[] }
+> = {
+  dissolve: { enter: [{ opacity: 0 }, { opacity: 1 }], leave: [] },
+  "slide-left": {
+    enter: [{ transform: "translateX(100%)" }, { transform: "translateX(0)" }],
+    leave: [{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }],
+  },
+  "slide-right": {
+    enter: [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
+    leave: [{ transform: "translateX(0)" }, { transform: "translateX(100%)" }],
+  },
+};
+
+/** One showing of a screen. `visit` keeps each showing's frame apart, so a frame is never reused. */
+interface Shown {
+  index: number;
+  visit: number;
+}
+
+interface ViewState {
+  current: Shown;
+  /** The screen animating out, kept until the transition ends. */
+  leaving: Shown | null;
+  transition: PageTransition;
+  /** True once the incoming frame has loaded, so the animation never shows a blank screen. */
+  loaded: boolean;
+}
+
 export default function PrototypeViewer({
   wireId,
   projectTitle,
@@ -48,13 +87,20 @@ export default function PrototypeViewer({
   initialPageIndex,
 }: PrototypeViewerProps) {
   const router = useRouter();
-  const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
+  const [view, setView] = React.useState<ViewState>({
+    current: { index: initialPageIndex, visit: 0 },
+    leaving: null,
+    transition: "instant",
+    loaded: false,
+  });
+  const currentIndex = view.current.index;
   const [deviceOverride, setDeviceOverride] = React.useState<ViewerDevice | null>(
     null,
   );
   const [zoom, setZoom] = React.useState(100);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const leavingRef = React.useRef<HTMLIFrameElement>(null);
   const [isPresenting, setIsPresenting] = React.useState(false);
   const [screenSize, setScreenSize] = React.useState({ width: 0, height: 0 });
 
@@ -78,18 +124,55 @@ export default function PrototypeViewer({
   const frameScale = isPresenting ? presentScale : zoom / 100;
 
   const isBrowser = useIsBrowser();
-  const srcDoc = React.useMemo(
-    () => (isBrowser ? addPlayScript(sanitizeIframeHtml(currentPage.html ?? "")) : ""),
-    [currentPage.html, isBrowser],
+  const srcDocs = React.useMemo(
+    () => (isBrowser ? pages.map((page) => addPlayScript(sanitizeIframeHtml(page.html ?? ""))) : []),
+    [pages, isBrowser],
   );
 
+  /** Shows a screen. Arrow keys and the screen strip pass no transition, so they stay instant. */
   const goToIndex = React.useCallback(
-    (index: number) => {
+    (index: number, transition: PageTransition = "instant") => {
       const bounded = Math.max(0, Math.min(pages.length - 1, index));
-      setCurrentIndex(bounded);
+      const animate =
+        transition !== "instant" &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setView((state) =>
+        bounded === state.current.index
+          ? state
+          : {
+              current: { index: bounded, visit: state.current.visit + 1 },
+              leaving: animate ? state.current : null,
+              transition,
+              loaded: false,
+            },
+      );
     },
     [pages.length],
   );
+
+  // Runs the transition once the incoming frame has loaded, then drops the
+  // outgoing frame. A layout effect, so the first painted frame is the start.
+  React.useLayoutEffect(() => {
+    if (!view.leaving || !view.loaded || view.transition === "instant") return;
+    const frames = TRANSITION_FRAMES[view.transition];
+    const options = { duration: TRANSITION_MS, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    const entering = iframeRef.current?.animate(frames.enter, options);
+    const leaving = leavingRef.current?.animate(frames.leave, options);
+    const visit = view.current.visit;
+    const finish = () =>
+      setView((state) =>
+        state.current.visit === visit ? { ...state, leaving: null } : state,
+      );
+    if (!entering) {
+      finish();
+      return;
+    }
+    entering.onfinish = finish;
+    return () => {
+      entering.cancel();
+      leaving?.cancel();
+    };
+  }, [view]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -104,12 +187,14 @@ export default function PrototypeViewer({
     // and hotspot clicks. A hotspot opens a page only when the viewer holds it.
     const handleFrameMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { type?: unknown; key?: unknown; pageId?: unknown } | null;
+      const data = event.data as
+        | { type?: unknown; key?: unknown; pageId?: unknown; transition?: unknown }
+        | null;
       if (data?.type === PLAY_KEY_MESSAGE) {
         goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
       } else if (data?.type === PLAY_GOTO_MESSAGE) {
         const index = pages.findIndex((page) => page.id === data.pageId);
-        if (index !== -1) goToIndex(index);
+        if (index !== -1) goToIndex(index, parsePageTransition(data.transition));
       }
     };
 
@@ -260,7 +345,7 @@ export default function PrototypeViewer({
       >
         <div
           className={cn(
-            "bg-background",
+            "relative overflow-hidden bg-background",
             isPresenting && device === "desktop"
               ? ""
               : "rounded-[var(--radius)] border border-border shadow-xl",
@@ -272,15 +357,36 @@ export default function PrototypeViewer({
             transformOrigin: "top center",
           }}
         >
-          <iframe
-            ref={iframeRef}
-            key={`${currentPage.id}-${device}`}
-            title={`${currentPage.title} play screen`}
-            srcDoc={srcDoc}
-            className="h-full w-full rounded-[inherit] border-0 bg-background"
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-          />
+          {/* The outgoing frame renders first, so React keeps it in place and never reloads it. */}
+          {[view.leaving, view.current].map((shown) => {
+            if (!shown) return null;
+            const isLeaving = shown === view.leaving;
+            const page = pages[shown.index] ?? pages[0];
+            return (
+              <iframe
+                ref={isLeaving ? leavingRef : iframeRef}
+                key={`${page.id}-${device}-${shown.visit}`}
+                title={`${page.title} play screen`}
+                srcDoc={srcDocs[shown.index] ?? ""}
+                onLoad={
+                  isLeaving
+                    ? undefined
+                    : () =>
+                        setView((state) =>
+                          state.current.visit === shown.visit ? { ...state, loaded: true } : state,
+                        )
+                }
+                className={cn(
+                  "absolute inset-0 h-full w-full border-0 bg-background",
+                  isLeaving && "pointer-events-none",
+                )}
+                // The incoming screen stays hidden until it loads, so the outgoing one shows meanwhile.
+                style={!isLeaving && view.leaving && !view.loaded ? { visibility: "hidden" } : undefined}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+            );
+          })}
         </div>
       </main>
 
@@ -293,7 +399,7 @@ export default function PrototypeViewer({
             <button
               key={page.id}
               type="button"
-              onClick={() => setCurrentIndex(index)}
+              onClick={() => goToIndex(index)}
               className={cn(
                 "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-xs transition",
                 index === currentIndex

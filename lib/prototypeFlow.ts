@@ -113,14 +113,29 @@ export const findNavigationMismatches = (
 /**
  * Marks an element as a hotspot: in the play view a click on it opens the page
  * whose id it holds. The link lives on the element, so it moves, copies, and
- * deletes with it, and `stripWirelyArtifacts` drops it from exported HTML.
+ * deletes with it, and `stripWirelyArtifacts` drops it and the link attributes
+ * below from exported HTML.
  */
 export const PAGE_LINK_ATTRIBUTE = "data-wirely-goto";
-const PAGE_LINK_PATTERN = new RegExp(`\\s${PAGE_LINK_ATTRIBUTE}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i");
+
+/** How the play view moves to the hotspot's page. No attribute means instant. */
+export const PAGE_TRANSITION_ATTRIBUTE = "data-wirely-transition";
+export const PAGE_TRANSITIONS = ["instant", "dissolve", "slide-left", "slide-right"] as const;
+export type PageTransition = (typeof PAGE_TRANSITIONS)[number];
+
+/** A transition name read from an attribute or a message, or instant for anything else. */
+export const parsePageTransition = (value: unknown): PageTransition =>
+  PAGE_TRANSITIONS.find((transition) => transition === value) ?? "instant";
+
+const readAttribute = (attributes: string, name: string) => {
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attributes);
+  return match ? (match[1] ?? match[2]) : undefined;
+};
 
 export interface PageLink {
   nodeId: string;
   targetPageId: string;
+  transition: PageTransition;
   /** The element's visible text, cut short, so an agent can tell links apart. */
   label: string;
 }
@@ -139,24 +154,46 @@ export const readPageLinks = (html: string): PageLink[] => {
     if (tag.isClosing) continue;
     const nodeId = readNodeId(tag.attributes);
     if (!nodeId) continue;
-    const match = PAGE_LINK_PATTERN.exec(tag.attributes);
-    const targetPageId = match?.[1] ?? match?.[2];
-    if (targetPageId) links.push({ nodeId, targetPageId, label: linkLabel(html, nodeId) });
+    const targetPageId = readAttribute(tag.attributes, PAGE_LINK_ATTRIBUTE);
+    if (!targetPageId) continue;
+    links.push({
+      nodeId,
+      targetPageId,
+      transition: parsePageTransition(readAttribute(tag.attributes, PAGE_TRANSITION_ATTRIBUTE)),
+      label: linkLabel(html, nodeId),
+    });
   }
   return links;
 };
 
+export interface PageLinkOptions {
+  transition?: PageTransition;
+}
+
 /**
- * Points the element at `targetPageId`, or removes its link when the target is
- * null. Stamps ids first so a node id from get_page_outline resolves. Null when
- * the element is not on the page.
+ * Points the element at `targetPageId` with the given options, or removes its
+ * link when the target is null. A default option writes no attribute. Stamps
+ * ids first so a node id from get_page_outline resolves. Null when the element
+ * is not on the page.
  */
-export const setPageLink = (html: string, nodeId: string, targetPageId: string | null) => {
+export const setPageLink = (
+  html: string,
+  nodeId: string,
+  targetPageId: string | null,
+  { transition = "instant" }: PageLinkOptions = {},
+) => {
   const source = stampNodeIds(html);
   if (!findNodeSpan(source, nodeId)) return null;
-  return targetPageId === null
-    ? removeNodeAttribute(source, nodeId, PAGE_LINK_ATTRIBUTE)
-    : setNodeAttribute(source, nodeId, PAGE_LINK_ATTRIBUTE, targetPageId);
+  const write = (current: string, name: string, value: string | null) =>
+    (value === null
+      ? removeNodeAttribute(current, nodeId, name)
+      : setNodeAttribute(current, nodeId, name, value)) ?? current;
+  const linked = write(source, PAGE_LINK_ATTRIBUTE, targetPageId);
+  return write(
+    linked,
+    PAGE_TRANSITION_ATTRIBUTE,
+    targetPageId === null || transition === "instant" ? null : transition,
+  );
 };
 
 /** The messages the play script posts out of the frame: a hotspot click and an arrow key. */
@@ -178,8 +215,9 @@ export const PLAY_KEY_MESSAGE = "wirely-prototype-key";
 export const addPlayScript = (html: string) => {
   if (!html) return html;
   const attr = JSON.stringify(PAGE_LINK_ATTRIBUTE);
+  const transitionAttr = JSON.stringify(PAGE_TRANSITION_ATTRIBUTE);
   const script =
-    `<script>(function(){var A=${attr},S="["+A+"]";` +
+    `<script>(function(){var A=${attr},T=${transitionAttr},S="["+A+"]";` +
     `var style=document.createElement("style");style.textContent=S+"{cursor:pointer!important}"+` +
     `"html.wirely-hint "+S+"{outline:2px solid rgba(13,153,255,.9)!important;outline-offset:0!important;box-shadow:inset 0 0 0 9999px rgba(13,153,255,.25)!important}";` +
     `(document.head||document.documentElement).appendChild(style);var timer=0;` +
@@ -187,7 +225,7 @@ export const addPlayScript = (html: string) => {
     `["pointerdown","mousedown","touchstart"].forEach(function(type){window.addEventListener(type,function(event){` +
     `if(!hotspotOf(event))event.stopImmediatePropagation();},true);});` +
     `window.addEventListener("click",function(event){var hotspot=hotspotOf(event);event.preventDefault();event.stopImmediatePropagation();` +
-    `if(hotspot){parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A)},"*");return;}` +
+    `if(hotspot){parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A),transition:hotspot.getAttribute(T)},"*");return;}` +
     `if(!document.querySelector(S))return;var root=document.documentElement;root.classList.add("wirely-hint");` +
     `clearTimeout(timer);timer=setTimeout(function(){root.classList.remove("wirely-hint");},600);},true);` +
     `document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){` +

@@ -72,6 +72,7 @@ import {
 } from "@/lib/db/queries/prototypeFlows";
 import {
   findNavigationMismatches,
+  PAGE_TRANSITIONS,
   parseFlowInput,
   readPageLinks,
   setPageLink,
@@ -991,10 +992,11 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
       pageId: z.string().trim().min(1),
       nodeId: z.string().trim().min(1).max(16),
       targetPageId: z.string().trim().min(1).nullable(),
+      transition: z.enum(PAGE_TRANSITIONS).optional(),
     })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
-  const { projectId, pageId, nodeId, targetPageId } = parsed.data;
+  const { projectId, pageId, nodeId, targetPageId, transition } = parsed.data;
 
   let targetTitle = "";
   if (targetPageId !== null) {
@@ -1012,7 +1014,7 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     const page = await getProjectPageForUser({ projectId, pageId, userId });
     if (!page) return fail("Page not found. Use list_pages for valid ids.");
 
-    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId);
+    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId, { transition });
     if (next === null) {
       return fail(`Element ${nodeId} is not on "${page.title}". Call get_page_outline for current ids.`);
     }
@@ -1032,7 +1034,8 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     const playable = flow?.pageIds ?? [];
     const outsideFlow = !playable.includes(pageId) || !playable.includes(targetPageId);
     return succeed(
-      `Clicking ${nodeId} on "${updated.title}" now opens "${targetTitle}".\n` +
+      `Clicking ${nodeId} on "${updated.title}" now opens "${targetTitle}"` +
+        `${transition && transition !== "instant" ? ` with a ${transition} transition` : ""}.\n` +
         `Give the user this link to play it: ${playLink(origin, projectId)}` +
         (outsideFlow
           ? "\nThe screen order saved with set_prototype_flow leaves out one of these pages, so " +
@@ -1058,7 +1061,8 @@ const listLinks: ToolHandler = async (userId, args, origin) => {
         (link.label ? ` "${link.label}"` : "") +
         (target
           ? ` opens "${target}" (${link.targetPageId})`
-          : ` opens a deleted page (${link.targetPageId}); relink or remove it`)
+          : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
+        (link.transition === "instant" ? "" : `, ${link.transition} transition`)
       );
     }),
   );

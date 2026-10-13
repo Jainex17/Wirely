@@ -8,7 +8,9 @@ import {
   addPlayScript,
   findNavigationMismatches,
   PAGE_LINK_ATTRIBUTE,
+  PAGE_TRANSITION_ATTRIBUTE,
   parseFlowInput,
+  parsePageTransition,
   PLAY_GOTO_MESSAGE,
   PLAY_KEY_MESSAGE,
   readPageLinks,
@@ -119,12 +121,12 @@ describe("page links", () => {
   it("links an element to a page and reads the link back with its text", () => {
     const linked = setPageLink(html, "a1", "page-2") ?? "";
     expect(linked).toContain(`<a href="#" data-wirely-id="a1" ${PAGE_LINK_ATTRIBUTE}="page-2">`);
-    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-2", label: "Pricing" }]);
+    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-2", transition: "instant", label: "Pricing" }]);
   });
 
   it("retargets an existing link instead of adding a second one", () => {
     const linked = setPageLink(setPageLink(html, "a1", "page-2") ?? "", "a1", "page-3") ?? "";
-    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-3", label: "Pricing" }]);
+    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-3", transition: "instant", label: "Pricing" }]);
   });
 
   it("removes a link with a null target, leaving the element as it was", () => {
@@ -142,7 +144,7 @@ describe("page links", () => {
     const unstamped = '<html><body><main><a href="#">Start</a></main></body></html>';
     const id = /<a data-wirely-id="([a-z0-9]+)"/.exec(stampNodeIds(unstamped))?.[1] ?? "";
     expect(readPageLinks(setPageLink(unstamped, id, "page-2") ?? "")).toEqual([
-      { nodeId: id, targetPageId: "page-2", label: "Start" },
+      { nodeId: id, targetPageId: "page-2", transition: "instant", label: "Start" },
     ]);
   });
 
@@ -150,6 +152,24 @@ describe("page links", () => {
     const linked = setPageLink(html, "a1", "page-2") ?? "";
     expect(readPageLinks(sanitizeIframeHtml(linked))).toHaveLength(1);
     expect(stripWirelyArtifacts(linked)).not.toContain(PAGE_LINK_ATTRIBUTE);
+  });
+
+  it("stores a transition next to the link and drops it for instant, on unlink, and on export", () => {
+    const sliding = setPageLink(html, "a1", "page-2", { transition: "slide-left" }) ?? "";
+    expect(sliding).toContain(`${PAGE_LINK_ATTRIBUTE}="page-2" ${PAGE_TRANSITION_ATTRIBUTE}="slide-left">`);
+    expect(readPageLinks(sliding)[0].transition).toBe("slide-left");
+    expect(stripWirelyArtifacts(sliding)).not.toContain(PAGE_TRANSITION_ATTRIBUTE);
+    expect(setPageLink(sliding, "a1", "page-2")).not.toContain(PAGE_TRANSITION_ATTRIBUTE);
+    expect(setPageLink(sliding, "a1", null)).toBe(html);
+  });
+});
+
+describe("parsePageTransition", () => {
+  it("keeps a known transition and reads anything else as instant", () => {
+    expect(parsePageTransition("dissolve")).toBe("dissolve");
+    expect(parsePageTransition("slide-right")).toBe("slide-right");
+    expect(parsePageTransition("spin")).toBe("instant");
+    expect(parsePageTransition(null)).toBe("instant");
   });
 });
 
@@ -177,7 +197,15 @@ describe("addPlayScript", () => {
   it("sends the hotspot's target page when anything inside it is clicked", () => {
     const { messages, click } = play(page);
     expect(click("#inner").defaultPrevented).toBe(true);
-    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2" }]);
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2", transition: null }]);
+  });
+
+  it("sends the hotspot's transition with its target", () => {
+    const { messages, click } = play(
+      `<button id="go" ${PAGE_LINK_ATTRIBUTE}="page-3" ${PAGE_TRANSITION_ATTRIBUTE}="dissolve">Go</button>`,
+    );
+    click("#go");
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-3", transition: "dissolve" }]);
   });
 
   it("cancels every click outside a hotspot, including hash links and page handlers", () => {
