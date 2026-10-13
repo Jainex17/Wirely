@@ -25,6 +25,8 @@ const MODES: Array<{ mode: CompareMode; label: string }> = [
 ];
 
 const SIDE_GAP_PX = 16;
+/** The canvas caps page frames at the same height. */
+const MAX_FRAME_HEIGHT = 20_000;
 const FRAME_IDS = ["compare-left", "compare-right"] as const;
 
 /** One page at its full height, reporting that height to the dialog by message. */
@@ -75,6 +77,9 @@ export default function PageCompareDialog() {
   const [heights, setHeights] = React.useState<Record<string, number>>({});
   const [areaWidth, setAreaWidth] = React.useState(0);
   const areaObserverRef = React.useRef<ResizeObserver | null>(null);
+  // Kept outside state so the message handler reads what it last applied.
+  const appliedRef = React.useRef<Record<string, number>>({});
+  const growthRef = React.useRef<Record<string, number>>({});
 
   const comparable = pages.filter((page) => page.deviceType !== "vector");
   const left = pages.find((page) => page.id === comparePageIds?.[0]);
@@ -95,13 +100,27 @@ export default function PageCompareDialog() {
         Number.isFinite(data.height)
       ) {
         const id = data.id;
-        const height = Math.max(1, Math.round(data.height));
-        setHeights((current) => (current[id] === height ? current : { ...current, [id]: height }));
+        const reported = Math.min(MAX_FRAME_HEIGHT, Math.max(1, Math.round(data.height)));
+        const height = appliedRef.current[id];
+        const growth = height === undefined ? 0 : reported - height;
+        // A 100vh section grows with the frame, so a page with one reports
+        // its frame height plus what follows, every time it is resized. Two
+        // equal growths in a row are that loop, and the frame stops there.
+        if (height === reported || (growth > 0 && growth === growthRef.current[id])) return;
+        growthRef.current[id] = growth;
+        appliedRef.current[id] = reported;
+        setHeights({ ...appliedRef.current });
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [open]);
+
+  const resetHeights = () => {
+    appliedRef.current = {};
+    growthRef.current = {};
+    setHeights({});
+  };
 
   // A callback ref, since the dialog mounts its content only while open.
   const measureArea = React.useCallback((node: HTMLDivElement | null) => {
@@ -116,7 +135,7 @@ export default function PageCompareDialog() {
 
   const close = () => {
     setComparePageIds(null);
-    setHeights({});
+    resetHeights();
     // A reload should not reopen a comparison the user closed.
     const url = new URL(window.location.href);
     if (url.searchParams.has("compare")) {
@@ -143,7 +162,7 @@ export default function PageCompareDialog() {
     next[side] = pageId;
     if (next[0] !== next[1]) {
       setComparePageIds(next);
-      setHeights({});
+      resetHeights();
     }
   };
 
@@ -182,7 +201,7 @@ export default function PageCompareDialog() {
             title="Swap pages"
             onClick={() => {
               setComparePageIds([comparePageIds[1], comparePageIds[0]]);
-              setHeights({});
+              resetHeights();
             }}
           >
             <ArrowLeftRight className="h-4 w-4" />
