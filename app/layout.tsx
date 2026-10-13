@@ -35,19 +35,12 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   // Link previews in chat apps and social posts. The image comes from
-  // app/opengraph-image.tsx, which Next attaches on its own.
-  openGraph: {
-    type: "website",
-    siteName: SITE_NAME,
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
-    url: "/",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
-  },
+  // app/opengraph-image.tsx, which Next attaches on its own. Title and
+  // description stay out of these objects on purpose: Next fills them from
+  // each page's own title and description, so /docs previews as /docs. Set
+  // them here and every child page would preview as the home page.
+  openGraph: { type: "website", siteName: SITE_NAME },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({

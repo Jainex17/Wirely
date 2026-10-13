@@ -14,7 +14,7 @@ Wirely is a web app at ${CANONICAL_APP_ORIGIN}. A coding agent connects to its M
 
 ## Facts
 
-- Price: free. There are no plans, credits, or usage caps. The agent runs on the user's own Claude, ChatGPT, or Cursor subscription.
+- Price: free. There are no paid plans or credit quotas. The agent runs on the user's own Claude, ChatGPT, or Cursor subscription. In-app generation has request rate limits.
 - License: MIT. Source code: ${REPO_URL}
 - Works with: Claude Code, Cursor, Codex, opencode, and any other MCP client over streamable HTTP.
 - MCP server URL: ${CANONICAL_APP_ORIGIN}/api/mcp, authenticated with a bearer token or OAuth.

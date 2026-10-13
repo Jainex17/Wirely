@@ -78,7 +78,9 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Google</strong> receives the first prompt of a new project to write a short
-          title for it, on Wirely&apos;s key, when you have not saved a key of your own.
+          title for it, on Wirely&apos;s key. This happens when you have no saved key for the
+          model you picked, or when the title request on your own key fails, times out, or
+          returns no usable title. It applies whichever provider your key is for.
         </li>
         <li>
           <strong>The AI provider you choose</strong> (Google, OpenRouter, or Z.ai) receives your
