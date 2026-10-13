@@ -89,7 +89,10 @@ export const MCP_INSTRUCTIONS = [
     "starting point. Copy it with add_page copyFromPageId before changing it, so the original stays.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
-    "components, and styles instead of pasting the HTML in.",
+    "components, and styles instead of pasting the HTML in. When the app runs locally, call " +
+    "capture_local_page with comparePageId set to that page, run the command, fix the " +
+    "differences it lists, and run it again with --page until it reports none that matter. " +
+    "Give the user the side by side link it prints.",
   "When the user says they tweaked a page on the canvas and wants those tweaks in their code, " +
     "call get_page_changes and apply only the listed differences to the matching components.",
   "For structural changes (reorder, duplicate, delete, hide, wrap in a frame, insert a block), " +
@@ -560,6 +563,42 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           type: "string",
           enum: ["desktop", "mobile"],
           description: "The viewport the page is loaded at. Defaults to desktop.",
+        },
+      },
+      required: ["projectId", "url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "capture_local_page",
+    description:
+      "Bring a page of the app running on the user's machine, such as http://localhost:3000, " +
+      "onto the canvas, and with comparePageId check it against a Wirely page. Wirely cannot " +
+      "reach localhost, so this returns one shell command for you to run: it drives the " +
+      "user's Chrome headless and needs Node 22 or newer, or Bun. The command prints the " +
+      "result: the new page's id, and with comparePageId a build check listing missing text, " +
+      "font, color, size, and spacing differences, the areas whose pixels differ most, and the " +
+      "path of a diff image you can open. For public sites, import_url needs no command.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        url: { type: "string", description: "The page of the running app, e.g. http://localhost:3000/pricing." },
+        comparePageId: {
+          type: "string",
+          description:
+            "The Wirely HTML page this build was made from. Adds the build check, and sets the " +
+            "viewport to that page's device type.",
+        },
+        pageId: {
+          type: "string",
+          description:
+            "A page an earlier capture added. The capture replaces its HTML instead of adding a page.",
+        },
+        deviceType: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          description: "The viewport to load the app at. Defaults to comparePageId's device, else desktop.",
         },
       },
       required: ["projectId", "url"],

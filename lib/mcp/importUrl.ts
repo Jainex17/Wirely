@@ -24,8 +24,8 @@ import { isBlockedIpAddress, isBlockedUrlHost } from "@/lib/urlContext";
 export class ImportUrlError extends Error {}
 
 const MAX_CSS_BYTES = 3_000_000;
-const MAX_IMAGE_BYTES = 60_000;
-const MAX_INLINED_IMAGE_BYTES = 250_000;
+export const MAX_IMAGE_BYTES = 60_000;
+export const MAX_INLINED_IMAGE_BYTES = 250_000;
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
@@ -61,9 +61,10 @@ const createHostGuard = () => {
 
 /**
  * Runs inside the page, so it is serialized and must not reference anything
- * outside its own body.
+ * outside its own body. The local capture script runs it too, in the user's
+ * own Chrome, through `lib/captureScript.ts`.
  */
-const serializePage = (
+export const serializePage = (
   sheets: Record<string, string>,
   images: Record<string, string>,
   maxChars: number,

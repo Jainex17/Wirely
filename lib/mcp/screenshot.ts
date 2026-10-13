@@ -15,6 +15,7 @@ import { accessSync, constants } from "node:fs";
 
 import type { Browser, Page } from "puppeteer-core";
 
+import { collectStyleMap } from "@/lib/buildCheck";
 import { getPageFrameSize } from "@/lib/canvasScene";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import type { VisualLintData } from "@/lib/mcp/diagnostics";
@@ -300,6 +301,29 @@ export const renderPagePng = (
   /** Device pixel ratio, for a sharper export. The byte cap grows with it. */
   scale = 1,
 ): Promise<RenderedPng> => withBrowserRetry(() => renderOnce(html, deviceType, lint, scale));
+
+/** A build check compares at most this much of a page's height, in CSS px. */
+export const MAX_CHECK_HEIGHT_PX = 8_000;
+
+/**
+ * Renders a design page for a build check: its style map and a screenshot of
+ * up to `MAX_CHECK_HEIGHT_PX` of its height, measured the same way the capture
+ * script measures the user's running app.
+ */
+export const renderPageForCheck = (html: string, deviceType: string) =>
+  withBrowserRetry(() =>
+    withLoadedPage(html, deviceType, 1, async (page) => {
+      const styleMap = await page.evaluate(collectStyleMap);
+      const { width } = getPageFrameSize({ deviceType, iframeHtml: html }, "desktop");
+      const height = Math.max(1, Math.min(styleMap.height, MAX_CHECK_HEIGHT_PX));
+      const png = await page.screenshot({
+        type: "png",
+        clip: { x: 0, y: 0, width, height },
+        captureBeyondViewport: true,
+      });
+      return { styleMap, png: Buffer.from(png) };
+    }),
+  );
 
 // PDF pages top out at 200 inches, which is 19,200 CSS px.
 const MAX_PDF_HEIGHT_PX = 19_200;
