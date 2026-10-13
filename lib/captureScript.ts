@@ -318,11 +318,19 @@ const main = async () => {
     const finalUrl = await evaluate(cdp, "location.href");
     const styleMap = await evaluate(cdp, "(" + collectStyleMap + ")()");
     const shotHeight = Math.max(1, Math.min(Math.ceil(styleMap.height), MAX_SHOT_HEIGHT));
-    const shoot = (quality) =>
-      cdp.send("Page.captureScreenshot", {
+    const styleMapJson = JSON.stringify(styleMap);
+    // Screenshots come before capturePage, which rewrites the live page: it
+    // turns controls into divs and large images into gray boxes. Lower
+    // qualities are taken only while a shot could crowd out the largest page.
+    const shots = [];
+    for (const quality of [80, 55, 35]) {
+      const result = await cdp.send("Page.captureScreenshot", {
         format: "jpeg", quality, captureBeyondViewport: true,
         clip: { x: 0, y: 0, width, height: shotHeight, scale: 1 },
       });
+      shots.push(Buffer.from(result.data, "base64"));
+      if (shots.at(-1).byteLength <= MAX_UPLOAD_BYTES - MAX_HTML_CHARS * 2 - Buffer.byteLength(styleMapJson)) break;
+    }
     const captured = await evaluate(
       cdp,
       "(" + capturePage + ")(" + serializePage + ", " + JSON.stringify({
@@ -335,16 +343,8 @@ const main = async () => {
       url: options.url, finalUrl, title: captured.title, deviceType: options.device,
       pageId: options.page || null, comparePageId: options.compare || null,
     });
-    const styleMapJson = JSON.stringify(styleMap);
     const room = MAX_UPLOAD_BYTES - Buffer.byteLength(captured.html) - Buffer.byteLength(styleMapJson) - 10000;
-    let screenshot = null;
-    for (const quality of [80, 55, 35]) {
-      const shot = Buffer.from((await shoot(quality)).data, "base64");
-      if (shot.byteLength <= room) {
-        screenshot = shot;
-        break;
-      }
-    }
+    const screenshot = shots.find((shot) => shot.byteLength <= room) || null;
 
     const form = new FormData();
     form.set("meta", meta);
