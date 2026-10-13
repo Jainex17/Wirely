@@ -5,6 +5,7 @@ import {
   Bot,
   Check,
   Copy,
+  Columns2,
   Download,
   Eye,
   FileCode2,
@@ -39,6 +40,7 @@ import {
 import {
   getNodeText,
   type NodeStyleProperty,
+  pickComparePartner,
   setNodeStyle,
   setNodeText,
   stampNodeIds,
@@ -1128,6 +1130,20 @@ export default React.memo(function PageRenderer({
               icon: History,
               onClick: () => setIsHistoryOpen(true),
             },
+            ...(page.deviceType === "vector"
+              ? []
+              : [
+                  {
+                    label: "Compare with…",
+                    icon: Columns2,
+                    onClick: () => {
+                      const { pages, setComparePageIds } = useEditorStore.getState();
+                      const partner = pickComparePartner(pages, page.id);
+                      if (partner) setComparePageIds([page.id, partner]);
+                      else toast.error("Add another page to compare this one with.");
+                    },
+                  },
+                ]),
             {
               label: "Add comment",
               icon: MessageSquarePlus,

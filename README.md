@@ -64,6 +64,8 @@ are on the [setup page](https://www.wirely.site/docs).
   captures that page from your running app and gets back what differs from the design: missing or
   reworded copy, fonts, sizes, colors, and the areas whose pixels differ most. It fixes them and
   checks again. A capture without a design page brings any localhost page onto the canvas.
+- **Compare two pages.** Open any page's menu and pick Compare to see it next to another page,
+  overlaid on it, or as a difference where everything that matches turns black.
 
 ### Build editable screens (preview)
 

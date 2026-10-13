@@ -15,7 +15,7 @@ import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
 import { isPageDeviceType } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
-import { readNodeLink, stampNodeIds } from "@/lib/pageNodes";
+import { readCompareLink, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertAtNode } from "@/lib/pageTree";
 import {
   commitPageEdit,
@@ -27,6 +27,7 @@ import {
 } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 import Canvas from "./Canvas";
+import PageCompareDialog from "./PageCompareDialog";
 
 interface EditorWorkspaceProps {
   sidebarMode?: "default" | "wire";
@@ -274,6 +275,11 @@ export default function EditorWorkspace({
     });
 
     hasInitializedViewportRef.current = true;
+    // A build check's link opens its design and build side by side.
+    const compare = readCompareLink(window.location.search);
+    if (compare && compare.every((pageId) => pages.some((page) => page.id === pageId))) {
+      useEditorStore.getState().setComparePageIds(compare);
+    }
     // An element link opens on its page with the element picked.
     const link = readNodeLink(window.location.search);
     if (link && pages.some((page) => page.id === link.pageId)) {
@@ -597,6 +603,7 @@ export default function EditorWorkspace({
         onSavePageHtml={commitCanvasEdit}
         onInsertAt={handleInsertAt}
       />
+      <PageCompareDialog />
     </div>
   );
 }

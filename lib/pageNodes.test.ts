@@ -7,6 +7,8 @@ import {
   getNodeStyle,
   getNodeText,
   parseGradient,
+  pickComparePartner,
+  readCompareLink,
   readNodeLink,
   scopePromptToNode,
   setNodeColor,
@@ -155,6 +157,34 @@ describe("element links", () => {
     expect(readNodeLink(new URL(link).search)).toEqual({ pageId: "page-2", nodeId: "1x9k3fz" });
     expect(readNodeLink('?page=page-2&node="]x')).toEqual({ pageId: "page-2", nodeId: null });
     expect(readNodeLink("?node=14")).toBeNull();
+  });
+
+  it("reads exactly two different pages from a compare link", () => {
+    expect(readCompareLink("?compare=design-1,build-2")).toEqual(["design-1", "build-2"]);
+    expect(readCompareLink("?compare=design-1")).toBeNull();
+    expect(readCompareLink("?compare=a,a")).toBeNull();
+    expect(readCompareLink("?compare=a,b,c")).toBeNull();
+    expect(readCompareLink("?page=a")).toBeNull();
+  });
+});
+
+describe("pickComparePartner", () => {
+  const pages = [
+    { id: "home", title: "Home", deviceType: "desktop" },
+    { id: "logo", title: "Logo", deviceType: "vector" },
+    { id: "pricing", title: "Pricing", deviceType: "desktop" },
+    { id: "build", title: "Build: Pricing", deviceType: "desktop" },
+  ];
+
+  it("pairs a design with its build capture, and a build with its design", () => {
+    expect(pickComparePartner(pages, "pricing")).toBe("build");
+    expect(pickComparePartner(pages, "build")).toBe("pricing");
+  });
+
+  it("falls back to the next page that is not an artboard, wrapping to the first", () => {
+    expect(pickComparePartner(pages, "home")).toBe("pricing");
+    expect(pickComparePartner([pages[0], pages[1], pages[2]], "pricing")).toBe("home");
+    expect(pickComparePartner([pages[0], pages[1]], "home")).toBeNull();
   });
 });
 

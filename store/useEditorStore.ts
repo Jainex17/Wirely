@@ -104,6 +104,8 @@ export interface CanvasState {
   pageFrameHeights: Record<string, number>;
   focusedPageId: string | null;
   selectedNode: SelectedNode | null;
+  /** The two pages open in the compare view, design first, or null when it is closed. */
+  comparePageIds: [string, string] | null;
   activeTool: CanvasTool;
   /** The comment whose card is open on the canvas and highlighted in the comments panel. */
   activeCommentId: string | null;
@@ -152,6 +154,7 @@ export interface EditorState extends CanvasState, ProjectState {
   hydratePageLayout: (layout: PersistedWireLayout) => void;
   setFocusedPage: (pageId: string | null) => void;
   setSelectedNode: (node: SelectedNode | null) => void;
+  setComparePageIds: (pageIds: [string, string] | null) => void;
   setComments: (comments: ProjectComment[]) => void;
   setActiveTool: (tool: CanvasTool) => void;
   setActiveCommentId: (commentId: string | null) => void;
@@ -244,6 +247,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageFrameHeights: {},
   focusedPageId: "page-home",
   selectedNode: null,
+  comparePageIds: null,
   activeTool: "select",
   activeCommentId: null,
   requestedGeneratedPageFocusIds: null,
@@ -621,6 +625,7 @@ export const useEditorStore = create<EditorState>()(
         }),
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
+      setComparePageIds: (comparePageIds) => set({ comparePageIds }),
       setComments: (comments) => set({ comments }),
       setActiveTool: (activeTool) => set({ activeTool }),
       setActiveCommentId: (activeCommentId) => set({ activeCommentId }),
