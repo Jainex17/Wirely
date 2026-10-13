@@ -1,15 +1,9 @@
-import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { listApiTokens } from "@/lib/auth/apiToken";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { listProjectsForUser } from "@/lib/db/queries/projects";
 import HomeClient from "./HomeClient";
 import Landing from "./Landing";
-
-export const metadata: Metadata = {
-  title: "Wirely",
-  description: "The design canvas for your coding agent.",
-};
 
 const MAX_DRAFT_PROMPT_LENGTH = 500;
 

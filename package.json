@@ -2,6 +2,7 @@
   "name": "wirely",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "bun scripts/copy-design-assets.ts && next dev",
     "build": "bun scripts/copy-design-assets.ts && next build",

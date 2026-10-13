@@ -3,6 +3,9 @@ import Link from "next/link";
 import { ArrowRight, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import WirelyMark from "@/components/icons/WirelyMark";
+import { SiteFooter } from "@/components/SitePage";
+import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
+import { REPO_URL, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import LandingHeader from "./LandingHeader";
 import {
   LANDING_DIRECTIONS,
@@ -13,7 +16,6 @@ import {
 
 const HERO_PROMPT = "Design three different layouts for a habit tracker.";
 
-const REPO_URL = "https://github.com/Jainex17/Wirely";
 const CTA_LABEL = "Connect your agent";
 const HERO_END_ID = "hero-end";
 
@@ -216,15 +218,13 @@ function ConnectSection({ origin }: { origin: string }) {
           Sign in and Wirely writes an install prompt with your token in it. Paste it into
           your agent and it adds Wirely to its own config.
         </p>
-        <a
-          href={`${REPO_URL}#mcp-server`}
-          target="_blank"
-          rel="noreferrer"
+        <Link
+          href="/docs"
           className="group mt-7 inline-flex items-center gap-1.5 text-sm text-primary transition-colors hover:text-foreground"
         >
           Manual setup for every client
           <ArrowRight className={`size-3.5 ${NUDGE}`} />
-        </a>
+        </Link>
       </div>
 
       <div className="reveal pane overflow-hidden rounded-2xl border border-border bg-card lg:col-span-7">
@@ -366,9 +366,33 @@ function FinalCta() {
   );
 }
 
+// Tells search and AI answer engines what Wirely is, what it costs, and
+// where the source lives, in a form they read without parsing the page.
+const STRUCTURED_DATA = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: SITE_NAME,
+  url: CANONICAL_APP_ORIGIN,
+  description: SITE_DESCRIPTION,
+  applicationCategory: "DesignApplication",
+  operatingSystem: "Any",
+  browserRequirements: "Requires a modern web browser",
+  isAccessibleForFree: true,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  sameAs: [REPO_URL],
+};
+
 export default function Landing({ origin }: { origin: string }) {
   return (
     <div className="min-h-[100dvh] bg-background">
+      <script
+        type="application/ld+json"
+        // Static JSON built above, never user input. The escape keeps a "<"
+        // in any string from closing the script tag.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(STRUCTURED_DATA).replace(/</g, "\\u003c"),
+        }}
+      />
       <LandingHeader markerId={HERO_END_ID}>
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
@@ -376,6 +400,9 @@ export default function Landing({ origin }: { origin: string }) {
             Wirely
           </Link>
           <div className="flex items-center gap-1">
+            <Button asChild variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex">
+              <Link href="/docs">Docs</Link>
+            </Button>
             <Button asChild variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex">
               <a href={REPO_URL} target="_blank" rel="noreferrer">
                 <BrandIcon slug="github" />
@@ -401,22 +428,7 @@ export default function Landing({ origin }: { origin: string }) {
         <FinalCta />
       </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-8 text-sm text-muted-foreground">
-          <span className="flex items-center gap-2 font-display font-semibold text-foreground">
-            <WirelyMark className="size-5" />
-            Wirely
-          </span>
-          <div className="flex items-center gap-6">
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">
-              GitHub
-            </a>
-            <Link href="/login" className="transition-colors hover:text-foreground">
-              Sign in
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
