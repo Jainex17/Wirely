@@ -180,10 +180,14 @@ describe("addPlayScript", () => {
     expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2" }]);
   });
 
-  it("keeps an ordinary link from leaving Play, but lets a hash link scroll", () => {
-    const { messages, click } = play(page);
+  it("cancels every click outside a hotspot, including hash links and page handlers", () => {
+    const { dom, messages, click } = play(
+      `${page}<button id="btn" onclick="document.body.dataset.ran='1'">Go</button>`,
+    );
     expect(click("#away").defaultPrevented).toBe(true);
-    expect(click("#hash").defaultPrevented).toBe(false);
+    expect(click("#hash").defaultPrevented).toBe(true);
+    expect(click("#btn").defaultPrevented).toBe(true);
+    expect(dom.window.document.body.dataset.ran).toBeUndefined();
     expect(messages).toEqual([]);
   });
 
