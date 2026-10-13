@@ -191,6 +191,29 @@ describe("addPlayScript", () => {
     expect(messages).toEqual([]);
   });
 
+  it("runs ahead of the page's own window listeners", () => {
+    const { dom, click } = play(
+      `${page}<script>window.addEventListener("click",function(){document.body.dataset.ran="1"},true)</script>`,
+    );
+    click("#text");
+    expect(dom.window.document.body.dataset.ran).toBeUndefined();
+  });
+
+  it("keeps presses outside a hotspot from page handlers without cancelling them", () => {
+    const { dom } = play(page);
+    const seen: string[] = [];
+    const press = (selector: string) => {
+      const target = dom.window.document.querySelector(selector)!;
+      target.addEventListener("pointerdown", () => seen.push(selector));
+      const event = new dom.window.MouseEvent("pointerdown", { bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event;
+    };
+    expect(press("#text").defaultPrevented).toBe(false);
+    press("#inner");
+    expect(seen).toEqual(["#inner"]);
+  });
+
   it("outlines the hotspots after a missed click, then clears the outline", async () => {
     const { dom, click } = play(page);
     const root = dom.window.document.documentElement;
