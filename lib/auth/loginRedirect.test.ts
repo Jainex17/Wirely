@@ -26,6 +26,8 @@ describe("loginReturnPath", () => {
     expect(loginReturnPath({ next: "//evil.example/phish" })).toBe("/");
     expect(loginReturnPath({ next: "/\\evil.example/phish" })).toBe("/");
     expect(loginReturnPath({ next: "https://evil.example/phish" })).toBe("/");
+    expect(loginReturnPath({ next: "http://wirely.local//evil.example/phish" })).toBe("/");
+    expect(loginReturnPath({ next: "/%2F/evil.example/phish" })).toBe("/%2F/evil.example/phish");
     expect(loginReturnPath({ redirectUrl: "https://evil.example//evil.example/phish" })).toBe(
       "/",
     );

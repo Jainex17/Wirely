@@ -3,7 +3,10 @@ const BASE = "http://wirely.local";
 const toLocalPath = (value: string) => {
   try {
     const url = new URL(value, BASE);
-    if (url.origin !== BASE || url.pathname === "/login") return null;
+    // A path starting with "//" is a protocol-relative URL to another host.
+    if (url.origin !== BASE || url.pathname.startsWith("//") || url.pathname === "/login") {
+      return null;
+    }
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return null;
