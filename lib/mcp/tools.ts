@@ -72,8 +72,10 @@ import {
 } from "@/lib/db/queries/prototypeFlows";
 import {
   BACK_TARGET,
+  CLOSE_TARGET,
   findNavigationMismatches,
   linkOptionsError,
+  PAGE_ACTIONS,
   PAGE_TRANSITIONS,
   parseFlowInput,
   readPageLinks,
@@ -995,27 +997,34 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
       nodeId: z.string().trim().min(1).max(16),
       targetPageId: z.string().trim().min(1).nullable(),
       transition: z.enum(PAGE_TRANSITIONS).optional(),
+      action: z.enum(PAGE_ACTIONS).optional(),
     })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
-  const { projectId, pageId, nodeId, targetPageId, transition } = parsed.data;
+  const { projectId, pageId, nodeId, targetPageId, transition, action } = parsed.data;
+  const isPageTarget =
+    targetPageId !== null && targetPageId !== BACK_TARGET && targetPageId !== CLOSE_TARGET;
 
   // What a click does, for the reply.
   let opens = "";
   if (targetPageId !== null) {
-    const optionsError = linkOptionsError(targetPageId, { transition });
+    const optionsError = linkOptionsError(targetPageId, { transition, action });
     if (optionsError) return fail(optionsError);
     if (targetPageId === BACK_TARGET) {
       opens = "goes back to the previous screen";
+    } else if (targetPageId === CLOSE_TARGET) {
+      opens = "closes the overlay it is shown in";
     } else {
       if (targetPageId === pageId) return fail("A page cannot link to itself.");
       const target = isUuid(targetPageId)
         ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
         : null;
       if (!target) {
-        return fail(`Target page not found. Use list_pages for HTML page ids, or "${BACK_TARGET}".`);
+        return fail(
+          `Target page not found. Use list_pages for HTML page ids, or "${BACK_TARGET}" or "${CLOSE_TARGET}".`,
+        );
       }
-      opens = `opens "${target.title}"`;
+      opens = `opens "${target.title}"${action === "overlay" ? " as an overlay" : ""}`;
     }
   }
 
@@ -1025,7 +1034,7 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     const page = await getProjectPageForUser({ projectId, pageId, userId });
     if (!page) return fail("Page not found. Use list_pages for valid ids.");
 
-    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId, { transition });
+    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId, { transition, action });
     if (next === null) {
       return fail(`Element ${nodeId} is not on "${page.title}". Call get_page_outline for current ids.`);
     }
@@ -1044,8 +1053,7 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     const flow = await getPrototypeFlowForProject(projectId, userId);
     const playable = flow?.pageIds ?? [];
     const outsideFlow =
-      !playable.includes(pageId) ||
-      (targetPageId !== BACK_TARGET && !playable.includes(targetPageId));
+      !playable.includes(pageId) || (isPageTarget && !playable.includes(targetPageId));
     return succeed(
       `Clicking ${nodeId} on "${updated.title}" now ${opens}` +
         `${transition && transition !== "instant" ? ` with a ${transition} transition` : ""}.\n` +
@@ -1074,9 +1082,11 @@ const listLinks: ToolHandler = async (userId, args, origin) => {
         (link.label ? ` "${link.label}"` : "") +
         (link.targetPageId === BACK_TARGET
           ? " goes back to the previous screen"
-          : target
-            ? ` opens "${target}" (${link.targetPageId})`
-            : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
+          : link.targetPageId === CLOSE_TARGET
+            ? " closes the overlay it is shown in"
+            : target
+              ? ` opens "${target}" (${link.targetPageId})${link.action === "overlay" ? " as an overlay" : ""}`
+              : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
         (link.transition === "instant" ? "" : `, ${link.transition} transition`)
       );
     }),

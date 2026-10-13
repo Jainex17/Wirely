@@ -12,7 +12,7 @@
  */
 
 import { PAPER_SHADERS_MODULE_URL } from "@/lib/iframeSecurity";
-import { PAGE_TRANSITIONS } from "@/lib/prototypeFlow";
+import { PAGE_ACTIONS, PAGE_TRANSITIONS } from "@/lib/prototypeFlow";
 
 export const MCP_SERVER_NAME = "wirely";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -113,7 +113,9 @@ export const MCP_INSTRUCTIONS = [
   "Never link pages unless the user asks to connect, link, or wire screens, or to make them " +
     "clickable. Linking costs tool calls the user did not ask for. When they ask, call " +
     "get_page_outline on each page for node ids, then link_element once per button, nav item, " +
-    "or card that should open another page, and give the user the play link it returns.",
+    "or card that should open another page, and give the user the play link it returns. " +
+    "link_element can add a transition, link a back button to \"back\", and open a dialog " +
+    "page as an overlay whose own buttons link to \"close\".",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -646,8 +648,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Only when the user asks to connect or link screens. Make one element on an HTML page a " +
       "hotspot: in the play view, clicking it opens targetPageId, like a Figma prototype " +
-      "connection, with an optional transition. Take nodeId from get_page_outline. Pass " +
-      "targetPageId null to remove the link. Returns the play link to give the user.",
+      "connection, with an optional transition, or opens it as an overlay above the screen " +
+      "for a dialog or menu. Take nodeId from get_page_outline. Pass targetPageId null to " +
+      "remove the link. Returns the play link to give the user.",
     inputSchema: {
       type: "object",
       properties: {
@@ -660,13 +663,20 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         targetPageId: {
           type: ["string", "null"],
           description:
-            "The page the click opens, from list_pages, or \"back\" for the screen the " +
-            "user came from. Null removes the link.",
+            "The page the click opens, from list_pages, \"back\" for the screen the user " +
+            "came from, or \"close\" to close the overlay the element is in. Null removes the link.",
         },
         transition: {
           type: "string",
           enum: [...PAGE_TRANSITIONS],
           description: "How the play view moves to the page. Defaults to instant.",
+        },
+        action: {
+          type: "string",
+          enum: [...PAGE_ACTIONS],
+          description:
+            "navigate replaces the screen, the default. overlay opens the page centered above " +
+            "it with a dimmed backdrop, and takes no transition.",
         },
       },
       required: ["projectId", "pageId", "nodeId", "targetPageId"],

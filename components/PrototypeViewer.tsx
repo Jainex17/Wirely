@@ -13,12 +13,15 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import {
   addPlayScript,
   BACK_TARGET,
+  CLOSE_TARGET,
   PLAY_GOTO_MESSAGE,
   PLAY_KEY_MESSAGE,
+  parsePageAction,
   parsePageTransition,
   type PageTransition,
   reverseTransition,
@@ -83,8 +86,11 @@ interface ViewState {
   loaded: boolean;
   /** The screens the user came from, each with the transition that left it, for Back. */
   history: Array<{ index: number; transition: PageTransition }>;
+  /** A page open above the screen, with its content height once its frame reports it. */
+  overlay: { index: number; height: number | null } | null;
 }
 
+/** Moving to another screen closes any overlay. */
 const moveTo = (
   state: ViewState,
   index: number,
@@ -99,7 +105,12 @@ const moveTo = (
   transition,
   loaded: false,
   history,
+  overlay: null,
 });
+
+// The overlay frame reports its content height under this id, through the
+// same reporter the canvas uses, so the overlay can fit its content.
+const OVERLAY_REPORTER_ID = "wirely-play-overlay";
 
 export default function PrototypeViewer({
   wireId,
@@ -114,6 +125,7 @@ export default function PrototypeViewer({
     transition: "instant",
     loaded: false,
     history: [],
+    overlay: null,
   });
   const currentIndex = view.current.index;
   const [deviceOverride, setDeviceOverride] = React.useState<ViewerDevice | null>(
@@ -123,6 +135,7 @@ export default function PrototypeViewer({
   const rootRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const leavingRef = React.useRef<HTMLIFrameElement>(null);
+  const overlayRef = React.useRef<HTMLIFrameElement>(null);
   const [isPresenting, setIsPresenting] = React.useState(false);
   const [screenSize, setScreenSize] = React.useState({ width: 0, height: 0 });
 
@@ -150,6 +163,15 @@ export default function PrototypeViewer({
     () => (isBrowser ? pages.map((page) => addPlayScript(sanitizeIframeHtml(page.html ?? ""))) : []),
     [pages, isBrowser],
   );
+  const overlayIndex = view.overlay?.index ?? null;
+  const overlayPage = overlayIndex === null ? null : pages[overlayIndex];
+  const overlayDoc = React.useMemo(
+    () =>
+      overlayIndex === null
+        ? ""
+        : injectIframeHeightReporter(srcDocs[overlayIndex] ?? "", OVERLAY_REPORTER_ID),
+    [overlayIndex, srcDocs],
+  );
 
   /** Shows a screen. Arrow keys and the screen strip pass no transition, so they stay instant. */
   const goToIndex = React.useCallback(
@@ -157,7 +179,7 @@ export default function PrototypeViewer({
       const bounded = Math.max(0, Math.min(pages.length - 1, index));
       setView((state) =>
         bounded === state.current.index
-          ? state
+          ? { ...state, overlay: null }
           : moveTo(state, bounded, transition, [
               ...state.history,
               { index: state.current.index, transition },
@@ -210,22 +232,46 @@ export default function PrototypeViewer({
       }
     };
 
-    // The frame reports arrow keys, since a click inside it takes the keyboard,
-    // and hotspot clicks. A hotspot opens a page only when the viewer holds it.
+    // The screen and overlay frames report arrow keys, since a click inside one
+    // takes the keyboard, and hotspot clicks. A hotspot opens a page only when
+    // the viewer holds it.
     const handleFrameMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as
-        | { type?: unknown; key?: unknown; pageId?: unknown; transition?: unknown }
-        | null;
+      const fromOverlay = event.source === overlayRef.current?.contentWindow;
+      if (!fromOverlay && event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as {
+        type?: unknown;
+        id?: unknown;
+        height?: unknown;
+        key?: unknown;
+        pageId?: unknown;
+        transition?: unknown;
+        action?: unknown;
+      } | null;
       if (data?.type === PLAY_KEY_MESSAGE) {
         goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
+      } else if (data?.type === "wirely-iframe-height") {
+        const height = data.height;
+        if (!fromOverlay || data.id !== OVERLAY_REPORTER_ID || typeof height !== "number") return;
+        if (!Number.isFinite(height) || height <= 0) return;
+        setView((state) => (state.overlay ? { ...state, overlay: { ...state.overlay, height } } : state));
       } else if (data?.type === PLAY_GOTO_MESSAGE) {
+        if (data.pageId === CLOSE_TARGET) {
+          if (fromOverlay) setView((state) => ({ ...state, overlay: null }));
+          return;
+        }
         if (data.pageId === BACK_TARGET) {
           goBack();
           return;
         }
         const index = pages.findIndex((page) => page.id === data.pageId);
-        if (index !== -1) goToIndex(index, parsePageTransition(data.transition));
+        if (index === -1) return;
+        if (parsePageAction(data.action) === "overlay") {
+          setView((state) =>
+            state.overlay?.index === index ? state : { ...state, overlay: { index, height: null } },
+          );
+        } else {
+          goToIndex(index, parsePageTransition(data.transition));
+        }
       }
     };
 
@@ -430,6 +476,30 @@ export default function PrototypeViewer({
               />
             );
           })}
+          {overlayPage && view.overlay ? (
+            // A click on the backdrop closes the overlay. Clicks inside the
+            // overlay frame stay in the frame and never reach it.
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/50 p-6"
+              onClick={() => setView((state) => ({ ...state, overlay: null }))}
+            >
+              <iframe
+                ref={overlayRef}
+                key={`${overlayPage.id}-overlay`}
+                title={`${overlayPage.title} overlay`}
+                srcDoc={overlayDoc}
+                className="max-h-full max-w-full shrink-0 rounded-[var(--radius)] border-0 bg-background shadow-2xl"
+                // Drawn at no height first, so the reported height is the content's own.
+                style={{
+                  width: `${DEVICE_WIDTHS[overlayPage.deviceType]}px`,
+                  height: `${view.overlay.height ?? 0}px`,
+                  visibility: view.overlay.height === null ? "hidden" : undefined,
+                }}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : null}
         </div>
       </main>
 

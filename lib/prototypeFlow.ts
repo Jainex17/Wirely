@@ -131,8 +131,23 @@ export const parsePageTransition = (value: unknown): PageTransition =>
 export const reverseTransition = (transition: PageTransition): PageTransition =>
   transition === "slide-left" ? "slide-right" : transition === "slide-right" ? "slide-left" : transition;
 
-/** A link target that is not a page: it returns to the screen the user came from. */
+/**
+ * Link targets that are not pages: back returns to the screen the user came
+ * from, and close shuts the overlay the hotspot sits in.
+ */
 export const BACK_TARGET = "back";
+export const CLOSE_TARGET = "close";
+
+/**
+ * Whether the hotspot's page replaces the screen or opens above it as an
+ * overlay. No attribute means navigate.
+ */
+export const PAGE_ACTION_ATTRIBUTE = "data-wirely-action";
+export const PAGE_ACTIONS = ["navigate", "overlay"] as const;
+export type PageAction = (typeof PAGE_ACTIONS)[number];
+
+export const parsePageAction = (value: unknown): PageAction =>
+  value === "overlay" ? "overlay" : "navigate";
 
 const readAttribute = (attributes: string, name: string) => {
   const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attributes);
@@ -143,6 +158,7 @@ export interface PageLink {
   nodeId: string;
   targetPageId: string;
   transition: PageTransition;
+  action: PageAction;
   /** The element's visible text, cut short, so an agent can tell links apart. */
   label: string;
 }
@@ -167,6 +183,7 @@ export const readPageLinks = (html: string): PageLink[] => {
       nodeId,
       targetPageId,
       transition: parsePageTransition(readAttribute(tag.attributes, PAGE_TRANSITION_ATTRIBUTE)),
+      action: parsePageAction(readAttribute(tag.attributes, PAGE_ACTION_ATTRIBUTE)),
       label: linkLabel(html, nodeId),
     });
   }
@@ -175,13 +192,24 @@ export const readPageLinks = (html: string): PageLink[] => {
 
 export interface PageLinkOptions {
   transition?: PageTransition;
+  action?: PageAction;
 }
 
 /** Why a link to `targetPageId` cannot take these options, or null when it can. */
-export const linkOptionsError = (targetPageId: string, { transition = "instant" }: PageLinkOptions) =>
-  targetPageId === BACK_TARGET && transition !== "instant"
-    ? "A back link plays the reverse of the transition it came in with, so leave transition out."
-    : null;
+export const linkOptionsError = (
+  targetPageId: string,
+  { transition = "instant", action = "navigate" }: PageLinkOptions,
+) => {
+  const special = targetPageId === BACK_TARGET || targetPageId === CLOSE_TARGET;
+  if (special && action === "overlay") return `A ${targetPageId} link cannot open an overlay.`;
+  if (transition === "instant") return null;
+  if (targetPageId === BACK_TARGET) {
+    return "A back link plays the reverse of the transition it came in with, so leave transition out.";
+  }
+  if (targetPageId === CLOSE_TARGET) return "A close link takes no transition.";
+  if (action === "overlay") return "An overlay opens without a transition, so leave transition out.";
+  return null;
+};
 
 /**
  * Points the element at `targetPageId` with the given options, or removes its
@@ -193,7 +221,7 @@ export const setPageLink = (
   html: string,
   nodeId: string,
   targetPageId: string | null,
-  { transition = "instant" }: PageLinkOptions = {},
+  { transition = "instant", action = "navigate" }: PageLinkOptions = {},
 ) => {
   const source = stampNodeIds(html);
   if (!findNodeSpan(source, nodeId)) return null;
@@ -202,10 +230,15 @@ export const setPageLink = (
       ? removeNodeAttribute(current, nodeId, name)
       : setNodeAttribute(current, nodeId, name, value)) ?? current;
   const linked = write(source, PAGE_LINK_ATTRIBUTE, targetPageId);
-  return write(
+  const withTransition = write(
     linked,
     PAGE_TRANSITION_ATTRIBUTE,
     targetPageId === null || transition === "instant" ? null : transition,
+  );
+  return write(
+    withTransition,
+    PAGE_ACTION_ATTRIBUTE,
+    targetPageId === null || action === "navigate" ? null : action,
   );
 };
 
@@ -229,8 +262,9 @@ export const addPlayScript = (html: string) => {
   if (!html) return html;
   const attr = JSON.stringify(PAGE_LINK_ATTRIBUTE);
   const transitionAttr = JSON.stringify(PAGE_TRANSITION_ATTRIBUTE);
+  const actionAttr = JSON.stringify(PAGE_ACTION_ATTRIBUTE);
   const script =
-    `<script>(function(){var A=${attr},T=${transitionAttr},S="["+A+"]";` +
+    `<script>(function(){var A=${attr},T=${transitionAttr},P=${actionAttr},S="["+A+"]";` +
     `var style=document.createElement("style");style.textContent=S+"{cursor:pointer!important}"+` +
     `"html.wirely-hint "+S+"{outline:2px solid rgba(13,153,255,.9)!important;outline-offset:0!important;box-shadow:inset 0 0 0 9999px rgba(13,153,255,.25)!important}";` +
     `(document.head||document.documentElement).appendChild(style);var timer=0;` +
@@ -238,7 +272,7 @@ export const addPlayScript = (html: string) => {
     `["pointerdown","mousedown","touchstart"].forEach(function(type){window.addEventListener(type,function(event){` +
     `if(!hotspotOf(event))event.stopImmediatePropagation();},true);});` +
     `window.addEventListener("click",function(event){var hotspot=hotspotOf(event);event.preventDefault();event.stopImmediatePropagation();` +
-    `if(hotspot){parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A),transition:hotspot.getAttribute(T)},"*");return;}` +
+    `if(hotspot){parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A),transition:hotspot.getAttribute(T),action:hotspot.getAttribute(P)},"*");return;}` +
     `if(!document.querySelector(S))return;var root=document.documentElement;root.classList.add("wirely-hint");` +
     `clearTimeout(timer);timer=setTimeout(function(){root.classList.remove("wirely-hint");},600);},true);` +
     `document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){` +
