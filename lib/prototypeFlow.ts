@@ -166,26 +166,34 @@ export const PLAY_KEY_MESSAGE = "wirely-prototype-key";
 /**
  * The script the play view adds to each srcdoc, after sanitizing. The frame is
  * sandboxed without allow-same-origin, so the viewer cannot read clicks in it.
- * The script reports a hotspot click and arrow keys out by message. A click on
- * an ordinary link is cancelled, so the frame does not navigate away from the
- * page, and a click that misses every hotspot outlines them for a moment, as
- * Figma does. The viewer only ever moves to a page it already holds, so a
- * forged message from the page's own scripts can do no more than a click.
+ * The script reports a hotspot click and arrow keys out by message. Only a
+ * hotspot responds to a click, as in Figma: every other click is cancelled in
+ * the capture phase before the page's own links, buttons, and handlers see it,
+ * and it flashes the hotspots so the user sees where they can click. It goes in
+ * right after the CSP meta tag, ahead of every page script, so its window
+ * listeners run first and can stop the page's own. The viewer only ever moves
+ * to a page it already holds, so a forged message from the page's own scripts
+ * can do no more than a click.
  */
 export const addPlayScript = (html: string) => {
   if (!html) return html;
   const attr = JSON.stringify(PAGE_LINK_ATTRIBUTE);
   const script =
     `<script>(function(){var A=${attr},S="["+A+"]";` +
-    `var style=document.createElement("style");style.textContent=S+"{cursor:pointer}html.wirely-hint "+S+"{outline:2px solid #3b82f6;outline-offset:2px}";` +
+    `var style=document.createElement("style");style.textContent=S+"{cursor:pointer!important}"+` +
+    `"html.wirely-hint "+S+"{outline:2px solid rgba(13,153,255,.9)!important;outline-offset:0!important;box-shadow:inset 0 0 0 9999px rgba(13,153,255,.25)!important}";` +
     `(document.head||document.documentElement).appendChild(style);var timer=0;` +
-    `document.addEventListener("click",function(event){var el=event.target instanceof Element?event.target:null;` +
-    `var hotspot=el&&el.closest(S);if(hotspot){event.preventDefault();event.stopPropagation();` +
-    `parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A)},"*");return;}` +
-    `var link=el&&el.closest("a[href]");if(link&&(link.getAttribute("href")||"").charAt(0)!=="#")event.preventDefault();` +
+    `var hotspotOf=function(event){var el=event.target instanceof Element?event.target:null;return el&&el.closest(S);};` +
+    `["pointerdown","mousedown","touchstart"].forEach(function(type){window.addEventListener(type,function(event){` +
+    `if(!hotspotOf(event))event.stopImmediatePropagation();},true);});` +
+    `window.addEventListener("click",function(event){var hotspot=hotspotOf(event);event.preventDefault();event.stopImmediatePropagation();` +
+    `if(hotspot){parent.postMessage({type:${JSON.stringify(PLAY_GOTO_MESSAGE)},pageId:hotspot.getAttribute(A)},"*");return;}` +
     `if(!document.querySelector(S))return;var root=document.documentElement;root.classList.add("wirely-hint");` +
     `clearTimeout(timer);timer=setTimeout(function(){root.classList.remove("wirely-hint");},600);},true);` +
     `document.addEventListener("keydown",function(event){if(event.key==="ArrowLeft"||event.key==="ArrowRight"){` +
     `parent.postMessage({type:${JSON.stringify(PLAY_KEY_MESSAGE)},key:event.key},"*");}});})();</script>`;
-  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${script}</body>`) : `${html}${script}`;
+  const anchor = /<meta\b[^>]*Content-Security-Policy[^>]*>/i.exec(html) ?? /<head\b[^>]*>/i.exec(html);
+  if (!anchor) return `${script}${html}`;
+  const at = anchor.index + anchor[0].length;
+  return `${html.slice(0, at)}${script}${html.slice(at)}`;
 };
