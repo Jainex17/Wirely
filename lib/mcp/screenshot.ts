@@ -242,6 +242,9 @@ const withLoadedPage = async <T>(
       ...getPageFrameSize({ deviceType, iframeHtml: html }, "desktop"),
       deviceScaleFactor: scale,
     });
+    // A Mac in dark mode gives headless Chrome a dark default page color,
+    // which the canvas, where the page renders in the user's browser, does not show.
+    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
 
     await page.setContent(sanitizeIframeHtml(html), { waitUntil: "load", timeout: 20_000 });
     // Give allowlisted CDN scripts and Unsplash images a moment to land. A slow
