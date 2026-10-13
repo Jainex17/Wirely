@@ -11,6 +11,7 @@ import {
   verifyCapturePath,
 } from "@/lib/mcp/capture";
 import { ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
+import { readUploadBody } from "@/lib/projectAssets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,15 +39,19 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   }
-  // The form adds a few KB of boundaries and field names around the parts.
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_CAPTURE_UPLOAD_BYTES + 64_000) {
-    return NextResponse.json({ error: "The capture is over 4 MB." }, { status: 413 });
+  // Bytes are counted as they arrive, so a chunked body with no
+  // Content-Length cannot make the server buffer more than the cap. The form
+  // adds a few KB of boundaries and field names around the parts.
+  const body = await readUploadBody(request, MAX_CAPTURE_UPLOAD_BYTES + 64_000);
+  if (!body) {
+    return NextResponse.json({ error: "Send a capture of at most 4 MB." }, { status: 413 });
   }
 
   let form: FormData;
   try {
-    form = await request.formData();
+    form = await new Response(body, {
+      headers: { "content-type": request.headers.get("content-type") ?? "" },
+    }).formData();
   } catch {
     return NextResponse.json({ error: "Send the capture as multipart form data." }, { status: 400 });
   }

@@ -149,19 +149,19 @@ export const inlineAssets = async (
 };
 
 /**
- * Reads an upload body as bytes, stopping at MAX_UPLOAD_BYTES without
+ * Reads an upload body as bytes, stopping at `maxBytes` without
  * buffering the rest. Null when the body is empty or too large.
  */
-export const readUploadBody = async (request: Request) => {
+export const readUploadBody = async (request: Request, maxBytes = MAX_UPLOAD_BYTES) => {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) return null;
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
   if (!request.body) return null;
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = request.body.getReader();
   for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
     size += chunk.value.byteLength;
-    if (size > MAX_UPLOAD_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel();
       return null;
     }
