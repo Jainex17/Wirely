@@ -9,16 +9,19 @@ import {
   Monitor,
   Presentation,
   Smartphone,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import {
   addPlayScript,
+  BACK_TARGET,
   PLAY_GOTO_MESSAGE,
   PLAY_KEY_MESSAGE,
   parsePageTransition,
   type PageTransition,
+  reverseTransition,
 } from "@/lib/prototypeFlow";
 import { useIsBrowser } from "@/hooks/useIsBrowser";
 
@@ -78,7 +81,25 @@ interface ViewState {
   transition: PageTransition;
   /** True once the incoming frame has loaded, so the animation never shows a blank screen. */
   loaded: boolean;
+  /** The screens the user came from, each with the transition that left it, for Back. */
+  history: Array<{ index: number; transition: PageTransition }>;
 }
+
+const moveTo = (
+  state: ViewState,
+  index: number,
+  transition: PageTransition,
+  history: ViewState["history"],
+): ViewState => ({
+  current: { index, visit: state.current.visit + 1 },
+  leaving:
+    transition !== "instant" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? state.current
+      : null,
+  transition,
+  loaded: false,
+  history,
+});
 
 export default function PrototypeViewer({
   wireId,
@@ -92,6 +113,7 @@ export default function PrototypeViewer({
     leaving: null,
     transition: "instant",
     loaded: false,
+    history: [],
   });
   const currentIndex = view.current.index;
   const [deviceOverride, setDeviceOverride] = React.useState<ViewerDevice | null>(
@@ -133,22 +155,27 @@ export default function PrototypeViewer({
   const goToIndex = React.useCallback(
     (index: number, transition: PageTransition = "instant") => {
       const bounded = Math.max(0, Math.min(pages.length - 1, index));
-      const animate =
-        transition !== "instant" &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       setView((state) =>
         bounded === state.current.index
           ? state
-          : {
-              current: { index: bounded, visit: state.current.visit + 1 },
-              leaving: animate ? state.current : null,
-              transition,
-              loaded: false,
-            },
+          : moveTo(state, bounded, transition, [
+              ...state.history,
+              { index: state.current.index, transition },
+            ]),
       );
     },
     [pages.length],
   );
+
+  /** Returns to the previous screen, undoing the transition that left it. */
+  const goBack = React.useCallback(() => {
+    setView((state) => {
+      const previous = state.history.at(-1);
+      return previous
+        ? moveTo(state, previous.index, reverseTransition(previous.transition), state.history.slice(0, -1))
+        : state;
+    });
+  }, []);
 
   // Runs the transition once the incoming frame has loaded, then drops the
   // outgoing frame. A layout effect, so the first painted frame is the start.
@@ -193,6 +220,10 @@ export default function PrototypeViewer({
       if (data?.type === PLAY_KEY_MESSAGE) {
         goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
       } else if (data?.type === PLAY_GOTO_MESSAGE) {
+        if (data.pageId === BACK_TARGET) {
+          goBack();
+          return;
+        }
         const index = pages.findIndex((page) => page.id === data.pageId);
         if (index !== -1) goToIndex(index, parsePageTransition(data.transition));
       }
@@ -204,7 +235,7 @@ export default function PrototypeViewer({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("message", handleFrameMessage);
     };
-  }, [currentIndex, goToIndex, pages]);
+  }, [currentIndex, goBack, goToIndex, pages]);
 
   React.useEffect(() => {
     const sync = () => {
@@ -299,6 +330,18 @@ export default function PrototypeViewer({
           <span className="whitespace-nowrap text-xs text-muted-foreground">
             {currentIndex + 1}/{pages.length}
           </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            title="Go back to the screen you came from"
+            disabled={view.history.length === 0}
+            onClick={goBack}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Back
+          </Button>
           <div className="flex items-center gap-1">
             <Button
               type="button"

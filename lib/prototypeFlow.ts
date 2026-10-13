@@ -127,6 +127,13 @@ export type PageTransition = (typeof PAGE_TRANSITIONS)[number];
 export const parsePageTransition = (value: unknown): PageTransition =>
   PAGE_TRANSITIONS.find((transition) => transition === value) ?? "instant";
 
+/** The transition that undoes another, for going back the way the user came. */
+export const reverseTransition = (transition: PageTransition): PageTransition =>
+  transition === "slide-left" ? "slide-right" : transition === "slide-right" ? "slide-left" : transition;
+
+/** A link target that is not a page: it returns to the screen the user came from. */
+export const BACK_TARGET = "back";
+
 const readAttribute = (attributes: string, name: string) => {
   const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i").exec(attributes);
   return match ? (match[1] ?? match[2]) : undefined;
@@ -169,6 +176,12 @@ export const readPageLinks = (html: string): PageLink[] => {
 export interface PageLinkOptions {
   transition?: PageTransition;
 }
+
+/** Why a link to `targetPageId` cannot take these options, or null when it can. */
+export const linkOptionsError = (targetPageId: string, { transition = "instant" }: PageLinkOptions) =>
+  targetPageId === BACK_TARGET && transition !== "instant"
+    ? "A back link plays the reverse of the transition it came in with, so leave transition out."
+    : null;
 
 /**
  * Points the element at `targetPageId` with the given options, or removes its

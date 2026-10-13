@@ -6,7 +6,9 @@ import { stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { stampNodeIds } from "@/lib/pageNodes";
 import {
   addPlayScript,
+  BACK_TARGET,
   findNavigationMismatches,
+  linkOptionsError,
   PAGE_LINK_ATTRIBUTE,
   PAGE_TRANSITION_ATTRIBUTE,
   parseFlowInput,
@@ -14,6 +16,7 @@ import {
   PLAY_GOTO_MESSAGE,
   PLAY_KEY_MESSAGE,
   readPageLinks,
+  reverseTransition,
   setPageLink,
 } from "@/lib/prototypeFlow";
 
@@ -171,6 +174,31 @@ describe("parsePageTransition", () => {
     expect(parsePageTransition("spin")).toBe("instant");
     expect(parsePageTransition(null)).toBe("instant");
   });
+
+  it("reverses a slide for going back and keeps the others", () => {
+    expect(reverseTransition("slide-left")).toBe("slide-right");
+    expect(reverseTransition("slide-right")).toBe("slide-left");
+    expect(reverseTransition("dissolve")).toBe("dissolve");
+    expect(reverseTransition("instant")).toBe("instant");
+  });
+});
+
+describe("back links", () => {
+  const html = '<html><body><button data-wirely-id="b1">Back</button></body></html>';
+
+  it("stores back as the target and reads it back", () => {
+    const linked = setPageLink(html, "b1", BACK_TARGET) ?? "";
+    expect(readPageLinks(linked)).toEqual([
+      { nodeId: "b1", targetPageId: BACK_TARGET, transition: "instant", label: "Back" },
+    ]);
+  });
+
+  it("rejects a transition on a back link and accepts one on a page link", () => {
+    expect(linkOptionsError(BACK_TARGET, {})).toBeNull();
+    expect(linkOptionsError(BACK_TARGET, { transition: "instant" })).toBeNull();
+    expect(linkOptionsError(BACK_TARGET, { transition: "dissolve" })).toContain("leave transition out");
+    expect(linkOptionsError("page-2", { transition: "slide-left" })).toBeNull();
+  });
 });
 
 describe("addPlayScript", () => {
@@ -206,6 +234,12 @@ describe("addPlayScript", () => {
     );
     click("#go");
     expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-3", transition: "dissolve" }]);
+  });
+
+  it("sends back as the target of a back hotspot", () => {
+    const { messages, click } = play(`<button id="back" ${PAGE_LINK_ATTRIBUTE}="${BACK_TARGET}">Back</button>`);
+    click("#back");
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: BACK_TARGET, transition: null }]);
   });
 
   it("cancels every click outside a hotspot, including hash links and page handlers", () => {

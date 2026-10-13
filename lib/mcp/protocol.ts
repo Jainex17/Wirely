@@ -659,7 +659,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         },
         targetPageId: {
           type: ["string", "null"],
-          description: "The page the click opens, from list_pages. Null removes the link.",
+          description:
+            "The page the click opens, from list_pages, or \"back\" for the screen the " +
+            "user came from. Null removes the link.",
         },
         transition: {
           type: "string",

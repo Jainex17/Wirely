@@ -71,7 +71,9 @@ import {
   upsertPrototypeFlowForProject,
 } from "@/lib/db/queries/prototypeFlows";
 import {
+  BACK_TARGET,
   findNavigationMismatches,
+  linkOptionsError,
   PAGE_TRANSITIONS,
   parseFlowInput,
   readPageLinks,
@@ -998,14 +1000,23 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
   const { projectId, pageId, nodeId, targetPageId, transition } = parsed.data;
 
-  let targetTitle = "";
+  // What a click does, for the reply.
+  let opens = "";
   if (targetPageId !== null) {
-    if (targetPageId === pageId) return fail("A page cannot link to itself.");
-    const target = isUuid(targetPageId)
-      ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
-      : null;
-    if (!target) return fail("Target page not found. Use list_pages for HTML page ids.");
-    targetTitle = target.title;
+    const optionsError = linkOptionsError(targetPageId, { transition });
+    if (optionsError) return fail(optionsError);
+    if (targetPageId === BACK_TARGET) {
+      opens = "goes back to the previous screen";
+    } else {
+      if (targetPageId === pageId) return fail("A page cannot link to itself.");
+      const target = isUuid(targetPageId)
+        ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
+        : null;
+      if (!target) {
+        return fail(`Target page not found. Use list_pages for HTML page ids, or "${BACK_TARGET}".`);
+      }
+      opens = `opens "${target.title}"`;
+    }
   }
 
   // Compare-and-swap like edit_element, so a user editing the same page at the
@@ -1032,9 +1043,11 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     if (targetPageId === null) return succeed(`Removed the link from ${nodeId} on "${updated.title}".`);
     const flow = await getPrototypeFlowForProject(projectId, userId);
     const playable = flow?.pageIds ?? [];
-    const outsideFlow = !playable.includes(pageId) || !playable.includes(targetPageId);
+    const outsideFlow =
+      !playable.includes(pageId) ||
+      (targetPageId !== BACK_TARGET && !playable.includes(targetPageId));
     return succeed(
-      `Clicking ${nodeId} on "${updated.title}" now opens "${targetTitle}"` +
+      `Clicking ${nodeId} on "${updated.title}" now ${opens}` +
         `${transition && transition !== "instant" ? ` with a ${transition} transition` : ""}.\n` +
         `Give the user this link to play it: ${playLink(origin, projectId)}` +
         (outsideFlow
@@ -1059,9 +1072,11 @@ const listLinks: ToolHandler = async (userId, args, origin) => {
       return (
         `"${page.title}" (${page.id}) node ${link.nodeId}` +
         (link.label ? ` "${link.label}"` : "") +
-        (target
-          ? ` opens "${target}" (${link.targetPageId})`
-          : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
+        (link.targetPageId === BACK_TARGET
+          ? " goes back to the previous screen"
+          : target
+            ? ` opens "${target}" (${link.targetPageId})`
+            : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
         (link.transition === "instant" ? "" : `, ${link.transition} transition`)
       );
     }),
