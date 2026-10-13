@@ -150,22 +150,30 @@ export const startDocumentSync = (
   };
   window.addEventListener("beforeunload", warnBeforeLeaving);
 
-  return () => {
-    // Leaving the project unmounts the editor with the newest edit still
-    // inside its debounce window. Send it now, or it goes with the
-    // timer; an edit that lands while a save is already out is flushed by
-    // that save's finish instead. The graph stays readable after the
-    // editor's dispose, so a save in flight when teardown reaches it still
-    // serializes.
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-    if (dirty && !saving && !inConflict) void save(true);
-    stopped = true;
-    stopHistory();
-    clearInterval(pollTimer);
-    window.removeEventListener("beforeunload", warnBeforeLeaving);
+  return {
+    /**
+     * Checks for a newer stored version now rather than at the next poll, as
+     * after a restore from history. Unsaved edits still win the same way they
+     * do over an agent's write: their save conflicts and the user picks.
+     */
+    refresh: () => void poll(),
+    stop: () => {
+      // Leaving the project unmounts the editor with the newest edit still
+      // inside its debounce window. Send it now, or it goes with the
+      // timer; an edit that lands while a save is already out is flushed by
+      // that save's finish instead. The graph stays readable after the
+      // editor's dispose, so a save in flight when teardown reaches it still
+      // serializes.
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      if (dirty && !saving && !inConflict) void save(true);
+      stopped = true;
+      stopHistory();
+      clearInterval(pollTimer);
+      window.removeEventListener("beforeunload", warnBeforeLeaving);
+    },
   };
 };
 

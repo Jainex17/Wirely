@@ -534,3 +534,25 @@ export const projectDocuments = pgTable("project_documents", {
   version: integer("version").default(1).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Earlier states of a project's design document, for the Design tab's history.
+ * lib/db/queries/documentVersions.ts decides when one is taken and how many stay.
+ */
+export const projectDocumentVersions = pgTable(
+  "project_document_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectCreatedIdx: index("project_document_versions_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+  }),
+);
