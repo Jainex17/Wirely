@@ -282,6 +282,39 @@ export const readNodeLink = (search: string) => {
   return { pageId, nodeId: nodeId && NODE_ID_FORMAT.test(nodeId) ? nodeId : null };
 };
 
+/**
+ * The two pages a compare link names, as `?compare=<designId>,<buildId>` from
+ * a build check. Null when the link names fewer or more than two, or the same
+ * page twice.
+ */
+export const readCompareLink = (search: string): [string, string] | null => {
+  const ids = (new URLSearchParams(search).get("compare") ?? "").split(",").map((id) => id.trim());
+  return ids.length === 2 && ids[0] && ids[1] && ids[0] !== ids[1] ? [ids[0], ids[1]] : null;
+};
+
+const BUILD_TITLE_PREFIX = "Build: ";
+
+/**
+ * The page to compare `pageId` with when the user opens the compare view from
+ * its menu: its build capture, or the design a build came from, else the next
+ * page that is not a vector artboard.
+ */
+export const pickComparePartner = (
+  pages: ReadonlyArray<{ id: string; title: string; deviceType?: string }>,
+  pageId: string,
+) => {
+  const page = pages.find((entry) => entry.id === pageId);
+  if (!page) return null;
+  const others = pages.filter((entry) => entry.id !== pageId && entry.deviceType !== "vector");
+  const paired = page.title.startsWith(BUILD_TITLE_PREFIX)
+    ? others.find((entry) => entry.title === page.title.slice(BUILD_TITLE_PREFIX.length))
+    : others.find((entry) => entry.title === `${BUILD_TITLE_PREFIX}${page.title}`);
+  if (paired) return paired.id;
+  const index = pages.indexOf(page);
+  const next = others.find((entry) => pages.indexOf(entry) > index) ?? others[0];
+  return next?.id ?? null;
+};
+
 const escapeText = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 

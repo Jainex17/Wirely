@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { computeAllLayouts } from "@open-pencil/core/layout";
 import type { SceneGraph } from "@open-pencil/scene-graph";
-import { createDesignDocument, readDesignDocument, screensPage, writeDesignDocument } from "@/lib/design/document";
+import {
+  createDesignDocument,
+  exportDesignNodes,
+  readDesignDocument,
+  screensPage,
+  writeDesignDocument,
+} from "@/lib/design/document";
 import { addScreen, findScreen } from "@/lib/design/screens";
 
 const screenWith = async (body: string) => {
@@ -70,5 +76,21 @@ describe("design JSX defaults agents rely on", () => {
     const reloaded = await reload(graph);
     expect(byName(reloaded, "Dashed").strokes[0].dashPattern).toEqual([6, 2]);
     expect(byName(reloaded, "Default").strokes[0].dashPattern).toEqual([4, 4]);
+  });
+});
+
+describe("exportDesignNodes", () => {
+  it("exports a screen as a PNG at the asked scale and as an SVG", async () => {
+    const { graph, id } = await screenWith(`<Frame name="Box" w={100} h={40} bg="#FF0000" />`);
+    const screen = findScreen(graph, id)!;
+
+    const png = new Uint8Array(await (await exportDesignNodes(graph, [screen.id], "png", { scale: 2 })).arrayBuffer());
+    expect(String.fromCharCode(...png.slice(1, 4))).toBe("PNG");
+    // A PNG stores its width at byte 16.
+    expect(new DataView(png.buffer).getUint32(16)).toBe(Math.round(screen.width * 2));
+
+    const svg = await exportDesignNodes(graph, [screen.id], "svg");
+    expect(svg.type).toBe("image/svg+xml");
+    expect(await svg.text()).toContain("<svg");
   });
 });

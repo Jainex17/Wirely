@@ -53,7 +53,7 @@ const makeSyncHarness = () => {
     },
   } as unknown as Editor;
 
-  const stop = startDocumentSync("project", editor, 1, {
+  const { stop } = startDocumentSync("project", editor, 1, {
     onStatus: () => undefined,
     onConflict: () => {
       throw new Error("no conflict is expected here");

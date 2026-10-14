@@ -6,12 +6,20 @@ import { stripWirelyArtifacts } from "@/lib/agentPrompt";
 import { stampNodeIds } from "@/lib/pageNodes";
 import {
   addPlayScript,
+  BACK_TARGET,
+  CLOSE_TARGET,
   findNavigationMismatches,
+  linkOptionsError,
+  PAGE_ACTION_ATTRIBUTE,
   PAGE_LINK_ATTRIBUTE,
+  PAGE_TRANSITION_ATTRIBUTE,
   parseFlowInput,
+  parsePageAction,
+  parsePageTransition,
   PLAY_GOTO_MESSAGE,
   PLAY_KEY_MESSAGE,
   readPageLinks,
+  reverseTransition,
   setPageLink,
 } from "@/lib/prototypeFlow";
 
@@ -119,12 +127,16 @@ describe("page links", () => {
   it("links an element to a page and reads the link back with its text", () => {
     const linked = setPageLink(html, "a1", "page-2") ?? "";
     expect(linked).toContain(`<a href="#" data-wirely-id="a1" ${PAGE_LINK_ATTRIBUTE}="page-2">`);
-    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-2", label: "Pricing" }]);
+    expect(readPageLinks(linked)).toEqual([
+      { nodeId: "a1", targetPageId: "page-2", transition: "instant", action: "navigate", label: "Pricing" },
+    ]);
   });
 
   it("retargets an existing link instead of adding a second one", () => {
     const linked = setPageLink(setPageLink(html, "a1", "page-2") ?? "", "a1", "page-3") ?? "";
-    expect(readPageLinks(linked)).toEqual([{ nodeId: "a1", targetPageId: "page-3", label: "Pricing" }]);
+    expect(readPageLinks(linked)).toEqual([
+      { nodeId: "a1", targetPageId: "page-3", transition: "instant", action: "navigate", label: "Pricing" },
+    ]);
   });
 
   it("removes a link with a null target, leaving the element as it was", () => {
@@ -142,7 +154,7 @@ describe("page links", () => {
     const unstamped = '<html><body><main><a href="#">Start</a></main></body></html>';
     const id = /<a data-wirely-id="([a-z0-9]+)"/.exec(stampNodeIds(unstamped))?.[1] ?? "";
     expect(readPageLinks(setPageLink(unstamped, id, "page-2") ?? "")).toEqual([
-      { nodeId: id, targetPageId: "page-2", label: "Start" },
+      { nodeId: id, targetPageId: "page-2", transition: "instant", action: "navigate", label: "Start" },
     ]);
   });
 
@@ -150,6 +162,84 @@ describe("page links", () => {
     const linked = setPageLink(html, "a1", "page-2") ?? "";
     expect(readPageLinks(sanitizeIframeHtml(linked))).toHaveLength(1);
     expect(stripWirelyArtifacts(linked)).not.toContain(PAGE_LINK_ATTRIBUTE);
+  });
+
+  it("stores a transition next to the link and drops it for instant, on unlink, and on export", () => {
+    const sliding = setPageLink(html, "a1", "page-2", { transition: "slide-left" }) ?? "";
+    expect(sliding).toContain(`${PAGE_LINK_ATTRIBUTE}="page-2" ${PAGE_TRANSITION_ATTRIBUTE}="slide-left">`);
+    expect(readPageLinks(sliding)[0].transition).toBe("slide-left");
+    expect(stripWirelyArtifacts(sliding)).not.toContain(PAGE_TRANSITION_ATTRIBUTE);
+    expect(setPageLink(sliding, "a1", "page-2")).not.toContain(PAGE_TRANSITION_ATTRIBUTE);
+    expect(setPageLink(sliding, "a1", null)).toBe(html);
+  });
+});
+
+describe("parsePageTransition", () => {
+  it("keeps a known transition and reads anything else as instant", () => {
+    expect(parsePageTransition("dissolve")).toBe("dissolve");
+    expect(parsePageTransition("slide-right")).toBe("slide-right");
+    expect(parsePageTransition("spin")).toBe("instant");
+    expect(parsePageTransition(null)).toBe("instant");
+  });
+
+  it("reverses a slide for going back and keeps the others", () => {
+    expect(reverseTransition("slide-left")).toBe("slide-right");
+    expect(reverseTransition("slide-right")).toBe("slide-left");
+    expect(reverseTransition("dissolve")).toBe("dissolve");
+    expect(reverseTransition("instant")).toBe("instant");
+  });
+});
+
+describe("back links", () => {
+  const html = '<html><body><button data-wirely-id="b1">Back</button></body></html>';
+
+  it("stores back as the target and reads it back", () => {
+    const linked = setPageLink(html, "b1", BACK_TARGET) ?? "";
+    expect(readPageLinks(linked)).toEqual([
+      { nodeId: "b1", targetPageId: BACK_TARGET, transition: "instant", action: "navigate", label: "Back" },
+    ]);
+  });
+
+  it("rejects a transition on a back link and accepts one on a page link", () => {
+    expect(linkOptionsError(BACK_TARGET, {})).toBeNull();
+    expect(linkOptionsError(BACK_TARGET, { transition: "instant" })).toBeNull();
+    expect(linkOptionsError(BACK_TARGET, { transition: "dissolve" })).toContain("leave transition out");
+    expect(linkOptionsError("page-2", { transition: "slide-left" })).toBeNull();
+  });
+});
+
+describe("overlay links", () => {
+  const html =
+    '<html><body><button data-wirely-id="o1">Filters</button><button data-wirely-id="c1">Done</button></body></html>';
+
+  it("stores the overlay action next to the link and drops it for navigate, on unlink, and on export", () => {
+    const linked = setPageLink(html, "o1", "page-2", { action: "overlay" }) ?? "";
+    expect(linked).toContain(`${PAGE_LINK_ATTRIBUTE}="page-2" ${PAGE_ACTION_ATTRIBUTE}="overlay">`);
+    expect(readPageLinks(linked)[0].action).toBe("overlay");
+    expect(stripWirelyArtifacts(linked)).not.toContain(PAGE_ACTION_ATTRIBUTE);
+    expect(setPageLink(linked, "o1", "page-2")).not.toContain(PAGE_ACTION_ATTRIBUTE);
+    expect(setPageLink(linked, "o1", null)).toBe(html);
+  });
+
+  it("stores close as the target", () => {
+    expect(readPageLinks(setPageLink(html, "c1", CLOSE_TARGET) ?? "")[0].targetPageId).toBe(CLOSE_TARGET);
+  });
+
+  it("reads an unknown action as navigate", () => {
+    expect(parsePageAction("overlay")).toBe("overlay");
+    expect(parsePageAction("popup")).toBe("navigate");
+    expect(parsePageAction(null)).toBe("navigate");
+  });
+
+  it("rejects options that back, close, and overlays cannot use", () => {
+    expect(linkOptionsError(CLOSE_TARGET, {})).toBeNull();
+    expect(linkOptionsError("page-2", { action: "overlay" })).toBeNull();
+    expect(linkOptionsError(BACK_TARGET, { action: "overlay" })).toBe("A back link cannot open an overlay.");
+    expect(linkOptionsError(CLOSE_TARGET, { action: "overlay" })).toBe("A close link cannot open an overlay.");
+    expect(linkOptionsError(CLOSE_TARGET, { transition: "dissolve" })).toBe("A close link takes no transition.");
+    expect(linkOptionsError("page-2", { action: "overlay", transition: "slide-left" })).toContain(
+      "leave transition out",
+    );
   });
 });
 
@@ -177,7 +267,34 @@ describe("addPlayScript", () => {
   it("sends the hotspot's target page when anything inside it is clicked", () => {
     const { messages, click } = play(page);
     expect(click("#inner").defaultPrevented).toBe(true);
-    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2" }]);
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-2", transition: null, action: null }]);
+  });
+
+  it("sends the hotspot's transition with its target", () => {
+    const { messages, click } = play(
+      `<button id="go" ${PAGE_LINK_ATTRIBUTE}="page-3" ${PAGE_TRANSITION_ATTRIBUTE}="dissolve">Go</button>`,
+    );
+    click("#go");
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: "page-3", transition: "dissolve", action: null }]);
+  });
+
+  it("sends back as the target of a back hotspot", () => {
+    const { messages, click } = play(`<button id="back" ${PAGE_LINK_ATTRIBUTE}="${BACK_TARGET}">Back</button>`);
+    click("#back");
+    expect(messages).toEqual([{ type: PLAY_GOTO_MESSAGE, pageId: BACK_TARGET, transition: null, action: null }]);
+  });
+
+  it("sends the overlay action and the close target", () => {
+    const { messages, click } = play(
+      `<button id="open" ${PAGE_LINK_ATTRIBUTE}="page-4" ${PAGE_ACTION_ATTRIBUTE}="overlay">Filters</button>` +
+        `<button id="close" ${PAGE_LINK_ATTRIBUTE}="${CLOSE_TARGET}">Done</button>`,
+    );
+    click("#open");
+    click("#close");
+    expect(messages).toEqual([
+      { type: PLAY_GOTO_MESSAGE, pageId: "page-4", transition: null, action: "overlay" },
+      { type: PLAY_GOTO_MESSAGE, pageId: CLOSE_TARGET, transition: null, action: null },
+    ]);
   });
 
   it("cancels every click outside a hotspot, including hash links and page handlers", () => {

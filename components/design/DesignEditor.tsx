@@ -2,7 +2,7 @@
 
 import { createDefaultEditorState, createEditor, type Editor, EDITOR_TOOLS, type Tool, TOOL_SHORTCUTS } from "@open-pencil/core/editor";
 import { EDITOR_COMMAND_METADATA } from "@open-pencil/vue";
-import { ChevronUp, Circle, Columns3, Frame, Hand, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Scan, Square, Type } from "lucide-react";
+import { ChevronUp, Circle, Columns3, Frame, Hand, History, LayoutGrid, Maximize, Minus, MousePointer2, PenTool, Scan, Square, Type } from "lucide-react";
 import { type DragEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { reactive } from "vue";
 import { toast } from "@/components/ui/sonner";
@@ -13,6 +13,7 @@ import { fetchDesignDocument, startDocumentSync, startSelectionReporting } from 
 import { findCommandForKey, isTypingTarget } from "@/components/design/keyboard";
 import ChatPanel, { type ChatMessage, type ChatModel } from "@/components/design/ChatPanel";
 import DesignSidebar from "@/components/design/DesignSidebar";
+import DocumentHistoryDialog from "@/components/design/DocumentHistoryDialog";
 import PropertiesPanel from "@/components/design/PropertiesPanel";
 import { useEditorValue } from "@/components/design/useEditorValue";
 import {
@@ -116,6 +117,9 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
   const [rightTab, setRightTab] = useState<"chat" | "design">("chat");
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // The open document's sync, for loading a restored version at once.
+  const refreshDocumentRef = useRef<(() => void) | null>(null);
 
   // Dialogs, menus, and toasts portal to <body>, so the editor palette goes
   // there too, as the HTML tab does.
@@ -148,10 +152,10 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
         });
         // The conflict choice acts on this editor, so it goes away with it.
         let conflictToast: string | number | null = null;
-        const stopSync = startDocumentSync(projectId, created, version, {
+        const sync = startDocumentSync(projectId, created, version, {
           onStatus: setSaveStatus,
           onConflict: ({ keepMine, loadTheirs }) => {
-            conflictToast = toast("An agent changed this design while you were editing.", {
+            conflictToast = toast("An agent or a restore changed this design while you were editing.", {
               duration: Number.POSITIVE_INFINITY,
               action: { label: "Keep my edits", onClick: keepMine },
               cancel: { label: "Load theirs", onClick: loadTheirs },
@@ -161,13 +165,15 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
         const stopClipboard = bindDesignClipboard(created);
         const stopDrawIntoScreens = bindDrawIntoScreens(created);
         const stopSelection = startSelectionReporting(projectId, created);
+        refreshDocumentRef.current = sync.refresh;
         setEditor(created);
         teardown = () => {
           if (conflictToast !== null) toast.dismiss(conflictToast);
+          refreshDocumentRef.current = null;
           stopClipboard();
           stopDrawIntoScreens();
           stopSelection();
-          stopSync();
+          sync.stop();
           unmount();
           created.dispose();
         };
@@ -261,10 +267,18 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
       onToggle={() => setIsRightCollapsed((collapsed) => !collapsed)}
     />
   );
+  // The save state opens the design's history, as in Google Docs.
   const saveLabel = (
-    <span role="status" className="px-1 text-xs text-muted-foreground">
-      {SAVE_LABELS[saveStatus]}
-    </span>
+    <button
+      type="button"
+      onClick={() => setIsHistoryOpen(true)}
+      data-tip="Version history"
+      data-tip-detail="See and restore earlier states of this design"
+      className="flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+    >
+      <History className="h-3.5 w-3.5" />
+      <span role="status">{SAVE_LABELS[saveStatus]}</span>
+    </button>
   );
   const sidebar = (isCollapsed: boolean) => (
     <DesignSidebar
@@ -322,6 +336,12 @@ export default function DesignEditor({ projectId, sessionUser, models, initialMe
           {editor ? <PropertiesPanel editor={editor} /> : null}
         </div>
       </aside>
+      <DocumentHistoryDialog
+        projectId={projectId}
+        open={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        onRestored={() => refreshDocumentRef.current?.()}
+      />
     </div>
   );
 }

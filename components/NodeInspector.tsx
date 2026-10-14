@@ -35,6 +35,19 @@ import {
   SHADOW_PRESETS,
   stampNodeIds,
 } from "@/lib/pageNodes";
+import {
+  BACK_TARGET,
+  CLOSE_TARGET,
+  PAGE_TRANSITIONS,
+  type PageAction,
+  type PageLink,
+  type PageLinkOptions,
+  type PageTransition,
+  parsePageAction,
+  parsePageTransition,
+  readPageLinks,
+  setPageLink,
+} from "@/lib/prototypeFlow";
 import { commitPageEdit } from "@/store/pageEdits";
 import { type SelectedNode, useEditorStore } from "@/store/useEditorStore";
 
@@ -84,6 +97,7 @@ export default function NodeInspector({ projectId, variant }: NodeInspectorProps
   const classes = ` ${getNodeAttribute(source, selectedNode.nodeId, "class") ?? ""}`;
   const overrides = { text: classes.includes(" text-[#"), bg: classes.includes(" bg-[#") };
   const inlineStyles = exists ? getNodeStyle(source, selectedNode.nodeId) : {};
+  const link = readPageLinks(source).find((candidate) => candidate.nodeId === selectedNode.nodeId) ?? null;
 
   return (
     <NodeInspectorCard
@@ -95,6 +109,7 @@ export default function NodeInspector({ projectId, variant }: NodeInspectorProps
       text={text}
       overrides={overrides}
       inlineStyles={inlineStyles}
+      link={link}
       showColors={!selectedNode.isSvg}
       projectId={projectId}
       variant={variant}
@@ -109,6 +124,7 @@ function NodeInspectorCard({
   text,
   overrides,
   inlineStyles,
+  link,
   showColors,
   projectId,
   variant,
@@ -122,6 +138,8 @@ function NodeInspectorCard({
   overrides: Record<NodeColorProperty, boolean>;
   /** Style values set here, which win over the page's classes. */
   inlineStyles: Partial<Record<NodeStyleProperty, string>>;
+  /** The element's hotspot link for the play view, or null. */
+  link: PageLink | null;
   /** False for SVG elements, which take fill and stroke instead of CSS colors and box styles. */
   showColors: boolean;
 } & NodeInspectorProps) {
@@ -328,6 +346,14 @@ function NodeInspectorCard({
                   onChange={(value) => changeStyle("background-image", value)}
                 />
               </Section>
+              <PrototypeSection
+                pageId={pageId}
+                link={link}
+                onChange={(target, options) => {
+                  flushPending();
+                  void commit((html) => setPageLink(html, nodeId, target, options));
+                }}
+              />
             </>
           ) : null}
         </>
@@ -347,6 +373,116 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 const FIELD_CLASS =
   "flex h-7 items-center gap-1.5 rounded-md bg-muted/60 px-2 focus-within:ring-1 focus-within:ring-ring";
+
+const SELECT_CLASS = "min-w-0 flex-1 bg-transparent text-foreground focus:outline-none disabled:opacity-50";
+
+const TRANSITION_LABELS: Record<PageTransition, string> = {
+  instant: "Instant",
+  dissolve: "Dissolve",
+  "slide-left": "Slide left",
+  "slide-right": "Slide right",
+};
+
+/**
+ * The element's hotspot for the play view: the page a click opens, whether it
+ * opens as an overlay, and the transition. It writes the same attributes as
+ * the MCP link_element tool, through the same undoable edit as other changes.
+ */
+function PrototypeSection({
+  pageId,
+  link,
+  onChange,
+}: {
+  pageId: string;
+  link: PageLink | null;
+  onChange: (target: string | null, options: PageLinkOptions) => void;
+}) {
+  const pages = useEditorStore((state) => state.pages);
+  const targets = pages.filter((page) => page.id !== pageId && page.deviceType !== "vector");
+  const target = link?.targetPageId ?? "";
+  const isSpecial = target === BACK_TARGET || target === CLOSE_TARGET;
+  const action = link?.action ?? "navigate";
+  const transition = link?.transition ?? "instant";
+  // Back and close take no options, and an overlay takes no transition.
+  const save = (next: string, nextAction: PageAction, nextTransition: PageTransition) => {
+    const special = next === BACK_TARGET || next === CLOSE_TARGET;
+    onChange(next, {
+      action: special ? "navigate" : nextAction,
+      transition: special || nextAction === "overlay" ? "instant" : nextTransition,
+    });
+  };
+
+  return (
+    <Section title="Prototype">
+      <label data-tip="The page a click on this element opens in play" className={FIELD_CLASS}>
+        <Link2 className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <select
+          value={target}
+          onChange={(event) => save(event.target.value, action, transition)}
+          aria-label="Link target"
+          className={SELECT_CLASS}
+        >
+          <option value="" disabled>
+            Link to a page
+          </option>
+          {targets.map((page) => (
+            <option key={page.id} value={page.id}>
+              {page.title}
+            </option>
+          ))}
+          <option value={BACK_TARGET}>Back to previous screen</option>
+          <option value={CLOSE_TARGET}>Close overlay</option>
+          {link && !isSpecial && !targets.some((page) => page.id === target) ? (
+            <option value={target} disabled>
+              Deleted page
+            </option>
+          ) : null}
+        </select>
+      </label>
+      {link ? (
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className={FIELD_CLASS}>
+              <select
+                value={action}
+                disabled={isSpecial}
+                onChange={(event) => save(target, parsePageAction(event.target.value), transition)}
+                aria-label="Link action"
+                className={SELECT_CLASS}
+              >
+                <option value="navigate">Navigate</option>
+                <option value="overlay">Overlay</option>
+              </select>
+            </label>
+            <label className={FIELD_CLASS}>
+              <select
+                value={transition}
+                disabled={isSpecial || action === "overlay"}
+                onChange={(event) => save(target, action, parsePageTransition(event.target.value))}
+                aria-label="Link transition"
+                className={SELECT_CLASS}
+              >
+                {PAGE_TRANSITIONS.map((name) => (
+                  <option key={name} value={name}>
+                    {TRANSITION_LABELS[name]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(null, {})}
+            className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+            Remove link
+          </button>
+        </>
+      ) : null}
+    </Section>
+  );
+}
 
 /** A swatch, its hex value, and a reset when the color was set here. */
 function ColorRow({

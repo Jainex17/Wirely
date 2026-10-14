@@ -12,6 +12,7 @@
  */
 
 import { PAPER_SHADERS_MODULE_URL } from "@/lib/iframeSecurity";
+import { PAGE_ACTIONS, PAGE_TRANSITIONS } from "@/lib/prototypeFlow";
 
 export const MCP_SERVER_NAME = "wirely";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -89,7 +90,10 @@ export const MCP_INSTRUCTIONS = [
     "starting point. Copy it with add_page copyFromPageId before changing it, so the original stays.",
   "When the user asks you to build a page they picked in their own codebase, call get_page " +
     "and treat its HTML as the visual spec: rebuild it with the project's own framework, " +
-    "components, and styles instead of pasting the HTML in.",
+    "components, and styles instead of pasting the HTML in. When the app runs locally, call " +
+    "capture_local_page with comparePageId set to that page, run the command, fix the " +
+    "differences it lists, and run it again with --page until it reports none that matter. " +
+    "Give the user the side by side link it prints.",
   "When the user says they tweaked a page on the canvas and wants those tweaks in their code, " +
     "call get_page_changes and apply only the listed differences to the matching components.",
   "For structural changes (reorder, duplicate, delete, hide, wrap in a frame, insert a block), " +
@@ -109,7 +113,9 @@ export const MCP_INSTRUCTIONS = [
   "Never link pages unless the user asks to connect, link, or wire screens, or to make them " +
     "clickable. Linking costs tool calls the user did not ask for. When they ask, call " +
     "get_page_outline on each page for node ids, then link_element once per button, nav item, " +
-    "or card that should open another page, and give the user the play link it returns.",
+    "or card that should open another page, and give the user the play link it returns. " +
+    "link_element can add a transition, link a back button to \"back\", and open a dialog " +
+    "page as an overlay whose own buttons link to \"close\".",
 ].join("\n");
 
 /** Versions a client may negotiate, including the two before the current spec. */
@@ -567,6 +573,42 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     },
   },
   {
+    name: "capture_local_page",
+    description:
+      "Bring a page of the app running on the user's machine, such as http://localhost:3000, " +
+      "onto the canvas, and with comparePageId check it against a Wirely page. Wirely cannot " +
+      "reach localhost, so this returns one shell command for you to run: it drives the " +
+      "user's Chrome headless and needs Node 22 or newer, or Bun. The command prints the " +
+      "result: the new page's id, and with comparePageId a build check listing missing text, " +
+      "font, color, size, and spacing differences, the areas whose pixels differ most, and the " +
+      "path of a diff image you can open. For public sites, import_url needs no command.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        url: { type: "string", description: "The page of the running app, e.g. http://localhost:3000/pricing." },
+        comparePageId: {
+          type: "string",
+          description:
+            "The Wirely HTML page this build was made from. Adds the build check, and sets the " +
+            "viewport to that page's device type.",
+        },
+        pageId: {
+          type: "string",
+          description:
+            "A page an earlier capture added. The capture replaces its HTML instead of adding a page.",
+        },
+        deviceType: {
+          type: "string",
+          enum: ["desktop", "mobile"],
+          description: "The viewport to load the app at. Defaults to comparePageId's device, else desktop.",
+        },
+      },
+      required: ["projectId", "url"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "add_asset",
     description:
       "Get a 15 minute link to upload an image from the user's disk into the project, for " +
@@ -606,8 +648,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Only when the user asks to connect or link screens. Make one element on an HTML page a " +
       "hotspot: in the play view, clicking it opens targetPageId, like a Figma prototype " +
-      "connection. Take nodeId from get_page_outline. Pass targetPageId null to remove the " +
-      "link. Returns the play link to give the user.",
+      "connection, with an optional transition, or opens it as an overlay above the screen " +
+      "for a dialog or menu. Take nodeId from get_page_outline. Pass targetPageId null to " +
+      "remove the link. Returns the play link to give the user.",
     inputSchema: {
       type: "object",
       properties: {
@@ -619,7 +662,21 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         },
         targetPageId: {
           type: ["string", "null"],
-          description: "The page the click opens, from list_pages. Null removes the link.",
+          description:
+            "The page the click opens, from list_pages, \"back\" for the screen the user " +
+            "came from, or \"close\" to close the overlay the element is in. Null removes the link.",
+        },
+        transition: {
+          type: "string",
+          enum: [...PAGE_TRANSITIONS],
+          description: "How the play view moves to the page. Defaults to instant.",
+        },
+        action: {
+          type: "string",
+          enum: [...PAGE_ACTIONS],
+          description:
+            "navigate replaces the screen, the default. overlay opens the page centered above " +
+            "it with a dimmed backdrop, and takes no transition.",
         },
       },
       required: ["projectId", "pageId", "nodeId", "targetPageId"],

@@ -4,6 +4,7 @@
  * the server, since the design engine has no DOM dependency: the editor loads
  * a document with them, and an MCP tool call loads, edits, and saves one.
  */
+import type { SkiaRenderer } from "@open-pencil/core/canvas";
 import { BUILTIN_IO_FORMATS, IORegistry } from "@open-pencil/core/io";
 import { SceneGraph, type SceneNode } from "@open-pencil/scene-graph";
 import { z } from "zod";
@@ -124,6 +125,29 @@ export const writeDesignDocument = async (graph: SceneGraph) => {
   const { data } = await io.writeDocument("fig", graph);
   if (!(data instanceof Uint8Array)) throw new Error("The design engine did not write binary .fig data.");
   return data;
+};
+
+export type DesignExportFormat = "png" | "svg" | "pdf";
+
+/**
+ * Nodes as a PNG, SVG, or PDF file, through the engine's own exporters. The
+ * PDF is the SVG drawn into a PDF, so text uses the PDF's built-in fonts. In
+ * the browser, pass the editor's renderer: the PNG then draws with the fonts
+ * and images the canvas already loaded.
+ */
+export const exportDesignNodes = async (
+  graph: SceneGraph,
+  nodeIds: string[],
+  format: DesignExportFormat,
+  { scale = 1, renderer }: { scale?: number; renderer?: SkiaRenderer | null } = {},
+) => {
+  const { data, mimeType } = await io.exportContent(
+    format,
+    { graph, target: { scope: "selection", nodeIds } },
+    format === "png" ? { format: "PNG", scale } : undefined,
+    renderer ? { canvasKit: renderer.ck, renderer } : undefined,
+  );
+  return new Blob([typeof data === "string" ? data : new Uint8Array(data)], { type: mimeType });
 };
 
 /** An empty document: one page for screens and nothing on it. */

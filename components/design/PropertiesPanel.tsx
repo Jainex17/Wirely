@@ -2,7 +2,7 @@
 
 import type { Editor } from "@open-pencil/core/editor";
 import type { Color, Effect, Fill, LayoutSizing, SceneNode, Stroke } from "@open-pencil/scene-graph";
-import { sceneNodeToJSX } from "@open-pencil/core/io";
+import { selectionToJSX } from "@open-pencil/core/io";
 import {
   AlignCenterHorizontal,
   AlignEndHorizontal,
@@ -10,14 +10,23 @@ import {
   ArrowDown,
   ArrowRight,
   Code,
+  Download,
+  FileCode2,
+  Image as ImageIcon,
+  Loader2,
   Minus,
   Plus,
   StretchHorizontal,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, use, useState } from "react";
 import { toast } from "@/components/ui/sonner";
+import { ProjectChromeContext } from "@/components/ProjectChrome";
+import { sendScreenToPages } from "@/components/design/sendToPages";
 import { useEditorValue } from "@/components/design/useEditorValue";
+import { type DesignExportFormat, exportDesignNodes } from "@/lib/design/document";
+import { downloadBlob, fileSlug } from "@/lib/download";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/store/useEditorStore";
 
 // ---- color helpers -------------------------------------------------------
 
@@ -54,7 +63,14 @@ export default function PropertiesPanel({ editor }: { editor: Editor }) {
   if (selection.nodes.length === 0) {
     return <p className="px-3 py-3 text-xs text-muted-foreground">Select a layer to edit it. Click a screen&apos;s name to select the screen.</p>;
   }
-  if (!node) return <p className="px-3 py-3 text-xs text-muted-foreground">{selection.nodes.length} layers selected.</p>;
+  if (!node) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto text-xs">
+        <p className="px-3 py-3 text-muted-foreground">{selection.nodes.length} layers selected.</p>
+        <ExportSection editor={editor} nodes={selection.nodes} />
+      </div>
+    );
+  }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto text-xs">
       <NodeProperties key={node.id} editor={editor} node={node} />
@@ -92,7 +108,7 @@ function NodeProperties({ editor, node }: { editor: Editor; node: SceneNode }) {
       <FillSection node={node} update={update} />
       <StrokeSection node={node} update={update} />
       <ShadowSection node={node} update={update} />
-      <ExportSection editor={editor} node={node} />
+      <ExportSection editor={editor} nodes={[node]} />
     </div>
   );
 }
@@ -358,26 +374,134 @@ function ShadowSection({ node, update }: { node: SceneNode; update: Update }) {
   );
 }
 
-/** Copies the layer as React with Tailwind classes, the hand-off for an agent. */
-function ExportSection({ editor, node }: { editor: Editor; node: SceneNode }) {
-  const copy = async () => {
+const EXPORT_SCALES = ["1", "2", "3"];
+const exportButtonClass = "flex w-full items-center justify-center gap-1.5 rounded-md border border-border py-1.5 hover:bg-accent";
+
+/**
+ * Exports the selected layers the way Figma's export section does: a PNG at a
+ * scale, an SVG, or a PDF as a download, a PNG to the clipboard, and React
+ * with Tailwind classes, the hand-off for an agent. The engine renders each
+ * one in the browser.
+ */
+function ExportSection({ editor, nodes }: { editor: Editor; nodes: SceneNode[] }) {
+  const [format, setFormat] = useState<DesignExportFormat>("png");
+  const [scale, setScale] = useState("2");
+  const nodeIds = nodes.map((entry) => entry.id);
+  const label = nodes.length === 1 ? nodes[0].name : `${nodes.length} layers`;
+  const baseName = fileSlug(nodes.length === 1 ? nodes[0].name : "selection", "layer");
+  const render = (as: DesignExportFormat, at = 1) =>
+    exportDesignNodes(editor.graph, nodeIds, as, { scale: at, renderer: editor.renderer });
+
+  const download = async () => {
     try {
-      await navigator.clipboard.writeText(sceneNodeToJSX(node.id, editor.graph, "tailwind"));
+      const blob = await render(format, Number(scale));
+      downloadBlob(blob, format === "png" ? `${baseName}@${scale}x.png` : `${baseName}.${format}`);
+    } catch {
+      toast.error("Could not export. Check the layers have visible content.");
+    }
+  };
+
+  const copyPng = async () => {
+    try {
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        downloadBlob(await render("png", 2), `${baseName}@2x.png`);
+        toast.success("This browser cannot copy images, so the PNG was downloaded instead.");
+        return;
+      }
+      // Safari drops the user gesture across an await, so the clipboard
+      // write starts now and receives the render as a pending promise.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": render("png", 2) })]);
+      toast.success("Copied as PNG.");
+    } catch {
+      toast.error("Could not copy the image. Allow clipboard access and try again.");
+    }
+  };
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(selectionToJSX(nodeIds, editor.graph, "tailwind"));
       toast.success("Copied as React + Tailwind. Paste it to your agent to build.");
     } catch {
       toast.error("Could not copy. Allow clipboard access and try again.");
     }
   };
+
   return (
     <Section title="Export">
-      <button
-        type="button"
-        onClick={() => void copy()}
-        className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border py-1.5 hover:bg-accent"
-      >
-        <Code className="h-3.5 w-3.5" /> Copy as code
-      </button>
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
+          <SelectInput
+            label="Format"
+            value={format}
+            options={[
+              ["png", "PNG"],
+              ["svg", "SVG"],
+              ["pdf", "PDF"],
+            ]}
+            onChange={(value) => setFormat(value as DesignExportFormat)}
+          />
+          {format === "png" ? (
+            <SelectInput label="Scale" value={scale} options={EXPORT_SCALES.map((value) => [value, `${value}x`])} onChange={setScale} />
+          ) : null}
+        </div>
+        <button type="button" onClick={() => void download()} className={exportButtonClass}>
+          <Download className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Export {label}</span>
+        </button>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button type="button" onClick={() => void copyPng()} className={exportButtonClass}>
+            <ImageIcon className="h-3.5 w-3.5" /> Copy PNG
+          </button>
+          <button type="button" onClick={() => void copyCode()} className={exportButtonClass}>
+            <Code className="h-3.5 w-3.5" /> Copy code
+          </button>
+        </div>
+        {nodes.length === 1 && nodes[0].parentId === editor.state.currentPageId ? (
+          <SendToPagesButton editor={editor} screen={nodes[0]} />
+        ) : null}
+      </div>
     </Section>
+  );
+}
+
+/**
+ * Copies a screen to the Pages tab as an HTML page and shows it there, so it
+ * can join prototypes, comments, and build checks. One way: later edits to
+ * the screen stay on this tab.
+ */
+function SendToPagesButton({ editor, screen }: { editor: Editor; screen: SceneNode }) {
+  const chrome = use(ProjectChromeContext);
+  const [isSending, setIsSending] = useState(false);
+  if (!chrome) return null;
+  const send = async () => {
+    setIsSending(true);
+    try {
+      const { pageId, imagesLeftOut } = await sendScreenToPages(chrome.projectId, editor, screen);
+      chrome.onViewChange("html");
+      useEditorStore.getState().focusPage(pageId);
+      if (imagesLeftOut > 0) {
+        toast.warning(`Sent "${screen.name}" to Pages without ${imagesLeftOut} image${imagesLeftOut === 1 ? "" : "s"} the project had no room for.`);
+      } else {
+        toast.success(`Sent "${screen.name}" to Pages.`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send the screen to Pages.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      disabled={isSending}
+      onClick={() => void send()}
+      data-tip="Send to Pages"
+      data-tip-detail="Copy this screen to the Pages tab as an HTML page, for prototypes, comments, and your agent. Later edits here do not carry over."
+      className={exportButtonClass}
+    >
+      {isSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCode2 className="h-3.5 w-3.5" />}
+      Send to Pages
+    </button>
   );
 }
 

@@ -26,6 +26,9 @@ export interface PageTitle extends PageIdentity {
   title: string;
 }
 
+/** The most page HTML Wirely stores from one agent write or capture. */
+export const PAGE_HTML_MAX_CHARS = 500_000;
+
 /** Vector pages are one SVG artboard sized by the SVG itself. See lib/vectorArtboard.ts. */
 export type PageDeviceType = "desktop" | "mobile" | "vector";
 

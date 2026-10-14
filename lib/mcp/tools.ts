@@ -50,6 +50,7 @@ import {
 import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
+import { buildCaptureCommand, createCapturePath } from "@/lib/mcp/capture";
 import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { parseDesignTokens } from "@/lib/designTokens";
@@ -70,15 +71,19 @@ import {
   upsertPrototypeFlowForProject,
 } from "@/lib/db/queries/prototypeFlows";
 import {
+  BACK_TARGET,
+  CLOSE_TARGET,
   findNavigationMismatches,
+  linkOptionsError,
+  PAGE_ACTIONS,
+  PAGE_TRANSITIONS,
   parseFlowInput,
   readPageLinks,
   setPageLink,
 } from "@/lib/prototypeFlow";
-import { isPageDeviceType } from "@/lib/types";
+import { isPageDeviceType, PAGE_HTML_MAX_CHARS } from "@/lib/types";
 import { isSvgDocument, prepareArtboardHtml } from "@/lib/vectorArtboard";
 
-const PAGE_HTML_MAX_CHARS = 500_000;
 const TITLE_MAX_CHARS = 120;
 
 
@@ -897,6 +902,58 @@ const importUrl: ToolHandler = async (userId, args) => {
   );
 };
 
+const captureLocalPage: ToolHandler = async (userId, args, origin) => {
+  const parsed = z
+    .object({
+      projectId: z.string().trim().min(1),
+      url: z.string().trim().url().max(2_000).refine((value) => /^https?:\/\//i.test(value), {
+        message: "Use an http or https URL.",
+      }),
+      comparePageId: z.string().trim().min(1).optional(),
+      pageId: z.string().trim().min(1).optional(),
+      deviceType: z.enum(["desktop", "mobile"]).optional(),
+    })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  // A page the capture compares with or replaces, or the reason it cannot be used.
+  const readHtmlPage = async (pageId: string | undefined, name: string) => {
+    if (pageId === undefined) return null;
+    if (isScreenId(pageId)) return `${name} ${pageId} is a design screen. Use an HTML page.`;
+    const page = isUuid(pageId)
+      ? await getProjectPageForUser({ projectId: project.id, pageId, userId })
+      : null;
+    if (!page) return `${name} ${pageId} is not a page in this project. Use list_pages for valid ids.`;
+    if (page.deviceType === "vector") return `${name} ${pageId} is a vector artboard, not a page.`;
+    return page;
+  };
+  const compare = await readHtmlPage(parsed.data.comparePageId, "comparePageId");
+  if (typeof compare === "string") return fail(compare);
+  const target = await readHtmlPage(parsed.data.pageId, "pageId");
+  if (typeof target === "string") return fail(target);
+
+  const deviceType =
+    parsed.data.deviceType ?? (compare?.deviceType === "mobile" ? "mobile" : "desktop");
+  const command = buildCaptureCommand({
+    origin,
+    uploadPath: createCapturePath({ projectId: project.id, userId }),
+    url: parsed.data.url,
+    deviceType,
+    pageId: target?.id,
+    comparePageId: compare?.id,
+  });
+  return succeed(
+    "Run this on the user's machine while the app is running. It takes 10 to 40 seconds and " +
+      `prints the result:\n${command}\n` +
+      "The link in it works for 60 minutes. If the page needs sign-in, ask the user for their " +
+      "session cookie and add --cookie 'name=value'. If content appears late, add --wait 2000. " +
+      "On Windows, download the script with the same URL and run node with the same flags.",
+  );
+};
+
 const playLink = (origin: string, projectId: string) => `${origin}/wire/${projectId}/prototype`;
 
 const setPrototypeFlow: ToolHandler = async (userId, args, origin) => {
@@ -939,19 +996,36 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
       pageId: z.string().trim().min(1),
       nodeId: z.string().trim().min(1).max(16),
       targetPageId: z.string().trim().min(1).nullable(),
+      transition: z.enum(PAGE_TRANSITIONS).optional(),
+      action: z.enum(PAGE_ACTIONS).optional(),
     })
     .safeParse(args);
   if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
-  const { projectId, pageId, nodeId, targetPageId } = parsed.data;
+  const { projectId, pageId, nodeId, targetPageId, transition, action } = parsed.data;
+  const isPageTarget =
+    targetPageId !== null && targetPageId !== BACK_TARGET && targetPageId !== CLOSE_TARGET;
 
-  let targetTitle = "";
+  // What a click does, for the reply.
+  let opens = "";
   if (targetPageId !== null) {
-    if (targetPageId === pageId) return fail("A page cannot link to itself.");
-    const target = isUuid(targetPageId)
-      ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
-      : null;
-    if (!target) return fail("Target page not found. Use list_pages for HTML page ids.");
-    targetTitle = target.title;
+    const optionsError = linkOptionsError(targetPageId, { transition, action });
+    if (optionsError) return fail(optionsError);
+    if (targetPageId === BACK_TARGET) {
+      opens = "goes back to the previous screen";
+    } else if (targetPageId === CLOSE_TARGET) {
+      opens = "closes the overlay it is shown in";
+    } else {
+      if (targetPageId === pageId) return fail("A page cannot link to itself.");
+      const target = isUuid(targetPageId)
+        ? await getProjectPageForUser({ projectId, pageId: targetPageId, userId })
+        : null;
+      if (!target) {
+        return fail(
+          `Target page not found. Use list_pages for HTML page ids, or "${BACK_TARGET}" or "${CLOSE_TARGET}".`,
+        );
+      }
+      opens = `opens "${target.title}"${action === "overlay" ? " as an overlay" : ""}`;
+    }
   }
 
   // Compare-and-swap like edit_element, so a user editing the same page at the
@@ -960,7 +1034,7 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     const page = await getProjectPageForUser({ projectId, pageId, userId });
     if (!page) return fail("Page not found. Use list_pages for valid ids.");
 
-    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId);
+    const next = setPageLink(page.htmlContent ?? "", nodeId, targetPageId, { transition, action });
     if (next === null) {
       return fail(`Element ${nodeId} is not on "${page.title}". Call get_page_outline for current ids.`);
     }
@@ -978,9 +1052,11 @@ const linkElement: ToolHandler = async (userId, args, origin) => {
     if (targetPageId === null) return succeed(`Removed the link from ${nodeId} on "${updated.title}".`);
     const flow = await getPrototypeFlowForProject(projectId, userId);
     const playable = flow?.pageIds ?? [];
-    const outsideFlow = !playable.includes(pageId) || !playable.includes(targetPageId);
+    const outsideFlow =
+      !playable.includes(pageId) || (isPageTarget && !playable.includes(targetPageId));
     return succeed(
-      `Clicking ${nodeId} on "${updated.title}" now opens "${targetTitle}".\n` +
+      `Clicking ${nodeId} on "${updated.title}" now ${opens}` +
+        `${transition && transition !== "instant" ? ` with a ${transition} transition` : ""}.\n` +
         `Give the user this link to play it: ${playLink(origin, projectId)}` +
         (outsideFlow
           ? "\nThe screen order saved with set_prototype_flow leaves out one of these pages, so " +
@@ -1004,9 +1080,14 @@ const listLinks: ToolHandler = async (userId, args, origin) => {
       return (
         `"${page.title}" (${page.id}) node ${link.nodeId}` +
         (link.label ? ` "${link.label}"` : "") +
-        (target
-          ? ` opens "${target}" (${link.targetPageId})`
-          : ` opens a deleted page (${link.targetPageId}); relink or remove it`)
+        (link.targetPageId === BACK_TARGET
+          ? " goes back to the previous screen"
+          : link.targetPageId === CLOSE_TARGET
+            ? " closes the overlay it is shown in"
+            : target
+              ? ` opens "${target}" (${link.targetPageId})${link.action === "overlay" ? " as an overlay" : ""}`
+              : ` opens a deleted page (${link.targetPageId}); relink or remove it`) +
+        (link.transition === "instant" ? "" : `, ${link.transition} transition`)
       );
     }),
   );
@@ -1032,6 +1113,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   get_design_tokens: getDesignTokensHandler,
   set_design_tokens: setDesignTokensHandler,
   import_url: importUrl,
+  capture_local_page: captureLocalPage,
   add_asset: addAsset,
   list_assets: listAssets,
   delete_page: deletePage,

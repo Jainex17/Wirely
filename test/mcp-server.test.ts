@@ -118,6 +118,7 @@ describe("tool catalog", () => {
     expect(TOOL_NAMES).toEqual([
       "add_asset",
       "add_page",
+      "capture_local_page",
       "create_project",
       "delete_page",
       "edit_element",

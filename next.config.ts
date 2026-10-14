@@ -59,6 +59,8 @@ const nextConfig: NextConfig = {
     "/api/projects/*/pages/*/png": [
       "./node_modules/@sparticuz/chromium/bin/**",
     ],
+    // A capture with a design page to compare renders that page.
+    "/api/capture": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
   // Vue's compile-time flags, for the design canvas (components/design).
   compiler: {

@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
+import { getDocumentVersionForUser, snapshotDocumentBeforeWrite } from "@/lib/db/queries/documentVersions";
 import { projectDocuments, projects } from "@/lib/db/schema";
 import { createDesignDocument } from "@/lib/design/document";
 
@@ -58,20 +59,25 @@ export type SaveDocumentResult =
 /**
  * Saves the document only if it is still at `expectedVersion`, so two writers
  * that read the same version cannot both save: the second gets "conflict" and
- * the current version, reloads, and tries again.
+ * the current version, reloads, and tries again. The document it replaces
+ * goes into history first (see documentVersions.ts).
  */
 export const saveProjectDocumentForUser = async ({
   projectId,
   userId,
   data,
   expectedVersion,
+  forceSnapshot = false,
 }: {
   projectId: string;
   userId: string;
   data: Uint8Array;
   expectedVersion: number;
+  /** Snapshot the current document even if one was just taken, so a restore can be undone. */
+  forceSnapshot?: boolean;
 }): Promise<SaveDocumentResult> => {
   const db = getDb();
+  await snapshotDocumentBeforeWrite({ projectId, userId, expectedVersion, force: forceSnapshot });
   const [saved] = await db
     .update(projectDocuments)
     .set({ data: Buffer.from(data), version: sql`${projectDocuments.version} + 1`, updatedAt: new Date() })
@@ -89,4 +95,17 @@ export const saveProjectDocumentForUser = async ({
   }
   const current = await getProjectDocumentVersionForUser(projectId, userId);
   return current === null ? { status: "missing" } : { status: "conflict", version: current };
+};
+
+/**
+ * Makes a snapshot from history the current document, as a save with a new
+ * version, so open editors load it through their usual poll. The document it
+ * replaces is snapshotted first, so the restore can be undone from history.
+ * Null when the snapshot is not in this project of the user's.
+ */
+export const restoreProjectDocumentVersionForUser = async (projectId: string, userId: string, versionId: string) => {
+  const data = await getDocumentVersionForUser(projectId, userId, versionId);
+  const current = data ? await getProjectDocumentVersionForUser(projectId, userId) : null;
+  if (!data || current === null) return null;
+  return saveProjectDocumentForUser({ projectId, userId, data, expectedVersion: current, forceSnapshot: true });
 };

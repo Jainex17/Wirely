@@ -60,6 +60,12 @@ are on the [setup page](https://www.wirely.site/docs).
   your agent with what to change. The agent edits only that element.
 - **Hand your edits back.** Your agent can read a page's layers, rearrange them by id, and ask
   what you changed by hand since it last wrote the page.
+- **Check the build against the design.** After your agent builds a page in your codebase, it
+  captures that page from your running app and gets back what differs from the design: missing or
+  reworded copy, fonts, sizes, colors, and the areas whose pixels differ most. It fixes them and
+  checks again. A capture without a design page brings any localhost page onto the canvas.
+- **Compare two pages.** Open any page's menu and pick Compare to see it next to another page,
+  overlaid on it, or as a difference where everything that matches turns black.
 
 ### Build editable screens (preview)
 
@@ -89,6 +95,11 @@ chat in Wirely. The default model is on a free Gemini tier. Keys are encrypted a
 
 Pages render in a sandboxed iframe with a strict Content Security Policy, so a generated design
 cannot reach your Wirely account. Wirely never runs your code.
+
+A build check is the one time Wirely hands your agent a script to run. Your agent downloads it
+from `/api/capture/script` and runs it on your machine. It opens your app in a headless copy of
+your own Chrome with a fresh profile, so it carries no cookies unless you pass one with `--cookie`,
+and it uploads the page to a link that only writes to that one project and expires after an hour.
 
 ## Run it yourself
 

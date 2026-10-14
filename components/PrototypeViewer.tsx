@@ -9,11 +9,23 @@ import {
   Monitor,
   Presentation,
   Smartphone,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
-import { addPlayScript, PLAY_GOTO_MESSAGE, PLAY_KEY_MESSAGE } from "@/lib/prototypeFlow";
+import {
+  addPlayScript,
+  BACK_TARGET,
+  CLOSE_TARGET,
+  PLAY_GOTO_MESSAGE,
+  PLAY_KEY_MESSAGE,
+  parsePageAction,
+  parsePageTransition,
+  type PageTransition,
+  reverseTransition,
+} from "@/lib/prototypeFlow";
 import { useIsBrowser } from "@/hooks/useIsBrowser";
 
 type ViewerDevice = "desktop" | "mobile";
@@ -41,6 +53,65 @@ const DEVICE_WIDTHS: Record<ViewerDevice, number> = {
 
 const MOBILE_HEIGHT = 812;
 
+const TRANSITION_MS = 280;
+
+/** What the incoming and outgoing screens do during a transition. */
+const TRANSITION_FRAMES: Record<
+  Exclude<PageTransition, "instant">,
+  { enter: Keyframe[]; leave: Keyframe[] }
+> = {
+  dissolve: { enter: [{ opacity: 0 }, { opacity: 1 }], leave: [] },
+  "slide-left": {
+    enter: [{ transform: "translateX(100%)" }, { transform: "translateX(0)" }],
+    leave: [{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }],
+  },
+  "slide-right": {
+    enter: [{ transform: "translateX(-100%)" }, { transform: "translateX(0)" }],
+    leave: [{ transform: "translateX(0)" }, { transform: "translateX(100%)" }],
+  },
+};
+
+/** One showing of a screen. `visit` keeps each showing's frame apart, so a frame is never reused. */
+interface Shown {
+  index: number;
+  visit: number;
+}
+
+interface ViewState {
+  current: Shown;
+  /** The screen animating out, kept until the transition ends. */
+  leaving: Shown | null;
+  transition: PageTransition;
+  /** True once the incoming frame has loaded, so the animation never shows a blank screen. */
+  loaded: boolean;
+  /** The screens the user came from, each with the transition that left it, for Back. */
+  history: Array<{ index: number; transition: PageTransition }>;
+  /** A page open above the screen, with its content height once its frame reports it. */
+  overlay: { index: number; height: number | null } | null;
+}
+
+/** Moving to another screen closes any overlay. */
+const moveTo = (
+  state: ViewState,
+  index: number,
+  transition: PageTransition,
+  history: ViewState["history"],
+): ViewState => ({
+  current: { index, visit: state.current.visit + 1 },
+  leaving:
+    transition !== "instant" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? state.current
+      : null,
+  transition,
+  loaded: false,
+  history,
+  overlay: null,
+});
+
+// The overlay frame reports its content height under this id, through the
+// same reporter the canvas uses, so the overlay can fit its content.
+const OVERLAY_REPORTER_ID = "wirely-play-overlay";
+
 export default function PrototypeViewer({
   wireId,
   projectTitle,
@@ -48,13 +119,23 @@ export default function PrototypeViewer({
   initialPageIndex,
 }: PrototypeViewerProps) {
   const router = useRouter();
-  const [currentIndex, setCurrentIndex] = React.useState(initialPageIndex);
+  const [view, setView] = React.useState<ViewState>({
+    current: { index: initialPageIndex, visit: 0 },
+    leaving: null,
+    transition: "instant",
+    loaded: false,
+    history: [],
+    overlay: null,
+  });
+  const currentIndex = view.current.index;
   const [deviceOverride, setDeviceOverride] = React.useState<ViewerDevice | null>(
     null,
   );
   const [zoom, setZoom] = React.useState(100);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const leavingRef = React.useRef<HTMLIFrameElement>(null);
+  const overlayRef = React.useRef<HTMLIFrameElement>(null);
   const [isPresenting, setIsPresenting] = React.useState(false);
   const [screenSize, setScreenSize] = React.useState({ width: 0, height: 0 });
 
@@ -78,18 +159,69 @@ export default function PrototypeViewer({
   const frameScale = isPresenting ? presentScale : zoom / 100;
 
   const isBrowser = useIsBrowser();
-  const srcDoc = React.useMemo(
-    () => (isBrowser ? addPlayScript(sanitizeIframeHtml(currentPage.html ?? "")) : ""),
-    [currentPage.html, isBrowser],
+  const srcDocs = React.useMemo(
+    () => (isBrowser ? pages.map((page) => addPlayScript(sanitizeIframeHtml(page.html ?? ""))) : []),
+    [pages, isBrowser],
+  );
+  const overlayIndex = view.overlay?.index ?? null;
+  const overlayPage = overlayIndex === null ? null : pages[overlayIndex];
+  const overlayDoc = React.useMemo(
+    () =>
+      overlayIndex === null
+        ? ""
+        : injectIframeHeightReporter(srcDocs[overlayIndex] ?? "", OVERLAY_REPORTER_ID),
+    [overlayIndex, srcDocs],
   );
 
+  /** Shows a screen. Arrow keys and the screen strip pass no transition, so they stay instant. */
   const goToIndex = React.useCallback(
-    (index: number) => {
+    (index: number, transition: PageTransition = "instant") => {
       const bounded = Math.max(0, Math.min(pages.length - 1, index));
-      setCurrentIndex(bounded);
+      setView((state) =>
+        bounded === state.current.index
+          ? { ...state, overlay: null }
+          : moveTo(state, bounded, transition, [
+              ...state.history,
+              { index: state.current.index, transition },
+            ]),
+      );
     },
     [pages.length],
   );
+
+  /** Returns to the previous screen, undoing the transition that left it. */
+  const goBack = React.useCallback(() => {
+    setView((state) => {
+      const previous = state.history.at(-1);
+      return previous
+        ? moveTo(state, previous.index, reverseTransition(previous.transition), state.history.slice(0, -1))
+        : state;
+    });
+  }, []);
+
+  // Runs the transition once the incoming frame has loaded, then drops the
+  // outgoing frame. A layout effect, so the first painted frame is the start.
+  React.useLayoutEffect(() => {
+    if (!view.leaving || !view.loaded || view.transition === "instant") return;
+    const frames = TRANSITION_FRAMES[view.transition];
+    const options = { duration: TRANSITION_MS, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    const entering = iframeRef.current?.animate(frames.enter, options);
+    const leaving = leavingRef.current?.animate(frames.leave, options);
+    const visit = view.current.visit;
+    const finish = () =>
+      setView((state) =>
+        state.current.visit === visit ? { ...state, leaving: null } : state,
+      );
+    if (!entering) {
+      finish();
+      return;
+    }
+    entering.onfinish = finish;
+    return () => {
+      entering.cancel();
+      leaving?.cancel();
+    };
+  }, [view]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -100,16 +232,46 @@ export default function PrototypeViewer({
       }
     };
 
-    // The frame reports arrow keys, since a click inside it takes the keyboard,
-    // and hotspot clicks. A hotspot opens a page only when the viewer holds it.
+    // The screen and overlay frames report arrow keys, since a click inside one
+    // takes the keyboard, and hotspot clicks. A hotspot opens a page only when
+    // the viewer holds it.
     const handleFrameMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { type?: unknown; key?: unknown; pageId?: unknown } | null;
+      const fromOverlay = event.source === overlayRef.current?.contentWindow;
+      if (!fromOverlay && event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as {
+        type?: unknown;
+        id?: unknown;
+        height?: unknown;
+        key?: unknown;
+        pageId?: unknown;
+        transition?: unknown;
+        action?: unknown;
+      } | null;
       if (data?.type === PLAY_KEY_MESSAGE) {
         goToIndex(currentIndex + (data.key === "ArrowRight" ? 1 : -1));
+      } else if (data?.type === "wirely-iframe-height") {
+        const height = data.height;
+        if (!fromOverlay || data.id !== OVERLAY_REPORTER_ID || typeof height !== "number") return;
+        if (!Number.isFinite(height) || height <= 0) return;
+        setView((state) => (state.overlay ? { ...state, overlay: { ...state.overlay, height } } : state));
       } else if (data?.type === PLAY_GOTO_MESSAGE) {
+        if (data.pageId === CLOSE_TARGET) {
+          if (fromOverlay) setView((state) => ({ ...state, overlay: null }));
+          return;
+        }
+        if (data.pageId === BACK_TARGET) {
+          goBack();
+          return;
+        }
         const index = pages.findIndex((page) => page.id === data.pageId);
-        if (index !== -1) goToIndex(index);
+        if (index === -1) return;
+        if (parsePageAction(data.action) === "overlay") {
+          setView((state) =>
+            state.overlay?.index === index ? state : { ...state, overlay: { index, height: null } },
+          );
+        } else {
+          goToIndex(index, parsePageTransition(data.transition));
+        }
       }
     };
 
@@ -119,7 +281,7 @@ export default function PrototypeViewer({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("message", handleFrameMessage);
     };
-  }, [currentIndex, goToIndex, pages]);
+  }, [currentIndex, goBack, goToIndex, pages]);
 
   React.useEffect(() => {
     const sync = () => {
@@ -214,6 +376,18 @@ export default function PrototypeViewer({
           <span className="whitespace-nowrap text-xs text-muted-foreground">
             {currentIndex + 1}/{pages.length}
           </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            title="Go back to the screen you came from"
+            disabled={view.history.length === 0}
+            onClick={goBack}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Back
+          </Button>
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -260,7 +434,7 @@ export default function PrototypeViewer({
       >
         <div
           className={cn(
-            "bg-background",
+            "relative overflow-hidden bg-background",
             isPresenting && device === "desktop"
               ? ""
               : "rounded-[var(--radius)] border border-border shadow-xl",
@@ -272,15 +446,60 @@ export default function PrototypeViewer({
             transformOrigin: "top center",
           }}
         >
-          <iframe
-            ref={iframeRef}
-            key={`${currentPage.id}-${device}`}
-            title={`${currentPage.title} play screen`}
-            srcDoc={srcDoc}
-            className="h-full w-full rounded-[inherit] border-0 bg-background"
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-          />
+          {/* The outgoing frame renders first, so React keeps it in place and never reloads it. */}
+          {[view.leaving, view.current].map((shown) => {
+            if (!shown) return null;
+            const isLeaving = shown === view.leaving;
+            const page = pages[shown.index] ?? pages[0];
+            return (
+              <iframe
+                ref={isLeaving ? leavingRef : iframeRef}
+                key={`${page.id}-${device}-${shown.visit}`}
+                title={`${page.title} play screen`}
+                srcDoc={srcDocs[shown.index] ?? ""}
+                onLoad={
+                  isLeaving
+                    ? undefined
+                    : () =>
+                        setView((state) =>
+                          state.current.visit === shown.visit ? { ...state, loaded: true } : state,
+                        )
+                }
+                className={cn(
+                  "absolute inset-0 h-full w-full border-0 bg-background",
+                  isLeaving && "pointer-events-none",
+                )}
+                // The incoming screen stays hidden until it loads, so the outgoing one shows meanwhile.
+                style={!isLeaving && view.leaving && !view.loaded ? { visibility: "hidden" } : undefined}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+            );
+          })}
+          {overlayPage && view.overlay ? (
+            // A click on the backdrop closes the overlay. Clicks inside the
+            // overlay frame stay in the frame and never reach it.
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/50 p-6"
+              onClick={() => setView((state) => ({ ...state, overlay: null }))}
+            >
+              <iframe
+                ref={overlayRef}
+                key={`${overlayPage.id}-overlay`}
+                title={`${overlayPage.title} overlay`}
+                srcDoc={overlayDoc}
+                className="max-h-full max-w-full shrink-0 rounded-[var(--radius)] border-0 bg-background shadow-2xl"
+                // Drawn at no height first, so the reported height is the content's own.
+                style={{
+                  width: `${DEVICE_WIDTHS[overlayPage.deviceType]}px`,
+                  height: `${view.overlay.height ?? 0}px`,
+                  visibility: view.overlay.height === null ? "hidden" : undefined,
+                }}
+                sandbox="allow-scripts"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : null}
         </div>
       </main>
 
@@ -293,7 +512,7 @@ export default function PrototypeViewer({
             <button
               key={page.id}
               type="button"
-              onClick={() => setCurrentIndex(index)}
+              onClick={() => goToIndex(index)}
               className={cn(
                 "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-xs transition",
                 index === currentIndex
