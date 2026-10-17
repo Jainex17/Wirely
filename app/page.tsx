@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { listApiTokens } from "@/lib/auth/apiToken";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { listProjectsForUser } from "@/lib/db/queries/projects";
@@ -17,13 +16,7 @@ export default async function Home({
     getServerSessionUserWithAiSettings(),
   ]);
 
-  if (!session) {
-    // The install command on the landing page names this deployment's MCP URL.
-    const requestHeaders = await headers();
-    const host = requestHeaders.get("host") ?? "localhost:3000";
-    const protocol = requestHeaders.get("x-forwarded-proto") ?? "https";
-    return <Landing origin={`${protocol}://${host}`} />;
-  }
+  if (!session) return <Landing />;
 
   const [projects, agentTokens] = await Promise.all([
     listProjectsForUser(session.user.id),
