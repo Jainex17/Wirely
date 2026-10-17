@@ -28,7 +28,7 @@ export default function AppHeader({
   const router = useRouter();
 
   useEffect(() => {
-    router.prefetch("/");
+    router.prefetch("/projects");
   }, [router]);
 
   const handleLogout = async () => {
@@ -37,7 +37,7 @@ export default function AppHeader({
       onLogout();
       return;
     }
-    router.push("/login?next=/");
+    router.push("/login?next=/projects");
   };
 
   return (
@@ -49,14 +49,14 @@ export default function AppHeader({
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => router.push("/")}
-            aria-label="Back to home"
-            title="Back to home"
+            onClick={() => router.push("/projects")}
+            aria-label="Back to projects"
+            title="Back to projects"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
         ) : (
-          <Link href="/" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+          <Link href="/projects" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
             <WirelyMark className="size-5" />
             Wirely
           </Link>

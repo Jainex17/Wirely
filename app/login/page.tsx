@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import LoginClient from "./LoginClient";
 import { redirect } from "next/navigation";
-import { loginReturnPath } from "@/lib/auth/loginRedirect";
+import { DEFAULT_RETURN_PATH, loginReturnPath } from "@/lib/auth/loginRedirect";
 import { getServerSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -26,11 +26,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   // A draft typed on the landing page rides through sign-in as a query param.
   const draftPrompt =
-    requestedNext === "/" && typeof resolvedParams.prompt === "string"
+    requestedNext === DEFAULT_RETURN_PATH && typeof resolvedParams.prompt === "string"
       ? resolvedParams.prompt.trim().slice(0, MAX_DRAFT_PROMPT_LENGTH)
       : "";
   const nextPath = draftPrompt
-    ? `/?prompt=${encodeURIComponent(draftPrompt)}`
+    ? `${DEFAULT_RETURN_PATH}?prompt=${encodeURIComponent(draftPrompt)}`
     : requestedNext;
 
   if (user) {

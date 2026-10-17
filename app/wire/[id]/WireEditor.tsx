@@ -305,8 +305,8 @@ export default function WireEditor({
             Open this page on a tablet or desktop for full editing access.
           </p>
           <div className="mt-5 flex justify-end">
-            <Button type="button" onClick={() => router.push("/")}>
-              Back to Home
+            <Button type="button" onClick={() => router.push("/projects")}>
+              Back to projects
             </Button>
           </div>
         </div>

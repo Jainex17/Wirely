@@ -1,45 +1,81 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, SquareTerminal } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, Check, SquareTerminal } from "lucide-react";
 import WirelyMark from "@/components/icons/WirelyMark";
-import { SiteFooter } from "@/components/SitePage";
 import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
 import { REPO_URL, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
+import HeroFilm from "./HeroFilm";
+import { CanvasWindow } from "./LandingCanvas";
 import LandingHeader from "./LandingHeader";
-import {
-  LANDING_DIRECTIONS,
-  LANDING_FRAME,
-  LANDING_PICKED_HTML,
-  LANDING_REVIEW_HTML,
-} from "./landingExamples";
+import LandingTranscript from "./LandingTranscript";
 
-const HERO_PROMPT = "Design three different layouts for a habit tracker.";
-
-const CTA_LABEL = "Connect your agent";
 const HERO_END_ID = "hero-end";
 
-// Press feedback shared by every button on the page.
-// A screen inside a feature card rises a little while the card is hovered.
-const LIFT =
-  "transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-2";
-const PRESS = "transition-transform duration-150 active:scale-[0.97]";
 // The trailing arrow nudges right when its button or link is hovered.
 const NUDGE = "transition-transform duration-200 group-hover:translate-x-0.5";
 
+// Section copy: an accent eyebrow in the display face, then the heading.
+const EYEBROW = "font-display text-lg font-medium text-primary";
+const H2 =
+  "font-display text-4xl font-semibold leading-[1.08] tracking-[-0.025em] sm:text-[2.75rem]";
+const BODY = "text-[17px] leading-relaxed text-foreground/70";
+
 // Simple Icons dropped the OpenAI mark, so Codex uses a plain terminal glyph.
 const AGENTS = [
-  { name: "Claude Code", logo: "claude" },
-  { name: "Cursor", logo: "cursor" },
-  { name: "Codex", logo: null },
-  { name: "opencode", logo: "opencode" },
+  { name: "Claude Code", logo: "claude", tint: "d97757" },
+  { name: "Cursor", logo: "cursor", tint: "0b1020" },
+  { name: "Codex", logo: null, tint: "0b1020" },
+  { name: "opencode", logo: "opencode", tint: "0b1020" },
 ] as const;
 
-/** A brand mark from Simple Icons, tinted to the page's foreground. */
-function BrandIcon({ slug, className = "size-4" }: { slug: string; className?: string }) {
+const PROVIDERS = ["Google AI Studio", "OpenRouter", "Z.ai", "Unsplash"] as const;
+
+const FREE_INCLUDES = [
+  "Unlimited projects and pages",
+  "Unlimited agent calls",
+  "Review links with pinned comments",
+  "Clickable prototypes",
+  "Desktop and mobile frames",
+  "The whole source, MIT licensed",
+] as const;
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Ask for directions, not a screen.",
+    body: "Tell your agent what the screen is for and ask for three layouts. It writes each one as a self-contained HTML page and calls Wirely to put it on your canvas.",
+  },
+  {
+    n: "02",
+    title: "Compare them side by side.",
+    body: "Frames fill in as each page lands. Pan, zoom, open the compare view, and look at the three next to each other instead of scrolling a chat for screenshots.",
+  },
+  {
+    n: "03",
+    title: "Point at what to change.",
+    body: "Pick one element on the canvas and copy its link. The agent edits that element and leaves the rest of the page alone. Reviewers can pin comments the same way.",
+  },
+  {
+    n: "04",
+    title: "Hand the winner back.",
+    body: "The agent reads the page it wrote, so the build matches the design instead of guessing from a screenshot.",
+  },
+] as const;
+
+/** A brand mark from Simple Icons, tinted to the surface it sits on. */
+function BrandIcon({
+  slug,
+  className = "size-4",
+  tint = "0b1020",
+}: {
+  slug: string;
+  className?: string;
+  /** Hex without the hash. */
+  tint?: string;
+}) {
   return (
     <Image
-      src={`https://cdn.simpleicons.org/${slug}/e9ecf5`}
+      src={`https://cdn.simpleicons.org/${slug}/${tint}`}
       alt=""
       width={20}
       height={20}
@@ -49,320 +85,243 @@ function BrandIcon({ slug, className = "size-4" }: { slug: string; className?: s
   );
 }
 
-const PROVIDERS = ["Google AI Studio", "OpenRouter", "Z.ai", "Unsplash"] as const;
-
-/**
- * One page at phone size, scaled down the way the canvas shows it. The frame
- * is sandboxed with no scripts: the examples are static HTML, and the landing
- * page must never give a srcdoc its origin.
- */
-function ScreenFrame({
-  html,
-  title,
-  scale,
-  className = "",
-  lazy = false,
-}: {
-  html: string;
-  title: string;
-  scale: number;
-  className?: string;
-  /** Below-the-fold frames load near the viewport, so their write plays there. */
-  lazy?: boolean;
-}) {
+/** The white key: "Set up with" and the three agent marks. */
+function SetUpKey() {
   return (
-    <div
-      className={`relative shrink-0 overflow-hidden rounded-[22px] bg-background ring-1 ring-white/10 ${className}`}
-      style={{ width: LANDING_FRAME.width * scale, height: LANDING_FRAME.height * scale }}
+    <Link
+      href="/login"
+      className="key group inline-flex h-11 items-center gap-3 rounded-[10px] bg-white px-4 text-[14.5px] font-semibold text-[#0b1020]"
     >
-      <iframe
-        title={title}
-        srcDoc={html}
-        sandbox=""
-        loading={lazy ? "lazy" : "eager"}
-        tabIndex={-1}
-        className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
-        style={{
-          width: LANDING_FRAME.width,
-          height: LANDING_FRAME.height,
-          transform: `scale(${scale})`,
-        }}
-      />
-    </div>
+      Set up with
+      <span className="h-5 w-px bg-black/10" />
+      <span className="flex items-center gap-2.5">
+        <BrandIcon slug="claude" tint="d97757" />
+        <BrandIcon slug="cursor" />
+        <SquareTerminal className="size-4" strokeWidth={2} />
+      </span>
+      <ArrowRight className={`size-4 text-black/50 ${NUDGE}`} />
+    </Link>
   );
 }
 
-function CanvasPreview() {
+function CheckItem({ children }: { children: React.ReactNode }) {
   return (
-    <div className="pane relative overflow-hidden rounded-2xl border border-border bg-[#15171c]">
-      <div className="flex h-11 items-center justify-between gap-6 border-b border-white/[0.06] px-4">
-        <span className="text-[13px] font-medium text-foreground">Habit tracker</span>
-        <span className="flex min-w-0 overflow-hidden font-mono text-xs text-muted-foreground">
-          <span aria-hidden>&gt;&nbsp;</span>
-          <span
-            className="type-in"
-            style={{ "--chars": HERO_PROMPT.length } as React.CSSProperties}
-          >
-            {HERO_PROMPT}
-          </span>
-        </span>
-      </div>
-      <div className="relative overflow-x-auto">
-        <div className="canvas-dots pointer-events-none absolute inset-0" />
-        <div className="relative flex min-w-max justify-center gap-8 px-8 pb-10 pt-8 sm:gap-12">
-          {LANDING_DIRECTIONS.map((direction, index) => (
-            <figure
-              key={direction.title}
-              className="enter group"
-              style={{ animationDelay: `${420 + index * 260}ms` }}
-            >
-              <figcaption className="mb-2.5 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
-                {direction.title}
-              </figcaption>
-              {/* The same sky outline the editor draws on a hovered frame. */}
-              <ScreenFrame
-                html={direction.html}
-                title={direction.title}
-                scale={0.62}
-                className="transition-[box-shadow,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-y-1 group-hover:ring-2 group-hover:ring-sky-400/70"
-              />
-            </figure>
-          ))}
-        </div>
-      </div>
-    </div>
+    <li className="flex items-start gap-3 text-[15px] text-foreground/85">
+      <span className="mt-1 grid size-4 shrink-0 place-items-center rounded-[4px] bg-primary/12 text-primary">
+        <Check className="size-3" strokeWidth={3} />
+      </span>
+      {children}
+    </li>
   );
 }
 
 function Hero() {
   return (
-    <section className="relative isolate -mt-16 overflow-hidden pt-16">
-      <div className="ribbon-field pointer-events-none -z-10">
-        <div className="ribbon ribbon-core rings-enter" />
-      </div>
-      <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
-
-      <div className="mx-auto max-w-6xl px-6 pb-20 pt-16 sm:pt-20">
-        <h1 className="enter enter-1 max-w-3xl font-display text-[clamp(2.6rem,6vw,4.4rem)] font-semibold leading-[1.02] tracking-[-0.04em]">
-          The design canvas for your coding agent.
+    <section className="relative -mt-16 pt-16">
+      <div className="mx-auto max-w-6xl px-6 pb-16 pt-14 sm:pt-20">
+        <p className={`enter enter-1 ${EYEBROW}`}>Free and open source</p>
+        <h1 className="enter enter-1 mt-3 max-w-4xl font-display text-[clamp(2.75rem,6.2vw,4.6rem)] font-semibold leading-[1] tracking-[-0.04em]">
+          The design canvas for your <span className="text-primary">coding agent</span>.
         </h1>
-        <p className="enter enter-2 mt-6 max-w-[44ch] text-lg leading-relaxed text-muted-foreground">
-          Your agent designs the screens on the plan you already pay for. Wirely puts them
-          side by side.
-        </p>
-        <div className="enter enter-3 mt-9 flex flex-wrap items-center gap-3">
-          <Button asChild size="lg" className={`group rounded-full px-6 ${PRESS}`}>
-            <Link href="/login">
-              {CTA_LABEL}
-              <ArrowRight className={`size-4 ${NUDGE}`} />
-            </Link>
-          </Button>
-          <Button
-            asChild
-            size="lg"
-            variant="outline"
-            className={`rounded-full bg-transparent px-6 ${PRESS}`}
-          >
-            <a href={REPO_URL} target="_blank" rel="noreferrer">
-              <BrandIcon slug="github" />
-              Star on GitHub
-            </a>
-          </Button>
+        <div className="mt-8 grid gap-8 lg:grid-cols-12 lg:items-end">
+          <p className={`enter enter-2 max-w-[48ch] lg:col-span-7 ${BODY}`}>
+            Ask Claude Code, Cursor, or Codex for three directions. They land on a canvas side by
+            side, you pick one, and the agent builds it in your codebase. All on the plan you
+            already pay for.
+          </p>
+          <div className="enter enter-3 flex flex-col gap-3 lg:col-span-5 lg:items-end">
+            <div className="flex flex-wrap items-center gap-3">
+              <SetUpKey />
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="key inline-flex h-11 items-center gap-2 rounded-[10px] bg-white px-4 text-[14.5px] font-semibold text-[#0b1020]"
+              >
+                <BrandIcon slug="github" />
+                Star on GitHub
+              </a>
+            </div>
+            <p className="text-[13px] text-muted-foreground">No credits, no card, no server key.</p>
+          </div>
         </div>
-
         <div id={HERO_END_ID} />
 
-        <div className="enter enter-4 mt-16">
-          <div className="tilt-in">
-            <CanvasPreview />
-          </div>
+        {/* The illustration is a live scene: clouds drift, a cat on the front
+            hill flicks its tail, and birds cross the sky now and then. */}
+        <div className="enter enter-4 mt-12 h-[clamp(16rem,34vw,26rem)] overflow-hidden rounded-[22px] shadow-[inset_0_0_0_1px_rgb(11_16_32_/_0.12)]">
+          <HeroFilm />
         </div>
-      </div>
-    </section>
-  );
-}
 
-function AgentStrip() {
-  return (
-    <section className="border-y border-border">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10 md:flex-row md:items-center md:justify-between">
-        <p className="text-sm text-muted-foreground">Works with any MCP client, including</p>
-        <ul className="flex flex-wrap items-center gap-x-10 gap-y-4">
+        <p className="logos enter enter-4 mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 text-sm text-muted-foreground">
+          <span>Works with</span>
           {AGENTS.map((agent) => (
-            <li
+            <span
               key={agent.name}
-              className="flex items-center gap-2.5 text-[15px] text-foreground/70 transition-colors hover:text-foreground"
+              className="logo flex items-center gap-2 font-semibold text-foreground"
             >
               {agent.logo ? (
-                <BrandIcon slug={agent.logo} className="size-5 opacity-85" />
+                <BrandIcon slug={agent.logo} tint={agent.tint} className="size-[18px]" />
               ) : (
-                <SquareTerminal className="size-5 opacity-85" strokeWidth={1.75} />
+                <SquareTerminal className="size-[18px]" strokeWidth={2} />
               )}
               {agent.name}
-            </li>
+            </span>
           ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-function ConnectSection({ origin }: { origin: string }) {
-  return (
-    <section className="mx-auto grid max-w-6xl gap-10 px-6 py-24 lg:grid-cols-12 lg:items-center lg:gap-12 sm:py-32">
-      <div className="reveal lg:col-span-5">
-        <h2 className="font-display text-4xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-5xl">
-          One paste to connect.
-        </h2>
-        <p className="mt-5 max-w-[42ch] text-base leading-relaxed text-muted-foreground">
-          Sign in and Wirely writes an install prompt with your token in it. Paste it into
-          your agent and it adds Wirely to its own config.
+          <span>and any MCP client.</span>
         </p>
-        <Link
-          href="/docs"
-          className="group mt-7 inline-flex items-center gap-1.5 text-sm text-primary transition-colors hover:text-foreground"
-        >
-          Manual setup for every client
-          <ArrowRight className={`size-3.5 ${NUDGE}`} />
-        </Link>
-      </div>
-
-      <div className="reveal pane overflow-hidden rounded-2xl border border-border bg-card lg:col-span-7">
-        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-3 text-[13px]">
-          <span className="text-foreground">Claude Code</span>
-          <span className="text-muted-foreground">Cursor, Codex, and opencode edit their config</span>
-        </div>
-        <pre className="overflow-x-auto px-5 py-6 font-mono text-[13px] leading-7 text-foreground/90">
-          <span className="text-muted-foreground">$ </span>claude mcp add --transport http wirely \
-          {"\n"}
-          {"    "}
-          {origin}/api/mcp \{"\n"}
-          {"    "}--header <span className="text-primary">&quot;Authorization: Bearer wirely_…&quot;</span>{" "}
-          --scope user
-        </pre>
-        <div className="border-t border-border px-5 py-4 font-mono text-xs text-muted-foreground">
-          Tools: create_project, add_page, patch_page, get_page_png, list_comments, and 10 more
-        </div>
       </div>
     </section>
   );
 }
 
-function FeatureGrid() {
+function CanvasSection() {
   return (
     <section className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
-      <div className="grid gap-4 lg:grid-cols-12">
-        <article className="reveal group relative flex min-h-[26rem] flex-col overflow-hidden rounded-2xl border border-border transition-colors duration-300 hover:border-white/15 bg-[linear-gradient(160deg,color-mix(in_oklab,var(--primary)_14%,var(--card))_0%,var(--card)_55%)] lg:col-span-7">
-          <div className="p-8">
-            <h3 className="font-display text-2xl font-semibold tracking-tight">
-              Point at one element.
-            </h3>
-            <p className="mt-2 max-w-[40ch] text-sm leading-relaxed text-muted-foreground">
-              Pick it on the canvas and copy its link. Your agent edits that element and
-              leaves the rest of the page alone.
-            </p>
-          </div>
-          <div className="relative mt-auto flex justify-center">
-            <ScreenFrame
-              html={LANDING_PICKED_HTML}
-              title="A page with one element picked"
-              scale={0.58}
-              className={`-mb-40 rounded-b-none ${LIFT}`}
-              lazy
-            />
-            {/* Sits level with the picked "Today" card inside the frame. */}
-            <code className="absolute bottom-24 right-6 hidden whitespace-nowrap rounded-lg border border-border bg-background px-3 py-2 font-mono text-[11px] text-muted-foreground shadow-lg sm:block">
-              /wire/7f3c?page=a91e&amp;node=<span className="text-primary">n4k2</span>
-            </code>
-          </div>
-        </article>
-
-        <article className="reveal group relative flex min-h-[26rem] flex-col overflow-hidden rounded-2xl border border-border bg-card transition-colors duration-300 hover:border-white/15 lg:col-span-5">
-          <div className="p-8">
-            <h3 className="font-display text-2xl font-semibold tracking-tight">
-              Share it for review.
-            </h3>
-            <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-muted-foreground">
-              Turn on a review link. Reviewers pin comments right on the screens, and you
-              see them on your canvas.
-            </p>
-          </div>
-          <div className="mt-auto flex justify-center">
-            <ScreenFrame
-              html={LANDING_REVIEW_HTML}
-              title="A page with review comments pinned on it"
-              scale={0.58}
-              className={`-mb-40 rounded-b-none ${LIFT}`}
-              lazy
-            />
-          </div>
-        </article>
-
-        <article className="reveal flex flex-col gap-6 rounded-2xl border border-border bg-card p-8 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
-          <div className="flex items-baseline gap-6">
-            <p className="font-display text-7xl font-semibold leading-none tracking-tighter text-primary">
-              $0
-            </p>
-            <p className="max-w-[44ch] text-sm leading-relaxed text-muted-foreground">
-              Wirely has no plans, no credits, and no cap on agent calls. It is open source,
-              and your agent runs on the Claude, ChatGPT, or Cursor plan you already have.
-            </p>
-          </div>
-          <Button asChild variant="outline" className={`shrink-0 rounded-full bg-transparent ${PRESS}`}>
-            <a href={REPO_URL} target="_blank" rel="noreferrer">
-              <BrandIcon slug="github" />
-              Star on GitHub
-            </a>
-          </Button>
-        </article>
+      <div className="reveal flex flex-col gap-4 pb-8 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className={EYEBROW}>One prompt, three answers</p>
+          <h2 className={`mt-3 ${H2}`}>
+            Compare directions <em className="not-italic text-primary">side by side</em>.
+          </h2>
+        </div>
+        <p className={`max-w-[38ch] ${BODY}`}>
+          Your agent writes each screen as a page and puts it on the canvas while you watch.
+        </p>
+      </div>
+      <div className="reveal">
+        <CanvasWindow />
       </div>
     </section>
   );
 }
 
-function KeySection() {
+function LoopSection() {
   return (
-    <section className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-16 lg:flex-row lg:items-center lg:justify-between">
-        <div className="reveal max-w-md">
-          <h2 className="font-display text-2xl font-semibold tracking-tight">No agent? Bring a key.</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Wirely can generate screens itself on your own provider key, starting on a free
-            Gemini tier. Keys are encrypted at rest.
-          </p>
-        </div>
-        <ul className="reveal flex flex-wrap gap-2">
-          {PROVIDERS.map((provider) => (
-            <li
-              key={provider}
-              className="rounded-full border border-border px-4 py-2 text-sm text-foreground/85"
-            >
-              {provider}
+    <section className="mx-auto grid max-w-6xl gap-12 px-6 pb-24 lg:grid-cols-12 lg:gap-16 sm:pb-32">
+      <div className="lg:col-span-5">
+        <p className={`reveal ${EYEBROW}`}>How it works</p>
+        <h2 className={`reveal mt-3 ${H2}`}>
+          Your agent designs. <em className="not-italic text-primary">You choose.</em>
+        </h2>
+        <ol className="mt-10 divide-y divide-border border-y border-border">
+          {STEPS.map((step) => (
+            <li key={step.n} className="reveal grid gap-4 py-7 sm:grid-cols-[3rem_1fr]">
+              <span className="font-mono text-sm text-primary">{step.n}</span>
+              <div>
+                <h3 className="font-display text-xl font-semibold tracking-tight">{step.title}</h3>
+                <p className="mt-2 max-w-[44ch] text-[15px] leading-relaxed text-foreground/70">
+                  {step.body}
+                </p>
+              </div>
             </li>
           ))}
-        </ul>
+        </ol>
+      </div>
+      <div className="reveal self-start lg:sticky lg:top-24 lg:col-span-7">
+        <LandingTranscript />
+        <p className="mt-4 text-center text-[13px] text-muted-foreground">
+          The tool names are the ones the MCP server exposes.
+        </p>
       </div>
     </section>
   );
 }
 
-function FinalCta() {
+function PricingSection() {
   return (
-    <section className="px-6 pb-24">
-      <div className="relative isolate mx-auto max-w-6xl overflow-hidden rounded-3xl border border-border px-8 py-20 sm:px-14 sm:py-24">
-        <div className="rings-glow pointer-events-none absolute inset-0 -z-10" />
-        <div className="hero-dots pointer-events-none absolute inset-0 -z-10" />
-        <h2 className="max-w-2xl font-display text-[clamp(2.2rem,5vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.04em]">
-          See multiple directions before your agent builds one.
+    <section className="mx-auto grid max-w-6xl gap-10 px-6 pb-24 lg:grid-cols-12 lg:gap-12 sm:pb-32">
+      <div className="reveal lg:col-span-5">
+        <p className={EYEBROW}>Pricing</p>
+        <h2 className={`mt-3 ${H2}`}>
+          Free, with <em className="not-italic text-primary">no asterisk</em>.
         </h2>
-        <Button asChild size="lg" className={`group mt-10 rounded-full px-6 ${PRESS}`}>
-          <Link href="/login">
-            {CTA_LABEL}
+        <p className={`mt-4 max-w-[44ch] ${BODY}`}>
+          No tiers, no credits, no cap on agent calls. Your agent runs on the subscription you
+          already have, and pages render in a sandbox.
+        </p>
+        <p className="mt-6 flex flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
+          <span className="mr-1">No agent? Bring a key:</span>
+          {PROVIDERS.map((provider) => (
+            <span
+              key={provider}
+              className="tile rounded-md px-2.5 py-1 text-[12.5px] font-medium text-foreground/85"
+            >
+              {provider}
+            </span>
+          ))}
+        </p>
+      </div>
+      <div className="tile reveal rounded-[14px] p-7 lg:col-span-7 lg:p-9">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <p className="flex items-baseline gap-2">
+            <span className="font-display text-6xl font-semibold leading-none tracking-tighter">
+              $0
+            </span>
+            <span className="text-base text-muted-foreground">forever</span>
+          </p>
+          <Link
+            href="/login"
+            className="key-primary group inline-flex h-10 items-center gap-2 rounded-[10px] bg-primary px-4 text-[14px] font-semibold text-white"
+          >
+            Connect your agent
             <ArrowRight className={`size-4 ${NUDGE}`} />
           </Link>
-        </Button>
+        </div>
+        <ul className="mt-6 grid gap-2.5 border-t border-border pt-6 sm:grid-cols-2">
+          {FREE_INCLUDES.map((item) => (
+            <CheckItem key={item}>{item}</CheckItem>
+          ))}
+        </ul>
+        <p className="mt-6 text-sm text-muted-foreground">
+          Setup is one line in your agent.{" "}
+          <Link href="/docs" className="text-primary underline underline-offset-4">
+            The docs
+          </Link>{" "}
+          cover Claude Code, Cursor, Codex, and opencode.
+        </p>
       </div>
     </section>
+  );
+}
+
+function LandingFooter() {
+  return (
+    <footer className="border-t border-border">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <Link
+            href="/"
+            className="flex items-center gap-2 font-display text-base font-semibold tracking-tight text-foreground"
+          >
+            <WirelyMark className="size-5" />
+            Wirely
+          </Link>
+          <p className="mt-2 max-w-[44ch]">
+            The design canvas for your coding agent. Free, open source, MIT licensed.
+          </p>
+        </div>
+        <nav className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <Link href="/docs" className="transition-colors hover:text-foreground">
+            Docs
+          </Link>
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
+            Privacy
+          </Link>
+          <Link href="/terms" className="transition-colors hover:text-foreground">
+            Terms
+          </Link>
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="transition-colors hover:text-foreground"
+          >
+            GitHub
+          </a>
+        </nav>
+      </div>
+    </footer>
   );
 }
 
@@ -382,9 +341,9 @@ const STRUCTURED_DATA = {
   sameAs: [REPO_URL],
 };
 
-export default function Landing({ origin }: { origin: string }) {
+export default function Landing() {
   return (
-    <div className="min-h-[100dvh] bg-background">
+    <div className="theme-light paper min-h-[100dvh] overflow-x-clip text-foreground">
       <script
         type="application/ld+json"
         // Static JSON built above, never user input. The escape keeps a "<"
@@ -394,41 +353,48 @@ export default function Landing({ origin }: { origin: string }) {
         }}
       />
       <LandingHeader markerId={HERO_END_ID}>
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+        <nav className="flex h-14 items-center justify-between px-5">
+          <Link
+            href="/"
+            className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight"
+          >
             <WirelyMark className="size-6" />
             Wirely
           </Link>
-          <div className="flex items-center gap-1">
-            <Button asChild variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex">
-              <Link href="/docs">Docs</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="hidden rounded-full sm:inline-flex">
-              <a href={REPO_URL} target="_blank" rel="noreferrer">
-                <BrandIcon slug="github" />
-                GitHub
-              </a>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="rounded-full">
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button asChild size="sm" className={`ml-1 rounded-full px-4 ${PRESS}`}>
-              <Link href="/login">{CTA_LABEL}</Link>
-            </Button>
+          <div className="flex items-center gap-1 text-[14.5px] font-medium">
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-foreground/75 transition-colors hover:text-foreground sm:flex"
+            >
+              <BrandIcon slug="github" />
+              GitHub
+            </a>
+            <Link
+              href="/login"
+              className="rounded-lg px-3 py-1.5 text-foreground/75 transition-colors hover:text-foreground"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/login"
+              className="key-primary ml-2 inline-flex h-9 items-center rounded-[10px] bg-primary px-4 text-white"
+            >
+              Start now
+            </Link>
           </div>
         </nav>
       </LandingHeader>
 
       <main>
         <Hero />
-        <AgentStrip />
-        <ConnectSection origin={origin} />
-        <FeatureGrid />
-        <KeySection />
-        <FinalCta />
+        <CanvasSection />
+        <LoopSection />
+        <PricingSection />
       </main>
 
-      <SiteFooter />
+      <LandingFooter />
     </div>
   );
 }

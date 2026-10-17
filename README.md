@@ -34,7 +34,7 @@ plans and no credits.
 
 3. On the first call your agent opens a browser tab. Click Authorize.
 4. Ask it to design something, for example "Design three different layouts for a habit tracker
-   in Wirely." The project shows up on your home page and fills in as the agent writes.
+   in Wirely." The project shows up on your projects page and fills in as the agent writes.
 
 Commands for Cursor, Codex, opencode, other MCP clients, and clients that cannot open a browser
 are on the [setup page](https://www.wirely.site/docs).

@@ -34,7 +34,7 @@ export default function LoginClient({ nextPath }: LoginClientProps) {
       await clerk.client.signIn.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: nextPath || "/",
+        redirectUrlComplete: nextPath || "/projects",
       });
     } catch (error) {
       const message =

@@ -63,19 +63,15 @@ interface Screen {
   cursor: CursorPath;
 }
 
-/**
- * `start` delays the whole write, so hero frames land one after another. The
- * feature card copies write themselves without a cursor; their frames load
- * lazily, so that happens as the reader scrolls to them.
- */
-const page = (screen: Screen, { start, cursor }: { start: number; cursor: boolean }) =>
+/** `start` delays the whole write, so the frames land one after another. */
+const page = (screen: Screen, { start }: { start: number }) =>
   "<!doctype html><html><head><meta charset=\"utf-8\"><style>" +
   RING_PROPERTY +
   BASE_CSS +
   screen.css +
   MOTION_CSS +
-  (cursor ? cursorCss(screen.cursor) : "") +
-  `</style></head><body style="--start:${start}s">${screen.body}${cursor ? CURSOR_HTML : ""}</body></html>`;
+  cursorCss(screen.cursor) +
+  `</style></head><body style="--start:${start}s">${screen.body}${CURSOR_HTML}</body></html>`;
 
 // A fixed pattern so the heatmap looks lived-in and renders the same on the
 // server and the client.
@@ -84,12 +80,12 @@ const HEAT_LEVELS = [
   3, 2, 3, 0, 0, 0, 0,
 ];
 
-const calendar = (picked: boolean): Screen => ({
+const calendar = (): Screen => ({
   body: `
 <header class="top"${at("w", 0)}><h1>September</h1><span class="muted">23 of 30 days</span></header>
 <div class="wk"${at("w", 0.25)}><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
 <div class="grid">${HEAT_LEVELS.map((level, index) => `<span class="l${level}"${at("pop", 0.35 + index * 0.025)}></span>`).join("")}</div>
-<section class="card${picked ? " picked" : ""}"${at("w", 1.3)}>
+<section class="card"${at("w", 1.3)}>
   <h2>Today</h2>
   <div class="row"${at("w", 1.45)}><span class="box done"></span><span class="name">Morning run</span><span class="meta">5 km</span></div>
   <div class="row"${at("w", 1.6)}><span class="box done"></span><span class="name">Read 20 pages</span><span class="meta">p. 184</span></div>
@@ -106,9 +102,6 @@ const calendar = (picked: boolean): Screen => ({
     ".grid span{aspect-ratio:1;border-radius:8px}" +
     ".l0{background:#e2e7e1}.l1{background:#bfe3c8}.l2{background:#7cc795}.l3{background:#2f9e5b}" +
     ".card{margin-top:24px;background:#fff;border-radius:20px;padding:18px 18px 6px;box-shadow:0 1px 2px rgba(20,40,30,.06)}" +
-    ".picked{outline:2.5px solid #38bdf8;outline-offset:5px}" +
-    "@media (prefers-reduced-motion:no-preference){.card.picked{animation:write .55s cubic-bezier(.16,1,.3,1) 1.3s both,pick .7s cubic-bezier(.16,1,.3,1) 2.3s both}}" +
-    "@keyframes pick{from{outline-color:transparent;outline-offset:16px}}" +
     "h2{font-size:15px;color:#6b7a70;font-weight:600;margin-bottom:4px}" +
     ".row{display:flex;align-items:center;gap:12px;padding:13px 0;border-top:1px solid #eef1ec}" +
     "h2+.row{border-top:0}" +
@@ -137,7 +130,7 @@ const STREAKS = [
 // Share of habits done on each day of the week so far.
 const WEEK = [80, 100, 60, 0, 0, 0, 0];
 
-const streaks = (pins: boolean): Screen => ({
+const streaks = (): Screen => ({
   body: `
 <p class="hello"${at("w", 0)}>Tuesday, 23 Sep</p>
 <h1${at("w", 0.15)}>Keep the<br>streaks alive.</h1>
@@ -153,13 +146,7 @@ ${STREAKS.map(
     `<span${index === 1 ? ' class="today"' : ""}${at("grow", 1.2 + index * 0.06, `height:${value}%`)}></span>`,
 ).join("")}</div></section>
 <button${at("w", 1.7)}>Log today</button>
-${
-  pins
-    ? `<span class="pin"${at("pop", 0.8, "top:150px;left:334px")}>1</span>` +
-      `<p class="bubble"${at("w", 1.1, "top:62px;left:176px")}><b>Priya</b>Make the day count bigger than the ring.</p>` +
-      `<span class="pin"${at("pop", 1.5, "top:452px;left:30px")}>2</span>`
-    : ""
-}`,
+`,
   css:
     "body{background:#0f1115;color:#f3f1ea;padding:60px 20px 0}" +
     ".hello{color:#8b909c;font-size:14px}" +
@@ -173,16 +160,11 @@ ${
     ".days{text-align:right;font-size:12px;color:#8b909c}.days b{display:block;font-size:30px;line-height:1;letter-spacing:-.03em}" +
     "button{position:absolute;left:20px;right:20px;bottom:34px;border:0;border-radius:18px;padding:18px;" +
     "font:inherit;font-size:16px;font-weight:700;background:#f3f1ea;color:#0f1115}" +
-    ".pin{position:absolute;width:30px;height:30px;border-radius:50% 50% 50% 4px;background:#38bdf8;color:#04121c;" +
-    "display:grid;place-items:center;font-size:14px;font-weight:800;box-shadow:0 6px 16px rgba(0,0,0,.4)}" +
     ".week{margin-top:14px;background:#181b21;border:1px solid #232730;border-radius:22px;padding:16px}" +
     ".week p{font-size:13px;color:#8b909c}" +
     ".bars{display:flex;align-items:flex-end;gap:10px;height:96px;margin-top:12px}" +
     ".bars span{flex:1;min-height:6px;border-radius:8px;background:#2b303a}" +
-    ".bars .today{background:#a3e635}" +
-    ".bubble{position:absolute;width:172px;background:#f3f1ea;color:#0f1115;border-radius:14px 14px 4px 14px;" +
-    "padding:10px 12px;font-size:13px;line-height:1.35;box-shadow:0 10px 24px rgba(0,0,0,.45)}" +
-    ".bubble b{display:block;font-size:12px;margin-bottom:2px}",
+    ".bars .today{background:#a3e635}",
   cursor: [
     [0, 30, 40],
     [0.2, 40, 110],
@@ -253,14 +235,21 @@ export const LANDING_FRAME = { width: 390, height: 844 } as const;
  */
 export const LANDING_WRITE_STARTS = [1.9, 2.6, 3.5] as const;
 
+/** Seconds after a page's write starts until its cursor leaves. */
+const writeLength = (screen: Screen) => screen.cursor[screen.cursor.length - 1][0] + 0.4;
+
+const direction = (title: string, screen: Screen, start: number) => ({
+  title,
+  html: page(screen, { start }),
+  /** Seconds after load when the canvas can mark this page done. */
+  done: start + writeLength(screen),
+});
+
 export const LANDING_DIRECTIONS = [
-  { title: "Calendar grid", html: page(calendar(false), { start: LANDING_WRITE_STARTS[0], cursor: true }) },
-  { title: "Streak cards", html: page(streaks(false), { start: LANDING_WRITE_STARTS[1], cursor: true }) },
-  { title: "Daily timeline", html: page(timeline(), { start: LANDING_WRITE_STARTS[2], cursor: true }) },
+  direction("Calendar grid", calendar(), LANDING_WRITE_STARTS[0]),
+  direction("Streak cards", streaks(), LANDING_WRITE_STARTS[1]),
+  direction("Daily timeline", timeline(), LANDING_WRITE_STARTS[2]),
 ] as const;
 
-/** The calendar screen with one element picked, as the element tool shows it. */
-export const LANDING_PICKED_HTML = page(calendar(true), { start: 0, cursor: false });
-
-/** The streak screen with review comment pins dropping onto it. */
-export const LANDING_REVIEW_HTML = page(streaks(true), { start: 0, cursor: false });
+/** When the last page lands and the run can report itself finished. */
+export const LANDING_RUN_DONE = Math.max(...LANDING_DIRECTIONS.map((item) => item.done));

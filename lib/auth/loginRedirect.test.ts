@@ -23,21 +23,21 @@ describe("loginReturnPath", () => {
   });
 
   it("never leaves the site", () => {
-    expect(loginReturnPath({ next: "//evil.example/phish" })).toBe("/");
-    expect(loginReturnPath({ next: "/\\evil.example/phish" })).toBe("/");
-    expect(loginReturnPath({ next: "https://evil.example/phish" })).toBe("/");
-    expect(loginReturnPath({ next: "http://wirely.local//evil.example/phish" })).toBe("/");
+    expect(loginReturnPath({ next: "//evil.example/phish" })).toBe("/projects");
+    expect(loginReturnPath({ next: "/\\evil.example/phish" })).toBe("/projects");
+    expect(loginReturnPath({ next: "https://evil.example/phish" })).toBe("/projects");
+    expect(loginReturnPath({ next: "http://wirely.local//evil.example/phish" })).toBe("/projects");
     expect(loginReturnPath({ next: "/%2F/evil.example/phish" })).toBe("/%2F/evil.example/phish");
     expect(loginReturnPath({ redirectUrl: "https://evil.example//evil.example/phish" })).toBe(
-      "/",
+      "/projects",
     );
     expect(loginReturnPath({ redirectUrl: "https://evil.example/wire/1" })).toBe("/wire/1");
   });
 
   it("falls back to home for missing, malformed, or login targets", () => {
-    expect(loginReturnPath({})).toBe("/");
-    expect(loginReturnPath({ redirectUrl: "not a url" })).toBe("/");
-    expect(loginReturnPath({ next: "/login" })).toBe("/");
-    expect(loginReturnPath({ redirectUrl: "https://www.wirely.site/login?x=1" })).toBe("/");
+    expect(loginReturnPath({})).toBe("/projects");
+    expect(loginReturnPath({ redirectUrl: "not a url" })).toBe("/projects");
+    expect(loginReturnPath({ next: "/login" })).toBe("/projects");
+    expect(loginReturnPath({ redirectUrl: "https://www.wirely.site/login?x=1" })).toBe("/projects");
   });
 });

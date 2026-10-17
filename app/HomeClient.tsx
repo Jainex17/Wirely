@@ -263,7 +263,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
     if (!state.user) {
       toast.error("Sign in to generate designs.");
-      router.push("/login?next=/");
+      router.push("/login?next=/projects");
       return;
     }
 
@@ -307,7 +307,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
 
       if (response.status === 401) {
         dispatch({ type: "patch", payload: { isSubmitting: false } });
-        router.push("/login?next=/");
+        router.push("/login?next=/projects");
         return;
       }
 

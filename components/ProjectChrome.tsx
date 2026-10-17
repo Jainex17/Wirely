@@ -64,7 +64,7 @@ function CanvasSwitch({ className }: { className?: string }) {
 function BackLink() {
   return (
     <Link
-      href="/"
+      href="/projects"
       aria-label="Back to projects"
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
     >
