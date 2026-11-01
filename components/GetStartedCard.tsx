@@ -12,7 +12,17 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
-const readDismissed = () => window.localStorage.getItem(DISMISSED_KEY) === "1";
+// A browser that blocks site storage throws on any access. The card then stays
+// closed for the rest of the visit once the user dismisses it.
+let isDismissedInMemory = false;
+const readDismissed = () => {
+  if (isDismissedInMemory) return true;
+  try {
+    return window.localStorage.getItem(DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
 // Hidden on the server, so the panel never flashes a card the user closed.
 const readDismissedOnServer = () => true;
 
@@ -27,7 +37,12 @@ export default function GetStartedCard() {
   if (isDismissed) return null;
 
   const dismiss = () => {
-    window.localStorage.setItem(DISMISSED_KEY, "1");
+    isDismissedInMemory = true;
+    try {
+      window.localStorage.setItem(DISMISSED_KEY, "1");
+    } catch {
+      // Storage is blocked, so the dismissal lasts until a reload.
+    }
     listeners.forEach((listener) => listener());
   };
 
