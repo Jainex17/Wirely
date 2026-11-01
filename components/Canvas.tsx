@@ -212,7 +212,6 @@ export default function Canvas({
     panBy,
     setPagePosition,
     setPagePositions,
-    groupPages,
     ungroupPages,
     renamePageGroup,
     bringPageToFront,
@@ -238,7 +237,6 @@ export default function Canvas({
       panBy: state.panBy,
       setPagePosition: state.setPagePosition,
       setPagePositions: state.setPagePositions,
-      groupPages: state.groupPages,
       ungroupPages: state.ungroupPages,
       renamePageGroup: state.renamePageGroup,
       bringPageToFront: state.bringPageToFront,
@@ -268,7 +266,7 @@ export default function Canvas({
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
   // the chat knows what to edit. This one exists only while the user has pages
-  // clicked, drives the size badge, and is what Cmd+G groups.
+  // clicked, drives the size badge, and moves together when dragged.
   const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
@@ -827,12 +825,6 @@ export default function Canvas({
     [setFocusedPage],
   );
 
-  const groupSelection = React.useCallback(() => {
-    if (selectedPageIds.length < 2) return;
-    groupPages(selectedPageIds);
-    setSelectedPageIds([]);
-  }, [groupPages, selectedPageIds]);
-
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -842,13 +834,11 @@ export default function Canvas({
           setLivePageId(null);
         }
       }
-      if (event.key.toLowerCase() !== "g" || !(event.metaKey || event.ctrlKey)) return;
+      // Ctrl+Shift+G ungroups. Groups made before the group tool was removed
+      // still need a way out.
+      if (event.key.toLowerCase() !== "g" || !(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
       if (isEditableTarget(event.target) || selectedPageIds.length === 0) return;
       event.preventDefault();
-      if (!event.shiftKey) {
-        groupSelection();
-        return;
-      }
       for (const group of pageGroups) {
         if (group.pageIds.some((pageId) => selectedPageIds.includes(pageId))) {
           ungroupPages(group.id);
@@ -857,7 +847,7 @@ export default function Canvas({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [groupSelection, pageGroups, selectedPageIds, setSelectedNode, ungroupPages]);
+  }, [pageGroups, selectedPageIds, setSelectedNode, ungroupPages]);
 
   const handleGroupPointerDown = React.useCallback(
     (pageIds: string[]) => (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1110,20 +1100,6 @@ export default function Canvas({
           })}
         </div>
       </div>
-
-      {selectedPageIds.length > 1 ? (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            groupSelection();
-          }}
-          data-tip="Group selection (Ctrl+G)"
-          className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1.5 text-xs font-medium text-foreground shadow-lg hover:bg-accent"
-        >
-          Group {selectedPageIds.length} pages
-        </button>
-      ) : null}
 
       <CanvasToolbar activeTool={activeTool} onToolChange={onToolChange} />
     </div>

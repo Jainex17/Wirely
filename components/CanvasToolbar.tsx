@@ -2,16 +2,12 @@
 
 import { memo } from "react";
 import {
-  ChevronUp,
-  Columns3,
+  Circle,
   Frame,
   Hand,
-  LayoutGrid,
-  Maximize,
   MessageCircle,
   MousePointer2,
   PenTool,
-  Scan,
   Square,
   SquareDashedMousePointer,
   Type,
@@ -19,22 +15,12 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import {
   CanvasBackgroundMenu,
-  menuTriggerClass,
   ToolbarDivider,
   ToolButton,
   toolbarClass,
   ZoomControls,
 } from "@/components/EditorChrome";
 import { type CanvasTool, MAX_CANVAS_ZOOM, MIN_CANVAS_ZOOM } from "@/lib/canvasScene";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/store/useEditorStore";
 
 interface CanvasToolbarProps {
@@ -47,15 +33,6 @@ interface CanvasToolbarProps {
  * the canvas re-renders on every pan frame and these props rarely change.
  */
 export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasToolbarProps) {
-  const { focusedPageId, arrangePages, fitAllPages, fitPage } = useEditorStore(
-    useShallow((state) => ({
-      focusedPageId: state.focusedPageId,
-      arrangePages: state.arrangePages,
-      fitAllPages: state.fitAllPages,
-      fitPage: state.fitPage,
-    })),
-  );
-
   return (
     <div
       className={toolbarClass}
@@ -112,12 +89,20 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
         <Frame className="h-4 w-4" />
       </ToolButton>
       <ToolButton
-        label="Rectangle (R)"
-        detail="Click in a page to add a box"
-        isActive={activeTool === "rectangle"}
-        onClick={() => onToolChange("rectangle")}
+        label="Square (R)"
+        detail="Click in a page to add a square"
+        isActive={activeTool === "square"}
+        onClick={() => onToolChange("square")}
       >
         <Square className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton
+        label="Circle (O)"
+        detail="Click in a page to add a circle"
+        isActive={activeTool === "circle"}
+        onClick={() => onToolChange("circle")}
+      >
+        <Circle className="h-4 w-4" />
       </ToolButton>
       <ToolButton
         label="Text (T)"
@@ -128,41 +113,6 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
         <Type className="h-4 w-4" />
       </ToolButton>
       <ToolbarDivider />
-      <DropdownMenu>
-        <DropdownMenuTrigger className={menuTriggerClass} aria-label="Arrange and zoom"
-          data-tip-detail="Line pages up in a row or grid, or fit them in view">
-          <LayoutGrid className="h-4 w-4" />
-          <ChevronUp className="h-3 w-3" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="center" sideOffset={8} className="w-56">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">Arrange pages</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => arrangePages("row")}>
-            <Columns3 className="h-4 w-4" />
-            In a row
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => arrangePages("grid")}>
-            <LayoutGrid className="h-4 w-4" />
-            In a grid
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-muted-foreground">Zoom</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={fitAllPages}>
-            <Maximize className="h-4 w-4" />
-            Fit all pages
-            <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!focusedPageId}
-            onSelect={() => {
-              if (focusedPageId) fitPage(focusedPageId);
-            }}
-          >
-            <Scan className="h-4 w-4" />
-            Fit selected page
-            <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
       <CanvasBackgroundMenu />
     </div>
   );

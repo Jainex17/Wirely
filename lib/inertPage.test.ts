@@ -45,15 +45,15 @@ describe("buildInertPage", () => {
     const output = body(`
       <script>alert(1)</script>
       <iframe srcdoc="<script>alert(1)</script>"></iframe>
-      <object data="https://evil.example.com/x.swf"></object>
-      <embed src="https://evil.example.com/x.swf">
-      <form action="https://evil.example.com"><input name="q"></form>
-      <button formaction="https://evil.example.com">Buy</button>
+      <object data="http://evil.example.com/x.swf"></object>
+      <embed src="http://evil.example.com/x.swf">
+      <form action="http://evil.example.com"><input name="q"></form>
+      <button formaction="http://evil.example.com">Buy</button>
       <select><option>One</option></select>
       <textarea>notes</textarea>
-      <base href="https://evil.example.com/">
-      <meta http-equiv="refresh" content="0;url=https://evil.example.com">
-      <link rel="stylesheet" href="https://evil.example.com/x.css">
+      <base href="http://evil.example.com/">
+      <meta http-equiv="refresh" content="0;url=http://evil.example.com">
+      <link rel="stylesheet" href="http://evil.example.com/x.css">
       <p>kept</p>`);
     expect(output.replace(/\s+/g, "")).toBe("<p>kept</p>");
   });
@@ -74,21 +74,21 @@ describe("buildInertPage", () => {
 
   it("removes SVG script vectors and keeps references into the page", () => {
     expect(body('<svg><foreignObject><div onclick="alert(1)">x</div></foreignObject></svg>')).toBe("<svg></svg>");
-    expect(body('<svg><script href="https://evil.example.com/x.js"></script></svg>')).toBe("<svg></svg>");
+    expect(body('<svg><script href="http://evil.example.com/x.js"></script></svg>')).toBe("<svg></svg>");
     expect(body('<svg><animate attributeName="href" values="javascript:alert(1)"></animate></svg>')).toBe(
       "<svg></svg>",
     );
-    expect(body('<svg><use href="https://evil.example.com/s.svg#a"></use><use href="#a"></use></svg>')).toBe(
+    expect(body('<svg><use href="http://evil.example.com/s.svg#a"></use><use href="#a"></use></svg>')).toBe(
       '<svg><use></use><use href="#a"></use></svg>',
     );
-    expect(body('<svg><image href="https://evil.example.com/x.png"></image></svg>')).toBe("<svg><image></image></svg>");
+    expect(body('<svg><image href="http://evil.example.com/x.png"></image></svg>')).toBe("<svg><image></image></svg>");
   });
 
-  it("keeps only allowlisted image sources", () => {
-    expect(body('<img src="https://evil.example.com/pixel.gif" alt="a">')).toBe('<img alt="a">');
+  it("keeps only https image sources", () => {
+    expect(body('<img src="http://evil.example.com/pixel.gif" alt="a">')).toBe('<img alt="a">');
     expect(body('<img src="data:text/html,<script>alert(1)</script>">')).toBe("<img>");
     expect(body('<img src="data:image/png;base64,AAAA">')).toBe('<img src="data:image/png;base64,AAAA">');
-    expect(body('<img srcset="https://images.unsplash.com/a 1x, https://evil.example.com/b 2x">')).toBe("<img>");
+    expect(body('<img srcset="https://images.unsplash.com/a 1x, http://evil.example.com/b 2x">')).toBe("<img>");
     // A browser reads this as one relative URL, a GET to /api/x on the editor.
     expect(
       body('<img srcset="/api/assets/0f8fad5b-d9cb-469f-a165-70867728950e,data:image/../../../api/x">'),
@@ -97,18 +97,18 @@ describe("buildInertPage", () => {
     expect(body('<img srcset="https://images.unsplash.com/a 1x,https://images.unsplash.com/b 2x">')).toBe(
       '<img srcset="https://images.unsplash.com/a 1x,https://images.unsplash.com/b 2x">',
     );
-    expect(body('<table background="https://evil.example.com/x.png"><tbody><tr><td>x</td></tr></tbody></table>')).toBe(
+    expect(body('<table background="http://evil.example.com/x.png"><tbody><tr><td>x</td></tr></tbody></table>')).toBe(
       "<table><tbody><tr><td>x</td></tr></tbody></table>",
     );
   });
 
   it("drops CSS that would load from elsewhere, in style blocks, style attributes, and SVG paint", () => {
     const { markup, css } = render(`
-      <style>input[value^=a]{background:url(https://evil.example.com/a)}@import "https://evil.example.com/x.css";</style>
-      <div style="position:fixed;inset:0;z-index:99999;background:url(https://evil.example.com/x)">overlay</div>
-      <svg><rect fill="url(https://evil.example.com/p.svg#g)"></rect><rect fill="url(#g)"></rect></svg>`);
+      <style>input[value^=a]{background:url(http://evil.example.com/a)}@import "http://evil.example.com/x.css";</style>
+      <div style="position:fixed;inset:0;z-index:99999;background:url(http://evil.example.com/x)">overlay</div>
+      <svg><rect fill="url(http://evil.example.com/p.svg#g)"></rect><rect fill="url(#g)"></rect></svg>`);
     expect(markup.slice(markup.indexOf("<div data-wirely-frame"))).not.toContain("evil.example.com");
-    expect(css).toContain('input[value^=a]{background: none }@wirely-dropped "https://evil.example.com/x.css";');
+    expect(css).toContain('input[value^=a]{background: none }@wirely-dropped "http://evil.example.com/x.css";');
     // Position stays: the frame contains fixed content and clips it.
     expect(markup).toContain('style="position:fixed;inset:0;z-index:99999;background: none"');
     expect(markup).toContain('<rect fill="none"></rect><rect fill="url(&quot;#g&quot;)"></rect>');
@@ -116,7 +116,7 @@ describe("buildInertPage", () => {
 
   it("puts the page's html and body attributes on its wrappers, without handlers", () => {
     const { markup } = render(
-      '<html class="dark" lang="en" onclick="alert(1)"><body class="bg-black" style="color:white" onload="alert(1)" background="https://evil.example.com/x.png"><p>x</p></body></html>',
+      '<html class="dark" lang="en" onclick="alert(1)"><body class="bg-black" style="color:white" onload="alert(1)" background="http://evil.example.com/x.png"><p>x</p></body></html>',
     );
     expect(markup).toContain('<div data-wirely-frame=""><div class="dark" lang="en" data-wirely-html="">');
     expect(markup).toContain('<div class="bg-black" style="color:white" data-wirely-body=""><p>x</p></div>');

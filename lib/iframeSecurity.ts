@@ -6,7 +6,6 @@ const ALLOWED_EXTERNAL_SCRIPT_PATTERNS = [
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:@4(?:\.\d+(?:\.\d+)?)?)?(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
   /^https:\/\/cdn\.jsdelivr\.net\/npm\/chart\.js(?:\/dist\/chart\.umd(?:\.min)?\.js)?(?:[?#].*)?$/i,
 ] as const;
-const ALLOWED_IMAGE_HOSTS = ["images.unsplash.com", "plus.unsplash.com"] as const;
 
 /**
  * Paper Shaders, the one ES module a page may import from an inline
@@ -30,7 +29,7 @@ const buildIframeCsp = (appOrigin: string | null, scriptUrls: string[]) => [
   "default-src 'none'",
   `script-src 'unsafe-inline' ${[...new Set([...scriptUrls, PAPER_SHADERS_MODULE_URL])].join(" ")}`,
   "style-src https://cdn.jsdelivr.net 'unsafe-inline'",
-  `img-src ${ALLOWED_IMAGE_HOSTS.map((host) => `https://${host}`).join(" ")}${appOrigin ? ` ${appOrigin}` : ""} data: blob:`,
+  `img-src https:${appOrigin ? ` ${appOrigin}` : ""} data: blob:`,
   "font-src https: data:",
   "connect-src 'none'",
   "frame-src 'none'",
@@ -120,16 +119,28 @@ const sanitizeUnsafeNavigation = (value: string) =>
 const parseAttributeValue = (value: string) =>
   value.replace(/^['"]|['"]$/g, "").trim();
 
-/** True for an image a page may load: the allowlisted hosts, a project asset, or a data or blob URL. */
+/**
+ * True for an image a page may load: any absolute https URL off the editor's
+ * host, a project asset, or a data or blob URL.
+ *
+ * Idle pages render in the editor's own document, so an image there is a GET
+ * from the editor with the user's cookies. A URL on the editor's host could hit
+ * an API route that way, so only the asset path may point at it. URLs with
+ * credentials are refused, since `https://trusted@other/` reads as one host and
+ * loads from another.
+ */
 export const isAllowedImageUrl = (value: string) => {
   if (!value) return false;
   if (value.startsWith("data:") || value.startsWith("blob:")) return true;
   if (ASSET_PATH_PATTERN.test(value)) return true;
   try {
     const parsed = new URL(value);
+    const appOrigin = readAppOrigin();
     return (
       parsed.protocol === "https:" &&
-      ALLOWED_IMAGE_HOSTS.includes(parsed.hostname.toLowerCase() as (typeof ALLOWED_IMAGE_HOSTS)[number])
+      !parsed.username &&
+      !parsed.password &&
+      (!appOrigin || parsed.hostname.toLowerCase() !== new URL(appOrigin).hostname.toLowerCase())
     );
   } catch {
     return false;

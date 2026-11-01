@@ -35,7 +35,7 @@ interface PagesPanelProps {
  * The editor's left column: one tree of every page on the canvas with each
  * page's layers nested under it, and the account menu. Clicking a page pans
  * the canvas to it at the current zoom; dragging it onto a group moves it in or
- * out. The focused page opens by default. Collapsed, the column shrinks to
+ * out. A page's layers open while an element on it is picked. Collapsed, the column shrinks to
  * its project header, floating over the canvas corner.
  */
 export default function PagesPanel({
@@ -56,17 +56,23 @@ export default function PagesPanel({
         movePageToGroup: state.movePageToGroup,
       })),
     );
-  // Pages the user opened or closed. The rest are open only while focused.
+  // Pages the user opened or closed with the chevron. The rest are open only
+  // while an element on them is picked.
   const [openByPageId, setOpenByPageId] = useState<Record<string, boolean>>({});
-  const isPageOpen = (pageId: string) => openByPageId[pageId] ?? pageId === focusedPageId;
-  // An element picked on the canvas reopens its page, once per pick.
-  const [revealedNodeId, setRevealedNodeId] = useState<string | null>(null);
-  if (selectedNode && selectedNode.nodeId !== revealedNodeId) {
-    setRevealedNodeId(selectedNode.nodeId);
-    if (openByPageId[selectedNode.pageId] === false) {
-      setOpenByPageId({ ...openByPageId, [selectedNode.pageId]: true });
-    }
+  const selectedPageId = selectedNode?.pageId ?? null;
+  const isPageOpen = (pageId: string) => openByPageId[pageId] ?? pageId === selectedPageId;
+  // When the pick moves to another page or clears, the page it left and the
+  // page it reached drop their chevron choice, so picking opens the tree and
+  // deselecting closes it.
+  const [revealedPageId, setRevealedPageId] = useState<string | null>(null);
+  if (selectedPageId !== revealedPageId) {
+    setRevealedPageId(selectedPageId);
+    const next = { ...openByPageId };
+    if (revealedPageId) delete next[revealedPageId];
+    if (selectedPageId) delete next[selectedPageId];
+    setOpenByPageId(next);
   }
+  const selectedPage = pages.find((page) => page.id === selectedPageId);
   const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
   // Rows drag with native drag and drop: drop a page on a group to move it in,
   // or on the ungrouped list to move it out. `undefined` means no drop target.
@@ -193,37 +199,45 @@ export default function PagesPanel({
         </div>
       </div>
       <nav role="tree" aria-label="Pages and layers" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
-        {pageGroups.map((group) => (
-          <div
-            key={group.id}
-            {...dropTargetProps(group.id)}
-            className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
-          >
-            <button
-              type="button"
-              onClick={() => focusPages(group.pageIds)}
-              data-tip={group.name}
-              data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
-              className="flex h-7 w-full items-center gap-1.5 pl-2 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+        {/* While an element is picked, the list narrows to its page so its layers
+            have the room. Deselecting brings every page and group back. */}
+        {selectedPage ? (
+          renderPage(selectedPage, 0)
+        ) : (
+          <>
+          {pageGroups.map((group) => (
+            <div
+              key={group.id}
+              {...dropTargetProps(group.id)}
+              className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
             >
-              <span className="w-4 shrink-0" />
-              <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{group.name}</span>
-              <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                {group.pageIds.length}
-              </span>
-            </button>
-            {pages
-              .filter((page) => group.pageIds.includes(page.id))
-              .map((page) => renderPage(page, 1))}
+              <button
+                type="button"
+                onClick={() => focusPages(group.pageIds)}
+                data-tip={group.name}
+                data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
+                className="flex h-7 w-full items-center gap-1.5 pl-2 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+              >
+                <span className="w-4 shrink-0" />
+                <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{group.name}</span>
+                <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+                  {group.pageIds.length}
+                </span>
+              </button>
+              {pages
+                .filter((page) => group.pageIds.includes(page.id))
+                .map((page) => renderPage(page, 1))}
+            </div>
+          ))}
+          <div
+            {...dropTargetProps(null)}
+            className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
+          >
+            {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, 0))}
           </div>
-        ))}
-        <div
-          {...dropTargetProps(null)}
-          className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
-        >
-          {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, 0))}
-        </div>
+          </>
+        )}
       </nav>
       <AssetsFolder projectId={projectId} />
       {footer}

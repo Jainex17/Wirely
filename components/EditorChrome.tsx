@@ -6,7 +6,16 @@
  */
 
 import { useClerk } from "@clerk/nextjs";
-import { ChevronDown, ChevronUp, Contrast, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Contrast,
+  type LucideIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import UserAccountMenu, { type UserAccountMenuUser } from "@/components/UserAccountMenu";
@@ -175,14 +184,17 @@ export function PanelToggle({
   );
 }
 
-/** The right panel's header: its tabs, then whatever goes at the end, usually the panel toggle. */
+/**
+ * The right panel's header: its tabs, then whatever goes at the end, usually the panel toggle.
+ * Only the active tab shows its label. The others show their icon, with the label in the tooltip.
+ */
 export function SidePanelTabs<Tab extends string>({
   tabs,
   active,
   onChange,
   end,
 }: {
-  tabs: ReadonlyArray<{ id: Tab; label: string; detail: string }>;
+  tabs: ReadonlyArray<{ id: Tab; label: string; detail: string; icon: LucideIcon }>;
   active: Tab;
   onChange: (tab: Tab) => void;
   end?: ReactNode;
@@ -190,25 +202,42 @@ export function SidePanelTabs<Tab extends string>({
   return (
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border px-2">
       <div role="tablist" className="flex items-center gap-0.5">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={active === tab.id}
-            data-tip={tab.label}
-            data-tip-detail={tab.detail}
-            onClick={() => onChange(tab.id)}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-[13px]",
-              active === tab.id
-                ? "bg-foreground/10 font-semibold text-foreground"
-                : "font-medium text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const isActive = active === tab.id;
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-label={tab.label}
+              data-tip={tab.label}
+              data-tip-detail={tab.detail}
+              onClick={() => onChange(tab.id)}
+              className={cn(
+                "flex h-7 items-center rounded-md px-1.5 text-[13px] font-semibold transition-colors duration-200",
+                isActive
+                  ? "bg-foreground/10 text-foreground"
+                  : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {/* The label stays mounted and its grid column transitions between
+                  zero and its own width, so a switch closes one label and opens
+                  the other over 200ms. Nothing animates between switches. */}
+              <span
+                aria-hidden
+                className={cn(
+                  "grid transition-[grid-template-columns,opacity,margin] duration-200 ease-out motion-reduce:transition-none",
+                  isActive ? "ml-1.5 grid-cols-[1fr] opacity-100" : "ml-0 grid-cols-[0fr] opacity-0",
+                )}
+              >
+                <span className="overflow-hidden whitespace-nowrap pr-1">{tab.label}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
       {end}
     </div>

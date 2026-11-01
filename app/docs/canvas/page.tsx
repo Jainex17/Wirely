@@ -46,7 +46,7 @@ export default function CanvasDocsPage() {
           Open a page in the pages panel to see its layers. You can hide, nest, duplicate, and
           delete them there.
         </li>
-        <li>The frame, rectangle, and text tools add new elements. Cmd+Z undoes any change.</li>
+        <li>The frame, square, circle, and text tools add new elements. Cmd+Z undoes any change.</li>
         <li>The pen tool draws on any page and edits shapes on vector pages.</li>
         <li>A page&apos;s history lists earlier versions you can go back to.</li>
       </ul>

@@ -12,7 +12,7 @@ describe("applyInertPreview", () => {
       {
         text: "Hello",
         color: "#ff0000",
-        style: { "background-image": "url(https://evil.example.com/x.png)" } as never,
+        style: { "background-image": "url(http://evil.example.com/x.png)" } as never,
       },
       desktop,
     );

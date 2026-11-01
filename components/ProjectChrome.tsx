@@ -10,7 +10,7 @@
 import { ArrowLeft, Play } from "lucide-react";
 import Link from "next/link";
 import { createContext, type ReactNode, use } from "react";
-import DesignTokensDialog from "@/components/DesignTokensDialog";
+import ImportDialog from "@/components/ImportDialog";
 import ShareProjectButton from "@/components/ShareProjectButton";
 
 export const ProjectChromeContext = createContext<{
@@ -60,11 +60,12 @@ export function FloatingProjectHeader({ end }: { end: ReactNode }) {
   );
 }
 
-/** Play, Tokens, and Share. Share is the one filled button, as in Figma. */
+/** Import, Play, and Share. Share is the one filled button, as in Figma. */
 export function ProjectActions() {
   const { projectId } = useProjectChrome();
   return (
     <div className="flex items-center gap-1">
+      <ImportDialog projectId={projectId} />
       <Link
         href={`/wire/${projectId}/prototype`}
         aria-label="Play"
@@ -74,7 +75,6 @@ export function ProjectActions() {
       >
         <Play className="h-4 w-4" />
       </Link>
-      <DesignTokensDialog projectId={projectId} />
       <ShareProjectButton projectId={projectId} />
     </div>
   );

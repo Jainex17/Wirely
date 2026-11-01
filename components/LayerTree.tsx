@@ -38,9 +38,6 @@ const KIND_ICONS: Record<LayerKind, typeof Square> = {
   other: Square,
 };
 
-// Deeper levels open as the user picks into them, so a long page starts short.
-const INITIALLY_OPEN_DEPTH = 2;
-
 /**
  * One page's elements as a tree, like Figma's layers list, rendered under the
  * page's row in the pages panel. Click a row to pick the element, drag it to
@@ -64,7 +61,8 @@ export default function LayerTree({
 }) {
   const selectedNode = useEditorStore((state) => state.selectedNode);
   const layers = useMemo(() => (html ? buildLayerTree(html) : []), [html]);
-  // Rows the user opened or closed. The rest follow INITIALLY_OPEN_DEPTH.
+  // Rows that are open. Every other row is closed, so the tree shows only the
+  // top-level layers until something is picked or the user opens a row.
   const [openById, setOpenById] = useState<Record<string, boolean>>({});
   const [drop, setDrop] = useState<{ id: string; position: InsertPosition } | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -72,35 +70,34 @@ export default function LayerTree({
 
   const selectedId = selectedNode && selectedNode.pageId === pageId ? selectedNode.nodeId : null;
 
-  // A newly picked element opens the rows above it, once, so the user can
-  // still collapse them after. Adjusted during render, not in an effect.
+  // A newly picked element opens its own row and the rows above it, and
+  // closes every other row, so the tree shows only the path to the pick. The
+  // user can still open or close rows after. Adjusted during render, not in
+  // an effect.
   const [revealedId, setRevealedId] = useState<string | null>(null);
   if (selectedId && selectedId !== revealedId) {
     setRevealedId(selectedId);
-    const ancestors: string[] = [];
+    const path = [selectedId];
     for (let parent = findLayerParent(layers, selectedId); parent; parent = findLayerParent(layers, parent)) {
-      ancestors.push(parent);
+      path.push(parent);
     }
-    if (ancestors.some((id) => openById[id] !== true)) {
-      setOpenById({ ...openById, ...Object.fromEntries(ancestors.map((id) => [id, true])) });
-    }
+    setOpenById(Object.fromEntries(path.map((id) => [id, true])));
   }
 
   useEffect(() => {
     if (selectedId) rowRefs.current.get(selectedId)?.scrollIntoView({ block: "nearest" });
   }, [selectedId, openById]);
 
-  const isOpen = (layer: Layer, depth: number) =>
-    openById[layer.id] ?? depth < INITIALLY_OPEN_DEPTH;
+  const isOpen = (layer: Layer) => openById[layer.id] === true;
 
-  const toggle = (layer: Layer, depth: number) =>
-    setOpenById((current) => ({ ...current, [layer.id]: !isOpen(layer, depth) }));
+  const toggle = (layer: Layer) =>
+    setOpenById((current) => ({ ...current, [layer.id]: !isOpen(layer) }));
 
   const rows: Array<{ layer: Layer; depth: number }> = [];
   const collect = (list: Layer[], depth: number) => {
     for (const layer of list) {
       rows.push({ layer, depth });
-      if (layer.children.length > 0 && isOpen(layer, depth)) collect(layer.children, depth + 1);
+      if (layer.children.length > 0 && isOpen(layer)) collect(layer.children, depth + 1);
     }
   };
   collect(layers, 0);
@@ -144,7 +141,7 @@ export default function LayerTree({
             }}
             role="treeitem"
             aria-selected={isSelected}
-            aria-expanded={layer.children.length > 0 ? isOpen(layer, depth) : undefined}
+            aria-expanded={layer.children.length > 0 ? isOpen(layer) : undefined}
             draggable
             onDragStart={(event) => {
               event.dataTransfer.setData(dragType, layer.id);
@@ -205,15 +202,15 @@ export default function LayerTree({
             {layer.children.length > 0 ? (
               <button
                 type="button"
-                aria-label={isOpen(layer, depth) ? "Collapse" : "Expand"}
+                aria-label={isOpen(layer) ? "Collapse" : "Expand"}
                 onClick={(event) => {
                   event.stopPropagation();
-                  toggle(layer, depth);
+                  toggle(layer);
                 }}
                 className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
               >
                 <ChevronRight
-                  className={cn("h-3 w-3 transition-transform", isOpen(layer, depth) && "rotate-90")}
+                  className={cn("h-3 w-3 transition-transform", isOpen(layer) && "rotate-90")}
                 />
               </button>
             ) : (

@@ -80,7 +80,7 @@ export default function ProjectThumbnail({ projectId }: { projectId: string }) {
   return (
     <div
       ref={containerRef}
-      className="relative aspect-[16/10] overflow-hidden rounded-lg bg-[#1a1c22]"
+      className="relative aspect-[16/10] overflow-hidden rounded-lg bg-background"
     >
       <div className="canvas-dots pointer-events-none absolute inset-0" />
       {(state.status === "ready" && frames.length === 0) || state.status === "failed" ? (

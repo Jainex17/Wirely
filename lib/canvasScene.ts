@@ -60,7 +60,7 @@ export type PageRenderMode = "live" | "inert";
 export type CanvasTool = "select" | "grab" | "element" | "pen" | "comment" | InsertKind;
 
 export const isInsertTool = (tool: CanvasTool): tool is InsertKind =>
-  tool === "frame" || tool === "text" || tool === "rectangle";
+  tool === "frame" || tool === "text" || tool === "square" || tool === "circle";
 
 export type PageFrameDevice = "desktop" | "tablet" | "mobile";
 
@@ -379,36 +379,6 @@ export const clipToFirstScreen = (bounds: PageBounds, screenHeight: number) =>
     width: bounds.width,
     height: Math.min(bounds.height, screenHeight),
   });
-
-export type PageArrangement = "row" | "grid";
-
-/**
- * Lines pages up in reading order, tops aligned: one row, or a near-square grid
- * whose rows sit one tallest-page-plus-gap apart so tall pages never overlap.
- */
-export const arrangePagePositions = (
-  pages: Array<{ id: string; x: number; y: number; width: number; height: number }>,
-  arrangement: PageArrangement,
-): Record<string, ScenePoint> => {
-  const ordered = [...pages].sort((a, b) =>
-    arrangement === "row" ? a.x - b.x : a.y - b.y || a.x - b.x,
-  );
-  const columns =
-    arrangement === "row" ? ordered.length : Math.ceil(Math.sqrt(ordered.length));
-  const originX = Math.min(...ordered.map((page) => page.x));
-  const positions: Record<string, ScenePoint> = {};
-  let y = 0;
-  for (let start = 0; start < ordered.length; start += columns) {
-    const rowPages = ordered.slice(start, start + columns);
-    let x = originX;
-    for (const page of rowPages) {
-      positions[page.id] = { x, y };
-      x += page.width + PAGE_GAP;
-    }
-    y += Math.max(...rowPages.map((page) => page.height)) + PAGE_GAP;
-  }
-  return positions;
-};
 
 export const zoomAtViewportPoint = ({
   camera,

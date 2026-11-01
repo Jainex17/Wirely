@@ -7,7 +7,8 @@ describe("route loading files", () => {
     expect(source.includes("export default function WireLoading")).toBe(true);
     // A static skeleton of the editor chrome, so the swap to the real editor
     // does not flash. It carries no pulse, which would repaint the whole screen.
-    expect(source.includes("editor-theme")).toBe(true);
+    expect(source.includes("bg-background")).toBe(true);
+    expect(source.includes("animate-pulse")).toBe(false);
   });
 
   it("includes settings loading boundary", () => {

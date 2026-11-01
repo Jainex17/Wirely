@@ -12,13 +12,12 @@
  * redirects and subresources, is checked against the same private address
  * rules as `lib/urlContext.ts`.
  */
-import { lookup } from "node:dns/promises";
-
 import type { HTTPRequest } from "puppeteer-core";
 
 import { getPageFrameSize } from "@/lib/canvasScene";
 import { forgetBrowser, getBrowser, isBrowserGone } from "@/lib/mcp/screenshot";
-import { isBlockedIpAddress, isBlockedUrlHost } from "@/lib/urlContext";
+import { createHostGuard } from "@/lib/mcp/hostGuard";
+import { isBlockedUrlHost } from "@/lib/urlContext";
 
 /** A failure the agent can act on, such as a blocked or unreachable URL. */
 export class ImportUrlError extends Error {}
@@ -39,24 +38,6 @@ const parseImportUrl = (rawUrl: string) => {
     // Falls through to null.
   }
   return null;
-};
-
-/** Resolves each host once per import and refuses any that points into a private range. */
-const createHostGuard = () => {
-  const verdicts = new Map<string, Promise<boolean>>();
-  return (hostname: string) => {
-    let verdict = verdicts.get(hostname);
-    if (!verdict) {
-      verdict = isBlockedUrlHost(hostname)
-        ? Promise.resolve(false)
-        : lookup(hostname, { all: true, verbatim: true }).then(
-            (entries) => entries.length > 0 && !entries.some((entry) => isBlockedIpAddress(entry.address)),
-            () => false,
-          );
-      verdicts.set(hostname, verdict);
-    }
-    return verdict;
-  };
 };
 
 /**
@@ -211,13 +192,16 @@ export const serializePage = (
     );
 
   for (const image of Array.from(document.images)) {
-    const data = images[image.currentSrc || image.src];
+    const src = image.currentSrc || image.src;
+    const data = images[src];
     image.removeAttribute("srcset");
     image.removeAttribute("loading");
     if (data) {
       image.src = data;
+    } else if (/^https:/i.test(src)) {
+      image.src = src;
     } else {
-      // Only Unsplash and data: images survive the sanitizer, so anything
+      // Only https and data: images survive the sanitizer, so anything
       // else becomes a sized gray box instead of a hole in the layout.
       const rect = image.getBoundingClientRect();
       image.src = grayBox(rect.width, rect.height);

@@ -289,8 +289,10 @@ export const INSERT_MARKUP = {
   frame:
     '<div data-name="Frame" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; min-height: 120px; border: 1px dashed #a1a1aa"></div>',
   text: '<p style="font-size: 16px">Text</p>',
-  rectangle:
-    '<div data-name="Rectangle" style="width: 160px; height: 120px; background-color: #d4d4d8; border-radius: 8px"></div>',
+  square:
+    '<div data-name="Square" style="width: 120px; height: 120px; flex-shrink: 0; background-color: #d4d4d8"></div>',
+  circle:
+    '<div data-name="Circle" style="width: 120px; height: 120px; flex-shrink: 0; background-color: #d4d4d8; border-radius: 9999px"></div>',
 } as const;
 
 export type InsertKind = keyof typeof INSERT_MARKUP;

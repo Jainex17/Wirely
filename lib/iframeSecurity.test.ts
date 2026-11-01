@@ -26,7 +26,7 @@ describe("sanitizeIframeHtml", () => {
     expect(sanitized).toContain("new Chart(");
     expect(sanitized).toContain("Content-Security-Policy");
     expect(sanitized).toContain("connect-src 'none'");
-    expect(sanitized).toContain("img-src https://images.unsplash.com https://plus.unsplash.com data: blob:");
+    expect(sanitized).toContain("img-src https: data: blob:");
   });
 
   it("allows scripts by exact URL, not every package on the CDN", () => {
@@ -112,14 +112,31 @@ describe("sanitizeIframeHtml", () => {
     }
   });
 
-  it("removes image tags from disallowed hosts", () => {
+  it("keeps https images from any host and drops the rest", () => {
     const html = `
       <img src="https://images.unsplash.com/photo-1" alt="ok" />
-      <img src="https://evil.example.com/tracker.png" alt="bad" />
+      <img src="https://cdn.example.com/logo.png" alt="ok" />
+      <img src="http://plain.example.com/x.png" alt="bad" />
+      <img src="https://images.unsplash.com@evil.example.com/x.png" alt="bad" />
+      <img src="//relative.example.com/x.png" alt="bad" />
     `;
 
     const sanitized = sanitizeIframeHtml(html);
-    expect(sanitized).toContain("images.unsplash.com");
+    expect(sanitized).toContain("images.unsplash.com/photo-1");
+    expect(sanitized).toContain("cdn.example.com/logo.png");
+    expect(sanitized).not.toContain("plain.example.com");
     expect(sanitized).not.toContain("evil.example.com");
+    expect(sanitized).not.toContain("relative.example.com");
+  });
+
+  it("drops images on the editor's own host other than project assets", () => {
+    const globals = globalThis as { location?: { origin: string } };
+    globals.location = { origin: "https://wirely.site" };
+    try {
+      const sanitized = sanitizeIframeHtml('<img src="https://wirely.site/api/projects" alt="bad">');
+      expect(sanitized).not.toContain("wirely.site/api/projects");
+    } finally {
+      delete globals.location;
+    }
   });
 });

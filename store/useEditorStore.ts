@@ -32,8 +32,6 @@ import {
   resolvePageFrameDevice,
   scaleFromZoom,
   stepZoom as getSteppedZoom,
-  arrangePagePositions,
-  type PageArrangement,
   unionBounds,
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
@@ -135,8 +133,6 @@ export interface EditorState extends CanvasState, ProjectState {
   endSaving: () => void;
   setPagePosition: (pageId: string, position: Point2D) => void;
   setPagePositions: (positions: PagePositionMap) => void;
-  /** Groups the pages, pulling them out of any group they were in. Returns the new group id. */
-  groupPages: (pageIds: string[]) => string | null;
   ungroupPages: (groupId: string) => void;
   renamePageGroup: (groupId: string, name: string) => void;
   /** Moves a page into a group, or out of every group when `groupId` is null. */
@@ -156,7 +152,6 @@ export interface EditorState extends CanvasState, ProjectState {
   focusPages: (pageIds: string[]) => void;
   fitAllPages: () => void;
   fitPage: (pageId: string) => void;
-  arrangePages: (arrangement: PageArrangement) => void;
   requestGeneratedPageFocusCheck: (pageIds: string[] | null) => void;
   clearRequestedGeneratedPageFocusCheck: () => void;
   setSelectedSection: (id: string | null) => void;
@@ -495,28 +490,6 @@ export const useEditorStore = create<EditorState>()(
         })),
       setPagePositions: (positions) =>
         set((state) => ({ pagePositions: { ...state.pagePositions, ...positions } })),
-      groupPages: (pageIds) => {
-        const state = useEditorStore.getState();
-        const memberIds = state.pages.map((page) => page.id).filter((id) => pageIds.includes(id));
-        if (memberIds.length === 0) return null;
-
-        const names = new Set(state.pageGroups.map((group) => group.name));
-        let number = state.pageGroups.length + 1;
-        while (names.has(`Group ${number}`)) number += 1;
-        const id = createPageId();
-        set({
-          pageGroups: [
-            ...state.pageGroups
-              .map((group) => ({
-                ...group,
-                pageIds: group.pageIds.filter((pageId) => !memberIds.includes(pageId)),
-              }))
-              .filter((group) => group.pageIds.length > 0),
-            { id, name: `Group ${number}`, pageIds: memberIds },
-          ],
-        });
-        return id;
-      },
       ungroupPages: (groupId) =>
         set((state) => ({
           pageGroups: state.pageGroups.filter((group) => group.id !== groupId),
@@ -728,22 +701,6 @@ export const useEditorStore = create<EditorState>()(
             focusedPageId: pageId,
           };
         }),
-      arrangePages: (arrangement) =>
-        set((state) => ({
-          pagePositions: {
-            ...state.pagePositions,
-            ...arrangePagePositions(
-              getPageBoundsCollection(state).map((bounds) => ({
-                id: bounds.pageId,
-                x: bounds.left,
-                y: bounds.top,
-                width: bounds.width,
-                height: bounds.height,
-              })),
-              arrangement,
-            ),
-          },
-        })),
       requestGeneratedPageFocusCheck: (pageIds) =>
         set({
           requestedGeneratedPageFocusIds:

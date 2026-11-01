@@ -43,6 +43,9 @@ export const MCP_INSTRUCTIONS = [
     "user asks for a new one, and name it after the product or codebase so a later chat can " +
     "find it. Give the user the editor URL of the project you used, from list_projects or " +
     "create_project.",
+  "Before writing pages to a project, call get_memory once and follow its project context and " +
+    "rules. They are the user's standing instructions for that project. When the user asks you " +
+    "to remember a preference for the project, save it with set_memory addRules.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -212,7 +215,7 @@ const htmlDescription =
   "</script> in <head>. The page is a static design mock and is sanitized before " +
   "storage: <button>, <form>, <input>, <select>, and <textarea> are removed together " +
   "with their contents, so draw CTAs as styled <a href=\"#\"> or <div role=\"button\"> " +
-  "elements instead, and keep <img> sources on Unsplash hosts or project images from " +
+  "elements instead, and give <img> sources as absolute https URLs or project images from " +
   "add_asset and list_assets. Allowlisted CDN " +
   "scripts (the Tailwind browser build, Tailwind Plus elements, Chart.js) are kept, and an " +
   "inline module may import Paper Shaders; " +
@@ -496,6 +499,47 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       properties: {
         projectId: { ...PROJECT_ID, description: "Only this project. Omit for the latest anywhere." },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_memory",
+    description:
+      "Return the project's memory: what the product is, the style rules the user wants every " +
+      "design to follow, and its design tokens. Call it once before writing pages to a project.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: PROJECT_ID },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_memory",
+    description:
+      "Change the project's memory. Send context to replace the project context, rules to " +
+      "replace every rule, or addRules to append rules. Fields you leave out stay as they are. " +
+      "Use it only when the user asks you to remember something for this project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        context: {
+          type: "string",
+          description: "What the product is, who uses it, and how it should feel. At most 4000 characters.",
+        },
+        rules: {
+          type: "array",
+          items: { type: "string" },
+          description: "The full rule list, replacing the current one. An empty list removes every rule.",
+        },
+        addRules: {
+          type: "array",
+          items: { type: "string" },
+          description: "Rules to add after the current ones. Each at most 500 characters.",
+        },
+      },
+      required: ["projectId"],
       additionalProperties: false,
     },
   },

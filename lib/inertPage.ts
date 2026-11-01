@@ -1,7 +1,7 @@
 /**
  * Turns a page's HTML into inert DOM for a canvas frame: elements and text
- * with no scripts, handlers, forms, frames, or fetches outside the image
- * allowlist, styled by its sanitized CSS. The canvas mounts the result in a
+ * with no scripts, handlers, forms, frames, or fetches other than https images,
+ * styled by its sanitized CSS. The canvas mounts the result in a
  * shadow root inside the editor's document instead of a sandboxed iframe, so
  * this function is the trust boundary for every idle page on the canvas.
  *

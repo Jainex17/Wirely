@@ -7,7 +7,7 @@
  * The CSS is tokenized the way a browser tokenizes it (CSS Syntax 3), escapes
  * included, so `u\72l(` reads as `url(` here too. Then every token that could
  * fetch is rewritten wherever it appears, in any rule or declaration:
- * - `url()` stays only for an allowlisted image or a `#fragment`, re-emitted
+ * - `url()` stays only for an https image or a `#fragment`, re-emitted
  *   from the decoded value so the browser reads exactly what was checked.
  * - `image-set()`, `image()`, `src()`, `cross-fade()`, `element()`, and
  *   `expression()` become `none`, since some take a bare string as a URL.
@@ -272,7 +272,7 @@ const tokenize = (input: string) => {
   return tokens;
 };
 
-/** A URL a CSS rule may load in an inert frame: an allowlisted image, or a reference into the page. */
+/** A URL a CSS rule may load in an inert frame: an https image, or a reference into the page. */
 export const isInertImageUrl = (value: string) => {
   const url = value.trim();
   if (/^data:/i.test(url)) return /^data:image\//i.test(url);
