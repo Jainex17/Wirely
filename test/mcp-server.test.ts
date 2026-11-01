@@ -123,6 +123,7 @@ describe("tool catalog", () => {
       "delete_page",
       "edit_element",
       "get_design_tokens",
+      "get_memory",
       "get_page",
       "get_page_changes",
       "get_page_outline",
@@ -138,6 +139,7 @@ describe("tool catalog", () => {
       "patch_page",
       "resolve_comment",
       "set_design_tokens",
+      "set_memory",
       "set_prototype_flow",
       "update_page",
     ]);

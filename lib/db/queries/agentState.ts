@@ -3,12 +3,14 @@ import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import {
   projectAgentState,
+  projectMemory,
   projectPageAgentBaselines,
   projectPages,
   projects,
 } from "@/lib/db/schema";
 import { applyDesignTokens, type DesignTokens } from "@/lib/designTokens";
 import { logger } from "@/lib/logger";
+import type { ProjectMemory } from "@/lib/projectMemory";
 
 /** The project's tokens, or null when it has none. Callers check ownership. */
 export const getDesignTokens = async (projectId: string): Promise<DesignTokens | null> => {
@@ -56,7 +58,31 @@ export const setDesignTokens = async (projectId: string, tokens: DesignTokens) =
   return changed;
 };
 
-/** Remembers the page and element the user picked. Callers check ownership. */
+/** The project's context and rules, empty when it has none. Callers check ownership. */
+export const getProjectMemory = async (projectId: string): Promise<ProjectMemory> => {
+  try {
+    const [row] = await getDb()
+      .select({ context: projectMemory.context, rules: projectMemory.rules })
+      .from(projectMemory)
+      .where(eq(projectMemory.projectId, projectId))
+      .limit(1);
+    return row ?? { context: "", rules: [] };
+  } catch (error) {
+    // Before the migration runs, no project has memory.
+    if (isMissingRelationError(error)) return { context: "", rules: [] };
+    throw error;
+  }
+};
+
+/** Replaces the project's context and rules. Callers check ownership. */
+export const setProjectMemory = async (projectId: string, memory: ProjectMemory) => {
+  const values = { context: memory.context, rules: memory.rules, updatedAt: new Date() };
+  await getDb()
+    .insert(projectMemory)
+    .values({ projectId, ...values })
+    .onConflictDoUpdate({ target: projectMemory.projectId, set: values });
+};
+
 /**
  * Remembers the user's pick. An HTML project's is a page and maybe an element
  * in it; a design project's is the ids of its selected layers, comma joined,

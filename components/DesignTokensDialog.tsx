@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,13 +14,22 @@ import { toast } from "@/components/ui/sonner";
 import { type DesignTokens, formatTokenLines, parseTokenLines } from "@/lib/designTokens";
 
 /**
- * Shows and edits the project's design tokens. An agent usually sets them
- * over MCP from the user's codebase; this is where the user sees them and can
- * change or clear them. Saving rewrites every page, which the editor's page
- * poll then picks up.
+ * Edits the project's design tokens, opened from the Memory tab. An agent
+ * usually sets them over MCP from the user's codebase; this is where the user
+ * can change or clear them. Saving rewrites every page, which the editor's
+ * page poll then picks up.
  */
-export default function DesignTokensDialog({ projectId }: { projectId: string }) {
-  const [open, setOpen] = React.useState(false);
+export default function DesignTokensDialog({
+  projectId,
+  open,
+  onOpenChange: setOpen,
+  onSaved,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: (tokens: DesignTokens) => void;
+}) {
   const [text, setText] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -61,6 +69,7 @@ export default function DesignTokensDialog({ projectId }: { projectId: string })
       toast.success(
         Object.keys(tokens).length > 0 ? "Tokens saved to every page." : "Tokens removed.",
       );
+      onSaved(tokens);
       setOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save design tokens.");
@@ -70,67 +79,55 @@ export default function DesignTokensDialog({ projectId }: { projectId: string })
   };
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Design tokens"
-        data-tip="Design tokens"
-        data-tip-detail="CSS variables written into every page"
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
-        onClick={() => setOpen(true)}
-      >
-        <Palette className="h-4 w-4" />
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Design tokens</DialogTitle>
-            <DialogDescription>
-              CSS variables written into every page, one per line. Pages use them as
-              var(--name). Your agent can set these from your codebase.
-            </DialogDescription>
-          </DialogHeader>
-          <textarea
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            disabled={isLoading}
-            spellCheck={false}
-            placeholder={"--color-primary: #4f46e5;\n--radius-md: 8px;\n--font-sans: Inter, sans-serif;"}
-            className="h-64 w-full resize-none rounded-md border border-input bg-background p-3 font-mono text-xs"
-          />
-          {parsed.ok ? (
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(parsed.tokens)
-                .filter(([, value]) => CSS.supports("color", value))
-                .map(([name, value]) => (
-                  <span
-                    key={name}
-                    title={`${name}: ${value}`}
-                    className="h-5 w-5 rounded border border-border"
-                    style={{ background: value }}
-                  />
-                ))}
-            </div>
-          ) : (
-            <p className="text-xs text-destructive">{parsed.error}</p>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={isSaving || isLoading}
-              onClick={() => void save({})}
-            >
-              Remove all
-            </Button>
-            <Button
-              disabled={!parsed.ok || isSaving || isLoading}
-              onClick={() => parsed.ok && void save(parsed.tokens)}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Design tokens</DialogTitle>
+          <DialogDescription>
+            CSS variables written into every page, one per line. Pages use them as
+            var(--name). Your agent can set these from your codebase.
+          </DialogDescription>
+        </DialogHeader>
+        <textarea
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          disabled={isLoading}
+          spellCheck={false}
+          placeholder={"--color-primary: #4f46e5;\n--radius-md: 8px;\n--font-sans: Inter, sans-serif;"}
+          className="h-64 w-full resize-none rounded-md border border-input bg-background p-3 font-mono text-xs"
+        />
+        {parsed.ok ? (
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(parsed.tokens)
+              .filter(([, value]) => CSS.supports("color", value))
+              .map(([name, value]) => (
+                <span
+                  key={name}
+                  title={`${name}: ${value}`}
+                  className="h-5 w-5 rounded border border-border"
+                  style={{ background: value }}
+                />
+              ))}
+          </div>
+        ) : (
+          <p className="text-xs text-destructive">{parsed.error}</p>
+        )}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            disabled={isSaving || isLoading}
+            onClick={() => void save({})}
+          >
+            Remove all
+          </Button>
+          <Button
+            disabled={!parsed.ok || isSaving || isLoading}
+            onClick={() => parsed.ok && void save(parsed.tokens)}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

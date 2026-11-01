@@ -28,7 +28,9 @@ import {
   getAgentBaseline,
   getCanvasSelection,
   getDesignTokens,
+  getProjectMemory,
   setAgentBaseline,
+  setProjectMemory,
   setDesignTokens,
 } from "@/lib/db/queries/agentState";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
@@ -43,9 +45,10 @@ import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
 import { buildCaptureCommand, createCapturePath } from "@/lib/mcp/capture";
-import { ImportUrlError, importUrlHtml } from "@/lib/mcp/importUrl";
+import { importUrlAsPage } from "@/lib/mcp/importUrlPage";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { parseDesignTokens } from "@/lib/designTokens";
+import { formatMemoryForAgent, mergeMemoryUpdate } from "@/lib/projectMemory";
 import { buildNodeLink, diffPageNodes, getNodeHtml } from "@/lib/pageNodes";
 import {
   buildLayerTree,
@@ -811,6 +814,39 @@ const getDesignTokensHandler: ToolHandler = async (userId, args) => {
   );
 };
 
+const getMemoryHandler: ToolHandler = async (userId, args) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const [memory, tokens] = await Promise.all([getProjectMemory(project.id), getDesignTokens(project.id)]);
+  return succeed(formatMemoryForAgent(project.title, memory, tokens));
+};
+
+const setMemoryHandler: ToolHandler = async (userId, args) => {
+  const parsed = z.object({ projectId: z.string().trim().min(1) }).passthrough().safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+  const { projectId, ...update } = parsed.data;
+
+  const project = await getProjectForUser(projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const merged = mergeMemoryUpdate(await getProjectMemory(project.id), update);
+  if (!merged.ok) return fail(merged.error);
+  try {
+    await setProjectMemory(project.id, merged.memory);
+  } catch (error) {
+    if (isMissingRelationError(error)) return fail("Memory is not set up on this server yet.");
+    throw error;
+  }
+  return succeed(
+    `Saved the memory for "${project.title}": ${merged.memory.context ? "a project context" : "no project context"} ` +
+      `and ${merged.memory.rules.length} rule(s). The user sees it in the editor's Memory tab.`,
+  );
+};
+
 const setDesignTokensHandler: ToolHandler = async (userId, args) => {
   const parsed = z
     .object({ projectId: z.string().trim().min(1), tokens: z.unknown() })
@@ -850,38 +886,19 @@ const importUrl: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const deviceType = parsed.data.deviceType ?? "desktop";
-  let imported: Awaited<ReturnType<typeof importUrlHtml>>;
-  try {
-    // Headroom under the cap for the CSP meta and the tokens block.
-    imported = await importUrlHtml(parsed.data.url, deviceType, PAGE_HTML_MAX_CHARS - 20_000);
-  } catch (error) {
-    if (error instanceof ImportUrlError || error instanceof ScreenshotUnavailableError) {
-      return fail(error.message);
-    }
-    throw error;
-  }
-
-  const html = sanitizeIframeHtml(imported.html);
-  if (html.length > PAGE_HTML_MAX_CHARS) {
-    return fail(
-      `The imported page is ${html.length} characters, over the ${PAGE_HTML_MAX_CHARS} limit even ` +
-        "with its artwork removed. Try a simpler page of the site.",
-    );
-  }
-
-  const page = await createProjectPageForUser({
+  const imported = await importUrlAsPage({
     projectId: project.id,
     userId,
-    title: (parsed.data.title ?? imported.title.trim()).slice(0, TITLE_MAX_CHARS) || "Imported page",
-    deviceType,
-    htmlContent: html,
+    url: parsed.data.url,
+    deviceType: parsed.data.deviceType ?? "desktop",
+    title: parsed.data.title,
   });
-  if (!page) return fail("Project not found. Use list_projects for valid ids.");
+  if (!imported.ok) return fail(imported.error);
+  const { page } = imported;
   await setAgentBaseline(page.id, page.htmlContent);
 
   return succeed(
-    `Imported ${parsed.data.url} as page "${page.title}" (id: ${page.id}, ${html.length} characters). ` +
+    `Imported ${parsed.data.url} as page "${page.title}" (id: ${page.id}, ${page.htmlContent.length} characters). ` +
       "Call get_page_png to see how it came through.",
   );
 };
@@ -1093,6 +1110,8 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   list_comments: listComments,
   resolve_comment: resolveComment,
   get_selection: getSelection,
+  get_memory: getMemoryHandler,
+  set_memory: setMemoryHandler,
   get_design_tokens: getDesignTokensHandler,
   set_design_tokens: setDesignTokensHandler,
   import_url: importUrl,

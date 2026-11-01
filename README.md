@@ -46,16 +46,22 @@ are on the [setup page](https://www.wirely.site/docs).
 - **Watch pages appear live.** Pages fill in on the canvas as your agent writes them.
 - **Compare directions.** Ask for several options and see them next to each other.
 - **Design for desktop and mobile.** Each page has its own device frame.
-- **Organize the canvas.** Group pages, pan and zoom, and change the canvas background.
+- **Import a starting point.** The Import button adds a public website or an HTML or SVG file as a
+  page. For an app on localhost, your codebase, or a Figma frame, it copies a prompt for your agent.
+- **Organize the canvas.** Pan and zoom, and change the canvas background.
 
 ### Edit and hand back
+
+- **Give agents a memory.** The Memory tab holds what the product is, the style rules every
+  design should follow, and the design tokens. Your agent reads it before it designs in the
+  project, and saves a preference there when you ask it to remember one.
 
 - **Edit like a design tool.** Pick any element to change its text, colors, size, spacing, radius,
   and shadow. Drag to reorder, drag handles to resize, and double-click text to type into it.
   Moves snap to nearby edges and centers, and holding Alt shows distances.
 - **Work with layers.** Each page in the pages panel opens into its layers for hiding, nesting,
-  duplicating, and deleting. Frame, rectangle, and text tools add new elements. Cmd+Z undoes it
-  all.
+  duplicating, and deleting. Frame, square, circle, and text tools add new elements. Cmd+Z undoes
+  it all.
 - **Send a pick to your agent.** Copy a link to one element or a whole page, and paste it into
   your agent with what to change. The agent edits only that element.
 - **Hand your edits back.** Your agent can read a page's layers, rearrange them by id, and ask

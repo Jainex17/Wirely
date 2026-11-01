@@ -6,14 +6,15 @@ import { useRouter } from "next/navigation";
 import type { Message } from "ai";
 // The screen order dialog is hidden for now. Re-enable it together with the
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
-import { X } from "lucide-react";
+import { Brain, History, MessageSquare, SlidersHorizontal, X } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
-import GetStartedCard from "@/components/GetStartedCard";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
 import WirePromptSidebar from "@/components/WirePromptSidebar";
 import CommentsPanel from "@/components/CommentsPanel";
+import ActivityPanel from "@/components/ActivityPanel";
+import MemoryPanel from "@/components/MemoryPanel";
 import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import { FloatingProjectActions, ProjectActionsBar } from "@/components/ProjectChrome";
@@ -41,8 +42,6 @@ interface WireEditorProps {
   };
   /** Server time the initial pages were read, the first change cursor. */
   pagesLoadedAt: string;
-  /** True once any of the user's agent tokens has called Wirely. */
-  hasConnectedAgent: boolean;
   initialModelName: WireModelName;
   initialMessages: Array<
     Message &
@@ -53,8 +52,15 @@ interface WireEditorProps {
 }
 
 const SIDEBAR_TABS = [
-  { id: "chat", label: "Chat", detail: "Ask a model on your key to write or change pages" },
-  { id: "design", label: "Design", detail: "Edit the picked element's text, colors, and spacing" },
+  { id: "chat", label: "Chat", detail: "Ask a model on your key to write or change pages", icon: MessageSquare },
+  {
+    id: "design",
+    label: "Design",
+    detail: "Edit the picked element's text, colors, and spacing",
+    icon: SlidersHorizontal,
+  },
+  { id: "memory", label: "Memory", detail: "Context, rules, and tokens every agent reads", icon: Brain },
+  { id: "activity", label: "Activity", detail: "Pages added and edited, and comments", icon: History },
 ] as const;
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;
@@ -72,7 +78,6 @@ export default function WireEditor({
   sessionUser,
   initialProject,
   pagesLoadedAt,
-  hasConnectedAgent,
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
@@ -82,7 +87,7 @@ export default function WireEditor({
   // on screen while its panel is hidden, so it doubles as the restore button.
   const [isPromptPanelCollapsed, setIsPromptPanelCollapsed] = useState(false);
   const [isPagesPanelCollapsed, setIsPagesPanelCollapsed] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<"chat" | "design">("chat");
+  const [sidebarTab, setSidebarTab] = useState<(typeof SIDEBAR_TABS)[number]["id"]>("chat");
   // const [isPrototypeDialogOpen, setIsPrototypeDialogOpen] = useState(false);
   const hydrateProject = useEditorStore((state) => state.hydrateProject);
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
@@ -96,12 +101,8 @@ export default function WireEditor({
   // Saving indicator hidden for now — restore with the header cloud icon.
   // const isSaving = useEditorStore((state) => state.pendingSaveCount > 0);
 
-  // Dialogs, menus, and toasts portal to <body>, outside the editor's root,
-  // so the editor palette goes on <body> too while the editor is open.
   useEffect(() => {
     warmTailwindFrame();
-    document.body.classList.add("editor-theme");
-    return () => document.body.classList.remove("editor-theme");
   }, []);
 
   useEffect(() => {
@@ -278,7 +279,6 @@ export default function WireEditor({
       onToggle={() => setIsPagesPanelCollapsed((collapsed) => !collapsed)}
       footer={
         <>
-          {hasConnectedAgent ? null : <GetStartedCard />}
           <AccountFooter user={sessionUser} />
         </>
       }
@@ -321,7 +321,7 @@ export default function WireEditor({
         </div>
       </div>
 
-      <div className="editor-theme h-full w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
+      <div className="h-full w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
         {isPagesPanelCollapsed ? null : pagesPanel}
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
@@ -401,6 +401,16 @@ export default function WireEditor({
             {sidebarTab === "design" && !isCommentMode ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <NodeInspector projectId={wireId} variant="panel" />
+              </div>
+            ) : null}
+            {sidebarTab === "memory" && !isCommentMode ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <MemoryPanel projectId={wireId} />
+              </div>
+            ) : null}
+            {sidebarTab === "activity" && !isCommentMode ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <ActivityPanel projectId={wireId} />
               </div>
             ) : null}
           </div>

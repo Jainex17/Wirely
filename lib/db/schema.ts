@@ -254,6 +254,20 @@ export const projectAgentState = pgTable("project_agent_state", {
 });
 
 /**
+ * What the product is and the style rules every agent follows, from the
+ * editor's Memory tab. Agents read it with get_memory. Its own table so the
+ * inserts into project_agent_state keep working before this migration runs.
+ */
+export const projectMemory = pgTable("project_memory", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  context: text("context").default("").notNull(),
+  rules: jsonb("rules").$type<string[]>().default([]).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * The HTML an MCP agent last wrote to a page, so get_page_changes can tell it
  * what the user changed by hand since. Its own table so page queries keep
  * working on a database that has not run this migration yet.
