@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
+import { listApiTokens } from "@/lib/auth/apiToken";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
 import { getProjectDocumentVersionForUser } from "@/lib/db/queries/projectDocuments";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
@@ -29,9 +30,10 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
   // Taken before the read so a write that races the page load is still newer
   // than the editor's first change cursor.
   const pagesLoadedAt = new Date().toISOString();
-  const [projectDetail, designVersion] = await Promise.all([
+  const [projectDetail, designVersion, agentTokens] = await Promise.all([
     getProjectDetailForUser(resolvedParams.id, sessionUser.id),
     getProjectDocumentVersionForUser(resolvedParams.id, sessionUser.id),
+    listApiTokens(sessionUser.id),
   ]);
 
   if (!projectDetail) {
@@ -100,6 +102,7 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
         sessionUser: accountUser,
         initialProject: { projectTitle, pages: initialPages },
         pagesLoadedAt,
+        hasConnectedAgent: agentTokens.some((token) => token.lastUsedAt !== null),
         initialModelName,
         initialMessages,
       }}

@@ -34,6 +34,8 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
+  "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
+    "and skip the search below.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +
     "or codebase you are working on, add the new pages to it with add_page, even when this is " +
     "a new chat. If none of the listed projects fits, call list_projects again with query set " +

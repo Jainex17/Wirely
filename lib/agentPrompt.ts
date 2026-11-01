@@ -58,3 +58,23 @@ export const buildAgentPrompt = ({
         `Reference HTML: ${shareUrl}`,
         `The link is read-only and expires on ${new Date(expiresAt).toISOString().slice(0, 10)}.`,
       ].join("\n");
+
+/** The title a project gets when nothing names it. A prompt built on it reads as noise. */
+const UNNAMED_PROJECT_TITLE = "untitled project";
+
+/**
+ * The prompt an empty project offers to copy: ask the agent for three
+ * directions and point it at this project by its editor URL, which the MCP
+ * server already reads as "use this project".
+ */
+export const buildFirstPagesPrompt = ({
+  projectTitle,
+  projectUrl,
+}: {
+  projectTitle: string;
+  projectUrl: string;
+}) => {
+  const title = projectTitle.trim();
+  const subject = !title || title.toLowerCase() === UNNAMED_PROJECT_TITLE ? "this project" : title;
+  return `Design three different layouts for ${subject} in Wirely, as pages in the project at ${projectUrl}`;
+};
