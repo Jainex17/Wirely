@@ -17,24 +17,23 @@ const SHORTCUT_PATTERN = /^(.*\S)\s*\(([^\s()]{1,12})\)$/;
 interface Tip {
   label: string;
   shortcut: string | null;
-  detail: string | null;
   rect: DOMRect;
 }
 
 /**
- * Reads the tip for a hovered control: `data-tip` or the `aria-label`, plus an
- * optional `data-tip-detail` line. A text button whose label is its own text
- * gets no tip, since it would only repeat what is on screen.
+ * Reads the tip for a hovered control: `data-tip` or the `aria-label`, and its
+ * shortcut. The tip is the title alone, so `data-tip-detail` is not shown. A
+ * text button whose label is its own text gets no tip, since it would only
+ * repeat what is on screen.
  */
 const readTip = (target: Element): Tip | null => {
   const raw = target.getAttribute("data-tip") ?? target.getAttribute("aria-label");
   if (!raw) return null;
-  const detail = target.getAttribute("data-tip-detail");
   const match = SHORTCUT_PATTERN.exec(raw);
   const label = match ? match[1] : raw;
   const shortcut = match ? match[2] : null;
-  if (!detail && !shortcut && target.textContent?.trim() === label) return null;
-  return { label, shortcut, detail, rect: target.getBoundingClientRect() };
+  if (!shortcut && target.textContent?.trim() === label) return null;
+  return { label, shortcut, rect: target.getBoundingClientRect() };
 };
 
 const TIP_ID = "wirely-hover-tip";
@@ -134,7 +133,7 @@ export default function HoverTips() {
     <div
       id={TIP_ID}
       role="tooltip"
-      className="pointer-events-none fixed z-[300] max-w-64 rounded-md border border-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-lg"
+      className="pointer-events-none fixed z-[300] max-w-64 truncate rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-lg"
       style={{
         ...horizontal,
         ...(isAbove
@@ -142,15 +141,8 @@ export default function HoverTips() {
           : { top: tip.rect.bottom + GAP }),
       }}
     >
-      <span className="flex items-center gap-2">
-        <span className="font-medium">{tip.label}</span>
-        {tip.shortcut ? (
-          <kbd className="ml-auto rounded border border-border bg-muted px-1 font-sans text-[10px] text-muted-foreground">
-            {tip.shortcut}
-          </kbd>
-        ) : null}
-      </span>
-      {tip.detail ? <span className="mt-0.5 block leading-snug text-muted-foreground">{tip.detail}</span> : null}
+      {tip.label}
+      {tip.shortcut ? <span className="ml-1 text-muted-foreground">({tip.shortcut})</span> : null}
     </div>
   );
 }
