@@ -36,7 +36,12 @@ export default function SecurityDocsPage() {
           Security Policy. Scripts load only from a short list of CDNs, and images only from a
           short list of hosts.
         </li>
-        <li>Wirely never runs your code on its servers.</li>
+        <li>
+          Wirely never runs your codebase. It does load page HTML in a headless Chrome on its
+          servers to take screenshots for <code>get_page_png</code>. That render sanitizes the
+          page first and keeps the same Content Security Policy, so scripts still load only from
+          the allowed CDNs.
+        </li>
       </ul>
 
       <h2>Your keys</h2>
