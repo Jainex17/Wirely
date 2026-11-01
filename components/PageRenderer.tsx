@@ -1698,10 +1698,18 @@ export default React.memo(function PageRenderer({
               // project an agent just created. A spinner here would never end.
               <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
                 {/* Counter-scaled like the editing pill, so the prompt reads at
-                    one screen size whatever the canvas zoom. */}
+                    one screen size whatever the canvas zoom. The scale stops at
+                    2 and the width shrinks by it, so a zoomed out frame still
+                    holds the whole prompt instead of clipping it. */}
                 <div
                   className="flex flex-col items-center gap-2"
-                  style={{ transform: "scale(var(--canvas-inverse-zoom, 1))" }}
+                  style={
+                    {
+                      "--prompt-scale": "min(var(--canvas-inverse-zoom, 1), 2)",
+                      transform: "scale(var(--prompt-scale))",
+                      width: "calc(100% / var(--prompt-scale))",
+                    } as React.CSSProperties
+                  }
                 >
                   <p className="text-sm font-medium text-foreground">Start with a prompt</p>
                   <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
