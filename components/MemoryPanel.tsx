@@ -86,8 +86,9 @@ export default function MemoryPanel({ projectId }: { projectId: string }) {
 
   const save = async () => {
     if (!editing) return;
-    const next =
-      editing === "context" ? { ...memory, context: draft } : { ...memory, rules: draft.split("\n") };
+    // Only the edited field goes up, so an agent's change to the other one
+    // since this tab loaded is kept.
+    const next = editing === "context" ? { context: draft } : { rules: draft.split("\n") };
     setIsSaving(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/memory`, {

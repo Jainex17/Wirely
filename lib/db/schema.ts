@@ -264,6 +264,8 @@ export const projectMemory = pgTable("project_memory", {
     .references(() => projects.id, { onDelete: "cascade" }),
   context: text("context").default("").notNull(),
   rules: jsonb("rules").$type<string[]>().default([]).notNull(),
+  /** Bumped on every write, so a save that read an older version retries instead of overwriting. */
+  version: integer("version").default(0).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

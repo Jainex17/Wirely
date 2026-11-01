@@ -30,7 +30,7 @@ import {
   getDesignTokens,
   getProjectMemory,
   setAgentBaseline,
-  setProjectMemory,
+  updateProjectMemory,
   setDesignTokens,
 } from "@/lib/db/queries/agentState";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
@@ -48,7 +48,7 @@ import { buildCaptureCommand, createCapturePath } from "@/lib/mcp/capture";
 import { importUrlAsPage } from "@/lib/mcp/importUrlPage";
 import { renderPagePng, ScreenshotUnavailableError } from "@/lib/mcp/screenshot";
 import { parseDesignTokens } from "@/lib/designTokens";
-import { formatMemoryForAgent, mergeMemoryUpdate } from "@/lib/projectMemory";
+import { formatMemoryForAgent } from "@/lib/projectMemory";
 import { buildNodeLink, diffPageNodes, getNodeHtml } from "@/lib/pageNodes";
 import {
   buildLayerTree,
@@ -833,14 +833,14 @@ const setMemoryHandler: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const merged = mergeMemoryUpdate(await getProjectMemory(project.id), update);
-  if (!merged.ok) return fail(merged.error);
+  let merged: Awaited<ReturnType<typeof updateProjectMemory>>;
   try {
-    await setProjectMemory(project.id, merged.memory);
+    merged = await updateProjectMemory(project.id, update);
   } catch (error) {
     if (isMissingRelationError(error)) return fail("Memory is not set up on this server yet.");
     throw error;
   }
+  if (!merged.ok) return fail(merged.error);
   return succeed(
     `Saved the memory for "${project.title}": ${merged.memory.context ? "a project context" : "no project context"} ` +
       `and ${merged.memory.rules.length} rule(s). The user sees it in the editor's Memory tab.`,

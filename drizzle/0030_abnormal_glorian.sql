@@ -2,6 +2,7 @@ CREATE TABLE "project_memory" (
 	"project_id" uuid PRIMARY KEY NOT NULL,
 	"context" text DEFAULT '' NOT NULL,
 	"rules" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"version" integer DEFAULT 0 NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

@@ -18,6 +18,7 @@ import type { Browser, Page } from "puppeteer-core";
 import { collectStyleMap } from "@/lib/buildCheck";
 import { getPageFrameSize } from "@/lib/canvasScene";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
+import { createHostGuard, requestHostname } from "@/lib/mcp/hostGuard";
 import type { VisualLintData } from "@/lib/mcp/diagnostics";
 
 /** A failure the user can act on, as opposed to an internal bug. */
@@ -246,6 +247,27 @@ const withLoadedPage = async <T>(
     // A Mac in dark mode gives headless Chrome a dark default page color,
     // which the canvas, where the page renders in the user's browser, does not show.
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+
+    // Pages may load images and fonts from any https host, and this browser
+    // runs on the server. Every request, redirects included, goes through the
+    // same private-address guard as website imports.
+    const isAllowedHost = createHostGuard();
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      const target = request.url();
+      if (target.startsWith("data:") || target.startsWith("blob:") || target === "about:blank") {
+        void request.continue();
+        return;
+      }
+      const hostname = requestHostname(target);
+      if (!hostname) {
+        void request.abort("blockedbyclient");
+        return;
+      }
+      void isAllowedHost(hostname).then((allowed) =>
+        allowed ? request.continue() : request.abort("blockedbyclient"),
+      );
+    });
 
     await page.setContent(sanitizeIframeHtml(html), { waitUntil: "load", timeout: 20_000 });
     // Give allowlisted CDN scripts and https images a moment to land. A slow

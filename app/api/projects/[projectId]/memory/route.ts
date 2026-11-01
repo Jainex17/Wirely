@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { getRequestSessionUser } from "@/lib/auth/session";
-import { getProjectMemory, setProjectMemory } from "@/lib/db/queries/agentState";
+import { getProjectMemory, updateProjectMemory } from "@/lib/db/queries/agentState";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import { getProjectForUser } from "@/lib/db/queries/projects";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
-import { parseProjectMemory } from "@/lib/projectMemory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +40,11 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-/** Replaces the context and rules. Agents see the change on their next get_memory. */
+/**
+ * Changes the context or the rules. A field the body leaves out keeps its
+ * stored value, so saving one section never undoes an agent's change to the
+ * other. Agents see the change on their next get_memory.
+ */
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const loaded = await loadProject(context);
@@ -49,12 +52,10 @@ export async function PUT(request: Request, context: RouteContext) {
 
     const parsed = await readJsonBodyWithLimit(request);
     if (!parsed.ok) return parsed.response;
-    const memory = parseProjectMemory(parsed.data);
+    const memory = await updateProjectMemory(loaded.project.id, parsed.data);
     if (!memory.ok) {
       return NextResponse.json({ error: memory.error }, { status: 400 });
     }
-
-    await setProjectMemory(loaded.project.id, memory.memory);
     return NextResponse.json(memory.memory);
   } catch (error) {
     if (isMissingRelationError(error)) {

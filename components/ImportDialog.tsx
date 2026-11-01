@@ -76,8 +76,10 @@ const AGENT_SOURCES: SourceInfo[] = [
 
 const SOURCES = [...DIRECT_SOURCES, ...AGENT_SOURCES];
 
-// The pages API takes up to 600 KB per request, with room for the JSON around the HTML.
+// The pages API takes up to 600,000 bytes per request. JSON escaping grows the
+// HTML, so the encoded request is checked too, not only the file.
 const MAX_FILE_BYTES = 500_000;
+const MAX_REQUEST_BYTES = 600_000;
 
 type CreatedPage = { id: string; title: string; htmlContent: string; deviceType: string };
 
@@ -174,17 +176,15 @@ export default function ImportDialog({ projectId }: { projectId: string }) {
     try {
       const html = await file.text();
       const documentTitle = /<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]?.trim();
-      finish(
-        await postJson(
-          `/api/projects/${projectId}/pages`,
-          {
-            title: documentTitle || file.name.replace(/\.[^.]+$/, ""),
-            deviceType: isSvg ? "vector" : deviceType,
-            htmlContent: html,
-          },
-          "Could not import the file.",
-        ),
-      );
+      const body = {
+        title: documentTitle || file.name.replace(/\.[^.]+$/, ""),
+        deviceType: isSvg ? "vector" : deviceType,
+        htmlContent: html,
+      };
+      if (new Blob([JSON.stringify(body)]).size > MAX_REQUEST_BYTES) {
+        throw new Error("That file is too large to import once encoded. Pick a smaller one.");
+      }
+      finish(await postJson(`/api/projects/${projectId}/pages`, body, "Could not import the file."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not import the file.");
     } finally {

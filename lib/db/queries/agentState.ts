@@ -10,7 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { applyDesignTokens, type DesignTokens } from "@/lib/designTokens";
 import { logger } from "@/lib/logger";
-import type { ProjectMemory } from "@/lib/projectMemory";
+import { type MemoryParseResult, mergeMemoryUpdate, type ProjectMemory } from "@/lib/projectMemory";
 
 /** The project's tokens, or null when it has none. Callers check ownership. */
 export const getDesignTokens = async (projectId: string): Promise<DesignTokens | null> => {
@@ -74,13 +74,41 @@ export const getProjectMemory = async (projectId: string): Promise<ProjectMemory
   }
 };
 
-/** Replaces the project's context and rules. Callers check ownership. */
-export const setProjectMemory = async (projectId: string, memory: ProjectMemory) => {
-  const values = { context: memory.context, rules: memory.rules, updatedAt: new Date() };
-  await getDb()
-    .insert(projectMemory)
-    .values({ projectId, ...values })
-    .onConflictDoUpdate({ target: projectMemory.projectId, set: values });
+/** Attempts before a memory write gives up because others keep changing it. */
+const MEMORY_WRITE_ATTEMPTS = 4;
+
+/**
+ * Applies a partial update (context, rules, or addRules) to the project's
+ * memory. Each write only lands if the row still has the version it read, and
+ * retries on a clash, so two saves at once both keep their changes. Callers
+ * check ownership.
+ */
+export const updateProjectMemory = async (projectId: string, update: unknown): Promise<MemoryParseResult> => {
+  const db = getDb();
+  for (let attempt = 0; attempt < MEMORY_WRITE_ATTEMPTS; attempt += 1) {
+    const [row] = await db
+      .select({ context: projectMemory.context, rules: projectMemory.rules, version: projectMemory.version })
+      .from(projectMemory)
+      .where(eq(projectMemory.projectId, projectId))
+      .limit(1);
+    const merged = mergeMemoryUpdate(row ?? { context: "", rules: [] }, update);
+    if (!merged.ok) return merged;
+
+    const values = { context: merged.memory.context, rules: merged.memory.rules, updatedAt: new Date() };
+    const written = row
+      ? await db
+          .update(projectMemory)
+          .set({ ...values, version: row.version + 1 })
+          .where(and(eq(projectMemory.projectId, projectId), eq(projectMemory.version, row.version)))
+          .returning({ projectId: projectMemory.projectId })
+      : await db
+          .insert(projectMemory)
+          .values({ projectId, ...values, version: 1 })
+          .onConflictDoNothing()
+          .returning({ projectId: projectMemory.projectId });
+    if (written.length > 0) return merged;
+  }
+  return { ok: false, error: "The memory kept changing while saving. Try again." };
 };
 
 /**
