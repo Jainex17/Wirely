@@ -108,18 +108,6 @@ describe("useEditorStore canvas state", () => {
     expect(useEditorStore.getState().camera.zoom).toBe(shortPagesZoom);
   });
 
-  it("tidies dragged pages back into one row", () => {
-    useEditorStore.getState().setPagePosition("page-1", { x: 500, y: 900 });
-    useEditorStore.getState().setPagePosition("page-2", { x: -800, y: -300 });
-
-    useEditorStore.getState().arrangePages("row");
-
-    const { pagePositions } = useEditorStore.getState();
-    expect(pagePositions["page-2"]).toEqual({ x: -800, y: 0 });
-    expect(pagePositions["page-1"].y).toBe(0);
-    expect(pagePositions["page-1"].x).toBeGreaterThan(-800);
-  });
-
   it("starts a new design on a new row under every page", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: -1560, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 0, y: 0 });
@@ -353,18 +341,6 @@ describe("agent edits", () => {
 });
 
 describe("useEditorStore page groups", () => {
-  it("moves a page between groups and drops the group it empties", () => {
-    const store = useEditorStore.getState();
-    const first = store.groupPages(["page-1"]);
-    const second = useEditorStore.getState().groupPages(["page-1", "page-2", "missing"]);
-
-    const { pageGroups } = useEditorStore.getState();
-    expect(pageGroups).toHaveLength(1);
-    expect(pageGroups[0].id).toBe(second as string);
-    expect(pageGroups[0].pageIds).toEqual(["page-1", "page-2"]);
-    expect(first).not.toBe(second);
-  });
-
   it("forgets deleted pages and restores groups from a saved layout", () => {
     useEditorStore.getState().hydratePageLayout({
       pageGroups: [

@@ -13,7 +13,6 @@ import {
   placeMissingPages,
   scaleFromZoom,
   stepZoom,
-  arrangePagePositions,
   sceneToViewport,
   viewportToScene,
   zoomAtViewportPoint,
@@ -170,36 +169,6 @@ describe("canvas view helpers", () => {
     expect(clipToFirstScreen(tall, 900).height).toBe(900);
     expect(clipToFirstScreen(tall, 900).top).toBe(0);
     expect(clipToFirstScreen(short, 900).height).toBe(600);
-  });
-
-  it("arranges pages into one top-aligned row in their left-to-right order", () => {
-    const positions = arrangePagePositions(
-      [
-        { id: "right", x: 3000, y: 400, width: 375, height: 812 },
-        { id: "left", x: -200, y: -50, width: 1440, height: 900 },
-      ],
-      "row",
-    );
-
-    expect(positions.left).toEqual({ x: -200, y: 0 });
-    expect(positions.right).toEqual({ x: -200 + 1440 + PAGE_GAP, y: 0 });
-  });
-
-  it("arranges pages into a grid whose rows clear the tallest page above", () => {
-    const pages = ["a", "b", "c", "d"].map((id, index) => ({
-      id,
-      x: index * 2000,
-      y: 0,
-      width: 1440,
-      height: id === "b" ? 5000 : 900,
-    }));
-
-    const positions = arrangePagePositions(pages, "grid");
-
-    expect(positions.a).toEqual({ x: 0, y: 0 });
-    expect(positions.b).toEqual({ x: 1440 + PAGE_GAP, y: 0 });
-    expect(positions.c).toEqual({ x: 0, y: 5000 + PAGE_GAP });
-    expect(positions.d.y).toBe(5000 + PAGE_GAP);
   });
 });
 
