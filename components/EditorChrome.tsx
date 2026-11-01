@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * The pieces of editor chrome the Pages and Editor tabs share, so the two
- * canvases look and behave the same: the floating tool bar, the zoom menu,
- * the side panels' tab header and collapse toggles, and the account footer.
+ * The editor's chrome pieces: the floating tool bar, the zoom menu, the side
+ * panels' tab header and collapse toggles, and the account footer.
  */
 
 import { useClerk } from "@clerk/nextjs";

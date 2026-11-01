@@ -204,6 +204,13 @@
       "when": 1791917520471,
       "tag": "0028_flippant_betty_brant",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793513606819,
+      "tag": "0029_bizarre_king_cobra",
+      "breakpoints": true
     }
   ]
 }

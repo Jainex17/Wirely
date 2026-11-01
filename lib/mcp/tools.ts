@@ -39,14 +39,6 @@ import {
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
-import {
-  describeDesignSelection,
-  designToolHandler,
-  getDesignReference,
-  isScreenId,
-  listProjectScreens,
-  screenHandlerFor,
-} from "@/lib/mcp/designTools";
 import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
 import { MCP_TOOLS } from "@/lib/mcp/protocol";
@@ -160,8 +152,8 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   const { project, page } = await createProject(userId, parsed.data.title);
   if (!page) return fail("The project was created without its first page. Call add_page to add one.");
   return succeed(
-    `Created project "${project.title}" (id: ${project.id}). Its Pages tab starts with an empty ` +
-      `page "Page 1" (id: ${page.id}); its Editor tab starts empty.\n` +
+    `Created project "${project.title}" (id: ${project.id}). It starts with an empty ` +
+      `page "Page 1" (id: ${page.id}).\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
       "Share this link with the user so they can watch the pages you write.",
   );
@@ -174,23 +166,18 @@ const listPages: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const [pages, screens] = await Promise.all([
-    listProjectPagesForUser({ projectId: project.id, userId }),
-    listProjectScreens(project.id, userId),
-  ]);
+  const pages = await listProjectPagesForUser({ projectId: project.id, userId });
   return succeed(
-    JSON.stringify([
-      ...pages.map((page) => ({
+    JSON.stringify(
+      pages.map((page) => ({
         id: page.id,
-        kind: "html",
         title: page.title,
         deviceType: page.deviceType,
         sortOrder: page.sortOrder,
         htmlBytes: Buffer.byteLength(page.htmlContent ?? "", "utf8"),
         updatedAt: page.updatedAt.toISOString(),
       })),
-      ...screens.map((screen) => ({ ...screen, kind: "design" })),
-    ]),
+    ),
   );
 };
 
@@ -766,9 +753,6 @@ const getSelection: ToolHandler = async (userId, args, origin) => {
     if (!isMissingRelationError(error)) throw error;
     selection = null;
   }
-  if (selection && !selection.pageId && selection.nodeId) {
-    return describeDesignSelection(userId, { ...selection, nodeId: selection.nodeId });
-  }
   if (!selection?.pageId) {
     return fail(
       "The user has not selected anything on the canvas yet. Ask them to click a page or " +
@@ -922,7 +906,6 @@ const captureLocalPage: ToolHandler = async (userId, args, origin) => {
   // A page the capture compares with or replaces, or the reason it cannot be used.
   const readHtmlPage = async (pageId: string | undefined, name: string) => {
     if (pageId === undefined) return null;
-    if (isScreenId(pageId)) return `${name} ${pageId} is a design screen. Use an HTML page.`;
     const page = isUuid(pageId)
       ? await getProjectPageForUser({ projectId: project.id, pageId, userId })
       : null;
@@ -1125,39 +1108,8 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 /** Guards the `tools/list` catalog and the dispatch table against drifting apart. */
 export const TOOL_NAMES = Object.keys(TOOL_HANDLERS).sort();
 
-// Page tools that read or write a page's HTML. Given a screen id they get the
-// screen version of the tool, when there is one, or a message saying which fit.
-const HTML_PAGE_TOOLS = new Set([
-  "get_page",
-  "get_page_png",
-  "delete_page",
-  "get_page_changes",
-  "get_page_outline",
-  "patch_page",
-  "edit_element",
-  "update_page",
-  "link_element",
-]);
-
-const SCREEN_ID_MESSAGE =
-  "is a screen on the Editor tab: it is design nodes, not HTML. Edit it with the design tools " +
-  "(render, set_fill, set_layout, set_text, update_node, and others), passing node ids from " +
-  "get_page_tree. get_page returns it as code and get_page_png renders it.";
-
-/**
- * The handler for a call, chosen from the arguments alone so a bad call never
- * costs a database read. A page id names an HTML page and a node id like
- * "1:23" names a screen on the design canvas.
- */
-const resolveHandler = (name: string, args: ToolArgs): ToolHandler | ToolCallResult => {
-  if (name === "get_design_reference") return getDesignReference;
-  const designTool = designToolHandler(name);
-  if (designTool) return designTool;
-  if (HTML_PAGE_TOOLS.has(name) && isScreenId(args.pageId)) {
-    return screenHandlerFor(name) ?? fail(`Screen ${String(args.pageId)} ${SCREEN_ID_MESSAGE}`);
-  }
-  return TOOL_HANDLERS[name] ?? fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
-};
+const resolveHandler = (name: string): ToolHandler | ToolCallResult =>
+  TOOL_HANDLERS[name] ?? fail(`Unknown tool "${name}". Call tools/list for the available tools.`);
 
 export const callTool = async (
   userId: string,
@@ -1166,7 +1118,7 @@ export const callTool = async (
   origin: string,
 ): Promise<ToolCallResult> => {
   try {
-    const handler = resolveHandler(name, args);
+    const handler = resolveHandler(name);
     return typeof handler === "function" ? await handler(userId, args, origin) : handler;
   } catch (error) {
     logger.error("mcp.tool_failed", { tool: name, error });

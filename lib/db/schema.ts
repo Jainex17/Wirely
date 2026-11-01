@@ -12,10 +12,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
-// No longer read. A project used to be one kind or the other; now every
-// project has HTML pages in project_pages and, once used, a design canvas in
-// project_documents, shown as two tabs of one editor. Drop the column once the
-// code that stopped writing it is deployed everywhere.
+// No longer read. A project used to be HTML or design; every project is now
+// HTML pages in project_pages. Drop the column once the code that stopped
+// writing it is deployed everywhere.
 export const projectKindEnum = pgEnum("project_kind", ["html", "design"]);
 export const conversationRoleEnum = pgEnum("conversation_role", [
   "system",
@@ -521,38 +520,3 @@ export type GenerationOutputKind = (typeof generationOutputKindEnum.enumValues)[
 export type GenerationOutputStatus =
   (typeof generationOutputStatusEnum.enumValues)[number];
 
-/**
- * A project's design canvas: the whole scene as .fig bytes, the format the
- * design engine reads and writes. `version` goes up on every save, so a writer
- * that read an older version is refused instead of overwriting newer work.
- */
-export const projectDocuments = pgTable("project_documents", {
-  projectId: uuid("project_id")
-    .primaryKey()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  data: bytea("data").notNull(),
-  version: integer("version").default(1).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
-/**
- * Earlier states of a project's design document, for the Design tab's history.
- * lib/db/queries/documentVersions.ts decides when one is taken and how many stay.
- */
-export const projectDocumentVersions = pgTable(
-  "project_document_versions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    data: bytea("data").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    projectCreatedIdx: index("project_document_versions_project_created_idx").on(
-      table.projectId,
-      table.createdAt,
-    ),
-  }),
-);
