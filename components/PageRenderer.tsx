@@ -22,7 +22,8 @@ import {
   X,
 } from "lucide-react";
 import { AGENT_CURSOR_ATTRIBUTE, buildRevealSteps, markAgentCursor } from "@/lib/agentCursor";
-import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
+import { buildAgentPrompt, buildFirstPagesPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
+import { ProjectChromeContext } from "@/components/ProjectChrome";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { injectIframeHeightReporter } from "@/lib/frameHeightReporter";
 import { FRAME_MOTION_REPLAY, injectFrameMotion } from "@/lib/frameMotion";
@@ -578,6 +579,18 @@ export default React.memo(function PageRenderer({
   const closeContextMenu = React.useCallback(() => {
     setContextMenuPosition(null);
   }, []);
+
+  // An empty page offers a prompt naming this project, so the user's agent
+  // writes into it instead of starting a new one. The empty branch renders
+  // only after the project hydrates on the client, so window is there.
+  const projectChrome = React.use(ProjectChromeContext);
+  const firstPagesPrompt =
+    projectChrome && typeof window !== "undefined"
+      ? buildFirstPagesPrompt({
+          projectTitle: projectChrome.projectTitle,
+          projectUrl: `${window.location.origin}/wire/${projectChrome.projectId}`,
+        })
+      : null;
 
   const copyToClipboard = React.useCallback(async (label: string, value: string) => {
     if (!value.trim()) {
@@ -1683,11 +1696,44 @@ export default React.memo(function PageRenderer({
             ) : (
               // An empty page nothing is writing to, such as the first page of a
               // project an agent just created. A spinner here would never end.
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-background px-8 text-center">
-                <p className="text-sm font-medium text-muted-foreground">Empty page</p>
-                <p className="max-w-xs text-xs leading-relaxed text-muted-foreground/80">
-                  Ask your agent to write it, or prompt in the chat.
-                </p>
+              <div className="flex h-full w-full flex-col items-center justify-center bg-background px-8 text-center">
+                {/* Counter-scaled like the editing pill, so the prompt reads at
+                    one screen size whatever the canvas zoom. The scale stops at
+                    2 and the width shrinks by it, so a zoomed out frame still
+                    holds the whole prompt instead of clipping it. */}
+                <div
+                  className="flex flex-col items-center gap-2"
+                  style={
+                    {
+                      "--prompt-scale": "min(var(--canvas-inverse-zoom, 1), 2)",
+                      transform: "scale(var(--prompt-scale))",
+                      width: "calc(100% / var(--prompt-scale))",
+                    } as React.CSSProperties
+                  }
+                >
+                  <p className="text-sm font-medium text-foreground">Start with a prompt</p>
+                  <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                    Paste this into your agent, or prompt in the chat.
+                  </p>
+                  {firstPagesPrompt ? (
+                    <div className="mt-3 flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-card p-3 text-left">
+                      <p className="text-[13px] leading-relaxed text-foreground">{firstPagesPrompt}</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="self-end"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void copyToClipboard("Prompt", firstPagesPrompt);
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy prompt
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             )}
             {pendingEditId ? (

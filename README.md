@@ -67,13 +67,6 @@ are on the [setup page](https://www.wirely.site/docs).
 - **Compare two pages.** Open any page's menu and pick Compare to see it next to another page,
   overlaid on it, or as a difference where everything that matches turns black.
 
-### Build editable screens (preview)
-
-Every project has a **Pages** tab for HTML pages and an **Editor** tab for screens made of frames,
-text, shapes, and auto layout. Ask your agent for an editable design, or to make one of your pages
-editable. In the Editor you can select, move, and resize anything, drag a layer between screens,
-and copy and paste across them.
-
 ### Prototype, review, and export
 
 - **Build a clickable prototype.** Link pages together, by hand or through your agent, then press

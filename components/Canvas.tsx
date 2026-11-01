@@ -835,7 +835,6 @@ export default function Canvas({
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (useEditorStore.getState().canvasView !== "html") return;
       if (event.key === "Escape") {
         setSelectedPageIds([]);
         if (!isEditableTarget(event.target)) {

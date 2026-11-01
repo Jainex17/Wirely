@@ -30,7 +30,7 @@ export default function PrivacyPage() {
       </p>
       <h3>Your work</h3>
       <ul>
-        <li>Projects, pages, design screens, page history, and prototype flows.</li>
+        <li>Projects, pages, page history, and prototype flows.</li>
         <li>Images you or your agent upload to a project.</li>
         <li>Comments left on your pages, with the commenter&apos;s account.</li>
         <li>

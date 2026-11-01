@@ -34,6 +34,8 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
+  "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
+    "and skip the search below.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +
     "or codebase you are working on, add the new pages to it with add_page, even when this is " +
     "a new chat. If none of the listed projects fits, call list_projects again with query set " +
@@ -41,19 +43,6 @@ export const MCP_INSTRUCTIONS = [
     "user asks for a new one, and name it after the product or codebase so a later chat can " +
     "find it. Give the user the editor URL of the project you used, from list_projects or " +
     "create_project.",
-  "A project has two tabs. The Pages tab holds HTML pages (add_page), the default for every " +
-    "mock. The Editor tab holds screens built from design nodes the user edits like Figma " +
-    "frames (add_screen). Only add a design screen when the user asks for an editable design, " +
-    "or asks, in chat or in a comment, to make an HTML page editable: then read the page with " +
-    "get_page and rebuild it with add_screen, keeping the HTML page. For design screens, call " +
-    "get_design_reference once, then edit with the design tools: get_page_tree or get_jsx for " +
-    "node ids, render with parent_id or replace_id to add or swap a part, and set_fill, " +
-    "set_layout, set_text, update_node, and batch_update for small changes, instead of " +
-    "rebuilding a screen.",
-  "list_pages lists both: HTML pages by UUID and design screens by node id like \"1:23\". " +
-    "get_page, get_page_png, and delete_page take either. patch_page, edit_element, " +
-    "get_page_outline, link_element, list_links, set_prototype_flow, and the HTML rules are " +
-    "for HTML pages only.",
   "When the user asks for several designs or options, make each one a different layout " +
     "direction: a different structure, hierarchy, and way of showing the data. The same " +
     "layout in different states is not a set of options. Say which kind you made in each " +
@@ -234,8 +223,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "list_projects",
     description:
       "List the user's Wirely projects with their editor URLs, most recently updated first. A " +
-      "project is one design file with two tabs: HTML pages, and design screens built from " +
-      "design nodes. Call this before create_project and reuse a project for the same product " +
+      "project is one canvas of HTML pages. Call this before create_project and reuse a project for the same product " +
       "or codebase. It returns at most 50; pass query to search all titles.",
     inputSchema: {
       type: "object",
@@ -253,8 +241,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Create a Wirely project. Call list_projects first and only create one when no existing " +
       "project is for the same product or codebase, or when the user asks for a new project. " +
-      "It starts with one empty HTML page named \"Page 1\" that you write with update_page, " +
-      "and an empty Editor tab for add_screen. " +
+      "It starts with one empty HTML page named \"Page 1\" that you write with update_page. " +
       "Returns the id and the editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",
@@ -273,8 +260,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_pages",
     description:
-      "List a project's HTML pages (id, title, device type, HTML size) and its design screens " +
-      "(node id, name, device, size), each with its kind.",
+      "List a project's HTML pages (id, title, device type, HTML size).",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID },
@@ -357,8 +343,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     name: "get_page",
     description:
       "Return an HTML page's full HTML source, or with nodeId just one element's exact source, " +
-      "ready to use as patch_page's oldString. Given a design screen id, return the screen as " +
-      "React with Tailwind classes, the spec to rebuild it in the user's codebase.",
+      "ready to use as patch_page's oldString.",
     inputSchema: {
       type: "object",
       properties: {
@@ -444,8 +429,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "get_page_png",
     description:
-      "Render an HTML page or a design screen (by its page id or screen id) as the canvas shows " +
-      "it and return a PNG. Use it to look at a screen and iterate on it visually.",
+      "Render an HTML page as the canvas shows it and return a PNG. Use it to look at a screen and iterate on it visually.",
     inputSchema: {
       type: "object",
       properties: {
@@ -634,8 +618,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "delete_page",
     description:
-      "Delete an HTML page, or a design screen by its screen id. The last remaining HTML page " +
-      "cannot be deleted.",
+      "Delete an HTML page. The last remaining page cannot be deleted.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID, pageId: PAGE_ID },

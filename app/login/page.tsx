@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import LoginClient from "./LoginClient";
+import AuthCard from "./AuthCard";
 import { redirect } from "next/navigation";
 import { DEFAULT_RETURN_PATH, loginReturnPath } from "@/lib/auth/loginRedirect";
 import { getServerSessionUser } from "@/lib/auth/session";
@@ -37,5 +37,5 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     redirect(nextPath);
   }
 
-  return <LoginClient nextPath={nextPath} />;
+  return <AuthCard mode="sign-in" nextPath={nextPath} />;
 }

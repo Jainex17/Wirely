@@ -8,6 +8,7 @@ import type { Message } from "ai";
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 import { X } from "lucide-react";
 import EditorWorkspace from "@/components/EditorWorkspace";
+import GetStartedCard from "@/components/GetStartedCard";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
 import type { UserAccountMenuUser } from "@/components/UserAccountMenu";
@@ -40,6 +41,8 @@ interface WireEditorProps {
   };
   /** Server time the initial pages were read, the first change cursor. */
   pagesLoadedAt: string;
+  /** True once any of the user's agent tokens has called Wirely. */
+  hasConnectedAgent: boolean;
   initialModelName: WireModelName;
   initialMessages: Array<
     Message &
@@ -69,6 +72,7 @@ export default function WireEditor({
   sessionUser,
   initialProject,
   pagesLoadedAt,
+  hasConnectedAgent,
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
@@ -272,7 +276,12 @@ export default function WireEditor({
       projectId={wireId}
       isCollapsed={isPagesPanelCollapsed}
       onToggle={() => setIsPagesPanelCollapsed((collapsed) => !collapsed)}
-      footer={<AccountFooter user={sessionUser} />}
+      footer={
+        <>
+          {hasConnectedAgent ? null : <GetStartedCard />}
+          <AccountFooter user={sessionUser} />
+        </>
+      }
     />
   );
 

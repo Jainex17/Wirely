@@ -30,9 +30,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "puppeteer-core",
     "@sparticuz/chromium",
-    "@open-pencil/core",
-    "@open-pencil/scene-graph",
-    "canvaskit-wasm",
   ],
   // Chromium resolves its bin/ directory at runtime from import.meta.url, so
   // the file tracer never sees the .br archives inside it. Without these
@@ -41,41 +38,12 @@ const nextConfig: NextConfig = {
   // branch uses the installed Chrome. Keys are picomatch globs matched against
   // the route, so dynamic segments are written as *.
   outputFileTracingIncludes: {
-    // get_page_png and the design tools render and measure text with
-    // CanvasKit, which loads its wasm and the default fonts from disk.
-    "/api/mcp": [
-      "./node_modules/@sparticuz/chromium/bin/**",
-      "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
-      "./node_modules/@open-pencil/core/assets/**",
-    ],
-    "/api/projects/*/design/generate": [
-      "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
-      "./node_modules/@open-pencil/core/assets/**",
-    ],
-    "/api/projects/*/document/thumbnail": [
-      "./node_modules/canvaskit-wasm/bin/canvaskit.wasm",
-      "./node_modules/@open-pencil/core/assets/**",
-    ],
+    "/api/mcp": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/projects/*/pages/*/png": [
       "./node_modules/@sparticuz/chromium/bin/**",
     ],
     // A capture with a design page to compare renders that page.
     "/api/capture": ["./node_modules/@sparticuz/chromium/bin/**"],
-  },
-  // Vue's compile-time flags, for the design canvas (components/design).
-  compiler: {
-    define: {
-      __VUE_OPTIONS_API__: "true",
-      __VUE_PROD_DEVTOOLS__: "false",
-      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: "false",
-    },
-  },
-  turbopack: {
-    resolveAlias: {
-      // CanvasKit, the design canvas renderer, requires fs on its Node path,
-      // which the browser build never runs.
-      fs: { browser: "./lib/emptyModule.ts" },
-    },
   },
   async headers() {
     return [

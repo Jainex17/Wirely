@@ -23,6 +23,28 @@ const displayFont = Bricolage_Grotesque({
   display: "swap",
 });
 
+
+// The headings on /login and /sign-up. Every other step keeps Clerk's wording.
+const AUTH_COPY = {
+  socialButtonsBlockButton: "Continue with {{provider|titleize}}",
+  signIn: {
+    start: {
+      title: "Welcome back.",
+      subtitle: "The design canvas for your coding agent. Sign in to your projects.",
+      actionText: "No account yet?",
+      actionLink: "Sign up",
+    },
+  },
+  signUp: {
+    start: {
+      title: "Create your account.",
+      subtitle: "Connect your coding agent and start designing. Free, with no credits.",
+      actionText: "Already have an account?",
+      actionLink: "Sign in",
+    },
+  },
+};
+
 export const metadata: Metadata = {
   // Resolves relative canonical URLs to the canonical domain. www is the host
   // the sitemap and all canonicals name, so both hosts must answer with the
@@ -55,7 +77,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${displayFont.variable} antialiased`}
       >
-        <ClerkProvider signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? "/login"}>
+        <ClerkProvider
+          signInUrl={process.env.NEXT_PUBLIC_CLERK_SIGN_IN_URL ?? "/login"}
+          signUpUrl="/sign-up"
+          localization={AUTH_COPY}
+        >
           {children}
           <Toaster />
           {shouldRenderAnalytics ? <Analytics /> : null}

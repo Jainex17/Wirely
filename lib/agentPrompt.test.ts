@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildAgentPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
+import { buildAgentPrompt, buildFirstPagesPrompt, stripWirelyArtifacts } from "@/lib/agentPrompt";
 
 describe("stripWirelyArtifacts", () => {
   it("removes the sandbox CSP, the attribution meta, and data-wirely attributes", () => {
@@ -31,5 +31,19 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("Reference HTML: https://wirely.test/api/share/pages/p1?exp=1&sig=s");
     expect(prompt).toContain("expires on 2026-10-03.");
     expect(prompt).not.toContain("```");
+  });
+});
+
+describe("buildFirstPagesPrompt", () => {
+  it("names the project and points the agent at its editor url", () => {
+    expect(
+      buildFirstPagesPrompt({ projectTitle: "Habit tracker", projectUrl: "https://wirely.test/wire/p1" }),
+    ).toBe("Design three different layouts for Habit tracker in Wirely, as pages in the project at https://wirely.test/wire/p1");
+  });
+
+  it("leaves out a default title", () => {
+    expect(
+      buildFirstPagesPrompt({ projectTitle: "Untitled Project", projectUrl: "https://wirely.test/wire/p1" }),
+    ).toBe("Design three different layouts for this project in Wirely, as pages in the project at https://wirely.test/wire/p1");
   });
 });

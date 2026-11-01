@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
+import { listApiTokens } from "@/lib/auth/apiToken";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
-import { getProjectDocumentVersionForUser } from "@/lib/db/queries/projectDocuments";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
-import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel, WIRE_MODEL_OPTIONS } from "@/lib/wireModels";
+import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel } from "@/lib/wireModels";
 import ProjectEditor from "./ProjectEditor";
 
 export const metadata: Metadata = {
@@ -14,11 +14,10 @@ export const metadata: Metadata = {
 
 interface WirePageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string | string[] }>;
 }
 
-export default async function WirePage({ params, searchParams }: WirePageProps) {
-  const [resolvedParams, { view }] = await Promise.all([params, searchParams]);
+export default async function WirePage({ params }: WirePageProps) {
+  const resolvedParams = await params;
   // Identity and AI settings share one users row, so read them together.
   const session = await getServerSessionUserWithAiSettings();
   if (!session) {
@@ -29,31 +28,20 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
   // Taken before the read so a write that races the page load is still newer
   // than the editor's first change cursor.
   const pagesLoadedAt = new Date().toISOString();
-  const [projectDetail, designVersion] = await Promise.all([
+  const [projectDetail, agentTokens] = await Promise.all([
     getProjectDetailForUser(resolvedParams.id, sessionUser.id),
-    getProjectDocumentVersionForUser(resolvedParams.id, sessionUser.id),
+    listApiTokens(sessionUser.id),
   ]);
 
   if (!projectDetail) {
     notFound();
   }
 
-  // The models the Design tab's in-app generation can run: enabled, with
-  // their provider's key saved.
   const keyPresence = {
     google: aiSettings.hasGoogleApiKey,
     openrouter: aiSettings.hasOpenRouterApiKey,
     zai: aiSettings.hasZaiApiKey,
   };
-  const designModels = WIRE_MODEL_OPTIONS.filter(
-    (option) => aiSettings.enabledModelIds.includes(option.id) && keyPresence[option.provider],
-  ).map((option) => ({ id: option.id, label: option.label, tier: option.tier }));
-  // A project used only on its Design tab, like one from before the tabs,
-  // opens there — unless the URL names a tab, which is the user's last
-  // explicit choice and wins over that default.
-  const isDesignOnly =
-    designVersion !== null && projectDetail.pages.every((page) => !page.htmlContent.trim());
-  const initialView = view === "design" || (view !== "html" && isDesignOnly) ? "design" : "html";
 
   const initialPages =
     projectDetail.pages.length > 0
@@ -93,21 +81,15 @@ export default async function WirePage({ params, searchParams }: WirePageProps) 
 
   return (
     <ProjectEditor
-      initialView={initialView}
       projectTitle={projectTitle}
       wire={{
         wireId: resolvedParams.id,
         sessionUser: accountUser,
         initialProject: { projectTitle, pages: initialPages },
         pagesLoadedAt,
+        hasConnectedAgent: agentTokens.some((token) => token.lastUsedAt !== null),
         initialModelName,
         initialMessages,
-      }}
-      design={{
-        projectId: resolvedParams.id,
-        sessionUser: accountUser,
-        models: designModels,
-        initialMessages: initialMessages.map(({ id, role, content }) => ({ id, role, content })),
       }}
     />
   );

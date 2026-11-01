@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { getRequestSessionUser } from "@/lib/auth/session";
-import { getProjectDocumentVersionForUser } from "@/lib/db/queries/projectDocuments";
 import { listProjectPreviewPages } from "@/lib/db/queries/projects";
 import { logger } from "@/lib/logger";
 import { isUuid } from "@/lib/projectComments";
@@ -18,8 +17,7 @@ interface RouteContext {
 }
 
 /**
- * The first HTML pages of a project, or when none has content yet the URL of
- * its rendered design canvas, for the thumbnail on its home card. Home lists
+ * The first HTML pages of a project, for the thumbnail on its home card. Home lists
  * titles only and each card fetches this once it scrolls into view, so the
  * home page never carries every project's HTML.
  */
@@ -40,17 +38,7 @@ export async function GET(_request: Request, context: RouteContext) {
       userId: sessionUser.id,
       limit: PREVIEW_PAGE_LIMIT,
     });
-    if (pages.some((page) => page.htmlContent.trim())) return NextResponse.json({ pages }, { status: 200 });
-
-    // A project used only on its Design tab shows a rendered PNG of that
-    // canvas, addressed by version so the browser caches each one.
-    const documentVersion = await getProjectDocumentVersionForUser(projectId, sessionUser.id);
-    return NextResponse.json(
-      documentVersion === null
-        ? { pages }
-        : { pages: [], thumbnailUrl: `/api/projects/${projectId}/document/thumbnail?v=${documentVersion}` },
-      { status: 200 },
-    );
+    return NextResponse.json({ pages }, { status: 200 });
   } catch (error) {
     logger.error("projects_preview_failed", { error });
     return NextResponse.json({ error: "Failed to load the preview." }, { status: 500 });
