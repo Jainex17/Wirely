@@ -11,16 +11,16 @@ const desktop = { width: 1440, height: 900 };
 const css = (input: string) => sanitizeInertCss(input, desktop);
 
 describe("sanitizeInertCss", () => {
-  it("drops url() to a host outside the image allowlist, however it is spelled", () => {
+  it("drops url() that is not an https image, however it is spelled", () => {
     const payloads = [
-      ".a{background:url(https://evil.example.com/x.png)}",
-      ".a{background:url('https://evil.example.com/x.png')}",
-      ".a{background:URL( \"https://evil.example.com/x.png\" )}",
-      ".a{background:u\\72l(https://evil.example.com/x.png)}",
-      ".a{background:\\75 rl(https://evil.example.com/x.png)}",
-      ".a{background:\\u\\r\\l(https://evil.example.com/x.png)}",
-      ".a{background:url(https://evil.example.com/x.png",
-      ".a{background:url(https://evil.example.com/a b)}",
+      ".a{background:url(http://evil.example.com/x.png)}",
+      ".a{background:url('http://evil.example.com/x.png')}",
+      ".a{background:URL( \"http://evil.example.com/x.png\" )}",
+      ".a{background:u\\72l(http://evil.example.com/x.png)}",
+      ".a{background:\\75 rl(http://evil.example.com/x.png)}",
+      ".a{background:\\u\\r\\l(http://evil.example.com/x.png)}",
+      ".a{background:url(http://evil.example.com/x.png",
+      ".a{background:url(http://evil.example.com/a b)}",
       ".a{background:url(//evil.example.com/x.png)}",
       ".a{background:url(https://images.unsplash.com@evil.example.com/x.png)}",
       ".a{background:url(javascript:alert(1))}",
@@ -34,10 +34,10 @@ describe("sanitizeInertCss", () => {
   });
 
   it("drops the functions that read a bare string as a URL", () => {
-    expect(css('.a{background-image:image-set("https://evil.example.com/a.png" 1x)}')).toBe(
+    expect(css('.a{background-image:image-set("http://evil.example.com/a.png" 1x)}')).toBe(
       ".a{background-image: none }",
     );
-    expect(css('.a{background-image:-webkit-image-set("https://evil.example.com/a.png" 1x)}')).toBe(
+    expect(css('.a{background-image:-webkit-image-set("http://evil.example.com/a.png" 1x)}')).toBe(
       ".a{background-image: none }",
     );
     expect(css(".a{width:expression(alert(1))}")).toBe(".a{width: none }");
@@ -58,20 +58,20 @@ describe("sanitizeInertCss", () => {
   });
 
   it("leaves url-looking text inside a string alone, since a string loads nothing there", () => {
-    expect(css('.a::before{content:"url(https://evil.example.com)"}')).toBe(
-      '.a::before{content:"url(https://evil.example.com)"}',
+    expect(css('.a::before{content:"url(http://evil.example.com)"}')).toBe(
+      '.a::before{content:"url(http://evil.example.com)"}',
     );
   });
 
   it("drops @import, @font-face, @namespace, and @scope by renaming them", () => {
-    expect(css('@import "https://evil.example.com/x.css";.a{color:red}')).toBe(
-      '@wirely-dropped "https://evil.example.com/x.css";.a{color:red}',
+    expect(css('@import "http://evil.example.com/x.css";.a{color:red}')).toBe(
+      '@wirely-dropped "http://evil.example.com/x.css";.a{color:red}',
     );
-    expect(css("@\\69mport url(https://evil.example.com/x.css);")).toBe("@wirely-dropped  none ;");
+    expect(css("@\\69mport url(http://evil.example.com/x.css);")).toBe("@wirely-dropped  none ;");
     expect(css('@namespace svg "http://www.w3.org/2000/svg";')).toBe(
       '@wirely-dropped svg "http://www.w3.org/2000/svg";',
     );
-    expect(css("@font-face{font-family:x;src:url(https://evil.example.com/f.woff2)}")).toBe(
+    expect(css("@font-face{font-family:x;src:url(http://evil.example.com/f.woff2)}")).toBe(
       "@wirely-dropped{font-family:x;src: none }",
     );
     expect(css("@scope{:scope{position:fixed!important}}")).toBe(
@@ -85,7 +85,7 @@ describe("sanitizeInertCss", () => {
         "@property --tw-shadow{syntax:'*';inherits:false;initial-value:0 0 #0000}" +
           "@property --canvas-inverse-zoom{syntax:'<color>';inherits:true;initial-value:red}" +
           "@property --tw-font-weight{syntax:'*';inherits:false}" +
-          "@property --tw-bg{syntax:'*';inherits:false;initial-value:url(https://evil.example.com/x.png)}" +
+          "@property --tw-bg{syntax:'*';inherits:false;initial-value:url(http://evil.example.com/x.png)}" +
           ".a{color:red}",
       ),
     ).toBe(
@@ -218,7 +218,7 @@ describe("sanitizeInertDeclarations", () => {
   it("drops a style attribute's exfiltrating background and keeps the rest", () => {
     expect(
       sanitizeInertDeclarations(
-        "color:red;background-image:url(https://evil.example.com/pixel.gif);height:100vh",
+        "color:red;background-image:url(http://evil.example.com/pixel.gif);height:100vh",
         desktop,
       ),
     ).toBe("color:red;background-image: none ;height:900px");

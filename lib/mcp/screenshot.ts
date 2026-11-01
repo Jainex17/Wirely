@@ -248,7 +248,7 @@ const withLoadedPage = async <T>(
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
 
     await page.setContent(sanitizeIframeHtml(html), { waitUntil: "load", timeout: 20_000 });
-    // Give allowlisted CDN scripts and Unsplash images a moment to land. A slow
+    // Give allowlisted CDN scripts and https images a moment to land. A slow
     // one degrades the screenshot instead of failing the tool call.
     await page
       .waitForNetworkIdle({ idleTime: 400, timeout: 5_000 })

@@ -211,13 +211,16 @@ export const serializePage = (
     );
 
   for (const image of Array.from(document.images)) {
-    const data = images[image.currentSrc || image.src];
+    const src = image.currentSrc || image.src;
+    const data = images[src];
     image.removeAttribute("srcset");
     image.removeAttribute("loading");
     if (data) {
       image.src = data;
+    } else if (/^https:/i.test(src)) {
+      image.src = src;
     } else {
-      // Only Unsplash and data: images survive the sanitizer, so anything
+      // Only https and data: images survive the sanitizer, so anything
       // else becomes a sized gray box instead of a hole in the layout.
       const rect = image.getBoundingClientRect();
       image.src = grayBox(rect.width, rect.height);
