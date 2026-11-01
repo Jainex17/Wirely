@@ -1,9 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Check, SquareTerminal } from "lucide-react";
+import { ArrowRight, Check, Plus, SquareTerminal } from "lucide-react";
 import WirelyMark from "@/components/icons/WirelyMark";
 import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
-import { REPO_URL, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
+import { CONTACT_URL, REPO_URL, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 import HeroFilm from "./HeroFilm";
 import { CanvasWindow } from "./LandingCanvas";
 import LandingHeader from "./LandingHeader";
@@ -147,13 +147,7 @@ function Hero() {
         </div>
         <div id={HERO_END_ID} />
 
-        {/* The illustration is a live scene: clouds drift, a cat on the front
-            hill flicks its tail, and birds cross the sky now and then. */}
-        <div className="enter enter-4 mt-12 h-[clamp(16rem,34vw,26rem)] overflow-hidden rounded-[22px] shadow-[inset_0_0_0_1px_rgb(11_16_32_/_0.12)]">
-          <HeroFilm />
-        </div>
-
-        <p className="logos enter enter-4 mt-8 flex flex-wrap items-center gap-x-7 gap-y-3 text-sm text-muted-foreground">
+        <p className="logos enter enter-4 mt-12 flex flex-wrap items-center gap-x-7 gap-y-3 text-sm text-muted-foreground">
           <span>Works with</span>
           {AGENTS.map((agent) => (
             <span
@@ -285,6 +279,105 @@ function PricingSection() {
   );
 }
 
+// One list feeds the visible FAQ and the FAQPage structured data, so search
+// results never quote an answer the page no longer shows.
+const FAQ = [
+  {
+    q: "Does Wirely cost anything?",
+    a: "No. There are no plans, credits, or limits on agent calls. Your agent runs on the subscription you already pay for, and Wirely only stores the pages it writes.",
+  },
+  {
+    q: "Which agents work with Wirely?",
+    a: "Claude Code, Cursor, Codex, and opencode have setup steps in the docs. Any other client that supports remote MCP servers over streamable HTTP works too.",
+  },
+  {
+    q: "Do I need an API key?",
+    a: "Not if you use an agent. A key is only needed to generate pages inside Wirely without an agent. You save it in settings, and Wirely encrypts it before storing it.",
+  },
+  {
+    q: "Can a generated page reach my account?",
+    a: "No. Every page renders in a sandboxed iframe without access to the Wirely origin, under a strict Content Security Policy that only allows a short list of script and image hosts.",
+  },
+  {
+    q: "How does a design get into my codebase?",
+    a: "You tell your agent which page you picked. It reads the HTML it wrote and builds the screen in your project. It can then capture your running app and get back what differs from the design.",
+  },
+  {
+    q: "Who can see my projects?",
+    a: "Only you, unless you send a review link. People you send it to sign in, see the pages, and pin comments on them.",
+  },
+  {
+    q: "Can I run Wirely myself?",
+    a: "Yes. The source is MIT licensed. You need Bun, a Postgres database, and a Clerk app. The self-hosting guide in the docs lists every step.",
+  },
+] as const;
+
+function FaqSection() {
+  return (
+    <section className="mx-auto grid max-w-6xl gap-10 px-6 pb-24 lg:grid-cols-12 lg:gap-12 sm:pb-32">
+      <div className="reveal lg:col-span-5">
+        <p className={EYEBROW}>FAQ</p>
+        <h2 className={`mt-3 ${H2}`}>
+          Questions, <em className="not-italic text-primary">answered</em>.
+        </h2>
+        <p className={`mt-4 max-w-[38ch] ${BODY}`}>
+          Something missing? The{" "}
+          <Link href="/docs" className="text-primary underline underline-offset-4">
+            docs
+          </Link>{" "}
+          go deeper, and{" "}
+          <a href={CONTACT_URL} className="text-primary underline underline-offset-4">
+            GitHub issues
+          </a>{" "}
+          reach the maintainer.
+        </p>
+      </div>
+      <div className="reveal divide-y divide-border border-y border-border lg:col-span-7">
+        {FAQ.map((item) => (
+          <details key={item.q} className="group py-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-6 font-display text-lg font-semibold tracking-tight [&::-webkit-details-marker]:hidden">
+              {item.q}
+              <Plus className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-45" />
+            </summary>
+            <p className="mt-3 max-w-[60ch] text-[15px] leading-relaxed text-foreground/70">
+              {item.a}
+            </p>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** The closing call to action, above the pixel scene that used to sit in the hero. */
+function ClosingSection() {
+  return (
+    <section className="mx-auto max-w-6xl px-6 pb-24 sm:pb-32">
+      <div className="tile reveal overflow-hidden rounded-[22px]">
+        <div className="flex flex-col gap-6 p-7 sm:flex-row sm:items-end sm:justify-between lg:p-10">
+          <div>
+            <h2 className={H2}>
+              Your next screen is <em className="not-italic text-primary">one prompt away</em>.
+            </h2>
+            <p className={`mt-3 max-w-[44ch] ${BODY}`}>
+              Add one line to your agent and ask it for three directions.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <SetUpKey />
+          </div>
+        </div>
+        {/* A live scene: clouds drift, a cat on the front hill flicks its
+            tail, and birds cross the sky now and then. It only animates
+            while it is on screen. */}
+        <div className="h-[clamp(14rem,30vw,22rem)] border-t border-border">
+          <HeroFilm />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function LandingFooter() {
   return (
     <footer className="border-t border-border">
@@ -304,6 +397,9 @@ function LandingFooter() {
         <nav className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <Link href="/docs" className="transition-colors hover:text-foreground">
             Docs
+          </Link>
+          <Link href="/blog" className="transition-colors hover:text-foreground">
+            Blog
           </Link>
           <Link href="/privacy" className="transition-colors hover:text-foreground">
             Privacy
@@ -327,19 +423,30 @@ function LandingFooter() {
 
 // Tells search and AI answer engines what Wirely is, what it costs, and
 // where the source lives, in a form they read without parsing the page.
-const STRUCTURED_DATA = {
-  "@context": "https://schema.org",
-  "@type": "WebApplication",
-  name: SITE_NAME,
-  url: CANONICAL_APP_ORIGIN,
-  description: SITE_DESCRIPTION,
-  applicationCategory: "DesignApplication",
-  operatingSystem: "Any",
-  browserRequirements: "Requires a modern web browser",
-  isAccessibleForFree: true,
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-  sameAs: [REPO_URL],
-};
+const STRUCTURED_DATA = [
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: SITE_NAME,
+    url: CANONICAL_APP_ORIGIN,
+    description: SITE_DESCRIPTION,
+    applicationCategory: "DesignApplication",
+    operatingSystem: "Any",
+    browserRequirements: "Requires a modern web browser",
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    sameAs: [REPO_URL],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  },
+];
 
 export default function Landing() {
   return (
@@ -362,6 +469,18 @@ export default function Landing() {
             Wirely
           </Link>
           <div className="flex items-center gap-1 text-[14.5px] font-medium">
+            <Link
+              href="/docs"
+              className="hidden rounded-lg px-3 py-1.5 text-foreground/75 transition-colors hover:text-foreground sm:block"
+            >
+              Docs
+            </Link>
+            <Link
+              href="/blog"
+              className="hidden rounded-lg px-3 py-1.5 text-foreground/75 transition-colors hover:text-foreground sm:block"
+            >
+              Blog
+            </Link>
             <a
               href={REPO_URL}
               target="_blank"
@@ -392,6 +511,8 @@ export default function Landing() {
         <CanvasSection />
         <LoopSection />
         <PricingSection />
+        <FaqSection />
+        <ClosingSection />
       </main>
 
       <LandingFooter />

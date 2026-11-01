@@ -20,6 +20,9 @@ export function SiteFooter() {
           <Link href="/docs" className="transition-colors hover:text-foreground">
             Docs
           </Link>
+          <Link href="/blog" className="transition-colors hover:text-foreground">
+            Blog
+          </Link>
           <Link href="/privacy" className="transition-colors hover:text-foreground">
             Privacy
           </Link>
@@ -36,17 +39,20 @@ export function SiteFooter() {
 }
 
 /**
- * The frame for a public text page: docs, privacy policy, terms. Children are
- * plain h2, h3, p, ul, ol, pre, and a elements; the wrapper styles them, so
- * the pages stay readable as markup.
+ * The frame for a public text page: docs, blog posts, privacy policy, terms.
+ * Children are plain h2, h3, p, ul, ol, pre, and a elements; the wrapper
+ * styles them, so the pages stay readable as markup. `nav` sits between the
+ * intro and the body, outside those styles, for the docs page list.
  */
 export default function SitePage({
   title,
   intro,
+  nav,
   children,
 }: {
   title: string;
   intro: React.ReactNode;
+  nav?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -61,6 +67,9 @@ export default function SitePage({
             <Link href="/docs" className="transition-colors hover:text-foreground">
               Docs
             </Link>
+            <Link href="/blog" className="transition-colors hover:text-foreground">
+              Blog
+            </Link>
             <Link href="/login" className="transition-colors hover:text-foreground">
               Sign in
             </Link>
@@ -71,6 +80,7 @@ export default function SitePage({
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16 sm:py-20">
         <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] sm:text-5xl">{title}</h1>
         <div className="mt-5 text-lg leading-relaxed text-muted-foreground">{intro}</div>
+        {nav}
         <div className="mt-6 text-[15px] leading-relaxed text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-foreground [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-foreground [&_h2]:mt-14 [&_h2]:font-display [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h2]:text-foreground [&_h3]:mt-8 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-foreground [&_li]:pl-1 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_p]:mt-4 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:bg-card [&_pre]:px-4 [&_pre]:py-3 [&_pre]:font-mono [&_pre]:text-[13px] [&_pre]:text-foreground [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
           {children}
         </div>

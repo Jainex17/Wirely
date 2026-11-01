@@ -1,4 +1,5 @@
 import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
+import { BLOG_POSTS } from "@/app/blog/posts";
 import { REPO_URL, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 
 // Served at /llms.txt (https://llmstxt.org): a plain summary AI answer
@@ -46,6 +47,10 @@ Commands for Cursor, Codex, opencode, and clients that cannot open a browser are
 
 - [Wirely](${CANONICAL_APP_ORIGIN}): landing page and sign in
 - [Connect your coding agent](${CANONICAL_APP_ORIGIN}/docs): setup steps for every MCP client
+- [Use the canvas](${CANONICAL_APP_ORIGIN}/docs/canvas): compare, edit, prototype, comment, and export
+- [Run it yourself](${CANONICAL_APP_ORIGIN}/docs/self-host): self-hosting steps
+- [Security](${CANONICAL_APP_ORIGIN}/docs/security): how pages are sandboxed and keys are stored
+${BLOG_POSTS.map((post) => `- [${post.title}](${CANONICAL_APP_ORIGIN}/blog/${post.slug}): ${post.description}`).join("\n")}
 - [Privacy policy](${CANONICAL_APP_ORIGIN}/privacy)
 - [Terms of use](${CANONICAL_APP_ORIGIN}/terms)
 - [Source and setup guide](${REPO_URL}): README with every feature and self-hosting steps

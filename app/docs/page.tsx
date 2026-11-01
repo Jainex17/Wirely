@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import SitePage from "@/components/SitePage";
+import DocsNav from "./DocsNav";
 import { CANONICAL_APP_ORIGIN } from "@/lib/appUrl";
 import { buildConnectSnippet, MCP_CLIENTS } from "@/lib/mcp/connectSnippet";
 
@@ -25,6 +26,7 @@ export default function DocsPage() {
   return (
     <SitePage
       title="Connect your coding agent"
+      nav={<DocsNav current="/docs" />}
       intro={
         <p>
           Wirely is an MCP server. Add it to your agent once, and the agent can create projects
