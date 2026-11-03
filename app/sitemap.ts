@@ -26,6 +26,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "yearly" as const,
       priority: 0.5,
     })),
+    { url: `${CANONICAL_APP_ORIGIN}/changelog`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${CANONICAL_APP_ORIGIN}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${CANONICAL_APP_ORIGIN}/terms`, changeFrequency: "yearly", priority: 0.3 },
   ];
