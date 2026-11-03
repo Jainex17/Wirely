@@ -50,6 +50,7 @@ Commands for Cursor, Codex, opencode, and clients that cannot open a browser are
 - [Run it yourself](${CANONICAL_APP_ORIGIN}/docs/self-host): self-hosting steps
 - [Security](${CANONICAL_APP_ORIGIN}/docs/security): how pages are sandboxed and keys are stored
 ${BLOG_POSTS.map((post) => `- [${post.title}](${CANONICAL_APP_ORIGIN}/blog/${post.slug}): ${post.description}`).join("\n")}
+- [Changelog](${CANONICAL_APP_ORIGIN}/changelog): what has shipped, month by month
 - [Privacy policy](${CANONICAL_APP_ORIGIN}/privacy)
 - [Terms of use](${CANONICAL_APP_ORIGIN}/terms)
 - [Source and setup guide](${REPO_URL}): README with every feature and self-hosting steps

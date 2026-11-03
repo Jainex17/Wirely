@@ -23,6 +23,9 @@ export function SiteFooter() {
           <Link href="/blog" className="transition-colors hover:text-foreground">
             Blog
           </Link>
+          <Link href="/changelog" className="transition-colors hover:text-foreground">
+            Changelog
+          </Link>
           <Link href="/privacy" className="transition-colors hover:text-foreground">
             Privacy
           </Link>
@@ -35,6 +38,35 @@ export function SiteFooter() {
         </nav>
       </div>
     </footer>
+  );
+}
+
+/** The top bar on every public text page and the changelog. */
+export function SiteHeader() {
+  return (
+    <header className="border-b border-border">
+      <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+        <Link href="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
+          <WirelyMark className="size-6" />
+          Wirely
+        </Link>
+        <div className="flex items-center gap-5 text-sm text-muted-foreground">
+          <Link href="/docs" className="transition-colors hover:text-foreground">
+            Docs
+          </Link>
+          <Link href="/blog" className="transition-colors hover:text-foreground">
+            Blog
+          </Link>
+          {/* Hidden on phones, where four links overflow a 320px header; the footer keeps it. */}
+          <Link href="/changelog" className="hidden transition-colors hover:text-foreground sm:inline">
+            Changelog
+          </Link>
+          <Link href="/login" className="transition-colors hover:text-foreground">
+            Sign in
+          </Link>
+        </div>
+      </nav>
+    </header>
   );
 }
 
@@ -57,25 +89,7 @@ export default function SitePage({
 }) {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
-      <header className="border-b border-border">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-            <WirelyMark className="size-6" />
-            Wirely
-          </Link>
-          <div className="flex items-center gap-5 text-sm text-muted-foreground">
-            <Link href="/docs" className="transition-colors hover:text-foreground">
-              Docs
-            </Link>
-            <Link href="/blog" className="transition-colors hover:text-foreground">
-              Blog
-            </Link>
-            <Link href="/login" className="transition-colors hover:text-foreground">
-              Sign in
-            </Link>
-          </div>
-        </nav>
-      </header>
+      <SiteHeader />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16 sm:py-20">
         <h1 className="font-display text-4xl font-semibold tracking-[-0.03em] sm:text-5xl">{title}</h1>
