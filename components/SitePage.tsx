@@ -57,7 +57,8 @@ export function SiteHeader() {
           <Link href="/blog" className="transition-colors hover:text-foreground">
             Blog
           </Link>
-          <Link href="/changelog" className="transition-colors hover:text-foreground">
+          {/* Hidden on phones, where four links overflow a 320px header; the footer keeps it. */}
+          <Link href="/changelog" className="hidden transition-colors hover:text-foreground sm:inline">
             Changelog
           </Link>
           <Link href="/login" className="transition-colors hover:text-foreground">
