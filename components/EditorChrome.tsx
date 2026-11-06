@@ -200,7 +200,7 @@ export function SidePanelTabs<Tab extends string>({
   end?: ReactNode;
 }) {
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border px-2">
+    <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border px-3">
       <div role="tablist" className="flex items-center gap-0.5">
         {tabs.map((tab) => {
           const isActive = active === tab.id;
@@ -261,7 +261,7 @@ export function AccountFooter({ user }: { user: UserAccountMenuUser }) {
     }
   };
   return (
-    <div className="flex shrink-0 items-center border-t border-sidebar-border p-2">
+    <div className="flex shrink-0 items-center border-t border-sidebar-border py-2 pl-3 pr-1">
       <UserAccountMenu
         user={user}
         isLoggingOut={isLoggingOut}

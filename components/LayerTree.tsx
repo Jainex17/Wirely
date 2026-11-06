@@ -3,8 +3,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
-  Eye,
-  EyeOff,
   Frame,
   Image as ImageIcon,
   MousePointerClick,
@@ -12,6 +10,8 @@ import {
   Square,
   Type,
 } from "lucide-react";
+import { Eye, EyeOff } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 import {
   buildLayerTree,
   findLayerParent,
@@ -102,7 +102,7 @@ export default function LayerTree({
   };
   collect(layers, 0);
 
-  const indent = (depth: number) => 8 + (baseDepth + depth) * 12;
+  const indent = (depth: number) => 6 + (baseDepth + depth) * 12;
 
   const select = (layer: Layer) => {
     const { setFocusedPage, setSelectedNode } = useEditorStore.getState();
@@ -120,7 +120,7 @@ export default function LayerTree({
 
   if (rows.length === 0) {
     return (
-      <p className="py-1 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) + 20 }}>
+      <p className="ml-1.5 mr-1 py-1 text-xs text-muted-foreground" style={{ paddingLeft: indent(0) + 20 }}>
         No elements yet
       </p>
     );
@@ -180,7 +180,7 @@ export default function LayerTree({
             onDragEnd={() => setDrop(null)}
             onClick={() => select(layer)}
             className={cn(
-              "group relative flex h-7 cursor-default items-center gap-1.5 pr-2 text-xs",
+              "group relative ml-1.5 mr-1 flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 text-xs",
               isSelected
                 ? "bg-primary/15 text-foreground"
                 : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
@@ -232,7 +232,7 @@ export default function LayerTree({
                 layer.hidden ? "visible" : "invisible group-hover:visible",
               )}
             >
-              {layer.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              <MorphIcon icon={layer.hidden ? EyeOff : Eye} className="h-3 w-3" />
             </button>
           </div>
         );

@@ -86,7 +86,7 @@ export function ProjectActions() {
  */
 export function ProjectActionsBar({ toggle, status }: { toggle: ReactNode; status?: ReactNode }) {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-2">
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-3">
       {toggle}
       {status}
       <div className="ml-auto">
