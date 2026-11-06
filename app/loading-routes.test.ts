@@ -11,6 +11,11 @@ describe("route loading files", () => {
     expect(source.includes("animate-pulse")).toBe(false);
   });
 
+  it("includes projects loading boundary", () => {
+    const source = readFileSync("app/projects/loading.tsx", "utf8");
+    expect(source.includes("export default function ProjectsLoading")).toBe(true);
+  });
+
   it("includes settings loading boundary", () => {
     const source = readFileSync("app/setting/loading.tsx", "utf8");
     expect(source.includes("export default function SettingLoading")).toBe(true);
