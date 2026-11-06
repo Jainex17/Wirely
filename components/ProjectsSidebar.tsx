@@ -39,13 +39,13 @@ export default function ProjectsSidebar({
     <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r border-border px-3 pb-3 md:flex">
       <Link
         href="/projects"
-        className="flex h-14 items-center gap-2 px-2.5 text-[15px] font-semibold tracking-tight"
+        className="flex h-14 shrink-0 items-center gap-2 px-2.5 text-[15px] font-semibold tracking-tight"
       >
         <WirelyMark className="size-5" />
         Wirely
       </Link>
 
-      <nav className="flex flex-col gap-0.5">
+      <nav className="flex shrink-0 flex-col gap-0.5">
         <Link
           href="/projects"
           aria-current="page"
@@ -63,10 +63,12 @@ export default function ProjectsSidebar({
         </Link>
       </nav>
 
-      <p className="mt-6 px-2.5 pb-1.5 text-xs text-muted-foreground">Agents</p>
-      <div className="flex flex-col gap-0.5">
+      <p className="mt-6 shrink-0 px-2.5 pb-1.5 text-xs text-muted-foreground">Agents</p>
+      {/* Only the agent list scrolls, so a long list or a short window never
+          pushes the connect link and the account menu off the pinned rail. */}
+      <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
         {agents.map((agent) => (
-          <div key={agent.name} className={`${rowClass} text-foreground`}>
+          <div key={agent.name} className={`${rowClass} shrink-0 text-foreground`}>
             <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
               <span className="size-1.5 rounded-full bg-emerald-500" />
             </span>
@@ -76,17 +78,17 @@ export default function ProjectsSidebar({
             </span>
           </div>
         ))}
-        <Link
-          href="/setting?tab=mcp"
-          className={`${rowClass} text-muted-foreground hover:bg-accent/60 hover:text-foreground`}
-        >
-          <CirclePlus className="size-4" />
-          Connect an agent
-        </Link>
       </div>
+      <Link
+        href="/setting?tab=mcp"
+        className={`${rowClass} mt-0.5 shrink-0 text-muted-foreground hover:bg-accent/60 hover:text-foreground`}
+      >
+        <CirclePlus className="size-4" />
+        Connect an agent
+      </Link>
 
       {user ? (
-        <div className="mt-auto flex items-center gap-2 px-1.5">
+        <div className="mt-auto flex shrink-0 items-center gap-2 px-1.5 pt-3">
           <UserAccountMenu
             user={user}
             onLogout={handleLogout}
