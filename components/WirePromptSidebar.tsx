@@ -1588,7 +1588,7 @@ export default function WirePromptSidebar({
   };
 
   return (
-    <aside className="flex h-full w-full flex-col gap-3 bg-transparent p-4 text-foreground">
+    <aside className="flex h-full w-full flex-col gap-3 bg-transparent p-3 text-foreground">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {renderedMessages}
         {/* The no-models notice below carries the fix, so it replaces this line. */}
@@ -1689,14 +1689,14 @@ export default function WirePromptSidebar({
             }
             className="w-full resize-none bg-transparent px-3 pb-2 pt-3 text-[13px] leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+          <div className="flex items-center justify-between gap-2 pb-3 pl-1.5 pr-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent"
+                  className="flex h-8 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent has-[>svg]:px-1.5"
                   disabled={noModelsEnabled}
                 >
                   <GeminiIcon className="h-3 w-3 shrink-0 text-primary" />

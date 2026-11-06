@@ -168,7 +168,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
       }}
       onDrop={canUpload ? handleDrop : undefined}
     >
-      <div className="flex h-8 items-center gap-1.5 px-3">
+      <div className="flex h-8 items-center gap-1.5 pl-3 pr-1.5">
         <button
           type="button"
           onClick={() => setIsOpen((open) => !open)}
@@ -214,13 +214,13 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
       {isOpen ? (
         <div className="max-h-48 overflow-y-auto pb-2">
           {status === "unavailable" ? (
-            <p className="px-3 text-[11px] text-muted-foreground">
+            <p className="px-4 text-[11px] text-muted-foreground">
               Images are not set up on this server yet.
             </p>
           ) : status === "failed" ? (
-            <p className="px-3 text-[11px] text-muted-foreground">Could not load images.</p>
+            <p className="px-4 text-[11px] text-muted-foreground">Could not load images.</p>
           ) : status === "ready" && assets.length === 0 ? (
-            <p className="px-3 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="px-4 text-[11px] leading-relaxed text-muted-foreground">
               Drop images here, or ask your agent to add one from your computer.
             </p>
           ) : (
@@ -238,7 +238,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
                   event.dataTransfer.setData(ASSET_DRAG_TYPE, JSON.stringify(dragged));
                   event.dataTransfer.effectAllowed = "copy";
                 }}
-                className="group flex h-8 items-center gap-2 pl-8 pr-2 text-xs text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                className="group ml-1.5 mr-1 flex h-8 items-center gap-2 rounded-md pl-[26px] pr-2 text-xs text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
               >
                 <button
                   type="button"

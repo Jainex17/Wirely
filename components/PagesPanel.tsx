@@ -133,13 +133,13 @@ export default function PagesPanel({
           data-tip={page.title}
           data-tip-detail={`${DEVICE_LABELS[page.deviceType ?? "desktop"]}. Click to go to it, drag it onto a group to move it.`}
           className={cn(
-            "flex h-7 w-full cursor-default items-center gap-1.5 pr-3 text-xs font-medium transition-colors",
+            "ml-1.5 mr-1 flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 text-xs font-medium transition-colors",
             isCurrent
               ? "text-foreground"
               : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
             isCurrent && selectedNode?.pageId !== page.id && "bg-primary/15",
           )}
-          style={{ paddingLeft: 8 + depth * 12 }}
+          style={{ paddingLeft: 6 + depth * 12 }}
         >
           <button
             type="button"
@@ -175,7 +175,7 @@ export default function PagesPanel({
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
       <ProjectHeader end={toggle} />
-      <div className="flex h-9 shrink-0 items-center gap-1 pl-3 pr-1.5">
+      <div className="flex h-9 shrink-0 items-center gap-1 pl-4 pr-1.5">
         <span className="text-[11px] font-semibold text-foreground">Pages</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
         <div className="ml-auto flex items-center">
@@ -216,9 +216,9 @@ export default function PagesPanel({
                 onClick={() => focusPages(group.pageIds)}
                 data-tip={group.name}
                 data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
-                className="flex h-7 w-full items-center gap-1.5 pl-2 pr-3 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+                className="ml-1.5 mr-1 flex h-7 w-[calc(100%-10px)] items-center gap-1.5 rounded-md pl-1.5 pr-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
               >
-                <span className="w-4 shrink-0" />
+                <span className="w-3.5 shrink-0" />
                 <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate">{group.name}</span>
                 <span className="ml-auto font-normal tabular-nums text-muted-foreground">
