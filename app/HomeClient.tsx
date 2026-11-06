@@ -17,12 +17,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import ProjectThumbnail from "@/components/ProjectThumbnail";
+import ProjectsSidebar, { type ConnectedAgent } from "@/components/ProjectsSidebar";
+import { timeAgo } from "@/lib/timeAgo";
 import { toast } from "@/components/ui/sonner";
 import McpConnectSteps from "@/components/McpConnectSteps";
 
@@ -70,9 +74,27 @@ export interface HomeClientInitialData {
   hasGoogleApiKey: boolean;
   hasOpenRouterApiKey: boolean;
   hasZaiApiKey: boolean;
-  // True once any MCP token has made a call, so the agent path works.
-  hasConnectedAgent: boolean;
+  // Agents whose MCP token has made a call, newest first.
+  agents: ConnectedAgent[];
 }
+
+const PROJECT_SORTS = {
+  edited: "Last edited",
+  created: "Date created",
+  title: "Name",
+} as const;
+
+type ProjectSort = keyof typeof PROJECT_SORTS;
+
+const sortProjects = (
+  projects: HomeClientInitialData["historyItems"],
+  sort: ProjectSort,
+) =>
+  [...projects].sort((a, b) => {
+    if (sort === "title") return a.title.localeCompare(b.title);
+    const key = sort === "created" ? "createdAt" : "updatedAt";
+    return new Date(b[key]).getTime() - new Date(a[key]).getTime();
+  });
 
 export type HomeGenerationMode =
   | "single_page"
@@ -162,32 +184,6 @@ const homeReducer = (state: HomeState, action: HomeAction): HomeState => {
     default:
       return state;
   }
-};
-
-const timeAgo = (date: string | Date) => {
-  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-
-  let interval = seconds / 31536000;
-  if (interval > 1) {
-    return Math.floor(interval) + " years ago";
-  }
-  interval = seconds / 2592000;
-  if (interval > 1) {
-    return Math.floor(interval) + " months ago";
-  }
-  interval = seconds / 86400;
-  if (interval > 1) {
-    return Math.floor(interval) + "d ago";
-  }
-  interval = seconds / 3600;
-  if (interval > 1) {
-    return Math.floor(interval) + " hours ago";
-  }
-  interval = seconds / 60;
-  if (interval > 1) {
-    return Math.floor(interval) + " minutes ago";
-  }
-  return Math.max(seconds, 0) + " seconds ago";
 };
 
 interface HomeClientProps {
@@ -378,7 +374,9 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   // The composer spends a provider key. Without one, the agent is the only way
   // to generate, so home leads with connecting it instead of a dead text box.
   const showComposer = !hasNoRunnableModels;
-  const { hasConnectedAgent } = initialData;
+  const hasConnectedAgent = initialData.agents.length > 0;
+  const [sort, setSort] = useState<ProjectSort>("edited");
+  const projects = sortProjects(state.historyItems, sort);
 
   const [isCreatingBlank, setIsCreatingBlank] = useState(false);
 
@@ -524,71 +522,86 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   );
 
   return (
-    <div className="min-h-[100dvh] bg-background">
-      <div className="mx-auto w-full max-w-6xl px-4 pt-3 sm:px-6">
-        <AppHeader
-          user={state.user}
-          onLogout={handleLogout}
-          isLoggingOut={state.isLoggingOut}
-        />
-      </div>
+    <div className="flex min-h-[100dvh] bg-background">
+      <ProjectsSidebar user={state.user} agents={initialData.agents} />
 
-      <main className="mx-auto w-full max-w-6xl px-4 pb-28 sm:px-6">
-        <section className="pt-10">
-          <div className="flex items-baseline justify-between gap-4">
-            <h1 className="font-display text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
-              Projects
-            </h1>
-            {state.historyTotal > state.historyItems.length ? (
-              <span className="text-sm text-muted-foreground">
-                Latest {state.historyItems.length} of {state.historyTotal}
-              </span>
-            ) : null}
-          </div>
+      <div className="min-w-0 flex-1">
+        <div className="px-4 pt-3 md:hidden">
+          <AppHeader
+            user={state.user}
+            onLogout={handleLogout}
+            isLoggingOut={state.isLoggingOut}
+          />
+        </div>
 
-          <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            <li>
-              <button
+        <main className="w-full px-4 pb-28 sm:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-6 md:h-14 md:pt-0">
+            <div className="flex items-baseline gap-3">
+              <h1 className="text-[15px] font-medium text-foreground">All projects</h1>
+              {state.historyTotal > state.historyItems.length ? (
+                <span className="text-xs text-muted-foreground">
+                  Latest {state.historyItems.length} of {state.historyTotal}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm">
+                    {PROJECT_SORTS[sort]}
+                    <ChevronDown className="text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuRadioGroup
+                    value={sort}
+                    onValueChange={(value) => setSort(value as ProjectSort)}
+                  >
+                    {Object.entries(PROJECT_SORTS).map(([value, label]) => (
+                      <DropdownMenuRadioItem key={value} value={value}>
+                        {label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
                 type="button"
+                size="sm"
                 onClick={createBlankProject}
                 disabled={isCreatingBlank}
-                className="flex h-full min-h-40 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-muted-foreground transition-[border-color,color,transform] duration-200 hover:border-foreground/30 hover:text-foreground active:scale-[0.99] disabled:opacity-60"
               >
-                <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card">
-                  {isCreatingBlank ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Plus className="size-4" />
-                  )}
-                </span>
-                <span className="text-[13px] font-medium">New project</span>
-              </button>
-            </li>
+                {isCreatingBlank ? <Loader2 className="animate-spin" /> : <Plus />}
+                New project
+              </Button>
+            </div>
+          </div>
 
-            {state.historyItems.map((project) => (
+          <ul className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(208px,1fr))] gap-5">
+            {projects.map((project) => (
               <li key={project.id} className="group relative">
                 <Link
                   href={`/wire/${project.id}`}
-                  className="block rounded-xl border border-border bg-card p-1 transition-[border-color,transform] duration-200 hover:border-white/15 active:scale-[0.99]"
+                  className="block overflow-hidden rounded-xl border border-border bg-card transition-[border-color,transform] duration-200 hover:border-foreground/20 active:scale-[0.99]"
                 >
-                  <div className="px-2.5 pb-2 pt-2">
-                    <p className="truncate pr-7 text-[13px] font-medium text-foreground">
+                  <ProjectThumbnail projectId={project.id} />
+                  <div className="border-t border-border px-4 py-3">
+                    <p className="truncate pr-8 text-sm font-medium text-foreground">
                       {project.title}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Edited {timeAgo(project.updatedAt)}
                     </p>
                   </div>
-                  <ProjectThumbnail projectId={project.id} />
                 </Link>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
                       aria-label={`Actions for ${project.title}`}
-                      className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                      className="absolute bottom-4 right-3 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
                     >
-                      <MoreHorizontal size={14} />
+                      <MoreHorizontal size={16} />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -608,11 +621,29 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                 </DropdownMenu>
               </li>
             ))}
-          </ul>
-        </section>
 
-        <div className="pt-12">{setup}</div>
-      </main>
+            <li>
+              <button
+                type="button"
+                onClick={createBlankProject}
+                disabled={isCreatingBlank}
+                className="flex h-full min-h-48 w-full flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-border text-muted-foreground transition-[border-color,color,transform] duration-200 hover:border-foreground/30 hover:text-foreground active:scale-[0.99] disabled:opacity-60"
+              >
+                <span className="flex size-8 items-center justify-center rounded-full border border-border bg-card">
+                  {isCreatingBlank ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                </span>
+                <span className="text-sm">New project</span>
+              </button>
+            </li>
+          </ul>
+
+          <div className="pt-14">{setup}</div>
+        </main>
+      </div>
 
       {state.projectToDelete ? (
         <DeleteProjectDialog

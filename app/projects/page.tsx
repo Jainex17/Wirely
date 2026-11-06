@@ -7,6 +7,24 @@ import HomeClient from "../HomeClient";
 const MAX_DRAFT_PROMPT_LENGTH = 500;
 
 /**
+ * Tokens that have made a call, one per agent, newest first. Each OAuth
+ * reconnect issues a fresh "OAuth: <client>" token, so the same agent can own
+ * several, and the sidebar should list it once.
+ */
+const connectedAgents = (tokens: Awaited<ReturnType<typeof listApiTokens>>) => {
+  const latestByName = new Map<string, Date>();
+  for (const token of tokens) {
+    if (!token.lastUsedAt) continue;
+    const name = token.name.replace(/^OAuth: /, "");
+    const seen = latestByName.get(name);
+    if (!seen || token.lastUsedAt > seen) latestByName.set(name, token.lastUsedAt);
+  }
+  return [...latestByName]
+    .map(([name, lastUsedAt]) => ({ name, lastUsedAt }))
+    .sort((a, b) => b.lastUsedAt.getTime() - a.lastUsedAt.getTime());
+};
+
+/**
  * The signed-in home: the projects grid and the composer. Signed-out
  * visitors go through login and come back here.
  */
@@ -47,7 +65,7 @@ export default async function ProjectsPage({
         hasGoogleApiKey: session.aiSettings.hasGoogleApiKey,
         hasOpenRouterApiKey: session.aiSettings.hasOpenRouterApiKey,
         hasZaiApiKey: session.aiSettings.hasZaiApiKey,
-        hasConnectedAgent: agentTokens.some((token) => token.lastUsedAt !== null),
+        agents: connectedAgents(agentTokens),
       }}
     />
   );
