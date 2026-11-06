@@ -19,9 +19,9 @@ export default function ProjectsLoading() {
           <Skeleton className="h-14 w-full rounded-lg" />
         </div>
         <main className="w-full px-4 pb-28 sm:px-8">
-          <div className="flex items-center justify-between gap-3 pt-6 md:h-14 md:pt-0">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-8 w-56" />
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-6 md:h-14 md:pt-0">
+            <Skeleton className="h-4 w-24 shrink-0" />
+            <Skeleton className="h-8 w-56 shrink-0" />
           </div>
           <ul className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(208px,1fr))] gap-5">
             {Array.from({ length: 4 }, (_, index) => (
