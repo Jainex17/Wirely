@@ -59,53 +59,55 @@
 }
 
 /* One dark palette for every signed-in page: the editor, home, projects, and
-   settings. Panels and cards sit a few steps lighter than the background, so
-   the editor's side panels read apart from its canvas. */
+   settings. The grays carry no hue, because the canvas sits next to the user's
+   designs and a tinted surround shifts how their colors read. Blue is the one
+   accent: it marks the primary action, links, focus, and selection, close to
+   the sky-500 the canvas uses for selected elements. */
 .dark {
-  --background: #212329;
-  --foreground: #e9ecf5;
-  --card: #2b2e35;
-  --card-foreground: #e9ecf5;
-  --popover: #2b2e35;
-  --popover-foreground: #e9ecf5;
-  --primary: #6c9bd2;
-  --primary-foreground: #08121c;
-  --secondary: #363941;
-  --secondary-foreground: #dfe3ec;
-  --muted: #363941;
-  --muted-foreground: #9ca3b1;
-  --accent: #363941;
-  --accent-foreground: #e9ecf5;
+  --background: #1e1e1e;
+  --foreground: #ededed;
+  --card: #262626;
+  --card-foreground: #ededed;
+  --popover: #2a2a2a;
+  --popover-foreground: #ededed;
+  --primary: #3b9eff;
+  --primary-foreground: #04121f;
+  --secondary: #303030;
+  --secondary-foreground: #e5e5e5;
+  --muted: #2c2c2c;
+  --muted-foreground: #a1a1a1;
+  --accent: #333333;
+  --accent-foreground: #ededed;
   --destructive: #ff5f45;
   --destructive-foreground: #14050a;
-  --border: #3b3e46;
-  --input: #3b3e46;
-  --ring: #6c9bd2;
-  --chart-1: #6c9bd2;
-  --chart-2: #4e7fb5;
-  --chart-3: #a3c0dd;
-  --chart-4: #1a1d24;
-  --chart-5: #cddff0;
-  --sidebar: #2b2e35;
-  --sidebar-foreground: #e9ecf5;
-  --sidebar-primary: #6c9bd2;
-  --sidebar-primary-foreground: #060a18;
-  --sidebar-accent: #363941;
-  --sidebar-accent-foreground: #e9ecf5;
-  --sidebar-border: #3b3e46;
-  --sidebar-ring: #6c9bd2;
+  --border: #363636;
+  --input: #3d3d3d;
+  --ring: #3b9eff;
+  --chart-1: #3b9eff;
+  --chart-2: #1f78d1;
+  --chart-3: #9ccbff;
+  --chart-4: #171717;
+  --chart-5: #d6e9ff;
+  --sidebar: #262626;
+  --sidebar-foreground: #ededed;
+  --sidebar-primary: #3b9eff;
+  --sidebar-primary-foreground: #04121f;
+  --sidebar-accent: #333333;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #363636;
+  --sidebar-ring: #3b9eff;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --radius: 0.625rem;
-  --shadow-2xs: 0 1px 2px 0px hsl(226 80% 2% / 0.5);
-  --shadow-xs: 0 1px 3px 0px hsl(226 80% 2% / 0.55);
-  --shadow-sm: 0 1px 3px 0px hsl(226 80% 2% / 0.6), 0 1px 2px -1px hsl(226 80% 2% / 0.6);
-  --shadow: 0 1px 3px 0px hsl(226 80% 2% / 0.6), 0 1px 2px -1px hsl(226 80% 2% / 0.6);
-  --shadow-md: 0 4px 12px -2px hsl(226 80% 2% / 0.65);
-  --shadow-lg: 0 18px 44px -16px hsl(226 80% 2% / 0.8), 0 2px 8px -2px hsl(226 80% 2% / 0.6);
-  --shadow-xl: 0 32px 72px -24px hsl(226 80% 2% / 0.85);
-  --shadow-2xl: 0 44px 96px -32px hsl(226 80% 2% / 0.9);
+  --shadow-2xs: 0 1px 2px 0px rgb(0 0 0 / 0.5);
+  --shadow-xs: 0 1px 3px 0px rgb(0 0 0 / 0.55);
+  --shadow-sm: 0 1px 3px 0px rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.6);
+  --shadow: 0 1px 3px 0px rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.6);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.65);
+  --shadow-lg: 0 18px 44px -16px rgb(0 0 0 / 0.8), 0 2px 8px -2px rgb(0 0 0 / 0.6);
+  --shadow-xl: 0 32px 72px -24px rgb(0 0 0 / 0.85);
+  --shadow-2xl: 0 44px 96px -32px rgb(0 0 0 / 0.9);
 }
 
 @theme inline {

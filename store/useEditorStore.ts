@@ -63,7 +63,7 @@ export interface AgentEdit {
 export type CanvasBackground = "dark" | "gray" | "light";
 
 /** Canvas colors for the gray and light backgrounds. Dark keeps the editor theme's own background. */
-export const CANVAS_BACKGROUND_COLORS = { gray: "#8e9097", light: "#eceef2" } as const;
+export const CANVAS_BACKGROUND_COLORS = { gray: "#8f8f8f", light: "#ededed" } as const;
 
 /**
  * The element the user picked with the element tool. The id is the element's

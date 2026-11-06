@@ -78,13 +78,13 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
   dark: {},
   gray: {
     backgroundColor: CANVAS_BACKGROUND_COLORS.gray,
-    ["--canvas-label" as string]: "#26282e",
-    ["--canvas-label-strong" as string]: "#0e1014",
+    ["--canvas-label" as string]: "#262626",
+    ["--canvas-label-strong" as string]: "#111111",
   },
   light: {
     backgroundColor: CANVAS_BACKGROUND_COLORS.light,
-    ["--canvas-label" as string]: "#6b7180",
-    ["--canvas-label-strong" as string]: "#0e1014",
+    ["--canvas-label" as string]: "#6b6b6b",
+    ["--canvas-label-strong" as string]: "#111111",
   },
 };
 
