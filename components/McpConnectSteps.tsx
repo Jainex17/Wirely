@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
@@ -77,7 +78,7 @@ export default function McpConnectSteps({ token }: { token?: string }) {
                 aria-label="Copy snippet"
                 className="absolute right-1.5 top-1.5 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                <MorphIcon icon={copied ? Check : Copy} className="size-3.5" />
               </button>
             </div>
           </div>

@@ -13,7 +13,9 @@ import {
 import { useChat } from "ai/react";
 import type { Message } from "ai";
 import Link from "next/link";
-import { Check, ChevronDown, Loader2, Send, Square, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, X } from "lucide-react";
+import { Send, Square } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -1759,29 +1761,22 @@ export default function WirePromptSidebar({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {isLoading ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-accent"
-                onClick={handleStopGeneration}
-                aria-label="Stop generating"
-                data-tip="Stop generating"
-              >
-                <Square className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                disabled={!prompt.trim() || pages.length === 0 || noModelsEnabled}
-                size="icon"
-                className="h-8 w-8 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
-                aria-label="Send message"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            )}
+            {/* One button for send and stop, so its icon morphs between them. */}
+            <Button
+              type={isLoading ? "button" : "submit"}
+              size="icon"
+              disabled={!isLoading && (!prompt.trim() || pages.length === 0 || noModelsEnabled)}
+              onClick={isLoading ? handleStopGeneration : undefined}
+              aria-label={isLoading ? "Stop generating" : "Send message"}
+              data-tip={isLoading ? "Stop generating" : undefined}
+              className={
+                isLoading
+                  ? "h-8 w-8 shrink-0 bg-transparent text-muted-foreground hover:bg-accent"
+                  : "h-8 w-8 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-20"
+              }
+            >
+              <MorphIcon icon={isLoading ? Square : Send} className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </form>

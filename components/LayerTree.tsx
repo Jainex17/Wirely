@@ -3,8 +3,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
-  Eye,
-  EyeOff,
   Frame,
   Image as ImageIcon,
   MousePointerClick,
@@ -12,6 +10,8 @@ import {
   Square,
   Type,
 } from "lucide-react";
+import { Eye, EyeOff } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 import {
   buildLayerTree,
   findLayerParent,
@@ -232,7 +232,7 @@ export default function LayerTree({
                 layer.hidden ? "visible" : "invisible group-hover:visible",
               )}
             >
-              {layer.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              <MorphIcon icon={layer.hidden ? EyeOff : Eye} className="h-3 w-3" />
             </button>
           </div>
         );

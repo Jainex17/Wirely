@@ -1,6 +1,8 @@
 "use client";
 
-import { Check, RotateCcw, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { Check, RotateCcw } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 import { cn } from "@/lib/utils";
 import type { ProjectComment } from "@/lib/projectComments";
 
@@ -78,7 +80,7 @@ export function CommentCard({
             aria-label={isResolved ? "Reopen comment" : "Resolve comment"}
             className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            {isResolved ? <RotateCcw className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+            <MorphIcon icon={isResolved ? RotateCcw : Check} className="h-3.5 w-3.5" />
           </button>
         ) : null}
         {canDelete ? (

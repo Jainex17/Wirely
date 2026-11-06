@@ -2,10 +2,8 @@
 
 import {
   ArrowLeft,
-  Check,
   ChevronRight,
   Component,
-  Copy,
   FileCode2,
   FolderGit2,
   Globe,
@@ -14,6 +12,8 @@ import {
   Radio,
   Upload,
 } from "lucide-react";
+import { Check, Copy } from "lucide";
+import MorphIcon from "@/components/MorphIcon";
 import { type DragEvent, type ReactNode, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -365,7 +365,7 @@ export default function ImportDialog({ projectId }: { projectId: string }) {
                 ) : null}
                 {isAgentSource ? (
                   <Button size="sm" onClick={() => void copyPrompt()} className="min-w-28 active:scale-[0.98]">
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    <MorphIcon icon={copied ? Check : Copy} className="h-3.5 w-3.5" />
                     {copied ? "Copied" : "Copy prompt"}
                   </Button>
                 ) : null}
