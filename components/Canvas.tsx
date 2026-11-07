@@ -21,8 +21,11 @@ import {
   clampZoom,
   getDefaultPageX,
   getEdgePanVelocity,
+  createBounds,
   getPageBounds,
   getPageFrameHeight,
+  getViewportBounds,
+  isBoundsIntersecting,
   getPageFrameWidth,
   isInsertTool,
   movePagesWith,
@@ -179,6 +182,37 @@ const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
 
+const INVERSE_ZOOM = "--canvas-inverse-zoom";
+
+/**
+ * Pins the inverse zoom variable on every page far from the viewport. A zoom
+ * step restyles each element that inherits the variable, so without this its
+ * cost grows with the number of pages on the canvas instead of the number on
+ * screen. The half viewport of margin covers titles and toolbars that
+ * counter-scale past a page's edge, and a page is unpinned before it shows.
+ */
+const pinOffscreenPages = (
+  camera: CameraState,
+  canvas: HTMLElement,
+  pageElements: Map<string, HTMLElement>,
+  pageBoundsById: Record<string, PageBounds>,
+) => {
+  const viewport = getViewportBounds(camera, { width: canvas.clientWidth, height: canvas.clientHeight });
+  const nearViewport = createBounds(
+    viewport.left - viewport.width / 2,
+    viewport.top - viewport.height / 2,
+    viewport.right + viewport.width / 2,
+    viewport.bottom + viewport.height / 2,
+  );
+  for (const [pageId, element] of pageElements) {
+    const bounds = pageBoundsById[pageId];
+    const isOffscreen = bounds !== undefined && !isBoundsIntersecting(bounds, nearViewport);
+    if (isOffscreen === (element.style.getPropertyValue(INVERSE_ZOOM) !== "")) continue;
+    if (isOffscreen) element.style.setProperty(INVERSE_ZOOM, "initial");
+    else element.style.removeProperty(INVERSE_ZOOM);
+  }
+};
+
 export default function Canvas({
   canvasRef,
   projectId,
@@ -261,6 +295,7 @@ export default function Canvas({
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const sceneRef = React.useRef<HTMLDivElement>(null);
+  const pageElementsRef = React.useRef(new Map<string, HTMLDivElement>());
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
   // the chat knows what to edit. This one exists only while the user has pages
@@ -325,6 +360,7 @@ export default function Canvas({
       }, {}),
     [pageLayouts],
   );
+  const pageBoundsRef = React.useRef(pageBoundsById);
 
   const groupFrames = React.useMemo(
     () =>
@@ -417,12 +453,15 @@ export default function Canvas({
   React.useLayoutEffect(() => {
     const applyCamera = (camera: CameraState, previous?: CameraState) => {
       const scene = sceneRef.current;
-      if (!scene) return;
+      const canvas = canvasRef.current;
+      if (!scene || !canvas) return;
+      // Before the writes below, so reading the canvas size forces no restyle.
+      pinOffscreenPages(camera, canvas, pageElementsRef.current, pageBoundsRef.current);
       scene.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${scaleFromZoom(camera.zoom)})`;
       // Page titles and toolbars counter-scale off this variable. Setting it
       // restyles each of them, so a pan, which keeps the zoom, leaves it alone.
       if (camera.zoom !== previous?.zoom) {
-        scene.style.setProperty("--canvas-inverse-zoom", String(100 / Math.max(20, camera.zoom)));
+        scene.style.setProperty(INVERSE_ZOOM, String(100 / Math.max(20, camera.zoom)));
       }
     };
     applyCamera(useEditorStore.getState().camera);
@@ -431,7 +470,25 @@ export default function Canvas({
       applyCamera(state.camera, previous.camera);
       scheduleLayoutSave();
     });
-  }, [scheduleLayoutSave]);
+  }, [canvasRef, scheduleLayoutSave]);
+
+  // A page that moves, appears, or comes into view as the canvas resizes needs
+  // the same check the camera runs.
+  React.useLayoutEffect(() => {
+    pageBoundsRef.current = pageBoundsById;
+    const canvas = canvasRef.current;
+    if (canvas) pinOffscreenPages(useEditorStore.getState().camera, canvas, pageElementsRef.current, pageBoundsById);
+  }, [canvasRef, pageBoundsById]);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(() =>
+      pinOffscreenPages(useEditorStore.getState().camera, canvas, pageElementsRef.current, pageBoundsRef.current),
+    );
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [canvasRef]);
 
   const handleWheel = React.useCallback(
     (event: WheelEvent) => {
@@ -1012,6 +1069,13 @@ export default function Canvas({
             return (
               <div
                 key={pageLayout.page.id}
+                ref={(element) => {
+                  if (!element) return;
+                  pageElementsRef.current.set(pageLayout.page.id, element);
+                  return () => {
+                    pageElementsRef.current.delete(pageLayout.page.id);
+                  };
+                }}
                 className={`absolute ${
                   activeTool === "select" && !isSpacePanning
                     ? draggingPageId === pageLayout.page.id
