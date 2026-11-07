@@ -1146,38 +1146,7 @@ export default function Canvas({
               ))
             : null}
 
-          {snapGuides.map((guide, index) => {
-            // One screen pixel. Guides only show mid-drag, while the zoom holds
-            // still, so reading it here cannot go stale.
-            const guideThickness = 1 / scaleFromZoom(useEditorStore.getState().camera.zoom);
-            if (guide.orientation === "vertical") {
-              return (
-                <div
-                  key={`vertical-${index}`}
-                  className="absolute bg-rose-500/90"
-                  style={{
-                    left: `${guide.position}px`,
-                    top: `${guide.start}px`,
-                    width: `${guideThickness}px`,
-                    height: `${guide.end - guide.start}px`,
-                  }}
-                />
-              );
-            }
-
-            return (
-              <div
-                key={`horizontal-${index}`}
-                className="absolute bg-rose-500/90"
-                style={{
-                  left: `${guide.start}px`,
-                  top: `${guide.position}px`,
-                  width: `${guide.end - guide.start}px`,
-                  height: `${guideThickness}px`,
-                }}
-              />
-            );
-          })}
+          {snapGuides.length > 0 ? <SnapGuides guides={snapGuides} /> : null}
         </div>
       </div>
 
@@ -1272,5 +1241,39 @@ function PageGroupFrame({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The snap lines of a drag in progress, one screen pixel thick at any zoom.
+ * It reads the zoom itself because the canvas does not render on camera
+ * changes, and it mounts only mid-drag, so a zoom renders nothing else.
+ */
+function SnapGuides({ guides }: { guides: SnapGuide[] }) {
+  const thickness = 1 / scaleFromZoom(useEditorStore((state) => state.camera.zoom));
+  return guides.map((guide, index) =>
+    guide.orientation === "vertical" ? (
+      <div
+        key={`vertical-${index}`}
+        className="absolute bg-rose-500/90"
+        style={{
+          left: `${guide.position}px`,
+          top: `${guide.start}px`,
+          width: `${thickness}px`,
+          height: `${guide.end - guide.start}px`,
+        }}
+      />
+    ) : (
+      <div
+        key={`horizontal-${index}`}
+        className="absolute bg-rose-500/90"
+        style={{
+          left: `${guide.start}px`,
+          top: `${guide.position}px`,
+          width: `${guide.end - guide.start}px`,
+          height: `${thickness}px`,
+        }}
+      />
+    ),
   );
 }
