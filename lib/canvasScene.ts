@@ -322,6 +322,30 @@ export const centerOnPoint = ({
   };
 };
 
+/**
+ * The camera a fraction `t` of the way from `from` to `to`. The point at the
+ * viewport center moves in a straight line and the zoom changes by a constant
+ * ratio, so a glide that also zooms does not swing sideways on the way.
+ */
+export const interpolateCamera = (
+  from: CameraState,
+  to: CameraState,
+  t: number,
+  viewport: ViewportSize,
+): CameraState => {
+  const center = { x: viewport.width / 2, y: viewport.height / 2 };
+  const fromPoint = viewportToScene(center, from, viewport);
+  const toPoint = viewportToScene(center, to, viewport);
+  return centerOnPoint({
+    scenePoint: {
+      x: fromPoint.x + (toPoint.x - fromPoint.x) * t,
+      y: fromPoint.y + (toPoint.y - fromPoint.y) * t,
+    },
+    viewport,
+    zoom: from.zoom * (to.zoom / from.zoom) ** t,
+  });
+};
+
 export const fitBounds = ({
   bounds,
   viewport,

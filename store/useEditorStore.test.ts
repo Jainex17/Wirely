@@ -72,19 +72,24 @@ describe("useEditorStore canvas state", () => {
     expect(useEditorStore.getState().pageFrameHeights).toEqual({ "page-1": 4200, "page-2": 1800 });
   });
 
-  it("updates frame heights and focuses a page using the current zoom", () => {
+  it("focuses a page at the zoom that fits its first screen, from any starting zoom", () => {
     useEditorStore.getState().setPagePosition("page-1", { x: 0, y: 0 });
     useEditorStore.getState().setPagePosition("page-2", { x: 2200, y: 0 });
     useEditorStore.getState().setPageFrameHeight("page-2", 1400);
-    useEditorStore.getState().setCamera({ x: 0, y: 0, zoom: 64 });
 
+    useEditorStore.getState().setCamera({ x: 0, y: 0, zoom: 20 });
     useEditorStore.getState().focusPage("page-2");
+    const fromZoomedOut = useEditorStore.getState().camera;
 
-    const state = useEditorStore.getState();
-    expect(state.focusedPageId).toBe("page-2");
-    expect(state.pageFrameHeights["page-2"]).toBe(1400);
-    expect(state.camera.zoom).toBe(64);
-    expect(state.camera.x).toBeLessThan(0);
+    useEditorStore.getState().setCamera({ x: 0, y: 0, zoom: 300 });
+    useEditorStore.getState().focusPage("page-2");
+    const fromZoomedIn = useEditorStore.getState().camera;
+
+    expect(useEditorStore.getState().focusedPageId).toBe("page-2");
+    expect(fromZoomedIn).toEqual(fromZoomedOut);
+    expect(fromZoomedOut.zoom).toBeGreaterThan(20);
+    expect(fromZoomedOut.zoom).toBeLessThanOrEqual(100);
+    expect(fromZoomedOut.x).toBeLessThan(0);
   });
 
   it("fits all pages into the viewport", () => {
