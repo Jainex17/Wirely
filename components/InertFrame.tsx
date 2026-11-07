@@ -105,7 +105,14 @@ export default React.memo(function InertFrame({
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 overflow-hidden bg-background"
-      style={{ contain: "strict", contentVisibility: "auto" }}
+      style={{
+        contain: "strict",
+        contentVisibility: "auto",
+        // `all: initial` below leaves custom properties alone, so without this
+        // every zoom step would restyle the whole page through the canvas's
+        // inherited zoom variable. Pinning it here stops the restyle at this box.
+        ["--canvas-inverse-zoom" as string]: "initial",
+      }}
     >
       {/* `all: initial` stops the editor's fonts and colors from inheriting
           into the page, as if it had its own document. It resets inherited

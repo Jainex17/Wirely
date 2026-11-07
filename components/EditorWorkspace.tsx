@@ -48,8 +48,9 @@ export default function EditorWorkspace({
   const hasInitializedViewportRef = useRef(false);
   const [isSpacePanning, setIsSpacePanning] = useState(false);
 
+  // The camera is left out on purpose and read with getState where needed.
+  // Subscribing to it would re-render the whole editor on every pan and zoom frame.
   const {
-    camera,
     activeDevice,
     pagePositions,
     pageFrameHeights,
@@ -76,7 +77,6 @@ export default function EditorWorkspace({
     setActiveTool,
   } = useEditorStore(
     useShallow((state) => ({
-      camera: state.camera,
       activeDevice: state.activeDevice,
       pagePositions: state.pagePositions,
       pageFrameHeights: state.pageFrameHeights,
@@ -265,7 +265,7 @@ export default function EditorWorkspace({
     if (!canvas || pages.length === 0 || viewportWidth === 0) return;
     if (hasInitializedViewportRef.current) return;
 
-    const viewportBounds = getViewportBounds(camera, {
+    const viewportBounds = getViewportBounds(useEditorStore.getState().camera, {
       width: canvas.clientWidth,
       height: canvas.clientHeight,
     });
@@ -298,7 +298,7 @@ export default function EditorWorkspace({
     if (!hasVisiblePage) {
       fitAllPages();
     }
-  }, [camera, fitAllPages, focusPage, pageBoundsById, pages, setSelectedNode, viewportWidth]);
+  }, [fitAllPages, focusPage, pageBoundsById, pages, setSelectedNode, viewportWidth]);
 
   /** Saves a pen tool edit, recorded so Cmd+Z can take it back. */
   const commitCanvasEdit = useCallback(
@@ -417,7 +417,7 @@ export default function EditorWorkspace({
       return;
     }
 
-    const viewportBounds = getViewportBounds(camera, {
+    const viewportBounds = getViewportBounds(useEditorStore.getState().camera, {
       width: canvasRef.current.clientWidth,
       height: canvasRef.current.clientHeight,
     });
@@ -434,7 +434,6 @@ export default function EditorWorkspace({
 
     clearRequestedGeneratedPageFocusCheck();
   }, [
-    camera,
     clearRequestedGeneratedPageFocusCheck,
     focusPages,
     pageBoundsById,

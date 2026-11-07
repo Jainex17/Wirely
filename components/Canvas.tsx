@@ -158,9 +158,9 @@ const getDragDelta = (
   drag: { startClientX: number; startClientY: number; initialCamera: CameraState },
   clientX: number,
   clientY: number,
-  scale: number,
 ) => {
   const { camera } = useEditorStore.getState();
+  const scale = scaleFromZoom(camera.zoom);
   return {
     x: (clientX - drag.startClientX - (camera.x - drag.initialCamera.x)) / scale,
     y: (clientY - drag.startClientY - (camera.y - drag.initialCamera.y)) / scale,
@@ -194,7 +194,6 @@ export default function Canvas({
   onSavePageHtml,
 }: CanvasProps) {
   const {
-    camera,
     canvasBackground,
     activeDevice,
     viewportSize,
@@ -219,7 +218,6 @@ export default function Canvas({
     setPageFrameHeight,
   } = useEditorStore(
     useShallow((state) => ({
-      camera: state.camera,
       canvasBackground: state.canvasBackground,
       activeDevice: state.activeDevice,
       viewportSize: state.viewportSize,
@@ -244,7 +242,6 @@ export default function Canvas({
       setPageFrameHeight: state.setPageFrameHeight,
     })),
   );
-  const scale = scaleFromZoom(camera.zoom);
   const isPanModeActive = activeTool === "grab" || isSpacePanning;
   const layoutStorageKey = React.useMemo(
     () => (projectId ? `wirely-wire-layout:${projectId}` : null),
@@ -263,6 +260,7 @@ export default function Canvas({
   const pinchStateRef = React.useRef<PinchState | null>(null);
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
   const hasCompletedInitialLayoutRef = React.useRef(false);
+  const sceneRef = React.useRef<HTMLDivElement>(null);
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
   // the chat knows what to edit. This one exists only while the user has pages
@@ -368,16 +366,17 @@ export default function Canvas({
     [],
   );
 
-  React.useEffect(() => {
-    if (!layoutStorageKey || typeof window === "undefined") {
-      return;
-    }
+  // Layout lives in local storage only, so it does not count as a pending
+  // save. Counting it would hold back agent edits polled from the server. The
+  // write waits for the layout to sit still and then reads the store, so a
+  // burst of camera frames and page moves becomes one write.
+  const scheduleLayoutSave = React.useCallback(() => {
+    if (!layoutStorageKey) return;
 
+    const { pages, pagePositions, pageStackOrder } = useEditorStore.getState();
     const hasAllPositions = pages.every((page) => pagePositions[page.id]);
     const hasAllStackEntries = pages.every((page) => pageStackOrder.includes(page.id));
-    if (!hasAllPositions || !hasAllStackEntries) {
-      return;
-    }
+    if (!hasAllPositions || !hasAllStackEntries) return;
 
     if (!hasCompletedInitialLayoutRef.current) {
       hasCompletedInitialLayoutRef.current = true;
@@ -387,11 +386,10 @@ export default function Canvas({
     if (layoutSaveTimeoutRef.current !== null) {
       window.clearTimeout(layoutSaveTimeoutRef.current);
     }
-
-    // Layout lives in local storage only, so it does not count as a pending
-    // save. Counting it would hold back agent edits polled from the server.
     layoutSaveTimeoutRef.current = window.setTimeout(() => {
       layoutSaveTimeoutRef.current = null;
+      const { camera, pagePositions, pageStackOrder, pageGroups, pageFrameHeights } =
+        useEditorStore.getState();
       try {
         window.localStorage.setItem(
           layoutStorageKey,
@@ -408,15 +406,32 @@ export default function Canvas({
         logger.error("wire_layout_persist_failed", { error });
       }
     }, LAYOUT_SAVE_IDLE_MS);
-  }, [
-    camera,
-    layoutStorageKey,
-    pageFrameHeights,
-    pageGroups,
-    pagePositions,
-    pageStackOrder,
-    pages,
-  ]);
+  }, [layoutStorageKey]);
+
+  React.useEffect(() => {
+    scheduleLayoutSave();
+  }, [scheduleLayoutSave, pageFrameHeights, pageGroups, pagePositions, pageStackOrder, pages]);
+
+  // Pan and zoom write the camera straight onto the scene element. Rendering
+  // the canvas for it would walk every page on every frame of a gesture.
+  React.useLayoutEffect(() => {
+    const applyCamera = (camera: CameraState, previous?: CameraState) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      scene.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${scaleFromZoom(camera.zoom)})`;
+      // Page titles and toolbars counter-scale off this variable. Setting it
+      // restyles each of them, so a pan, which keeps the zoom, leaves it alone.
+      if (camera.zoom !== previous?.zoom) {
+        scene.style.setProperty("--canvas-inverse-zoom", String(100 / Math.max(20, camera.zoom)));
+      }
+    };
+    applyCamera(useEditorStore.getState().camera);
+    return useEditorStore.subscribe((state, previous) => {
+      if (state.camera === previous.camera) return;
+      applyCamera(state.camera, previous.camera);
+      scheduleLayoutSave();
+    });
+  }, [scheduleLayoutSave]);
 
   const handleWheel = React.useCallback(
     (event: WheelEvent) => {
@@ -436,7 +451,7 @@ export default function Canvas({
       }
 
       // A trackpad fires several wheel events per frame. Folding them into one
-      // camera update per animation frame keeps React to one render a frame.
+      // camera update per animation frame keeps it to one scene write a frame.
       const pending =
         pendingWheelRef.current ??
         (pendingWheelRef.current = {
@@ -537,13 +552,13 @@ export default function Canvas({
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        initialCamera: camera,
+        initialCamera: useEditorStore.getState().camera,
       };
       setIsPanning(true);
       event.currentTarget.setPointerCapture(event.pointerId);
       event.preventDefault();
     },
-    [camera, isPanModeActive],
+    [isPanModeActive],
   );
 
   const handleCanvasPointerMove = React.useCallback(
@@ -749,7 +764,7 @@ export default function Canvas({
       );
       const isSnapDisabled = event.metaKey || event.ctrlKey;
       const movePage = (clientX: number, clientY: number) => {
-        const delta = getDragDelta(dragState, clientX, clientY, scale);
+        const delta = getDragDelta(dragState, clientX, clientY);
         const snapped = getSnappedPagePosition({
           movingPageId: pageId,
           position: {
@@ -768,7 +783,7 @@ export default function Canvas({
           otherPages: pageLayouts
             .map((pageLayout) => pageLayout.bounds)
             .filter((bounds) => !(bounds.pageId in dragState.initialPositions)),
-          scale,
+          scale: scaleFromZoom(useEditorStore.getState().camera.zoom),
           disabled: isSnapDisabled,
         });
 
@@ -785,7 +800,6 @@ export default function Canvas({
       pageBoundsById,
       pageLayouts,
       panAtEdge,
-      scale,
       setPagePositions,
     ],
   );
@@ -878,7 +892,7 @@ export default function Canvas({
       const dragState = groupDragStateRef.current;
       if (!dragState || dragState.pointerId !== event.pointerId) return;
       const moveGroup = (clientX: number, clientY: number) => {
-        const delta = getDragDelta(dragState, clientX, clientY, scale);
+        const delta = getDragDelta(dragState, clientX, clientY);
         setPagePositions(
           Object.fromEntries(
             Object.entries(dragState.initialPositions).map(([pageId, position]) => [
@@ -891,7 +905,7 @@ export default function Canvas({
       moveGroup(event.clientX, event.clientY);
       panAtEdge(event.clientX, event.clientY, moveGroup);
     },
-    [panAtEdge, scale, setPagePositions],
+    [panAtEdge, setPagePositions],
   );
 
   const stopGroupDrag = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -961,13 +975,12 @@ export default function Canvas({
     >
       <div className="pointer-events-none absolute inset-0 canvas-dots" />
       <div
+        ref={sceneRef}
         className="absolute"
         style={{
-          transform: `translate(${camera.x}px, ${camera.y}px) scale(${scale})`,
+          // The camera subscription above writes the transform and the zoom
+          // variable, so no render ever has to.
           transformOrigin: "0 0",
-          // Page titles and toolbars counter-scale off this variable, so a zoom
-          // tick restyles them without re-rendering any page.
-          ["--canvas-inverse-zoom" as string]: 100 / Math.max(20, camera.zoom),
           left: "50%",
           top: `${CANVAS_TOP_OFFSET}px`,
           // Promote the scene to its own layer so pan and zoom composite on
@@ -1070,6 +1083,9 @@ export default function Canvas({
             : null}
 
           {snapGuides.map((guide, index) => {
+            // One screen pixel. Guides only show mid-drag, while the zoom holds
+            // still, so reading it here cannot go stale.
+            const guideThickness = 1 / scaleFromZoom(useEditorStore.getState().camera.zoom);
             if (guide.orientation === "vertical") {
               return (
                 <div
@@ -1078,7 +1094,7 @@ export default function Canvas({
                   style={{
                     left: `${guide.position}px`,
                     top: `${guide.start}px`,
-                    width: `${1 / scale}px`,
+                    width: `${guideThickness}px`,
                     height: `${guide.end - guide.start}px`,
                   }}
                 />
@@ -1093,7 +1109,7 @@ export default function Canvas({
                   left: `${guide.start}px`,
                   top: `${guide.position}px`,
                   width: `${guide.end - guide.start}px`,
-                  height: `${1 / scale}px`,
+                  height: `${guideThickness}px`,
                 }}
               />
             );
