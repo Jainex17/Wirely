@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createDefaultCamera } from "@/lib/canvasScene";
-import { getViewportSceneBounds, useEditorStore } from "@/store/useEditorStore";
+import { getViewportSceneBounds, stopCameraGlide, useEditorStore } from "@/store/useEditorStore";
 
 const resetStore = () => {
   useEditorStore.setState({
@@ -438,5 +438,100 @@ describe("focusComment", () => {
 
     expect(useEditorStore.getState().activeCommentId).toBeNull();
     expect(useEditorStore.getState().focusedPageId).toBe("page-2");
+  });
+});
+
+describe("camera glide", () => {
+  // Bun has no window, so focus jumps straight there in every other test. These
+  // tests stand in a window whose animation frames run only when stepped.
+  let queued: FrameRequestCallback[] = [];
+  let reducedMotion = false;
+  let now = 0;
+  const step = (ms: number) => {
+    now += ms;
+    const callbacks = queued;
+    queued = [];
+    callbacks.forEach((callback) => callback(now));
+  };
+  const runToEnd = () => {
+    for (let frame = 0; frame < 200 && queued.length > 0; frame += 1) step(16);
+  };
+  const focusTarget = () => {
+    const camera = useEditorStore.getState().camera;
+    useEditorStore.getState().focusPage("page-2");
+    runToEnd();
+    const target = useEditorStore.getState().camera;
+    useEditorStore.getState().setCamera(camera);
+    return target;
+  };
+
+  beforeEach(() => {
+    queued = [];
+    reducedMotion = false;
+    now = 0;
+    Object.assign(globalThis, {
+      window: {
+        requestAnimationFrame: (callback: FrameRequestCallback) => queued.push(callback),
+        cancelAnimationFrame: () => {
+          queued = [];
+        },
+        matchMedia: () => ({ matches: reducedMotion }),
+      },
+    });
+    useEditorStore.getState().setPagePosition("page-1", { x: 0, y: 0 });
+    useEditorStore.getState().setPagePosition("page-2", { x: 2200, y: 0 });
+    useEditorStore.getState().setCamera({ x: 0, y: 0, zoom: 40 });
+  });
+
+  afterEach(() => {
+    stopCameraGlide();
+    Reflect.deleteProperty(globalThis, "window");
+  });
+
+  it("passes through the space between and lands on the fitted camera", () => {
+    const target = focusTarget();
+
+    useEditorStore.getState().focusPage("page-2");
+    step(0);
+    step(300);
+    const midway = useEditorStore.getState().camera;
+    runToEnd();
+
+    expect(midway.x).toBeLessThan(0);
+    expect(midway.x).toBeGreaterThan(target.x);
+    expect(midway.zoom).toBeGreaterThan(40);
+    expect(midway.zoom).toBeLessThan(target.zoom);
+    expect(useEditorStore.getState().camera).toEqual(target);
+  });
+
+  it("gives way to a camera write from elsewhere", () => {
+    useEditorStore.getState().focusPage("page-2");
+    step(0);
+    step(100);
+    useEditorStore.getState().setCamera({ x: 5, y: 5, zoom: 80 });
+    runToEnd();
+
+    expect(useEditorStore.getState().camera).toEqual({ x: 5, y: 5, zoom: 80 });
+  });
+
+  it("stays where it is when a drag stops it", () => {
+    useEditorStore.getState().focusPage("page-2");
+    step(0);
+    step(100);
+    const stoppedAt = useEditorStore.getState().camera;
+    stopCameraGlide();
+    runToEnd();
+
+    expect(useEditorStore.getState().camera).toBe(stoppedAt);
+  });
+
+  it("jumps straight to the page under reduced motion", () => {
+    const target = focusTarget();
+    reducedMotion = true;
+
+    useEditorStore.getState().focusPage("page-2");
+
+    expect(useEditorStore.getState().camera).toEqual(target);
+    expect(queued).toHaveLength(0);
   });
 });

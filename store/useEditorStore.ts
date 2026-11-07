@@ -356,11 +356,20 @@ const easeInOutCubic = (t: number) =>
  * Moves the camera to `target` over a short ease in and out, so jumping to a page from
  * a list reads as travel across the canvas instead of a cut. Every frame writes
  * the store, so a pan or a hit test mid-glide sees the camera that is on screen.
- * A camera write from anywhere else, such as a wheel zoom or a drag, stops it.
+ * A camera write from anywhere else, such as a wheel zoom or a pan, stops it.
  */
-const glideCamera = (target: CameraState) => {
+/**
+ * Ends a running glide where it is. Drags call it when they start, since they
+ * measure from the camera at that moment and a glide still zooming under them
+ * would pull the page away from the pointer.
+ */
+export const stopCameraGlide = () => {
   if (cameraGlideFrame !== null) window.cancelAnimationFrame(cameraGlideFrame);
   cameraGlideFrame = null;
+};
+
+const glideCamera = (target: CameraState) => {
+  stopCameraGlide();
 
   const { camera: from, viewportSize } = useEditorStore.getState();
   const canAnimate =
