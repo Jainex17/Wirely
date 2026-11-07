@@ -4,7 +4,12 @@ import React from "react";
 import { Ungroup } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { logger } from "@/lib/logger";
-import { CANVAS_BACKGROUND_COLORS, type CanvasBackground, useEditorStore } from "@/store/useEditorStore";
+import {
+  CANVAS_BACKGROUND_COLORS,
+  type CanvasBackground,
+  stopCameraGlide,
+  useEditorStore,
+} from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import CanvasCommentPins from "./CanvasCommentPins";
 import PageRenderer, { PAGE_FRAME_TOP } from "./PageRenderer";
@@ -605,6 +610,7 @@ export default function Canvas({
         return;
       }
 
+      stopCameraGlide();
       panStateRef.current = {
         pointerId: event.pointerId,
         startClientX: event.clientX,
@@ -770,6 +776,7 @@ export default function Canvas({
       const movingPageIds = selectedPageIds.includes(pageId) ? selectedPageIds : [pageId];
       const startOf = (id: string) =>
         pageBoundsById[id] ? { x: pageBoundsById[id].left, y: pageBoundsById[id].top } : null;
+      stopCameraGlide();
       pageDragStateRef.current = {
         pageId,
         pointerId: event.pointerId,
@@ -926,6 +933,7 @@ export default function Canvas({
       if (isEditableTarget(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
+      stopCameraGlide();
       groupDragStateRef.current = {
         pointerId: event.pointerId,
         startClientX: event.clientX,

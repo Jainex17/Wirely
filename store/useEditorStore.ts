@@ -25,6 +25,7 @@ import {
   createDefaultCamera,
   fitBounds,
   getDefaultPageX,
+  interpolateCamera,
   getPageBounds,
   getPageFrameHeight,
   getPageFrameSize,
@@ -345,6 +346,57 @@ const getFitBoundsById = (state: EditorState, pageId: string) =>
 const hasUsableViewport = (viewportSize: ViewportSize) =>
   viewportSize.width > 0 && viewportSize.height > 0;
 
+const CAMERA_GLIDE_MS = 600;
+let cameraGlideFrame: number | null = null;
+
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+
+/**
+ * Moves the camera to `target` over a short ease in and out, so jumping to a page from
+ * a list reads as travel across the canvas instead of a cut. Every frame writes
+ * the store, so a pan or a hit test mid-glide sees the camera that is on screen.
+ * A camera write from anywhere else, such as a wheel zoom or a pan, stops it.
+ */
+/**
+ * Ends a running glide where it is. Drags call it when they start, since they
+ * measure from the camera at that moment and a glide still zooming under them
+ * would pull the page away from the pointer.
+ */
+export const stopCameraGlide = () => {
+  if (cameraGlideFrame !== null) window.cancelAnimationFrame(cameraGlideFrame);
+  cameraGlideFrame = null;
+};
+
+const glideCamera = (target: CameraState) => {
+  stopCameraGlide();
+
+  const { camera: from, viewportSize } = useEditorStore.getState();
+  const canAnimate =
+    typeof window !== "undefined" &&
+    typeof window.requestAnimationFrame === "function" &&
+    !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (!canAnimate) {
+    useEditorStore.setState({ camera: target });
+    return;
+  }
+
+  let written = from;
+  let startedAt: number | null = null;
+  const step = (now: number) => {
+    if (useEditorStore.getState().camera !== written) {
+      cameraGlideFrame = null;
+      return;
+    }
+    startedAt ??= now;
+    const t = Math.min(1, (now - startedAt) / CAMERA_GLIDE_MS);
+    written = t === 1 ? target : interpolateCamera(from, target, easeInOutCubic(t), viewportSize);
+    useEditorStore.setState({ camera: written });
+    cameraGlideFrame = t === 1 ? null : window.requestAnimationFrame(step);
+  };
+  cameraGlideFrame = window.requestAnimationFrame(step);
+};
+
 const getFittedCamera = (state: EditorState) => {
   return getFittedCameraForPageIds(
     state,
@@ -416,7 +468,7 @@ const getPositionRightOf = (bounds: PageBounds[]) => ({
 
 export const useEditorStore = create<EditorState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...DEFAULT_CANVAS_STATE,
       ...generateEmptyState(),
 
@@ -591,28 +643,27 @@ export const useEditorStore = create<EditorState>()(
       setComments: (comments) => set({ comments }),
       setActiveTool: (activeTool) => set({ activeTool }),
       setActiveCommentId: (activeCommentId) => set({ activeCommentId }),
-      focusComment: (commentId) =>
-        set((state) => {
-          const comment = state.comments.find((candidate) => candidate.id === commentId);
-          if (!comment) return state;
-          // Resolved comments have no pin on the canvas, so only their page is shown.
-          const next = {
-            activeCommentId: comment.resolvedAt === null ? comment.id : null,
-            focusedPageId: comment.pageId,
-          };
-          const page = getPageBoundsCollection(state).find(
-            (bounds) => bounds.pageId === comment.pageId,
-          );
-          if (!page || !hasUsableViewport(state.viewportSize)) return next;
-          return {
-            ...next,
-            camera: centerOnPoint({
-              scenePoint: { x: page.left + comment.x, y: page.top + comment.y },
-              viewport: state.viewportSize,
-              zoom: state.camera.zoom,
-            }),
-          };
-        }),
+      focusComment: (commentId) => {
+        const state = get();
+        const comment = state.comments.find((candidate) => candidate.id === commentId);
+        if (!comment) return;
+        // Resolved comments have no pin on the canvas, so only their page is shown.
+        set({
+          activeCommentId: comment.resolvedAt === null ? comment.id : null,
+          focusedPageId: comment.pageId,
+        });
+        const page = getPageBoundsCollection(state).find(
+          (bounds) => bounds.pageId === comment.pageId,
+        );
+        if (!page || !hasUsableViewport(state.viewportSize)) return;
+        glideCamera(
+          centerOnPoint({
+            scenePoint: { x: page.left + comment.x, y: page.top + comment.y },
+            viewport: state.viewportSize,
+            zoom: state.camera.zoom,
+          }),
+        );
+      },
       setPageFrameHeight: (pageId, height) =>
         set((state) => {
           const nextHeight = Math.max(1, Math.round(height));
@@ -627,59 +678,27 @@ export const useEditorStore = create<EditorState>()(
             },
           };
         }),
-      focusPage: (pageId) =>
-        set((state) => {
-          const bounds = getFitBoundsById(state, pageId);
-          if (!bounds || !hasUsableViewport(state.viewportSize)) {
-            return {
-              focusedPageId: pageId,
-            };
-          }
-
-          const nextCamera = fitBounds({
-            bounds,
-            viewport: state.viewportSize,
-            minZoom: state.camera.zoom,
-            maxZoom: state.camera.zoom,
-          });
-
-          return {
-            camera: nextCamera,
-            focusedPageId: pageId,
-          };
-        }),
-      focusPages: (pageIds) =>
-        set((state) => {
-          const uniquePageIds = [...new Set(pageIds)].filter((pageId) =>
-            state.pages.some((page) => page.id === pageId),
-          );
-          if (uniquePageIds.length === 0) {
-            return state;
-          }
-          if (uniquePageIds.length === 1) {
-            const bounds = getFitBoundsById(state, uniquePageIds[0]);
-            if (!bounds || !hasUsableViewport(state.viewportSize)) {
-              return {
-                focusedPageId: uniquePageIds[0],
-              };
-            }
-
-            return {
-              camera: fitBounds({
-                bounds,
-                viewport: state.viewportSize,
-                minZoom: state.camera.zoom,
-                maxZoom: state.camera.zoom,
-              }),
-              focusedPageId: uniquePageIds[0],
-            };
-          }
-
-          return {
-            camera: getFittedCameraForPageIds(state, uniquePageIds),
-            focusedPageId: uniquePageIds[uniquePageIds.length - 1] ?? null,
-          };
-        }),
+      // Zooms to fit the page's first screen, so the page lands filling the
+      // view whatever zoom the canvas was at.
+      focusPage: (pageId) => {
+        const state = get();
+        set({ focusedPageId: pageId });
+        if (!getFitBoundsById(state, pageId) || !hasUsableViewport(state.viewportSize)) return;
+        glideCamera(getFittedCameraForPageIds(state, [pageId]));
+      },
+      focusPages: (pageIds) => {
+        const state = get();
+        const uniquePageIds = [...new Set(pageIds)].filter((pageId) =>
+          state.pages.some((page) => page.id === pageId),
+        );
+        if (uniquePageIds.length === 0) return;
+        if (uniquePageIds.length === 1) {
+          state.focusPage(uniquePageIds[0]);
+          return;
+        }
+        set({ focusedPageId: uniquePageIds[uniquePageIds.length - 1] ?? null });
+        glideCamera(getFittedCameraForPageIds(state, uniquePageIds));
+      },
       fitAllPages: () =>
         set((state) => {
           if (!hasUsableViewport(state.viewportSize)) {

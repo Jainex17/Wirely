@@ -9,6 +9,7 @@ import {
   getPageBounds,
   getSnappedPagePosition,
   getViewportBounds,
+  interpolateCamera,
   clipToFirstScreen,
   placeMissingPages,
   scaleFromZoom,
@@ -181,5 +182,35 @@ describe("movePagesWith", () => {
         { x: 120, y: -30 },
       ),
     ).toEqual({ a: { x: 120, y: -30 }, b: { x: 1720, y: 10 }, c: { x: -380, y: 870 } });
+  });
+});
+
+describe("interpolateCamera", () => {
+  const viewport = { width: 1200, height: 800 };
+  const center = { x: 600, y: 400 };
+
+  it("starts and ends on the given cameras", () => {
+    const from = { x: 40, y: -20, zoom: 50 };
+    const to = { x: -900, y: 300, zoom: 200 };
+
+    expect(interpolateCamera(from, to, 0, viewport)).toEqual(from);
+    const end = interpolateCamera(from, to, 1, viewport);
+    expect(end.x).toBeCloseTo(to.x);
+    expect(end.y).toBeCloseTo(to.y);
+    expect(end.zoom).toBeCloseTo(to.zoom);
+  });
+
+  it("moves the centered point in a straight line while zooming by a constant ratio", () => {
+    const from = { x: 0, y: 0, zoom: 50 };
+    const to = { x: -2000, y: -600, zoom: 200 };
+    const fromPoint = viewportToScene(center, from, viewport);
+    const toPoint = viewportToScene(center, to, viewport);
+
+    const half = interpolateCamera(from, to, 0.5, viewport);
+    const halfPoint = viewportToScene(center, half, viewport);
+
+    expect(half.zoom).toBeCloseTo(100);
+    expect(halfPoint.x).toBeCloseTo((fromPoint.x + toPoint.x) / 2);
+    expect(halfPoint.y).toBeCloseTo((fromPoint.y + toPoint.y) / 2);
   });
 });
