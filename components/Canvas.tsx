@@ -249,6 +249,9 @@ export default function Canvas({
     focusedPageId,
     selectedNode,
     setSelectedNode,
+    selectedPageIds,
+    setSelectedPageIds,
+    toggleSelectedPages,
     setCamera,
     panBy,
     setPagePosition,
@@ -273,6 +276,9 @@ export default function Canvas({
       focusedPageId: state.focusedPageId,
       selectedNode: state.selectedNode,
       setSelectedNode: state.setSelectedNode,
+      selectedPageIds: state.selectedPageIds,
+      setSelectedPageIds: state.setSelectedPageIds,
+      toggleSelectedPages: state.toggleSelectedPages,
       setCamera: state.setCamera,
       panBy: state.panBy,
       setPagePosition: state.setPagePosition,
@@ -306,10 +312,6 @@ export default function Canvas({
   const groupLayerRef = React.useRef<HTMLDivElement>(null);
   const pageElementsRef = React.useRef(new Map<string, HTMLDivElement>());
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
-  // Separate from the store's focused page, which always points at some page so
-  // the chat knows what to edit. This one exists only while the user has pages
-  // clicked, drives the size badge, and moves together when dragged.
-  const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [isPanning, setIsPanning] = React.useState(false);
   const [snapGuides, setSnapGuides] = React.useState<SnapGuide[]>([]);
   // The one page running as a live iframe. It goes live on a double click, a
@@ -748,11 +750,9 @@ export default function Canvas({
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
-      setSelectedPageIds((current) =>
-        current.includes(pageId) ? current.filter((id) => id !== pageId) : [...current, pageId],
-      );
+      toggleSelectedPages([pageId]);
     },
-    [activeTool, setFocusedPage],
+    [activeTool, setFocusedPage, toggleSelectedPages],
   );
 
   // While a page or group is held near the canvas edge, pan one step a frame
@@ -806,7 +806,7 @@ export default function Canvas({
       event.preventDefault();
       event.stopPropagation();
       setFocusedPage(pageId);
-      setSelectedPageIds((current) => (current.includes(pageId) ? current : [pageId]));
+      if (!selectedPageIds.includes(pageId)) setSelectedPageIds([pageId]);
       bringPageToFront(pageId);
 
       // Pressing a page in a multi-page selection drags the whole selection.
@@ -838,6 +838,7 @@ export default function Canvas({
       pageBoundsById,
       selectedPageIds,
       setFocusedPage,
+      setSelectedPageIds,
     ],
   );
 
@@ -935,9 +936,9 @@ export default function Canvas({
   const handlePageFocus = React.useCallback(
     (pageId: string) => {
       setFocusedPage(pageId);
-      setSelectedPageIds((current) => (current.includes(pageId) ? current : [pageId]));
+      if (!useEditorStore.getState().selectedPageIds.includes(pageId)) setSelectedPageIds([pageId]);
     },
-    [setFocusedPage],
+    [setFocusedPage, setSelectedPageIds],
   );
 
   React.useEffect(() => {
@@ -962,14 +963,23 @@ export default function Canvas({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pageGroups, selectedPageIds, setSelectedNode, ungroupPages]);
+  }, [pageGroups, selectedPageIds, setSelectedNode, setSelectedPageIds, ungroupPages]);
 
+  // Shift-click adds the group's pages to the selection or takes them out.
+  // Pressing a group already inside a larger selection drags the whole
+  // selection, the way pressing a selected page does.
   const handleGroupPointerDown = React.useCallback(
-    (pageIds: string[]) => (event: React.PointerEvent<HTMLDivElement>) => {
+    (groupPageIds: string[]) => (event: React.PointerEvent<HTMLDivElement>) => {
       if (activeTool !== "select" || isSpacePanning || event.button !== 0) return;
       if (isEditableTarget(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
+      if (event.shiftKey) {
+        toggleSelectedPages(groupPageIds);
+        return;
+      }
+      const isInSelection = groupPageIds.every((pageId) => selectedPageIds.includes(pageId));
+      const pageIds = isInSelection ? selectedPageIds : groupPageIds;
       stopCameraGlide();
       groupDragStateRef.current = {
         pointerId: event.pointerId,
@@ -986,7 +996,14 @@ export default function Canvas({
       setSelectedPageIds(pageIds);
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeTool, isSpacePanning, pageBoundsById],
+    [
+      activeTool,
+      isSpacePanning,
+      pageBoundsById,
+      selectedPageIds,
+      setSelectedPageIds,
+      toggleSelectedPages,
+    ],
   );
 
   const handleGroupPointerMove = React.useCallback(

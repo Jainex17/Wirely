@@ -649,3 +649,27 @@ describe("useEditorStore focus requests", () => {
     expect(useEditorStore.getState().focusRequestCount).toBe(before);
   });
 });
+
+describe("page selection", () => {
+  it("shift-click adds pages, and removes a set only when all of it is picked", () => {
+    const { setSelectedPageIds, toggleSelectedPages } = useEditorStore.getState();
+    setSelectedPageIds(["page-1"]);
+
+    toggleSelectedPages(["page-2", "page-3"]);
+    expect(useEditorStore.getState().selectedPageIds).toEqual(["page-1", "page-2", "page-3"]);
+
+    // A group partly picked gets the rest of its pages, not a removal.
+    toggleSelectedPages(["page-1"]);
+    toggleSelectedPages(["page-1", "page-2"]);
+    expect(useEditorStore.getState().selectedPageIds).toEqual(["page-2", "page-3", "page-1"]);
+
+    toggleSelectedPages(["page-1", "page-2"]);
+    expect(useEditorStore.getState().selectedPageIds).toEqual(["page-3"]);
+  });
+
+  it("drops a deleted page from the selection", () => {
+    useEditorStore.getState().setSelectedPageIds(["page-1", "page-2"]);
+    useEditorStore.getState().deletePage("page-1");
+    expect(useEditorStore.getState().selectedPageIds).toEqual(["page-2"]);
+  });
+});

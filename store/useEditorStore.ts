@@ -120,6 +120,12 @@ export interface CanvasState {
    */
   focusRequestCount: number;
   selectedNode: SelectedNode | null;
+  /**
+   * Pages picked as a set on the canvas or in the pages panel. Unlike the
+   * focused page it can be empty. Shift-click adds or removes pages, and the
+   * canvas drags the whole set together.
+   */
+  selectedPageIds: string[];
   /** The two pages open in the compare view, design first, or null when it is closed. */
   comparePageIds: [string, string] | null;
   activeTool: CanvasTool;
@@ -164,6 +170,9 @@ export interface EditorState extends CanvasState, ProjectState {
   applyCanvasArrangement: (arrangement: CanvasArrangement) => void;
   setFocusedPage: (pageId: string | null) => void;
   setSelectedNode: (node: SelectedNode | null) => void;
+  setSelectedPageIds: (pageIds: string[]) => void;
+  /** Shift-click: removes the pages when all are picked, otherwise adds them. */
+  toggleSelectedPages: (pageIds: string[]) => void;
   setComparePageIds: (pageIds: [string, string] | null) => void;
   setComments: (comments: ProjectComment[]) => void;
   setActiveTool: (tool: CanvasTool) => void;
@@ -260,6 +269,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   focusedPageId: "page-home",
   focusRequestCount: 0,
   selectedNode: null,
+  selectedPageIds: [],
   comparePageIds: null,
   activeTool: "select",
   activeCommentId: null,
@@ -689,6 +699,13 @@ export const useEditorStore = create<EditorState>()(
       setFocusedPage: (focusedPageId) =>
         set((state) => ({ focusedPageId, focusRequestCount: state.focusRequestCount + 1 })),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
+      setSelectedPageIds: (selectedPageIds) => set({ selectedPageIds }),
+      toggleSelectedPages: (pageIds) =>
+        set(({ selectedPageIds }) => ({
+          selectedPageIds: pageIds.every((pageId) => selectedPageIds.includes(pageId))
+            ? selectedPageIds.filter((pageId) => !pageIds.includes(pageId))
+            : [...new Set([...selectedPageIds, ...pageIds])],
+        })),
       setComparePageIds: (comparePageIds) => set({ comparePageIds }),
       setComments: (comments) => set({ comments }),
       setActiveTool: (activeTool) => set({ activeTool }),
@@ -1051,6 +1068,7 @@ export const useEditorStore = create<EditorState>()(
               state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
                 ? state.selectedNode
                 : null,
+            selectedPageIds: state.selectedPageIds.filter((id) => nextPageIds.includes(id)),
             focusedPageId:
               state.focusedPageId && nextPageIds.includes(state.focusedPageId)
                 ? state.focusedPageId
@@ -1218,6 +1236,7 @@ export const useEditorStore = create<EditorState>()(
             pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
             focusedPageId: nextFocusedPageId,
             selectedNode: state.selectedNode?.pageId === pageId ? null : state.selectedNode,
+            selectedPageIds: state.selectedPageIds.filter((id) => id !== pageId),
           };
         }),
 
@@ -1233,6 +1252,7 @@ export const useEditorStore = create<EditorState>()(
           arrangedAt: null,
           focusedPageId: "page-home",
           selectedNode: null,
+          selectedPageIds: [],
           requestedGeneratedPageFocusIds: null,
           viewportSize: { width: 0, height: 0 },
         })),
