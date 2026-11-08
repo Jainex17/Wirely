@@ -1292,15 +1292,18 @@ function PageGroupFrame({
               {name}
             </span>
           )}
-          {/* Shown on hover or selection only, so it never crowds the name.
-              Ctrl+Shift+G ungroups from the keyboard. */}
+          {/* Collapsed until the group is hovered or selected, or the button
+              takes keyboard focus, so it never crowds the name. It collapses
+              rather than hides, so it stays in the tab order. */}
           <button
             type="button"
             onClick={onUngroup}
             aria-label={`Ungroup ${name}`}
             data-tip="Ungroup (Ctrl+Shift+G)"
-            className={`-mr-1.5 shrink-0 rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10 ${
-              isSelected ? "block" : "hidden group-hover/frame:block"
+            className={`shrink-0 overflow-hidden rounded text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10 ${
+              isSelected
+                ? "-mr-1.5 max-w-6 p-0.5"
+                : "max-w-0 p-0 opacity-0 group-hover/frame:-mr-1.5 group-hover/frame:max-w-6 group-hover/frame:p-0.5 group-hover/frame:opacity-100 focus-visible:-mr-1.5 focus-visible:max-w-6 focus-visible:p-0.5 focus-visible:opacity-100"
             }`}
           >
             <Ungroup className="h-3.5 w-3.5" />
