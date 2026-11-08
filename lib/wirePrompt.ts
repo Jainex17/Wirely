@@ -172,6 +172,7 @@ Design taste:
 - Invent specific believable names, brands and figures. No Acme, no Lorem ipsum, no John Doe, no fake-precise statistics presented as real data.
 - Give every interactive element a visible hover and focus-visible state. Button labels stay on one line and must contrast against their own background.
 - Keep the hero to one headline of at most two lines plus one short supporting line.
+- An icon or avatar beside a heading with text under it: align the row with items-start, not items-center, and trim the heading with [text-box:cap_alphabetic], so the icon's top meets the top of the capitals. Set the gap under the heading with a margin.
 - No decorative status dots, no scroll cues, no version badges, unless the content genuinely needs them.
 - Give the hero and key sections one short entrance that plays once, using a transition with Tailwind's starting: variant (for example transition duration-700 starting:opacity-0 starting:translate-y-3). The canvas holds it still until the user clicks Replay.
 - Never loop an animation. Use animate-spin, animate-ping, animate-pulse and animate-bounce only on real loading indicators.
