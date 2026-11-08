@@ -57,6 +57,9 @@ export const MCP_INSTRUCTIONS = [
     "returned source as oldString, and keep its data-wirely-id attribute.",
   "Give each page one short entrance animation that plays once. The canvas shows pages " +
     "settled and plays their motion when the user clicks Replay. Never loop an animation.",
+  "When an icon or avatar sits beside a heading with text under it, align the row to the top " +
+    "(align-items: start), not the center, and give the heading text-box: cap alphabetic, so the " +
+    "icon's top meets the top of the capitals. Set the gap under the heading with a margin.",
   "Keep all content visible without JavaScript. The canvas shows pages with scripts off, so " +
     "never hide content until a script or IntersectionObserver reveals it.",
   "For an icon, logo, illustration, social card, or any artwork that is not a screen, send " +
