@@ -1257,18 +1257,23 @@ function PageGroupFrame({
       <div
         className="absolute bottom-full left-0 origin-bottom-left pb-2 text-[color:var(--canvas-label-strong,var(--foreground))]"
         // Rows leave room for the name at its largest in ARRANGEMENT_ROW_GAP.
-        style={{ transform: `scale(var(${GROUP_LABEL_SCALE}, 1))` }}
+        // Groups side by side get no such room, so the chip never grows past
+        // its frame and a long name truncates, like a Figma section's.
+        style={{
+          transform: `scale(var(${GROUP_LABEL_SCALE}, 1))`,
+          maxWidth: `calc(${width}px / var(${GROUP_LABEL_SCALE}, 1))`,
+        }}
         onDoubleClick={() => setIsRenaming(true)}
       >
         {/* A filled chip, like a Figma section label, so the name reads as the
             frame's title rather than loose text on the canvas. */}
-        <div className="flex items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] py-1 pl-2.5 pr-1">
+        <div className="flex max-w-full items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] py-1 pl-2.5 pr-1">
           {isRenaming ? (
             <input
               autoFocus
               defaultValue={name}
               aria-label="Group name"
-              className="h-6 w-40 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
+              className="h-6 w-40 min-w-0 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
               onBlur={(event) => {
                 onRename(event.currentTarget.value);
                 setIsRenaming(false);
@@ -1279,14 +1284,16 @@ function PageGroupFrame({
               }}
             />
           ) : (
-            <span className="whitespace-nowrap text-sm font-semibold">{name}</span>
+            <span className="truncate text-sm font-semibold" data-tip={name}>
+              {name}
+            </span>
           )}
           <button
             type="button"
             onClick={onUngroup}
             aria-label={`Ungroup ${name}`}
             data-tip="Ungroup (Ctrl+Shift+G)"
-            className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
+            className="shrink-0 rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
           >
             <Ungroup className="h-3.5 w-3.5" />
           </button>
