@@ -41,6 +41,23 @@ export const arrangementRowsSchema = z
   .min(1)
   .max(20);
 
+/** Reads an arrangement back from a saved layout, which any script on the origin could have written. */
+export const readSavedArrangement = (value: unknown): CanvasArrangement | null => {
+  const parsed = z.object({ rows: arrangementRowsSchema, arrangedAt: z.string() }).safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
+
+/**
+ * The agent's groups for the pages there are now, each under the name the user
+ * may have given it since. Ungrouping ends a live arrangement, so while one is
+ * live every group on the canvas came from it.
+ */
+export const syncArrangedGroups = (current: PageGroup[], arranged: PageGroup[]) =>
+  arranged.map((group) => ({
+    ...group,
+    name: current.find((candidate) => candidate.id === group.id)?.name ?? group.name,
+  }));
+
 /** Checks the rows against the project's pages: every id must exist and appear once. */
 export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: string[]) => {
   const known = new Set(projectPageIds);

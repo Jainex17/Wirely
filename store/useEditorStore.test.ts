@@ -438,6 +438,52 @@ describe("applyCanvasArrangement", () => {
     expect(useEditorStore.getState().pagePositions["page-1"].x).toBe(0);
   });
 
+  it("keeps re-flowing rows after a reload that restores a live arrangement", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    const saved = useEditorStore.getState();
+    store.hydratePageLayout({
+      pagePositions: saved.pagePositions,
+      pageGroups: saved.pageGroups,
+      arrangedAt: saved.arrangedAt,
+      arrangement: saved.arrangement,
+    });
+
+    store.setPageFrameHeight("page-2", 3000);
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(3000);
+  });
+
+  it("ignores a saved arrangement that does not parse", () => {
+    useEditorStore.getState().hydratePageLayout({ arrangement: { rows: "nope" } });
+    expect(useEditorStore.getState().arrangement).toBeNull();
+  });
+
+  it("puts a page that arrives a poll after its arrangement into its group, keeping a rename", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement({
+      rows: [
+        [{ name: "Mobile", pageIds: ["page-2", "page-3"] }, { name: "Late", pageIds: ["page-4"] }],
+        [{ name: "Website", pageIds: ["page-1"] }],
+      ],
+      arrangedAt: arrangement.arrangedAt,
+    });
+    const mobile = useEditorStore.getState().pageGroups.find((group) => group.name === "Mobile");
+    store.renamePageGroup(mobile!.id, "Phone");
+
+    store.applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3", "page-4"],
+      changed: ["page-3", "page-4"].map((id) => ({ id, title: id, htmlContent: "<p></p>", deviceType: "mobile" })),
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.pageGroups.map((group) => [group.name, group.pageIds])).toEqual([
+      ["Phone", ["page-2", "page-3"]],
+      ["Late", ["page-4"]],
+      ["Website", ["page-1"]],
+    ]);
+    expect(state.pagePositions["page-3"].y).toBe(0);
+  });
+
   it("does not apply an arrangement the saved layout already holds", () => {
     const store = useEditorStore.getState();
     store.hydratePageLayout({

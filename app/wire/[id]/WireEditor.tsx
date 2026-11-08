@@ -127,7 +127,9 @@ export default function WireEditor({
 
     try {
       const raw = window.localStorage.getItem(getWireLayoutStorageKey(wireId));
-      if (raw) hydratePageLayout(JSON.parse(raw) as PersistedWireLayout);
+      // An empty layout still runs, so a project opened after another one
+      // does not keep that project's camera or arrangement.
+      hydratePageLayout(raw ? (JSON.parse(raw) as PersistedWireLayout) : {});
     } catch {
       hydratePageLayout({});
     }

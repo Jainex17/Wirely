@@ -70,4 +70,6 @@ export interface PersistedWireLayout {
   pageFrameHeights?: Record<string, number>;
   /** When the agent arrangement this layout already holds was written. */
   arrangedAt?: string | null;
+  /** That arrangement while it still re-flows the rows, null once the user dragged a page. */
+  arrangement?: unknown;
 }

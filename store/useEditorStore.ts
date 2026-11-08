@@ -41,6 +41,8 @@ import {
   type ArrangementRows,
   type CanvasArrangement,
   layoutArrangement,
+  readSavedArrangement,
+  syncArrangedGroups,
 } from "@/lib/canvasArrangement";
 import type { NodeStyleProperty } from "@/lib/pageNodes";
 import type { ProjectComment } from "@/lib/projectComments";
@@ -572,6 +574,7 @@ export const useEditorStore = create<EditorState>()(
       ungroupPages: (groupId) =>
         set((state) => ({
           pageGroups: state.pageGroups.filter((group) => group.id !== groupId),
+          arrangement: null,
         })),
       renamePageGroup: (groupId, name) =>
         set((state) => ({
@@ -639,6 +642,7 @@ export const useEditorStore = create<EditorState>()(
             pageGroups = [],
             pageFrameHeights = {},
             arrangedAt = null,
+            arrangement = null,
           } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
           const storedHeights = Object.fromEntries(
@@ -658,7 +662,7 @@ export const useEditorStore = create<EditorState>()(
             pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
-            arrangement: null,
+            arrangement: readSavedArrangement(arrangement),
             arrangedAt: typeof arrangedAt === "string" ? arrangedAt : null,
             // A height a frame already reported this session is newer.
             pageFrameHeights: { ...storedHeights, ...state.pageFrameHeights },
@@ -1132,15 +1136,27 @@ export const useEditorStore = create<EditorState>()(
           if (!didChange) return state;
 
           const nextPageIds = pages.map((page) => page.id);
+          let pagePositions = filterPagePositions(
+            { ...state.pagePositions, ...addedPositions },
+            nextPageIds,
+          );
+          let pageGroups = filterPageGroups(state.pageGroups, nextPageIds);
+          // A page the agent added can land a poll after the arrangement that
+          // names it, so a live arrangement places it now, group and all.
+          if (state.arrangement) {
+            const arranged = getArrangedPositions(
+              { ...state, pages, pagePositions },
+              state.arrangement.rows,
+            );
+            pagePositions = arranged.pagePositions;
+            pageGroups = syncArrangedGroups(pageGroups, arranged.pageGroups);
+          }
           return {
             pages,
             agentEdits,
-            pagePositions: filterPagePositions(
-              { ...state.pagePositions, ...addedPositions },
-              nextPageIds,
-            ),
+            pagePositions,
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
-            pageGroups: filterPageGroups(state.pageGroups, nextPageIds),
+            pageGroups,
             pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
             selectedNode:
               state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)

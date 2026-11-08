@@ -429,8 +429,15 @@ export default function Canvas({
     }
     layoutSaveTimeoutRef.current = window.setTimeout(() => {
       layoutSaveTimeoutRef.current = null;
-      const { camera, pagePositions, pageStackOrder, pageGroups, pageFrameHeights, arrangedAt } =
-        useEditorStore.getState();
+      const {
+        camera,
+        pagePositions,
+        pageStackOrder,
+        pageGroups,
+        pageFrameHeights,
+        arrangedAt,
+        arrangement,
+      } = useEditorStore.getState();
       try {
         window.localStorage.setItem(
           layoutStorageKey,
@@ -442,6 +449,7 @@ export default function Canvas({
             pageGroups,
             pageFrameHeights,
             arrangedAt,
+            arrangement,
           }),
         );
       } catch (error) {
