@@ -1,4 +1,5 @@
-import { and, desc, eq, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, or } from "drizzle-orm";
+import type { ArrangementRows, CanvasArrangement } from "@/lib/canvasArrangement";
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import {
@@ -109,6 +110,42 @@ export const updateProjectMemory = async (projectId: string, update: unknown): P
     if (written.length > 0) return merged;
   }
   return { ok: false, error: "The memory kept changing while saving. Try again." };
+};
+
+/** Stores an agent's arrangement for open editors to apply. Callers check ownership. */
+export const setCanvasArrangement = async (projectId: string, rows: ArrangementRows) => {
+  const arrangement = { canvasArrangement: rows, canvasArrangedAt: new Date() };
+  await getDb()
+    .insert(projectAgentState)
+    .values({ projectId, ...arrangement })
+    .onConflictDoUpdate({ target: projectAgentState.projectId, set: arrangement });
+};
+
+/**
+ * The project's last arrangement, or null when it has none or none newer than
+ * `since`. The editor reads it on load and on every page poll, so a database
+ * without the column yet reads as no arrangement. Callers check ownership.
+ */
+export const getCanvasArrangement = async (
+  projectId: string,
+  since?: Date,
+): Promise<CanvasArrangement | null> => {
+  try {
+    const [row] = await getDb()
+      .select({ rows: projectAgentState.canvasArrangement, arrangedAt: projectAgentState.canvasArrangedAt })
+      .from(projectAgentState)
+      .where(
+        and(
+          eq(projectAgentState.projectId, projectId),
+          since ? gt(projectAgentState.canvasArrangedAt, since) : undefined,
+        ),
+      )
+      .limit(1);
+    return row?.rows && row.arrangedAt ? { rows: row.rows, arrangedAt: row.arrangedAt.toISOString() } : null;
+  } catch (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
 };
 
 /**

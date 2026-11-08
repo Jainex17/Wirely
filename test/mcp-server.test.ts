@@ -118,6 +118,7 @@ describe("tool catalog", () => {
     expect(TOOL_NAMES).toEqual([
       "add_asset",
       "add_page",
+      "arrange_canvas",
       "capture_local_page",
       "create_project",
       "delete_page",
@@ -187,6 +188,19 @@ describe("tool dispatch", () => {
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("Provide html, title, or deviceType"),
+    });
+  });
+
+  it("rejects an arrangement with an empty group before reaching the database", async () => {
+    const result = await callTool("user", "arrange_canvas", {
+      projectId: "p",
+      rows: [[{ name: "Mobile", pageIds: [] }]],
+    }, "https://wirely.test");
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("rows.0.0.pageIds"),
     });
   });
 

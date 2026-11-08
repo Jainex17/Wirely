@@ -263,11 +263,62 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_pages",
     description:
-      "List a project's HTML pages (id, title, device type, HTML size).",
+      "List a project's HTML pages (id, title, device type, HTML size). A page placed in a " +
+      "named group by the last arrange_canvas call also has that group's name; the user may " +
+      "have moved pages by hand since.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID },
       required: ["projectId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "arrange_canvas",
+    description:
+      "Lay out the whole canvas when the user asks to group, sort, tidy, or spread out pages. " +
+      "Send rows from top to bottom. Each row holds groups from left to right, and each group " +
+      "holds page ids from left to right. A group with a name gets a titled frame around its " +
+      "pages; leave the name out to place pages side by side without a frame. Wirely spaces " +
+      "the pages by their real size, so rows never overlap. This replaces every group on the " +
+      "canvas, and pages you leave out go in a last row at the bottom. Call list_pages first " +
+      "for ids, titles, and device types. For example, put the mobile flows in the first row " +
+      "and the desktop pages in the second.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: PROJECT_ID,
+        rows: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20,
+          description: "Rows from top to bottom.",
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 20,
+            description: "The groups in one row, from left to right.",
+            items: {
+              type: "object",
+              properties: {
+                name: {
+                  type: "string",
+                  description: "Group title shown on the canvas, like \"Onboarding (mobile)\".",
+                },
+                pageIds: {
+                  type: "array",
+                  items: { type: "string" },
+                  minItems: 1,
+                  description: "Page ids from left to right. Each page appears once in the whole arrangement.",
+                },
+              },
+              required: ["pageIds"],
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+      required: ["projectId", "rows"],
       additionalProperties: false,
     },
   },

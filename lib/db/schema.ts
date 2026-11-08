@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { ArrangementRows } from "@/lib/canvasArrangement";
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
 // No longer read. A project used to be HTML or design; every project is now
@@ -251,6 +252,9 @@ export const projectAgentState = pgTable("project_agent_state", {
   selectedPageId: uuid("selected_page_id"),
   selectedNodeId: text("selected_node_id"),
   selectedAt: timestamp("selected_at", { withTimezone: true }),
+  /** The rows of page groups an agent asked for with arrange_canvas, see `lib/canvasArrangement.ts`. */
+  canvasArrangement: jsonb("canvas_arrangement").$type<ArrangementRows>(),
+  canvasArrangedAt: timestamp("canvas_arranged_at", { withTimezone: true }),
 });
 
 /**

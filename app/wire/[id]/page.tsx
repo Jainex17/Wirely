@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { isPageDeviceType } from "@/lib/types";
 import { notFound, redirect } from "next/navigation";
 import { getServerSessionUserWithAiSettings } from "@/lib/auth/session";
+import { getCanvasArrangement } from "@/lib/db/queries/agentState";
 import { getProjectDetailForUser } from "@/lib/db/queries/projects";
 import { DEFAULT_WIRE_MODEL, resolveRunnableWireModel } from "@/lib/wireModels";
 import ProjectEditor from "./ProjectEditor";
@@ -27,7 +28,12 @@ export default async function WirePage({ params }: WirePageProps) {
   // Taken before the read so a write that races the page load is still newer
   // than the editor's first change cursor.
   const pagesLoadedAt = new Date().toISOString();
-  const projectDetail = await getProjectDetailForUser(resolvedParams.id, sessionUser.id);
+  // The arrangement read skips the ownership check and is dropped below with
+  // the project when the check fails, so the two share a round trip.
+  const [projectDetail, initialArrangement] = await Promise.all([
+    getProjectDetailForUser(resolvedParams.id, sessionUser.id),
+    getCanvasArrangement(resolvedParams.id),
+  ]);
 
   if (!projectDetail) {
     notFound();
@@ -83,6 +89,7 @@ export default async function WirePage({ params }: WirePageProps) {
         sessionUser: accountUser,
         initialProject: { projectTitle, pages: initialPages },
         pagesLoadedAt,
+        initialArrangement,
         initialModelName,
         initialMessages,
       }}

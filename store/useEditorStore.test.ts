@@ -398,6 +398,104 @@ describe("useEditorStore page groups", () => {
   });
 });
 
+describe("applyCanvasArrangement", () => {
+  const arrangement = {
+    rows: [[{ name: "Mobile", pageIds: ["page-2"] }], [{ name: "Website", pageIds: ["page-1"] }]],
+    arrangedAt: "2026-11-08T10:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    useEditorStore.setState({
+      pages: [
+        { id: "page-1", title: "Home", sections: [], deviceType: "desktop" },
+        { id: "page-2", title: "App", sections: [], deviceType: "mobile" },
+      ],
+      viewportSize: { width: 0, height: 0 },
+    });
+  });
+
+  it("groups the pages into rows and pushes the lower row down as a frame grows", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pageGroups.map((group) => group.name)).toEqual(["Mobile", "Website"]);
+    const firstRowBottom = 812;
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(firstRowBottom);
+
+    store.setPageFrameHeight("page-2", 3000);
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(3000);
+  });
+
+  it("applies an arrangement once, and stops re-flowing after the user drags a page", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    store.setPagePositions({ "page-1": { x: 5000, y: 5000 } });
+
+    store.setPageFrameHeight("page-2", 3000);
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pagePositions["page-1"]).toEqual({ x: 5000, y: 5000 });
+
+    store.applyCanvasArrangement({ ...arrangement, arrangedAt: "2026-11-08T11:00:00.000Z" });
+    expect(useEditorStore.getState().pagePositions["page-1"].x).toBe(0);
+  });
+
+  it("keeps re-flowing rows after a reload that restores a live arrangement", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    const saved = useEditorStore.getState();
+    store.hydratePageLayout({
+      pagePositions: saved.pagePositions,
+      pageGroups: saved.pageGroups,
+      arrangedAt: saved.arrangedAt,
+      arrangement: saved.arrangement,
+    });
+
+    store.setPageFrameHeight("page-2", 3000);
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(3000);
+  });
+
+  it("ignores a saved arrangement that does not parse", () => {
+    useEditorStore.getState().hydratePageLayout({ arrangement: { rows: "nope" } });
+    expect(useEditorStore.getState().arrangement).toBeNull();
+  });
+
+  it("puts a page that arrives a poll after its arrangement into its group, keeping a rename", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement({
+      rows: [
+        [{ name: "Mobile", pageIds: ["page-2", "page-3"] }, { name: "Late", pageIds: ["page-4"] }],
+        [{ name: "Website", pageIds: ["page-1"] }],
+      ],
+      arrangedAt: arrangement.arrangedAt,
+    });
+    const mobile = useEditorStore.getState().pageGroups.find((group) => group.name === "Mobile");
+    store.renamePageGroup(mobile!.id, "Phone");
+
+    store.applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3", "page-4"],
+      changed: ["page-3", "page-4"].map((id) => ({ id, title: id, htmlContent: "<p></p>", deviceType: "mobile" })),
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.pageGroups.map((group) => [group.name, group.pageIds])).toEqual([
+      ["Phone", ["page-2", "page-3"]],
+      ["Late", ["page-4"]],
+      ["Website", ["page-1"]],
+    ]);
+    expect(state.pagePositions["page-3"].y).toBe(0);
+  });
+
+  it("does not apply an arrangement the saved layout already holds", () => {
+    const store = useEditorStore.getState();
+    store.hydratePageLayout({
+      pagePositions: { "page-1": { x: 900, y: 0 }, "page-2": { x: 0, y: 0 } },
+      arrangedAt: arrangement.arrangedAt,
+    });
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pagePositions["page-1"]).toEqual({ x: 900, y: 0 });
+    expect(useEditorStore.getState().pageGroups).toEqual([]);
+  });
+});
+
 describe("focusComment", () => {
   const comment = (id: string, resolvedAt: string | null) => ({
     id,

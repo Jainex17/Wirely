@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, getTableColumns, gt, ilike, inArray, sql, TransactionRollbackError } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { getDesignTokens } from "@/lib/db/queries/agentState";
+import { getCanvasArrangement, getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
 import { applyDesignTokens } from "@/lib/designTokens";
 import {
@@ -269,7 +269,7 @@ export const listProjectPageChangesForUser = async ({
   const db = getDb();
   // The editor polls this every few seconds, so the ownership check shares the
   // round trip with the reads and a failed check drops what they returned.
-  const [project, idRows, changed] = await Promise.all([
+  const [project, idRows, changed, arrangement] = await Promise.all([
     getProjectForUser(projectId, userId),
     db
       .select({ id: projectPages.id })
@@ -286,10 +286,11 @@ export const listProjectPageChangesForUser = async ({
       .from(projectPages)
       .where(and(eq(projectPages.projectId, projectId), gt(projectPages.updatedAt, since)))
       .orderBy(asc(projectPages.sortOrder)),
+    getCanvasArrangement(projectId, since),
   ]);
   if (!project) return null;
 
-  return { pageIds: idRows.map((row) => row.id), changed };
+  return { pageIds: idRows.map((row) => row.id), changed, arrangement };
 };
 
 export const createProjectPageForUser = async ({

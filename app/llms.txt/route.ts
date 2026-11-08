@@ -41,6 +41,7 @@ Commands for Cursor, Codex, opencode, and clients that cannot open a browser are
 - get_page_png: render a page to an image to check it.
 - list_comments, resolve_comment: read and close review comments.
 - link_element, set_prototype_flow: wire pages into a clickable prototype.
+- arrange_canvas: group pages and lay them out in rows on the canvas.
 
 ## Links
 

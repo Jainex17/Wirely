@@ -25,6 +25,7 @@ import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 import { warmTailwindFrame } from "@/lib/tailwindFrameBrowser";
+import type { CanvasArrangement } from "@/lib/canvasArrangement";
 import type { PersistedWireLayout } from "@/lib/types";
 import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
@@ -42,6 +43,8 @@ interface WireEditorProps {
   };
   /** Server time the initial pages were read, the first change cursor. */
   pagesLoadedAt: string;
+  /** The last canvas arrangement an agent asked for, applied once over the saved layout. */
+  initialArrangement: CanvasArrangement | null;
   initialModelName: WireModelName;
   initialMessages: Array<
     Message &
@@ -78,6 +81,7 @@ export default function WireEditor({
   sessionUser,
   initialProject,
   pagesLoadedAt,
+  initialArrangement,
   initialModelName,
   initialMessages,
 }: WireEditorProps) {
@@ -93,6 +97,7 @@ export default function WireEditor({
   const hydratePageLayout = useEditorStore((state) => state.hydratePageLayout);
   const setFocusedPage = useEditorStore((state) => state.setFocusedPage);
   const applyServerPageChanges = useEditorStore((state) => state.applyServerPageChanges);
+  const applyCanvasArrangement = useEditorStore((state) => state.applyCanvasArrangement);
   // The comment tool swaps the sidebar for the project's comments, as Figma does,
   // and opens the sidebar if it was collapsed.
   const isCommentMode = useEditorStore((state) => state.activeTool === "comment");
@@ -122,15 +127,15 @@ export default function WireEditor({
 
     try {
       const raw = window.localStorage.getItem(getWireLayoutStorageKey(wireId));
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw) as PersistedWireLayout;
-
-      hydratePageLayout(parsed);
+      // An empty layout still runs, so a project opened after another one
+      // does not keep that project's camera or arrangement.
+      hydratePageLayout(raw ? (JSON.parse(raw) as PersistedWireLayout) : {});
     } catch {
       hydratePageLayout({});
     }
-  }, [hydratePageLayout, wireId]);
+    // An agent may have arranged the canvas while this browser was away.
+    if (initialArrangement) applyCanvasArrangement(initialArrangement);
+  }, [applyCanvasArrangement, hydratePageLayout, initialArrangement, wireId]);
 
   // An MCP agent writes pages from outside this tab. Polling while the tab is
   // visible shows those writes live without a reload; a hidden tab skips its
@@ -165,6 +170,8 @@ export default function WireEditor({
         cursor = payload.cursor;
         if (payload.changed.length > 0) lastChangeAt = Date.now();
         applyServerPageChanges(payload);
+        // After the pages, so an arrangement can place a page the agent just added.
+        if (payload.arrangement) applyCanvasArrangement(payload.arrangement);
       } catch {
         // A dropped poll is retried on the next tick.
       } finally {
@@ -203,7 +210,7 @@ export default function WireEditor({
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("focus", wake);
     };
-  }, [applyServerPageChanges, pagesLoadedAt, wireId]);
+  }, [applyCanvasArrangement, applyServerPageChanges, pagesLoadedAt, wireId]);
 
   useEffect(() => {
     const load = async () => {

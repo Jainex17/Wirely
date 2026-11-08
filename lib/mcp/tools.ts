@@ -26,10 +26,12 @@ import { getAssetData, listProjectAssetsForUser } from "@/lib/db/queries/assets"
 import { createAssetUploadPath, inlineAssets } from "@/lib/projectAssets";
 import {
   getAgentBaseline,
+  getCanvasArrangement,
   getCanvasSelection,
   getDesignTokens,
   getProjectMemory,
   setAgentBaseline,
+  setCanvasArrangement,
   updateProjectMemory,
   setDesignTokens,
 } from "@/lib/db/queries/agentState";
@@ -40,6 +42,7 @@ import {
 } from "@/lib/db/queries/reviews";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
+import { arrangementRowsSchema, checkArrangementPages } from "@/lib/canvasArrangement";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
@@ -169,18 +172,64 @@ const listPages: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
-  const pages = await listProjectPagesForUser({ projectId: project.id, userId });
+  const [pages, arrangement] = await Promise.all([
+    listProjectPagesForUser({ projectId: project.id, userId }),
+    getCanvasArrangement(project.id),
+  ]);
+  const groupOf = new Map(
+    (arrangement?.rows.flat() ?? []).flatMap((group) =>
+      group.name ? group.pageIds.map((pageId) => [pageId, group.name] as const) : [],
+    ),
+  );
   return succeed(
     JSON.stringify(
       pages.map((page) => ({
         id: page.id,
         title: page.title,
         deviceType: page.deviceType,
+        ...(groupOf.has(page.id) ? { group: groupOf.get(page.id) } : {}),
         sortOrder: page.sortOrder,
         htmlBytes: Buffer.byteLength(page.htmlContent ?? "", "utf8"),
         updatedAt: page.updatedAt.toISOString(),
       })),
     ),
+  );
+};
+
+const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
+  const parsed = z
+    .object({ projectId: z.string().trim().min(1), rows: arrangementRowsSchema })
+    .safeParse(args);
+  if (!parsed.success) return fail(`Invalid arguments. ${formatIssues(parsed.error.issues)}`);
+
+  const project = await getProjectForUser(parsed.data.projectId, userId);
+  if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  const pages = await listProjectPagesForUser({ projectId: project.id, userId });
+  const { rows } = parsed.data;
+  const { unknown, repeated, unlisted } = checkArrangementPages(
+    rows,
+    pages.map((page) => page.id),
+  );
+  if (unknown.length > 0) {
+    return fail(`These page ids are not in the project: ${unknown.join(", ")}. Use list_pages for valid ids.`);
+  }
+  if (repeated.length > 0) {
+    return fail(`Each page can appear once, but these appear more than once: ${repeated.join(", ")}.`);
+  }
+
+  try {
+    await setCanvasArrangement(project.id, rows);
+  } catch (error) {
+    if (isMissingRelationError(error)) return fail("Canvas arrangement is not set up on this server yet.");
+    throw error;
+  }
+  const groupCount = rows.flat().filter((group) => group.name?.trim()).length;
+  const rest =
+    unlisted.length > 0 ? ` The ${unlisted.length} page(s) left out went in a last row at the bottom.` : "";
+  return succeed(
+    `Arranged "${project.title}" into ${rows.length} row(s) with ${groupCount} named group(s).${rest} ` +
+      `An open editor moves the pages within a few seconds: ${origin}/wire/${project.id}`,
   );
 };
 
@@ -1100,6 +1149,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   create_project: createProjectHandler,
   list_pages: listPages,
   add_page: addPage,
+  arrange_canvas: arrangeCanvas,
   update_page: updatePage,
   patch_page: patchPage,
   get_page: getPage,
