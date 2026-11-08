@@ -101,6 +101,10 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 const DRAG_START_THRESHOLD_PX = 4;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const CAMERA_LAYER_IDLE_MS = 150;
+// How far the zoom may move from the scale the scene layer was rastered at
+// before it rasters again. Zoomed out by this factor, the layer holds about its
+// square, 2.25 times, the tiles the screen shows.
+const MAX_LAYER_SCALE_DRIFT = 1.5;
 
 interface PointerDragState {
   pageId: string;
@@ -470,19 +474,42 @@ export default function Canvas({
   // the canvas for it would walk every page on every frame of a gesture.
   //
   // The scene is its own GPU layer only while the camera moves. Chrome rasters
-  // a `will-change: transform` layer at a fixed scale, so a permanent hint
-  // makes a zoomed out canvas of many pages ask for far more tiles than the
-  // screen shows. Past the tile budget Chrome drops tiles across the whole
-  // window, and the sidebar and panels go blank in bands. Dropping the hint
-  // when the camera rests repaints the scene once at its real scale.
+  // a `will-change: transform` layer at the scale it had when promoted and
+  // keeps that scale while the transform changes. Zoomed out far past it, a
+  // canvas of many pages asks for many times the tiles the screen shows. Past
+  // the tile budget Chrome drops tiles across the whole window, and the
+  // sidebars and toolbar flicker blank. So the hint drops when the camera
+  // rests, and mid-zoom it drops for one frame whenever the zoom drifts past
+  // MAX_LAYER_SCALE_DRIFT, which rasters the scene again at its real scale.
   React.useLayoutEffect(() => {
     let layerTimer: number | undefined;
-    const holdLayer = (scene: HTMLElement) => {
-      scene.style.willChange = "transform";
+    // The zoom the layer was rastered at, or null while the scene has no layer.
+    let layerZoom: number | null = null;
+    // Set from a release until a frame has rendered without the layer. Adding
+    // the hint back before then would keep the old raster.
+    let releaseFrame: number | undefined;
+    const releaseLayer = (scene: HTMLElement) => {
+      scene.style.willChange = "";
+      layerZoom = null;
+    };
+    const holdLayer = (scene: HTMLElement, zoom: number) => {
       window.clearTimeout(layerTimer);
-      layerTimer = window.setTimeout(() => {
-        scene.style.willChange = "";
-      }, CAMERA_LAYER_IDLE_MS);
+      layerTimer = window.setTimeout(() => releaseLayer(scene), CAMERA_LAYER_IDLE_MS);
+      if (releaseFrame !== undefined) return;
+      if (layerZoom === null) {
+        scene.style.willChange = "transform";
+        layerZoom = zoom;
+        return;
+      }
+      if (Math.max(zoom / layerZoom, layerZoom / zoom) < MAX_LAYER_SCALE_DRIFT) return;
+      releaseLayer(scene);
+      // Two frames, since a release made outside a frame callback renders in
+      // the frame the first callback runs in.
+      releaseFrame = window.requestAnimationFrame(() => {
+        releaseFrame = window.requestAnimationFrame(() => {
+          releaseFrame = undefined;
+        });
+      });
     };
     const applyCamera = (camera: CameraState, previous?: CameraState) => {
       const scene = sceneRef.current;
@@ -504,13 +531,14 @@ export default function Canvas({
     applyCamera(useEditorStore.getState().camera);
     const unsubscribe = useEditorStore.subscribe((state, previous) => {
       if (state.camera === previous.camera) return;
-      if (sceneRef.current) holdLayer(sceneRef.current);
+      if (sceneRef.current) holdLayer(sceneRef.current, state.camera.zoom);
       applyCamera(state.camera, previous.camera);
       scheduleLayoutSave();
     });
     return () => {
       unsubscribe();
       window.clearTimeout(layerTimer);
+      if (releaseFrame !== undefined) window.cancelAnimationFrame(releaseFrame);
     };
   }, [canvasRef, scheduleLayoutSave]);
 
