@@ -12,7 +12,7 @@ import {
 } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import CanvasCommentPins from "./CanvasCommentPins";
-import PageRenderer, { PAGE_FRAME_TOP } from "./PageRenderer";
+import PageRenderer from "./PageRenderer";
 import type { ReportedNode } from "@/lib/nodePicker";
 import type { PageRecord } from "@/lib/types";
 import {
@@ -23,6 +23,8 @@ import {
   type ScenePoint,
   type SnapGuide,
   CANVAS_TOP_OFFSET,
+  GROUP_FRAME_PADDING,
+  PAGE_FRAME_TOP,
   clampZoom,
   getDefaultPageX,
   getEdgePanVelocity,
@@ -99,10 +101,6 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 const DRAG_START_THRESHOLD_PX = 4;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const CAMERA_LAYER_IDLE_MS = 150;
-// Scene pixels between a group's frame and its pages. The top leaves room for
-// the 50px page title row.
-const GROUP_PADDING = 32;
-const GROUP_TITLE_ROW = 50;
 
 interface PointerDragState {
   pageId: string;
@@ -1086,10 +1084,12 @@ export default function Canvas({
             <PageGroupFrame
               key={group.id}
               name={group.name}
-              left={bounds.left - GROUP_PADDING}
-              top={bounds.top - GROUP_PADDING - GROUP_TITLE_ROW}
-              width={bounds.width + GROUP_PADDING * 2}
-              height={bounds.height + GROUP_PADDING * 2 + GROUP_TITLE_ROW}
+              left={bounds.left - GROUP_FRAME_PADDING}
+              top={bounds.top - GROUP_FRAME_PADDING}
+              width={bounds.width + GROUP_FRAME_PADDING * 2}
+              // Page bounds measure the design only, so the frame adds the
+              // title row each page draws above its design.
+              height={bounds.height + PAGE_FRAME_TOP + GROUP_FRAME_PADDING * 2}
               isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
               onRename={(name) => renamePageGroup(group.id, name)}
               onUngroup={() => ungroupPages(group.id)}
@@ -1226,8 +1226,8 @@ function PageGroupFrame({
 
   return (
     <div
-      className={`absolute cursor-grab rounded-xl border bg-foreground/[0.03] active:cursor-grabbing ${
-        isSelected ? "border-sky-500" : "border-foreground/15"
+      className={`absolute cursor-grab rounded-2xl border bg-foreground/[0.07] active:cursor-grabbing ${
+        isSelected ? "border-sky-500" : "border-foreground/20"
       }`}
       style={{
         left,
@@ -1243,37 +1243,41 @@ function PageGroupFrame({
       onPointerCancel={onPointerUp}
     >
       <div
-        className="absolute bottom-full left-0 flex origin-bottom-left items-center gap-1.5 pb-1.5 text-[color:var(--canvas-label-strong,var(--foreground))]"
+        className="absolute bottom-full left-0 origin-bottom-left pb-2 text-[color:var(--canvas-label-strong,var(--foreground))]"
         style={{ transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 4))" }}
         onDoubleClick={() => setIsRenaming(true)}
       >
-        {isRenaming ? (
-          <input
-            autoFocus
-            defaultValue={name}
-            aria-label="Group name"
-            className="h-6 w-40 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
-            onBlur={(event) => {
-              onRename(event.currentTarget.value);
-              setIsRenaming(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") setIsRenaming(false);
-            }}
-          />
-        ) : (
-          <span className="whitespace-nowrap text-sm font-semibold">{name}</span>
-        )}
-        <button
-          type="button"
-          onClick={onUngroup}
-          aria-label={`Ungroup ${name}`}
-          data-tip="Ungroup (Ctrl+Shift+G)"
-          className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
-        >
-          <Ungroup className="h-3.5 w-3.5" />
-        </button>
+        {/* A filled chip, like a Figma section label, so the name reads as the
+            frame's title rather than loose text on the canvas. */}
+        <div className="flex items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] py-1 pl-2.5 pr-1">
+          {isRenaming ? (
+            <input
+              autoFocus
+              defaultValue={name}
+              aria-label="Group name"
+              className="h-6 w-40 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
+              onBlur={(event) => {
+                onRename(event.currentTarget.value);
+                setIsRenaming(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") setIsRenaming(false);
+              }}
+            />
+          ) : (
+            <span className="whitespace-nowrap text-sm font-semibold">{name}</span>
+          )}
+          <button
+            type="button"
+            onClick={onUngroup}
+            aria-label={`Ungroup ${name}`}
+            data-tip="Ungroup (Ctrl+Shift+G)"
+            className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
+          >
+            <Ungroup className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

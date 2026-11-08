@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 
-import { PAGE_GAP } from "@/lib/canvasScene";
+import { GROUP_FRAME_PADDING, PAGE_FRAME_TOP, PAGE_GAP } from "@/lib/canvasScene";
 import type { PageGroup, PagePositionMap } from "@/lib/types";
 
 const GROUP_NAME_MAX_CHARS = 80;
@@ -72,10 +72,10 @@ export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: str
   return { unknown, repeated, unlisted: projectPageIds.filter((pageId) => !seen.has(pageId)) };
 };
 
-// Scene pixels between groups and between rows. A group frame draws 32px of
-// padding around its pages and a 50px title row above them, so this leaves
-// about 175px between frames side by side and 125px between rows.
-export const ARRANGEMENT_GROUP_GAP = PAGE_GAP * 2;
+// Scene pixels between the pages of neighbouring groups, and between rows. Each
+// frame pads its pages, so 200px stays between frames, which leaves room for
+// a group's name above its frame.
+export const ARRANGEMENT_GROUP_GAP = GROUP_FRAME_PADDING * 2 + 200;
 
 /**
  * Places every page: groups left to right within a row, pages left to right
@@ -126,7 +126,8 @@ export const layoutArrangement = (
       x += ARRANGEMENT_GROUP_GAP - PAGE_GAP;
       if (group.name) pageGroups.push({ id: group.id, name: group.name, pageIds: group.pageIds });
     }
-    y += rowHeight + ARRANGEMENT_GROUP_GAP;
+    // A page's height counts its design only, so add the title row above it.
+    y += PAGE_FRAME_TOP + rowHeight + ARRANGEMENT_GROUP_GAP;
   }
   return { pagePositions, pageGroups };
 };

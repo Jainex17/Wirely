@@ -113,6 +113,10 @@ export const MAX_FIT_ZOOM = 100;
 export const ZOOM_STEPS = [2, 5, 10, 25, 50, 75, 100, 125, 150, 200];
 export const CANVAS_TOP_OFFSET = 100;
 export const PAGE_GAP = 120;
+/** Where the design starts below a page's top: the 50px title row plus the 4px column gap. */
+export const PAGE_FRAME_TOP = 54;
+/** Scene pixels between a group's frame and its pages, on every side. */
+export const GROUP_FRAME_PADDING = 80;
 
 const MIN_FIT_PADDING = 48;
 const SNAP_DISTANCE_SCREEN_PX = 8;
