@@ -927,7 +927,7 @@ export default React.memo(function PageRenderer({
   const hoverToolbar = (
     <div
       className={cn(
-        "pointer-events-auto ml-auto flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 p-1 opacity-0 shadow-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100",
+        "pointer-events-auto ml-auto flex items-center gap-1 rounded-lg border border-border/70 bg-background p-1 opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100",
         isFocused && "opacity-100",
       )}
       style={{
