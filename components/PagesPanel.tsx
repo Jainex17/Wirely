@@ -73,6 +73,19 @@ export default function PagesPanel({
     setOpenByPageId(next);
   }
   const selectedPage = pages.find((page) => page.id === selectedPageId);
+  // Groups start closed. One opens with its chevron, or when the user focuses
+  // a page inside it. Focus that moved because the project loaded or the
+  // focused page was deleted does not count, since the user did not pick it.
+  const [openGroupIds, setOpenGroupIds] = useState<string[]>([]);
+  const [seenFocusedPageId, setSeenFocusedPageId] = useState(focusedPageId);
+  if (focusedPageId !== seenFocusedPageId) {
+    setSeenFocusedPageId(focusedPageId);
+    const focusedGroup = pageGroups.find((group) => focusedPageId && group.pageIds.includes(focusedPageId));
+    const isUserFocus = pages.some((page) => page.id === seenFocusedPageId);
+    if (focusedGroup && isUserFocus && !openGroupIds.includes(focusedGroup.id)) {
+      setOpenGroupIds([...openGroupIds, focusedGroup.id]);
+    }
+  }
   const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
   // Rows drag with native drag and drop: drop a page on a group to move it in,
   // or on the ungrouped list to move it out. `undefined` means no drop target.
@@ -205,31 +218,58 @@ export default function PagesPanel({
           renderPage(selectedPage, 0)
         ) : (
           <>
-          {pageGroups.map((group) => (
-            <div
-              key={group.id}
-              {...dropTargetProps(group.id)}
-              className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
-            >
-              <button
-                type="button"
-                onClick={() => focusPages(group.pageIds)}
-                data-tip={group.name}
-                data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
-                className="ml-1.5 mr-1 flex h-7 w-[calc(100%-10px)] items-center gap-1.5 rounded-md pl-1.5 pr-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+          {pageGroups.map((group) => {
+            const isGroupOpen = openGroupIds.includes(group.id);
+            // A closed group takes the current page's highlight, so the focus
+            // stays visible without opening it.
+            const holdsCurrentPage = !isGroupOpen && !!focusedPageId && group.pageIds.includes(focusedPageId);
+            return (
+              <div
+                key={group.id}
+                {...dropTargetProps(group.id)}
+                className={cn(dropGroupId === group.id && "bg-primary/10 ring-1 ring-inset ring-primary/40")}
               >
-                <span className="w-3.5 shrink-0" />
-                <Frame className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{group.name}</span>
-                <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                  {group.pageIds.length}
-                </span>
-              </button>
-              {pages
-                .filter((page) => group.pageIds.includes(page.id))
-                .map((page) => renderPage(page, 1))}
-            </div>
-          ))}
+                <div
+                  role="treeitem"
+                  aria-selected={holdsCurrentPage}
+                  aria-expanded={isGroupOpen}
+                  onClick={() => focusPages(group.pageIds)}
+                  data-tip={group.name}
+                  data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
+                  className={cn(
+                    "ml-1.5 mr-1 flex h-7 cursor-default items-center gap-1.5 rounded-md pl-1.5 pr-2 text-xs font-medium text-foreground transition-colors",
+                    holdsCurrentPage ? "bg-primary/15" : "hover:bg-foreground/5",
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-label={isGroupOpen ? `Hide pages of ${group.name}` : `Show pages of ${group.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenGroupIds(
+                        isGroupOpen
+                          ? openGroupIds.filter((groupId) => groupId !== group.id)
+                          : [...openGroupIds, group.id],
+                      );
+                    }}
+                    className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+                  >
+                    <ChevronRight className={cn("h-3 w-3 transition-transform", isGroupOpen && "rotate-90")} />
+                  </button>
+                  <Frame className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
+                  <span className="truncate">{group.name}</span>
+                  <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+                    {group.pageIds.length}
+                  </span>
+                </div>
+                {isGroupOpen
+                  ? pages
+                      .filter((page) => group.pageIds.includes(page.id))
+                      .map((page) => renderPage(page, 1))
+                  : null}
+              </div>
+            );
+          })}
           <div
             {...dropTargetProps(null)}
             className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
