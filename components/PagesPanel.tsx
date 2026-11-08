@@ -267,7 +267,7 @@ export default function PagesPanel({
                     data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
                     className="flex h-full min-w-0 flex-1 cursor-default items-center gap-1.5 pr-2 text-left"
                   >
-                    <Frame className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
+                    <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
                     <span className="truncate">{group.name}</span>
                     <span className="ml-auto font-normal tabular-nums text-muted-foreground">
                       {group.pageIds.length}
@@ -294,6 +294,29 @@ export default function PagesPanel({
       <AssetsFolder projectId={projectId} />
       {footer}
     </aside>
+  );
+}
+
+/**
+ * A group's icon: a box with a tab in its corner, the way Figma marks a
+ * section, so a group reads apart from a page. Lucide has no such glyph, so
+ * this draws one in its stroke style.
+ */
+function SectionIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h7V3" />
+    </svg>
   );
 }
 
