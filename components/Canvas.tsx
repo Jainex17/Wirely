@@ -98,6 +98,7 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 
 const DRAG_START_THRESHOLD_PX = 4;
 const LAYOUT_SAVE_IDLE_MS = 700;
+const CAMERA_LAYER_IDLE_MS = 150;
 // Scene pixels between a group's frame and its pages. The top leaves room for
 // the 50px page title row.
 const GROUP_PADDING = 32;
@@ -464,7 +465,22 @@ export default function Canvas({
 
   // Pan and zoom write the camera straight onto the scene element. Rendering
   // the canvas for it would walk every page on every frame of a gesture.
+  //
+  // The scene is its own GPU layer only while the camera moves. Chrome rasters
+  // a `will-change: transform` layer at a fixed scale, so a permanent hint
+  // makes a zoomed out canvas of many pages ask for far more tiles than the
+  // screen shows. Past the tile budget Chrome drops tiles across the whole
+  // window, and the sidebar and panels go blank in bands. Dropping the hint
+  // when the camera rests repaints the scene once at its real scale.
   React.useLayoutEffect(() => {
+    let layerTimer: number | undefined;
+    const holdLayer = (scene: HTMLElement) => {
+      scene.style.willChange = "transform";
+      window.clearTimeout(layerTimer);
+      layerTimer = window.setTimeout(() => {
+        scene.style.willChange = "";
+      }, CAMERA_LAYER_IDLE_MS);
+    };
     const applyCamera = (camera: CameraState, previous?: CameraState) => {
       const scene = sceneRef.current;
       const canvas = canvasRef.current;
@@ -479,11 +495,16 @@ export default function Canvas({
       }
     };
     applyCamera(useEditorStore.getState().camera);
-    return useEditorStore.subscribe((state, previous) => {
+    const unsubscribe = useEditorStore.subscribe((state, previous) => {
       if (state.camera === previous.camera) return;
+      if (sceneRef.current) holdLayer(sceneRef.current);
       applyCamera(state.camera, previous.camera);
       scheduleLayoutSave();
     });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(layerTimer);
+    };
   }, [canvasRef, scheduleLayoutSave]);
 
   // A page that moves, appears, or comes into view as the canvas resizes needs
@@ -1057,9 +1078,6 @@ export default function Canvas({
           transformOrigin: "0 0",
           left: "50%",
           top: `${CANVAS_TOP_OFFSET}px`,
-          // Promote the scene to its own layer so pan and zoom composite on
-          // the GPU instead of repainting every frame on the main thread.
-          willChange: "transform",
         }}
         onClick={(event) => event.stopPropagation()}
       >
