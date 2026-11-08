@@ -50,8 +50,12 @@ export default function PagesPanel({
     focusedPageId,
     focusRequestCount,
     selectedNode,
+    selectedPageIds,
     focusPage,
     focusPages,
+    setFocusedPage,
+    setSelectedPageIds,
+    toggleSelectedPages,
     movePageToGroup,
   } = useEditorStore(
     useShallow((state) => ({
@@ -60,8 +64,12 @@ export default function PagesPanel({
       focusedPageId: state.focusedPageId,
       focusRequestCount: state.focusRequestCount,
       selectedNode: state.selectedNode,
+      selectedPageIds: state.selectedPageIds,
       focusPage: state.focusPage,
       focusPages: state.focusPages,
+      setFocusedPage: state.setFocusedPage,
+      setSelectedPageIds: state.setSelectedPageIds,
+      toggleSelectedPages: state.toggleSelectedPages,
       movePageToGroup: state.movePageToGroup,
     })),
   );
@@ -123,12 +131,13 @@ export default function PagesPanel({
     const Icon =
       page.deviceType === "mobile" ? Smartphone : page.deviceType === "vector" ? PenTool : Monitor;
     const isCurrent = focusedPageId === page.id;
+    const isHighlighted = isCurrent || selectedPageIds.includes(page.id);
     const isOpen = isPageOpen(page.id);
     return (
       <div key={page.id}>
         <div
           role="treeitem"
-          aria-selected={isCurrent}
+          aria-selected={isHighlighted}
           aria-expanded={isOpen}
           draggable
           onDragStart={(event) => {
@@ -149,15 +158,25 @@ export default function PagesPanel({
             event.stopPropagation();
             insertAsset(projectId, page.id, asset, "end");
           }}
-          onClick={() => focusPage(page.id)}
+          // Shift-click picks pages without moving the camera, so the canvas
+          // stays where the user is building the selection.
+          onClick={(event) => {
+            if (event.shiftKey) {
+              setFocusedPage(page.id);
+              toggleSelectedPages([page.id]);
+              return;
+            }
+            setSelectedPageIds([page.id]);
+            focusPage(page.id);
+          }}
           data-tip={page.title}
-          data-tip-detail={`${DEVICE_LABELS[page.deviceType ?? "desktop"]}. Click to go to it, drag it onto a group to move it.`}
+          data-tip-detail={`${DEVICE_LABELS[page.deviceType ?? "desktop"]}. Click to go to it, Shift-click to add it to the selection, drag it onto a group to move it.`}
           className={cn(
             "ml-1.5 mr-1 flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 text-xs font-medium transition-colors",
-            isCurrent
+            isHighlighted
               ? "text-foreground"
               : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-            isCurrent && selectedNode?.pageId !== page.id && "bg-primary/15",
+            isHighlighted && selectedNode?.pageId !== page.id && "bg-primary/15",
           )}
           style={{ paddingLeft: 6 + depth * 12 }}
         >
@@ -172,7 +191,7 @@ export default function PagesPanel({
           >
             <ChevronRight className={cn("h-3 w-3 transition-transform", isOpen && "rotate-90")} />
           </button>
-          <Icon className={cn("h-3.5 w-3.5 shrink-0", isCurrent && "text-primary")} />
+          <Icon className={cn("h-3.5 w-3.5 shrink-0", isHighlighted && "text-primary")} />
           <span className="truncate">{page.title}</span>
         </div>
         {isOpen ? (
@@ -218,7 +237,13 @@ export default function PagesPanel({
           ) : null}
         </div>
       </div>
-      <nav role="tree" aria-label="Pages and layers" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+      {/* select-none, or a shift-click would also select the row text. */}
+      <nav
+        role="tree"
+        aria-label="Pages and layers"
+        aria-multiselectable
+        className="flex min-h-0 flex-1 select-none flex-col overflow-y-auto pb-2"
+      >
         {/* While an element is picked, the list narrows to its page so its layers
             have the room. Deselecting brings every page and group back. */}
         {selectedPage ? (
@@ -230,6 +255,8 @@ export default function PagesPanel({
             // A closed group takes the current page's highlight, so the focus
             // stays visible without opening it.
             const holdsCurrentPage = !isGroupOpen && !!focusedPageId && group.pageIds.includes(focusedPageId);
+            const isGroupSelected = group.pageIds.every((pageId) => selectedPageIds.includes(pageId));
+            const isGroupHighlighted = holdsCurrentPage || isGroupSelected;
             return (
               <div
                 key={group.id}
@@ -238,11 +265,11 @@ export default function PagesPanel({
               >
                 <div
                   role="treeitem"
-                  aria-selected={holdsCurrentPage}
+                  aria-selected={isGroupHighlighted}
                   aria-expanded={isGroupOpen}
                   className={cn(
                     "ml-1.5 mr-1 flex h-7 items-center gap-1.5 rounded-md pl-1.5 text-xs font-medium text-foreground transition-colors",
-                    holdsCurrentPage ? "bg-primary/15" : "hover:bg-foreground/5",
+                    isGroupHighlighted ? "bg-primary/15" : "hover:bg-foreground/5",
                   )}
                 >
                   <button
@@ -262,12 +289,19 @@ export default function PagesPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={() => focusPages(group.pageIds)}
+                    onClick={(event) => {
+                      if (event.shiftKey) {
+                        toggleSelectedPages(group.pageIds);
+                        return;
+                      }
+                      setSelectedPageIds(group.pageIds);
+                      focusPages(group.pageIds);
+                    }}
                     data-tip={group.name}
-                    data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
+                    data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view, Shift-click to add them to the selection.`}
                     className="flex h-full min-w-0 flex-1 cursor-default items-center gap-1.5 pr-2 text-left"
                   >
-                    <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
+                    <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", isGroupHighlighted ? "text-primary" : "text-muted-foreground")} />
                     <span className="truncate">{group.name}</span>
                     <span className="ml-auto font-normal tabular-nums text-muted-foreground">
                       {group.pageIds.length}
