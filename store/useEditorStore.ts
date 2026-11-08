@@ -113,6 +113,12 @@ export interface CanvasState {
   /** When the last applied arrangement was written, kept in the saved layout so it applies once. */
   arrangedAt: string | null;
   focusedPageId: string | null;
+  /**
+   * Counts focus requests from the user or the editor, not the fallbacks that
+   * move focus when a project loads or a page goes. The pages panel opens the
+   * focused page's group on each one, even when focus stayed on the same page.
+   */
+  focusRequestCount: number;
   selectedNode: SelectedNode | null;
   /** The two pages open in the compare view, design first, or null when it is closed. */
   comparePageIds: [string, string] | null;
@@ -252,6 +258,7 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   arrangement: null,
   arrangedAt: null,
   focusedPageId: "page-home",
+  focusRequestCount: 0,
   selectedNode: null,
   comparePageIds: null,
   activeTool: "select",
@@ -679,7 +686,8 @@ export const useEditorStore = create<EditorState>()(
         set({ arrangement, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
         if (hasUsableViewport(state.viewportSize)) glideCamera(getFittedCamera(get()));
       },
-      setFocusedPage: (focusedPageId) => set({ focusedPageId }),
+      setFocusedPage: (focusedPageId) =>
+        set((state) => ({ focusedPageId, focusRequestCount: state.focusRequestCount + 1 })),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
       setComparePageIds: (comparePageIds) => set({ comparePageIds }),
       setComments: (comments) => set({ comments }),
@@ -693,6 +701,7 @@ export const useEditorStore = create<EditorState>()(
         set({
           activeCommentId: comment.resolvedAt === null ? comment.id : null,
           focusedPageId: comment.pageId,
+          focusRequestCount: state.focusRequestCount + 1,
         });
         const page = getPageBoundsCollection(state).find(
           (bounds) => bounds.pageId === comment.pageId,
@@ -729,7 +738,7 @@ export const useEditorStore = create<EditorState>()(
       // view whatever zoom the canvas was at.
       focusPage: (pageId) => {
         const state = get();
-        set({ focusedPageId: pageId });
+        set({ focusedPageId: pageId, focusRequestCount: state.focusRequestCount + 1 });
         if (!getFitBoundsById(state, pageId) || !hasUsableViewport(state.viewportSize)) return;
         glideCamera(getFittedCameraForPageIds(state, [pageId]));
       },
@@ -743,7 +752,10 @@ export const useEditorStore = create<EditorState>()(
           state.focusPage(uniquePageIds[0]);
           return;
         }
-        set({ focusedPageId: uniquePageIds[uniquePageIds.length - 1] ?? null });
+        set({
+          focusedPageId: uniquePageIds[uniquePageIds.length - 1] ?? null,
+          focusRequestCount: state.focusRequestCount + 1,
+        });
         glideCamera(getFittedCameraForPageIds(state, uniquePageIds));
       },
       fitAllPages: () =>
@@ -765,6 +777,7 @@ export const useEditorStore = create<EditorState>()(
           return {
             camera: getFittedCameraForPageIds(state, [pageId]),
             focusedPageId: pageId,
+            focusRequestCount: state.focusRequestCount + 1,
           };
         }),
       requestGeneratedPageFocusCheck: (pageIds) =>

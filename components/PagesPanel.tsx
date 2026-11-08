@@ -44,18 +44,27 @@ export default function PagesPanel({
   onToggle,
   footer,
 }: PagesPanelProps) {
-  const { pages, pageGroups, focusedPageId, selectedNode, focusPage, focusPages, movePageToGroup } =
-    useEditorStore(
-      useShallow((state) => ({
-        pages: state.pages,
-        pageGroups: state.pageGroups,
-        focusedPageId: state.focusedPageId,
-        selectedNode: state.selectedNode,
-        focusPage: state.focusPage,
-        focusPages: state.focusPages,
-        movePageToGroup: state.movePageToGroup,
-      })),
-    );
+  const {
+    pages,
+    pageGroups,
+    focusedPageId,
+    focusRequestCount,
+    selectedNode,
+    focusPage,
+    focusPages,
+    movePageToGroup,
+  } = useEditorStore(
+    useShallow((state) => ({
+      pages: state.pages,
+      pageGroups: state.pageGroups,
+      focusedPageId: state.focusedPageId,
+      focusRequestCount: state.focusRequestCount,
+      selectedNode: state.selectedNode,
+      focusPage: state.focusPage,
+      focusPages: state.focusPages,
+      movePageToGroup: state.movePageToGroup,
+    })),
+  );
   // Pages the user opened or closed with the chevron. The rest are open only
   // while an element on them is picked.
   const [openByPageId, setOpenByPageId] = useState<Record<string, boolean>>({});
@@ -73,16 +82,14 @@ export default function PagesPanel({
     setOpenByPageId(next);
   }
   const selectedPage = pages.find((page) => page.id === selectedPageId);
-  // Groups start closed. One opens with its chevron, or when the user focuses
-  // a page inside it. Focus that moved because the project loaded or the
-  // focused page was deleted does not count, since the user did not pick it.
+  // Groups start closed. One opens with its chevron, or on each focus request
+  // that lands on a page inside it, even a page that already had focus.
   const [openGroupIds, setOpenGroupIds] = useState<string[]>([]);
-  const [seenFocusedPageId, setSeenFocusedPageId] = useState(focusedPageId);
-  if (focusedPageId !== seenFocusedPageId) {
-    setSeenFocusedPageId(focusedPageId);
+  const [seenFocusRequestCount, setSeenFocusRequestCount] = useState(focusRequestCount);
+  if (focusRequestCount !== seenFocusRequestCount) {
+    setSeenFocusRequestCount(focusRequestCount);
     const focusedGroup = pageGroups.find((group) => focusedPageId && group.pageIds.includes(focusedPageId));
-    const isUserFocus = pages.some((page) => page.id === seenFocusedPageId);
-    if (focusedGroup && isUserFocus && !openGroupIds.includes(focusedGroup.id)) {
+    if (focusedGroup && !openGroupIds.includes(focusedGroup.id)) {
       setOpenGroupIds([...openGroupIds, focusedGroup.id]);
     }
   }
@@ -233,11 +240,8 @@ export default function PagesPanel({
                   role="treeitem"
                   aria-selected={holdsCurrentPage}
                   aria-expanded={isGroupOpen}
-                  onClick={() => focusPages(group.pageIds)}
-                  data-tip={group.name}
-                  data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
                   className={cn(
-                    "ml-1.5 mr-1 flex h-7 cursor-default items-center gap-1.5 rounded-md pl-1.5 pr-2 text-xs font-medium text-foreground transition-colors",
+                    "ml-1.5 mr-1 flex h-7 items-center gap-1.5 rounded-md pl-1.5 text-xs font-medium text-foreground transition-colors",
                     holdsCurrentPage ? "bg-primary/15" : "hover:bg-foreground/5",
                   )}
                 >
@@ -256,11 +260,19 @@ export default function PagesPanel({
                   >
                     <ChevronRight className={cn("h-3 w-3 transition-transform", isGroupOpen && "rotate-90")} />
                   </button>
-                  <Frame className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
-                  <span className="truncate">{group.name}</span>
-                  <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                    {group.pageIds.length}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => focusPages(group.pageIds)}
+                    data-tip={group.name}
+                    data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view.`}
+                    className="flex h-full min-w-0 flex-1 cursor-default items-center gap-1.5 pr-2 text-left"
+                  >
+                    <Frame className={cn("h-3.5 w-3.5 shrink-0", holdsCurrentPage ? "text-primary" : "text-muted-foreground")} />
+                    <span className="truncate">{group.name}</span>
+                    <span className="ml-auto font-normal tabular-nums text-muted-foreground">
+                      {group.pageIds.length}
+                    </span>
+                  </button>
                 </div>
                 {isGroupOpen
                   ? pages
