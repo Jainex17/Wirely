@@ -1238,7 +1238,7 @@ function PageGroupFrame({
 
   return (
     <div
-      className={`absolute cursor-grab rounded-2xl border bg-foreground/[0.07] active:cursor-grabbing ${
+      className={`group/frame absolute cursor-grab rounded-2xl border bg-foreground/[0.07] active:cursor-grabbing ${
         isSelected ? "border-sky-500" : "border-foreground/20"
       }`}
       style={{
@@ -1257,17 +1257,21 @@ function PageGroupFrame({
       <div
         className="absolute bottom-full left-0 origin-bottom-left pb-2 text-[color:var(--canvas-label-strong,var(--foreground))]"
         // Rows leave room for the name at its largest in ARRANGEMENT_ROW_GAP.
-        // Groups side by side get no such room, so the chip never grows past
-        // its frame and a long name truncates, like a Figma section's.
+        // Groups side by side get no such room, so the chip stops at its
+        // frame's width and a long name truncates, like a Figma section's.
+        // A tiny frame still leaves the chip 96px, so its name never vanishes,
+        // and renaming lifts the cap so the field stays usable.
         style={{
           transform: `scale(var(${GROUP_LABEL_SCALE}, 1))`,
-          maxWidth: `calc(${width}px / var(${GROUP_LABEL_SCALE}, 1))`,
+          maxWidth: isRenaming
+            ? undefined
+            : `max(96px, calc(${width}px / var(${GROUP_LABEL_SCALE}, 1)))`,
         }}
         onDoubleClick={() => setIsRenaming(true)}
       >
         {/* A filled chip, like a Figma section label, so the name reads as the
             frame's title rather than loose text on the canvas. */}
-        <div className="flex max-w-full items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] py-1 pl-2.5 pr-1">
+        <div className="flex max-w-full items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] px-2.5 py-1">
           {isRenaming ? (
             <input
               autoFocus
@@ -1288,12 +1292,16 @@ function PageGroupFrame({
               {name}
             </span>
           )}
+          {/* Shown on hover or selection only, so it never crowds the name.
+              Ctrl+Shift+G ungroups from the keyboard. */}
           <button
             type="button"
             onClick={onUngroup}
             aria-label={`Ungroup ${name}`}
             data-tip="Ungroup (Ctrl+Shift+G)"
-            className="shrink-0 rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
+            className={`-mr-1.5 shrink-0 rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10 ${
+              isSelected ? "block" : "hidden group-hover/frame:block"
+            }`}
           >
             <Ungroup className="h-3.5 w-3.5" />
           </button>
