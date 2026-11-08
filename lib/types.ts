@@ -68,4 +68,6 @@ export interface PersistedWireLayout {
   pageGroups?: PageGroup[];
   /** Last measured height of each page, so frames open at their real height. */
   pageFrameHeights?: Record<string, number>;
+  /** When the agent arrangement this layout already holds was written. */
+  arrangedAt?: string | null;
 }

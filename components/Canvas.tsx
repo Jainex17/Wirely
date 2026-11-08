@@ -429,7 +429,7 @@ export default function Canvas({
     }
     layoutSaveTimeoutRef.current = window.setTimeout(() => {
       layoutSaveTimeoutRef.current = null;
-      const { camera, pagePositions, pageStackOrder, pageGroups, pageFrameHeights } =
+      const { camera, pagePositions, pageStackOrder, pageGroups, pageFrameHeights, arrangedAt } =
         useEditorStore.getState();
       try {
         window.localStorage.setItem(
@@ -441,6 +441,7 @@ export default function Canvas({
             pageStackOrder,
             pageGroups,
             pageFrameHeights,
+            arrangedAt,
           }),
         );
       } catch (error) {

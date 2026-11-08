@@ -37,6 +37,11 @@ import {
   zoomAtViewportPoint as getZoomedCameraAtPoint,
 } from "@/lib/canvasScene";
 import { isPageDeviceType, type PageDeviceType } from "@/lib/types";
+import {
+  type ArrangementRows,
+  type CanvasArrangement,
+  layoutArrangement,
+} from "@/lib/canvasArrangement";
 import type { NodeStyleProperty } from "@/lib/pageNodes";
 import type { ProjectComment } from "@/lib/projectComments";
 
@@ -98,6 +103,13 @@ export interface CanvasState {
   pageStackOrder: string[];
   pageGroups: PageGroup[];
   pageFrameHeights: Record<string, number>;
+  /**
+   * The agent arrangement the canvas last applied. Its rows stay live, so
+   * pages re-flow as their frames measure, until the user drags a page.
+   */
+  arrangement: CanvasArrangement | null;
+  /** When the last applied arrangement was written, kept in the saved layout so it applies once. */
+  arrangedAt: string | null;
   focusedPageId: string | null;
   selectedNode: SelectedNode | null;
   /** The two pages open in the compare view, design first, or null when it is closed. */
@@ -140,6 +152,8 @@ export interface EditorState extends CanvasState, ProjectState {
   movePageToGroup: (pageId: string, groupId: string | null) => void;
   bringPageToFront: (pageId: string) => void;
   hydratePageLayout: (layout: PersistedWireLayout) => void;
+  /** Lays the canvas out as an agent asked, unless this arrangement was applied before. */
+  applyCanvasArrangement: (arrangement: CanvasArrangement) => void;
   setFocusedPage: (pageId: string | null) => void;
   setSelectedNode: (node: SelectedNode | null) => void;
   setComparePageIds: (pageIds: [string, string] | null) => void;
@@ -195,6 +209,7 @@ export interface ServerPageChanges {
     htmlContent: string;
     deviceType: string;
   }>;
+  arrangement?: CanvasArrangement | null;
 }
 
 const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
@@ -232,6 +247,8 @@ const DEFAULT_CANVAS_STATE: CanvasState = {
   pageStackOrder: [],
   pageGroups: [],
   pageFrameHeights: {},
+  arrangement: null,
+  arrangedAt: null,
   focusedPageId: "page-home",
   selectedNode: null,
   comparePageIds: null,
@@ -461,6 +478,16 @@ const getNewRowPosition = (state: EditorState, deviceType?: PageDeviceType) => {
   };
 };
 
+/** Every page's position under the agent's rows, sized as the canvas draws it now. */
+const getArrangedPositions = (state: EditorState, rows: ArrangementRows) => {
+  const sizes = new Map(getPageBoundsCollection(state).map((bounds) => [bounds.pageId, bounds]));
+  return layoutArrangement(
+    rows,
+    state.pages.map((page) => page.id),
+    (pageId) => sizes.get(pageId) ?? { width: 0, height: 0 },
+  );
+};
+
 const getPositionRightOf = (bounds: PageBounds[]) => ({
   x: Math.max(...bounds.map((item) => item.right)) + PAGE_GAP,
   y: Math.min(...bounds.map((item) => item.top)),
@@ -541,7 +568,7 @@ export const useEditorStore = create<EditorState>()(
           },
         })),
       setPagePositions: (positions) =>
-        set((state) => ({ pagePositions: { ...state.pagePositions, ...positions } })),
+        set((state) => ({ pagePositions: { ...state.pagePositions, ...positions }, arrangement: null })),
       ungroupPages: (groupId) =>
         set((state) => ({
           pageGroups: state.pageGroups.filter((group) => group.id !== groupId),
@@ -579,6 +606,7 @@ export const useEditorStore = create<EditorState>()(
 
           return {
             pageGroups,
+            arrangement: null,
             ...(anchorBounds.length > 0
               ? {
                   pagePositions: {
@@ -610,6 +638,7 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder = [],
             pageGroups = [],
             pageFrameHeights = {},
+            arrangedAt = null,
           } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
           const storedHeights = Object.fromEntries(
@@ -629,6 +658,8 @@ export const useEditorStore = create<EditorState>()(
             pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
+            arrangement: null,
+            arrangedAt: typeof arrangedAt === "string" ? arrangedAt : null,
             // A height a frame already reported this session is newer.
             pageFrameHeights: { ...storedHeights, ...state.pageFrameHeights },
             focusedPageId:
@@ -637,6 +668,13 @@ export const useEditorStore = create<EditorState>()(
                 : pageIds[0] ?? null,
           };
         }),
+      applyCanvasArrangement: (arrangement) => {
+        const state = get();
+        if (state.arrangedAt && arrangement.arrangedAt <= state.arrangedAt) return;
+        const { pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
+        set({ arrangement, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
+        if (hasUsableViewport(state.viewportSize)) glideCamera(getFittedCamera(get()));
+      },
       setFocusedPage: (focusedPageId) => set({ focusedPageId }),
       setSelectedNode: (selectedNode) => set({ selectedNode }),
       setComparePageIds: (comparePageIds) => set({ comparePageIds }),
@@ -671,12 +709,17 @@ export const useEditorStore = create<EditorState>()(
             return state;
           }
 
-          return {
-            pageFrameHeights: {
-              ...state.pageFrameHeights,
-              [pageId]: nextHeight,
-            },
-          };
+          const pageFrameHeights = { ...state.pageFrameHeights, [pageId]: nextHeight };
+          // A taller frame pushes the rows under it down, so they never overlap.
+          return state.arrangement
+            ? {
+                pageFrameHeights,
+                pagePositions: getArrangedPositions(
+                  { ...state, pageFrameHeights },
+                  state.arrangement.rows,
+                ).pagePositions,
+              }
+            : { pageFrameHeights };
         }),
       // Zooms to fit the page's first screen, so the page lands filling the
       // view whatever zoom the canvas was at.
@@ -1157,6 +1200,8 @@ export const useEditorStore = create<EditorState>()(
           pageStackOrder: [],
           pageGroups: [],
           pageFrameHeights: {},
+          arrangement: null,
+          arrangedAt: null,
           focusedPageId: "page-home",
           selectedNode: null,
           requestedGeneratedPageFocusIds: null,

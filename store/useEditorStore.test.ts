@@ -398,6 +398,58 @@ describe("useEditorStore page groups", () => {
   });
 });
 
+describe("applyCanvasArrangement", () => {
+  const arrangement = {
+    rows: [[{ name: "Mobile", pageIds: ["page-2"] }], [{ name: "Website", pageIds: ["page-1"] }]],
+    arrangedAt: "2026-11-08T10:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    useEditorStore.setState({
+      pages: [
+        { id: "page-1", title: "Home", sections: [], deviceType: "desktop" },
+        { id: "page-2", title: "App", sections: [], deviceType: "mobile" },
+      ],
+      viewportSize: { width: 0, height: 0 },
+    });
+  });
+
+  it("groups the pages into rows and pushes the lower row down as a frame grows", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pageGroups.map((group) => group.name)).toEqual(["Mobile", "Website"]);
+    const firstRowBottom = 812;
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(firstRowBottom);
+
+    store.setPageFrameHeight("page-2", 3000);
+    expect(useEditorStore.getState().pagePositions["page-1"].y).toBeGreaterThan(3000);
+  });
+
+  it("applies an arrangement once, and stops re-flowing after the user drags a page", () => {
+    const store = useEditorStore.getState();
+    store.applyCanvasArrangement(arrangement);
+    store.setPagePositions({ "page-1": { x: 5000, y: 5000 } });
+
+    store.setPageFrameHeight("page-2", 3000);
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pagePositions["page-1"]).toEqual({ x: 5000, y: 5000 });
+
+    store.applyCanvasArrangement({ ...arrangement, arrangedAt: "2026-11-08T11:00:00.000Z" });
+    expect(useEditorStore.getState().pagePositions["page-1"].x).toBe(0);
+  });
+
+  it("does not apply an arrangement the saved layout already holds", () => {
+    const store = useEditorStore.getState();
+    store.hydratePageLayout({
+      pagePositions: { "page-1": { x: 900, y: 0 }, "page-2": { x: 0, y: 0 } },
+      arrangedAt: arrangement.arrangedAt,
+    });
+    store.applyCanvasArrangement(arrangement);
+    expect(useEditorStore.getState().pagePositions["page-1"]).toEqual({ x: 900, y: 0 });
+    expect(useEditorStore.getState().pageGroups).toEqual([]);
+  });
+});
+
 describe("focusComment", () => {
   const comment = (id: string, resolvedAt: string | null) => ({
     id,

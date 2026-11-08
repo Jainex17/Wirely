@@ -1,0 +1,115 @@
+/**
+ * An agent's request to lay out the canvas, sent with the arrange_canvas MCP
+ * tool. The server stores the rows as asked. Pixel positions are worked out in
+ * the editor by `layoutArrangement`, because only the editor knows how tall
+ * each page frame measured.
+ */
+import { z } from "zod";
+
+import { PAGE_GAP } from "@/lib/canvasScene";
+import type { PageGroup, PagePositionMap } from "@/lib/types";
+
+const GROUP_NAME_MAX_CHARS = 80;
+
+/** Pages that sit side by side. A named group gets a frame and a title on the canvas. */
+export interface ArrangedGroup {
+  name?: string;
+  pageIds: string[];
+}
+
+/** Rows top to bottom, each holding groups left to right. */
+export type ArrangementRows = ArrangedGroup[][];
+
+export interface CanvasArrangement {
+  rows: ArrangementRows;
+  /** ISO time of the write, so the editor applies each arrangement once. */
+  arrangedAt: string;
+}
+
+export const arrangementRowsSchema = z
+  .array(
+    z
+      .array(
+        z.object({
+          name: z.string().trim().max(GROUP_NAME_MAX_CHARS).optional(),
+          pageIds: z.array(z.string().trim().min(1)).min(1).max(100),
+        }),
+      )
+      .min(1)
+      .max(20),
+  )
+  .min(1)
+  .max(20);
+
+/** Checks the rows against the project's pages: every id must exist and appear once. */
+export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: string[]) => {
+  const known = new Set(projectPageIds);
+  const seen = new Set<string>();
+  const unknown: string[] = [];
+  const repeated: string[] = [];
+  for (const pageId of rows.flat().flatMap((group) => group.pageIds)) {
+    if (!known.has(pageId)) unknown.push(pageId);
+    else if (seen.has(pageId)) repeated.push(pageId);
+    seen.add(pageId);
+  }
+  return { unknown, repeated, unlisted: projectPageIds.filter((pageId) => !seen.has(pageId)) };
+};
+
+// Scene pixels between groups and between rows. A group frame draws 32px of
+// padding around its pages and a 50px title row above them, so this leaves
+// about 175px between frames side by side and 125px between rows.
+export const ARRANGEMENT_GROUP_GAP = PAGE_GAP * 2;
+
+/**
+ * Places every page: groups left to right within a row, pages left to right
+ * within a group, rows stacked by their tallest page. Pages the rows leave out
+ * go in one more row at the bottom, without a group. Ids that are not in
+ * `pageIds` are skipped, since a page can be deleted after the agent asked.
+ */
+export const layoutArrangement = (
+  rows: ArrangementRows,
+  pageIds: string[],
+  sizeOf: (pageId: string) => { width: number; height: number },
+): { pagePositions: PagePositionMap; pageGroups: PageGroup[] } => {
+  const remaining = new Set(pageIds);
+  const take = (ids: string[]) =>
+    ids.filter((pageId) => {
+      if (!remaining.has(pageId)) return false;
+      remaining.delete(pageId);
+      return true;
+    });
+
+  const placedRows = rows
+    .map((row, rowIndex) =>
+      row
+        .map((group, groupIndex) => ({
+          id: `arranged-${rowIndex}-${groupIndex}`,
+          name: group.name?.trim() ?? "",
+          pageIds: take(group.pageIds),
+        }))
+        .filter((group) => group.pageIds.length > 0),
+    )
+    .filter((row) => row.length > 0);
+  const leftOver = take(pageIds);
+  if (leftOver.length > 0) placedRows.push([{ id: "arranged-rest", name: "", pageIds: leftOver }]);
+
+  const pagePositions: PagePositionMap = {};
+  const pageGroups: PageGroup[] = [];
+  let y = 0;
+  for (const row of placedRows) {
+    let x = 0;
+    let rowHeight = 0;
+    for (const group of row) {
+      for (const pageId of group.pageIds) {
+        const { width, height } = sizeOf(pageId);
+        pagePositions[pageId] = { x, y };
+        x += width + PAGE_GAP;
+        rowHeight = Math.max(rowHeight, height);
+      }
+      x += ARRANGEMENT_GROUP_GAP - PAGE_GAP;
+      if (group.name) pageGroups.push({ id: group.id, name: group.name, pageIds: group.pageIds });
+    }
+    y += rowHeight + ARRANGEMENT_GROUP_GAP;
+  }
+  return { pagePositions, pageGroups };
+};
