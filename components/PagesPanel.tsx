@@ -127,11 +127,15 @@ export default function PagesPanel({
     },
   });
 
+  // Rows highlight the selection. With nothing selected, the focused page
+  // takes the highlight, so the panel still shows which page the chat edits.
+  const highlightedPageIds =
+    selectedPageIds.length > 0 ? selectedPageIds : focusedPageId ? [focusedPageId] : [];
+
   const renderPage = (page: (typeof pages)[number], depth: number) => {
     const Icon =
       page.deviceType === "mobile" ? Smartphone : page.deviceType === "vector" ? PenTool : Monitor;
-    const isCurrent = focusedPageId === page.id;
-    const isHighlighted = isCurrent || selectedPageIds.includes(page.id);
+    const isHighlighted = highlightedPageIds.includes(page.id);
     const isOpen = isPageOpen(page.id);
     return (
       <div key={page.id}>
@@ -162,7 +166,7 @@ export default function PagesPanel({
           // stays where the user is building the selection.
           onClick={(event) => {
             if (event.shiftKey) {
-              setFocusedPage(page.id);
+              if (!selectedPageIds.includes(page.id)) setFocusedPage(page.id);
               toggleSelectedPages([page.id]);
               return;
             }
@@ -252,11 +256,11 @@ export default function PagesPanel({
           <>
           {pageGroups.map((group) => {
             const isGroupOpen = openGroupIds.includes(group.id);
-            // A closed group takes the current page's highlight, so the focus
-            // stays visible without opening it.
-            const holdsCurrentPage = !isGroupOpen && !!focusedPageId && group.pageIds.includes(focusedPageId);
-            const isGroupSelected = group.pageIds.every((pageId) => selectedPageIds.includes(pageId));
-            const isGroupHighlighted = holdsCurrentPage || isGroupSelected;
+            // A closed group takes the highlight of the pages inside it, so the
+            // selection stays visible without opening it.
+            const isGroupHighlighted =
+              group.pageIds.every((pageId) => selectedPageIds.includes(pageId)) ||
+              (!isGroupOpen && group.pageIds.some((pageId) => highlightedPageIds.includes(pageId)));
             return (
               <div
                 key={group.id}
