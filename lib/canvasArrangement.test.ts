@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { PAGE_FRAME_TOP, PAGE_GAP } from "@/lib/canvasScene";
 import {
   ARRANGEMENT_GROUP_GAP,
+  ARRANGEMENT_ROW_GAP,
   checkArrangementPages,
   layoutArrangement,
 } from "@/lib/canvasArrangement";
@@ -33,7 +34,7 @@ describe("layoutArrangement", () => {
     expect(pagePositions.m1).toEqual({ x: 0, y: 0 });
     expect(pagePositions.m2).toEqual({ x: 375 + PAGE_GAP, y: 0 });
     expect(pagePositions.m3).toEqual({ x: 375 * 2 + PAGE_GAP + ARRANGEMENT_GROUP_GAP, y: 0 });
-    const secondRowY = PAGE_FRAME_TOP + 2000 + ARRANGEMENT_GROUP_GAP;
+    const secondRowY = PAGE_FRAME_TOP + 2000 + ARRANGEMENT_ROW_GAP;
     expect(pagePositions.d1).toEqual({ x: 0, y: secondRowY });
     expect(pagePositions.d2).toEqual({ x: 1440 + PAGE_GAP, y: secondRowY });
     expect(pageGroups.map((group) => [group.name, group.pageIds])).toEqual([
@@ -51,7 +52,7 @@ describe("layoutArrangement", () => {
     );
 
     expect(pageGroups).toEqual([]);
-    expect(pagePositions.d1).toEqual({ x: 0, y: PAGE_FRAME_TOP + 2000 + ARRANGEMENT_GROUP_GAP });
+    expect(pagePositions.d1).toEqual({ x: 0, y: PAGE_FRAME_TOP + 2000 + ARRANGEMENT_ROW_GAP });
   });
 
   it("skips pages deleted since the agent asked, without leaving a gap or an empty row", () => {

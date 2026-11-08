@@ -187,6 +187,10 @@ const isEditableTarget = (target: EventTarget | null) =>
   Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
 
 const INVERSE_ZOOM = "--canvas-inverse-zoom";
+// Group names keep their screen size down to 10% zoom, further than page
+// titles, so an overview of many groups still reads. Only the group layer
+// carries this variable, so a zoom step restyles a few labels, not every page.
+const GROUP_LABEL_SCALE = "--canvas-group-label-scale";
 
 /**
  * Pins the inverse zoom variable on every page far from the viewport. A zoom
@@ -299,6 +303,7 @@ export default function Canvas({
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const sceneRef = React.useRef<HTMLDivElement>(null);
+  const groupLayerRef = React.useRef<HTMLDivElement>(null);
   const pageElementsRef = React.useRef(new Map<string, HTMLDivElement>());
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
@@ -490,6 +495,10 @@ export default function Canvas({
       // restyles each of them, so a pan, which keeps the zoom, leaves it alone.
       if (camera.zoom !== previous?.zoom) {
         scene.style.setProperty(INVERSE_ZOOM, String(100 / Math.max(20, camera.zoom)));
+        groupLayerRef.current?.style.setProperty(
+          GROUP_LABEL_SCALE,
+          String(100 / Math.max(10, camera.zoom)),
+        );
       }
     };
     applyCamera(useEditorStore.getState().camera);
@@ -1080,24 +1089,27 @@ export default function Canvas({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative">
-          {groupFrames.map(({ group, bounds }) => (
-            <PageGroupFrame
-              key={group.id}
-              name={group.name}
-              left={bounds.left - GROUP_FRAME_PADDING}
-              top={bounds.top - GROUP_FRAME_PADDING}
-              width={bounds.width + GROUP_FRAME_PADDING * 2}
-              // Page bounds measure the design only, so the frame adds the
-              // title row each page draws above its design.
-              height={bounds.height + PAGE_FRAME_TOP + GROUP_FRAME_PADDING * 2}
-              isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
-              onRename={(name) => renamePageGroup(group.id, name)}
-              onUngroup={() => ungroupPages(group.id)}
-              onPointerDown={handleGroupPointerDown(group.pageIds)}
-              onPointerMove={handleGroupPointerMove}
-              onPointerUp={stopGroupDrag}
-            />
-          ))}
+          {/* Static, so the frames still position against the scene. */}
+          <div ref={groupLayerRef}>
+            {groupFrames.map(({ group, bounds }) => (
+              <PageGroupFrame
+                key={group.id}
+                name={group.name}
+                left={bounds.left - GROUP_FRAME_PADDING}
+                top={bounds.top - GROUP_FRAME_PADDING}
+                width={bounds.width + GROUP_FRAME_PADDING * 2}
+                // Page bounds measure the design only, so the frame adds the
+                // title row each page draws above its design.
+                height={bounds.height + PAGE_FRAME_TOP + GROUP_FRAME_PADDING * 2}
+                isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
+                onRename={(name) => renamePageGroup(group.id, name)}
+                onUngroup={() => ungroupPages(group.id)}
+                onPointerDown={handleGroupPointerDown(group.pageIds)}
+                onPointerMove={handleGroupPointerMove}
+                onPointerUp={stopGroupDrag}
+              />
+            ))}
+          </div>
           {pageLayouts.map((pageLayout) => {
             const renderMode: PageRenderMode = livePageId === pageLayout.page.id ? "live" : "inert";
 
@@ -1244,7 +1256,8 @@ function PageGroupFrame({
     >
       <div
         className="absolute bottom-full left-0 origin-bottom-left pb-2 text-[color:var(--canvas-label-strong,var(--foreground))]"
-        style={{ transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 4))" }}
+        // Rows leave room for the name at its largest in ARRANGEMENT_ROW_GAP.
+        style={{ transform: `scale(var(${GROUP_LABEL_SCALE}, 1))` }}
         onDoubleClick={() => setIsRenaming(true)}
       >
         {/* A filled chip, like a Figma section label, so the name reads as the

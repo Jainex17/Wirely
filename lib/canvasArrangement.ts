@@ -72,10 +72,12 @@ export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: str
   return { unknown, repeated, unlisted: projectPageIds.filter((pageId) => !seen.has(pageId)) };
 };
 
-// Scene pixels between the pages of neighbouring groups, and between rows. Each
-// frame pads its pages, so 200px stays between frames, which leaves room for
-// a group's name above its frame.
+// Scene pixels between the pages of neighbouring groups, and between rows.
+// Each frame pads its pages, so 200px stays between frames side by side. Rows
+// keep 480px between frames for the group name above each frame, which the
+// canvas scales up to 10x as it zooms out, to about 380 scene pixels tall.
 export const ARRANGEMENT_GROUP_GAP = GROUP_FRAME_PADDING * 2 + 200;
+export const ARRANGEMENT_ROW_GAP = GROUP_FRAME_PADDING * 2 + 480;
 
 /**
  * Places every page: groups left to right within a row, pages left to right
@@ -127,7 +129,7 @@ export const layoutArrangement = (
       if (group.name) pageGroups.push({ id: group.id, name: group.name, pageIds: group.pageIds });
     }
     // A page's height counts its design only, so add the title row above it.
-    y += PAGE_FRAME_TOP + rowHeight + ARRANGEMENT_GROUP_GAP;
+    y += PAGE_FRAME_TOP + rowHeight + ARRANGEMENT_ROW_GAP;
   }
   return { pagePositions, pageGroups };
 };
