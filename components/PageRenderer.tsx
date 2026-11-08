@@ -103,8 +103,6 @@ const DROP_LINE = "calc(2px * var(--canvas-inverse-zoom, 1))";
 const REVEAL_STEP_MS = 300;
 // How long keys stay blocked waiting for the live frame to start a text edit.
 const PENDING_EDIT_TIMEOUT_MS = 10_000;
-/** Where the design starts below the frame's top: the 50px title row plus the 4px column gap. */
-export const PAGE_FRAME_TOP = 54;
 
 const stabilizeViewportHeightClasses = (
   html: string,

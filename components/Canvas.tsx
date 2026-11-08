@@ -12,7 +12,7 @@ import {
 } from "@/store/useEditorStore";
 import CanvasToolbar from "./CanvasToolbar";
 import CanvasCommentPins from "./CanvasCommentPins";
-import PageRenderer, { PAGE_FRAME_TOP } from "./PageRenderer";
+import PageRenderer from "./PageRenderer";
 import type { ReportedNode } from "@/lib/nodePicker";
 import type { PageRecord } from "@/lib/types";
 import {
@@ -23,6 +23,8 @@ import {
   type ScenePoint,
   type SnapGuide,
   CANVAS_TOP_OFFSET,
+  GROUP_FRAME_PADDING,
+  PAGE_FRAME_TOP,
   clampZoom,
   getDefaultPageX,
   getEdgePanVelocity,
@@ -99,10 +101,6 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 const DRAG_START_THRESHOLD_PX = 4;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const CAMERA_LAYER_IDLE_MS = 150;
-// Scene pixels between a group's frame and its pages. The top leaves room for
-// the 50px page title row.
-const GROUP_PADDING = 32;
-const GROUP_TITLE_ROW = 50;
 
 interface PointerDragState {
   pageId: string;
@@ -189,6 +187,10 @@ const isEditableTarget = (target: EventTarget | null) =>
   Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
 
 const INVERSE_ZOOM = "--canvas-inverse-zoom";
+// Group names keep their screen size down to 10% zoom, further than page
+// titles, so an overview of many groups still reads. Only the group layer
+// carries this variable, so a zoom step restyles a few labels, not every page.
+const GROUP_LABEL_SCALE = "--canvas-group-label-scale";
 
 /**
  * Pins the inverse zoom variable on every page far from the viewport. A zoom
@@ -301,6 +303,7 @@ export default function Canvas({
   const layoutSaveTimeoutRef = React.useRef<number | null>(null);
   const hasCompletedInitialLayoutRef = React.useRef(false);
   const sceneRef = React.useRef<HTMLDivElement>(null);
+  const groupLayerRef = React.useRef<HTMLDivElement>(null);
   const pageElementsRef = React.useRef(new Map<string, HTMLDivElement>());
   const [draggingPageId, setDraggingPageId] = React.useState<string | null>(null);
   // Separate from the store's focused page, which always points at some page so
@@ -492,6 +495,10 @@ export default function Canvas({
       // restyles each of them, so a pan, which keeps the zoom, leaves it alone.
       if (camera.zoom !== previous?.zoom) {
         scene.style.setProperty(INVERSE_ZOOM, String(100 / Math.max(20, camera.zoom)));
+        groupLayerRef.current?.style.setProperty(
+          GROUP_LABEL_SCALE,
+          String(100 / Math.max(10, camera.zoom)),
+        );
       }
     };
     applyCamera(useEditorStore.getState().camera);
@@ -1082,22 +1089,27 @@ export default function Canvas({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative">
-          {groupFrames.map(({ group, bounds }) => (
-            <PageGroupFrame
-              key={group.id}
-              name={group.name}
-              left={bounds.left - GROUP_PADDING}
-              top={bounds.top - GROUP_PADDING - GROUP_TITLE_ROW}
-              width={bounds.width + GROUP_PADDING * 2}
-              height={bounds.height + GROUP_PADDING * 2 + GROUP_TITLE_ROW}
-              isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
-              onRename={(name) => renamePageGroup(group.id, name)}
-              onUngroup={() => ungroupPages(group.id)}
-              onPointerDown={handleGroupPointerDown(group.pageIds)}
-              onPointerMove={handleGroupPointerMove}
-              onPointerUp={stopGroupDrag}
-            />
-          ))}
+          {/* Static, so the frames still position against the scene. */}
+          <div ref={groupLayerRef}>
+            {groupFrames.map(({ group, bounds }) => (
+              <PageGroupFrame
+                key={group.id}
+                name={group.name}
+                left={bounds.left - GROUP_FRAME_PADDING}
+                top={bounds.top - GROUP_FRAME_PADDING}
+                width={bounds.width + GROUP_FRAME_PADDING * 2}
+                // Page bounds measure the design only, so the frame adds the
+                // title row each page draws above its design.
+                height={bounds.height + PAGE_FRAME_TOP + GROUP_FRAME_PADDING * 2}
+                isSelected={group.pageIds.every((pageId) => selectedPageIds.includes(pageId))}
+                onRename={(name) => renamePageGroup(group.id, name)}
+                onUngroup={() => ungroupPages(group.id)}
+                onPointerDown={handleGroupPointerDown(group.pageIds)}
+                onPointerMove={handleGroupPointerMove}
+                onPointerUp={stopGroupDrag}
+              />
+            ))}
+          </div>
           {pageLayouts.map((pageLayout) => {
             const renderMode: PageRenderMode = livePageId === pageLayout.page.id ? "live" : "inert";
 
@@ -1226,8 +1238,8 @@ function PageGroupFrame({
 
   return (
     <div
-      className={`absolute cursor-grab rounded-xl border bg-foreground/[0.03] active:cursor-grabbing ${
-        isSelected ? "border-sky-500" : "border-foreground/15"
+      className={`group/frame absolute cursor-grab rounded-2xl border bg-foreground/[0.07] active:cursor-grabbing ${
+        isSelected ? "border-sky-500" : "border-foreground/20"
       }`}
       style={{
         left,
@@ -1243,37 +1255,60 @@ function PageGroupFrame({
       onPointerCancel={onPointerUp}
     >
       <div
-        className="absolute bottom-full left-0 flex origin-bottom-left items-center gap-1.5 pb-1.5 text-[color:var(--canvas-label-strong,var(--foreground))]"
-        style={{ transform: "scale(clamp(0.4, var(--canvas-inverse-zoom, 1), 4))" }}
+        className="absolute bottom-full left-0 origin-bottom-left pb-2 text-[color:var(--canvas-label-strong,var(--foreground))]"
+        // Rows leave room for the name at its largest in ARRANGEMENT_ROW_GAP.
+        // Groups side by side get no such room, so the chip stops at its
+        // frame's width and a long name truncates, like a Figma section's.
+        // A tiny frame still leaves the chip 96px, so its name never vanishes,
+        // and renaming lifts the cap so the field stays usable.
+        style={{
+          transform: `scale(var(${GROUP_LABEL_SCALE}, 1))`,
+          maxWidth: isRenaming
+            ? undefined
+            : `max(96px, calc(${width}px / var(${GROUP_LABEL_SCALE}, 1)))`,
+        }}
         onDoubleClick={() => setIsRenaming(true)}
       >
-        {isRenaming ? (
-          <input
-            autoFocus
-            defaultValue={name}
-            aria-label="Group name"
-            className="h-6 w-40 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
-            onBlur={(event) => {
-              onRename(event.currentTarget.value);
-              setIsRenaming(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") setIsRenaming(false);
-            }}
-          />
-        ) : (
-          <span className="whitespace-nowrap text-sm font-semibold">{name}</span>
-        )}
-        <button
-          type="button"
-          onClick={onUngroup}
-          aria-label={`Ungroup ${name}`}
-          data-tip="Ungroup (Ctrl+Shift+G)"
-          className="rounded p-0.5 text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10"
-        >
-          <Ungroup className="h-3.5 w-3.5" />
-        </button>
+        {/* A filled chip, like a Figma section label, so the name reads as the
+            frame's title rather than loose text on the canvas. */}
+        <div className="flex max-w-full items-center gap-1 rounded-lg border border-foreground/20 bg-foreground/[0.12] px-2.5 py-1">
+          {isRenaming ? (
+            <input
+              autoFocus
+              defaultValue={name}
+              aria-label="Group name"
+              className="h-6 w-40 min-w-0 rounded border border-sky-500 bg-background px-1.5 text-sm text-foreground outline-none"
+              onBlur={(event) => {
+                onRename(event.currentTarget.value);
+                setIsRenaming(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") setIsRenaming(false);
+              }}
+            />
+          ) : (
+            <span className="truncate text-sm font-semibold" data-tip={name}>
+              {name}
+            </span>
+          )}
+          {/* Collapsed until the group is hovered or selected, or the button
+              takes keyboard focus, so it never crowds the name. It collapses
+              rather than hides, so it stays in the tab order. */}
+          <button
+            type="button"
+            onClick={onUngroup}
+            aria-label={`Ungroup ${name}`}
+            data-tip="Ungroup (Ctrl+Shift+G)"
+            className={`shrink-0 overflow-hidden rounded text-[color:var(--canvas-label,var(--muted-foreground))] hover:bg-foreground/10 ${
+              isSelected
+                ? "-mr-1.5 max-w-6 p-0.5"
+                : "max-w-0 p-0 opacity-0 group-hover/frame:-mr-1.5 group-hover/frame:max-w-6 group-hover/frame:p-0.5 group-hover/frame:opacity-100 focus-visible:-mr-1.5 focus-visible:max-w-6 focus-visible:p-0.5 focus-visible:opacity-100"
+            }`}
+          >
+            <Ungroup className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

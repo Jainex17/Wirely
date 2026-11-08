@@ -633,3 +633,19 @@ describe("camera glide", () => {
     expect(queued).toHaveLength(0);
   });
 });
+
+describe("useEditorStore focus requests", () => {
+  it("counts focusing a page that already has focus", () => {
+    const before = useEditorStore.getState().focusRequestCount;
+    useEditorStore.getState().setFocusedPage("page-1");
+    useEditorStore.getState().focusPage("page-1");
+    expect(useEditorStore.getState().focusRequestCount).toBe(before + 2);
+  });
+
+  it("does not count focus that moves because the focused page was deleted", () => {
+    const before = useEditorStore.getState().focusRequestCount;
+    useEditorStore.getState().deletePage("page-1");
+    expect(useEditorStore.getState().focusedPageId).toBe("page-2");
+    expect(useEditorStore.getState().focusRequestCount).toBe(before);
+  });
+});
