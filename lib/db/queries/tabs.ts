@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/schema";
 import {
   DEFAULT_TAB_NAME,
+  findTabByName,
   nextTabName,
   resolvePageTabs,
   type PageTabAssignment,
@@ -28,6 +29,14 @@ const ownsProject = async (db: Queryable, projectId: string, userId: string) => 
     .limit(1);
   return row !== undefined;
 };
+
+/**
+ * Holds the project's tab writes one at a time until the transaction ends.
+ * Without it, three parallel add_page calls naming one new tab each find no
+ * such tab and make three, and a double-clicked "+" makes two "Tab 2"s.
+ */
+const lockProjectTabs = (db: Queryable, projectId: string) =>
+  db.execute(sql`select pg_advisory_xact_lock(hashtext(${projectId}))`);
 
 /**
  * Materializes the implicit first tab so a tab or assignment write has a row
@@ -142,24 +151,35 @@ export const writePageTab = async (db: Queryable, pageId: string, tabId: string)
     .onConflictDoUpdate({ target: projectPageTabs.pageId, set: { tabId } });
 };
 
+/**
+ * Adds a tab. With `reuseByName`, a tab already called `name` (trimmed,
+ * ignoring case) is returned instead, which is how an agent names the tab a
+ * page goes on.
+ */
 export const createProjectTabForUser = async ({
   projectId,
   userId,
   name,
+  reuseByName = false,
 }: {
   projectId: string;
   userId: string;
   name?: string;
+  reuseByName?: boolean;
 }) => {
   const db = getDb();
   if (!(await ownsProject(db, projectId, userId))) return null;
 
   return db.transaction(async (tx) => {
+    await lockProjectTabs(tx, projectId);
     await ensureDefaultTab(tx, projectId);
     const existing = await tx
-      .select({ name: projectTabs.name, sortOrder: projectTabs.sortOrder })
+      .select({ id: projectTabs.id, name: projectTabs.name, sortOrder: projectTabs.sortOrder })
       .from(projectTabs)
-      .where(eq(projectTabs.projectId, projectId));
+      .where(eq(projectTabs.projectId, projectId))
+      .orderBy(asc(projectTabs.sortOrder), asc(projectTabs.createdAt));
+    const match = reuseByName && name ? findTabByName(existing, name) : null;
+    if (match) return { id: match.id, name: match.name };
     const [tab] = await tx
       .insert(projectTabs)
       .values({
@@ -220,6 +240,7 @@ export const deleteProjectTabForUser = async ({
   if (!(await ownsProject(db, projectId, userId))) return { ok: false, reason: "not_found" };
 
   return db.transaction(async (tx) => {
+    await lockProjectTabs(tx, projectId);
     await ensureDefaultTab(tx, projectId);
     const pageRows = await tx
       .select({ id: projectPages.id })
@@ -270,6 +291,7 @@ export const movePageToTabForUser = async ({
   if (!(await ownsProject(db, projectId, userId))) return "not_found" as const;
 
   return db.transaction(async (tx) => {
+    await lockProjectTabs(tx, projectId);
     await ensureDefaultTab(tx, projectId);
     const [page] = await tx
       .select({ id: projectPages.id })

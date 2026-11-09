@@ -830,7 +830,71 @@ describe("project tabs", () => {
     });
     expect(state.pageGroups).toEqual([
       { id: "gb", name: "Keep", pageIds: ["page-3"] },
-      { id: "arranged-0-0", name: "Web", pageIds: ["page-1", "page-2"] },
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1", "page-2"] },
+    ]);
+  });
+
+  it("lays out each arranged tab from its own origin with its own group ids", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [
+        [{ name: "Web", pageIds: ["page-1", "page-2"] }],
+        [{ name: "Phone", pageIds: ["page-3"] }],
+      ],
+      arrangedAt: "2026-11-09T11:00:00.000Z",
+    });
+
+    let state = useEditorStore.getState();
+    expect(state.pagePositions["page-3"]).toEqual({ x: 0, y: 0 });
+    expect(state.pageGroups.map((group) => group.id)).toEqual([
+      "tab-home:arranged-0-0",
+      "tab-b:arranged-1-0",
+    ]);
+
+    useEditorStore.getState().ungroupPages("tab-b:arranged-1-0");
+    state = useEditorStore.getState();
+    expect(state.pageGroups).toEqual([
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1", "page-2"] },
+    ]);
+  });
+
+  it("keeps a saved position that another tab's page shares on reload", () => {
+    seedTabs();
+    useEditorStore.getState().hydratePageLayout({
+      pagePositions: {
+        "page-1": { x: 0, y: 0 },
+        "page-2": { x: 5000, y: 0 },
+        "page-3": { x: 0, y: 0 },
+      },
+    });
+    expect(useEditorStore.getState().pagePositions).toEqual({
+      "page-1": { x: 0, y: 0 },
+      "page-2": { x: 5000, y: 0 },
+      "page-3": { x: 0, y: 0 },
+    });
+  });
+
+  it("ends a live arrangement when a poll moves one of its pages to another tab", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [[{ name: "Web", pageIds: ["page-1", "page-2"] }]],
+      arrangedAt: "2026-11-09T12:00:00.000Z",
+    });
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [],
+      tabs: [
+        { id: "tab-home", name: "Tab 1" },
+        { id: "tab-b", name: "Mobile" },
+      ],
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-b", "page-3": "tab-b" },
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.arrangement).toBe(null);
+    expect(state.pages.find((page) => page.id === "page-2")?.tabId).toBe("tab-b");
+    expect(state.pageGroups).toEqual([
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1"] },
     ]);
   });
 });

@@ -41,10 +41,10 @@ import {
   setProjectCommentResolved,
 } from "@/lib/db/queries/reviews";
 import { createProjectTabForUser, getProjectTabState } from "@/lib/db/queries/tabs";
-import { findTabByName, TAB_NAME_MAX_CHARS } from "@/lib/projectTabs";
+import { TAB_NAME_MAX_CHARS } from "@/lib/projectTabs";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
-import { arrangementRowsSchema, checkArrangementPages } from "@/lib/canvasArrangement";
+import { arrangementRowsSchema, checkArrangementPages, mergeTabArrangement } from "@/lib/canvasArrangement";
 import { buildVisualLintReport, describeWrite } from "@/lib/mcp/diagnostics";
 import type { ToolCallResult } from "@/lib/mcp/protocol";
 import { fail, succeed, text } from "@/lib/mcp/results";
@@ -248,7 +248,12 @@ const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
   }
 
   try {
-    await setCanvasArrangement(project.id, rows);
+    const tabId = listedTabIds[0];
+    const previous = await getCanvasArrangement(project.id);
+    await setCanvasArrangement(
+      project.id,
+      mergeTabArrangement(previous?.rows ?? null, rows, (pageId) => pageTabIds[pageId] === tabId),
+    );
   } catch (error) {
     if (isMissingRelationError(error)) return fail("Canvas arrangement is not set up on this server yet.");
     throw error;
@@ -300,12 +305,15 @@ const addPage: ToolHandler = async (userId, args) => {
   // the tab the user last opened in the editor.
   let tabId: string | undefined;
   if (parsed.data.tab) {
-    const { tabs } = await getProjectTabState(project.id, []);
-    const existing = findTabByName(tabs, parsed.data.tab);
     try {
-      tabId =
-        existing?.id ??
-        (await createProjectTabForUser({ projectId: project.id, userId, name: parsed.data.tab }))?.id;
+      tabId = (
+        await createProjectTabForUser({
+          projectId: project.id,
+          userId,
+          name: parsed.data.tab,
+          reuseByName: true,
+        })
+      )?.id;
     } catch (error) {
       if (isMissingRelationError(error)) return fail("Tabs are not set up on this server yet.");
       throw error;

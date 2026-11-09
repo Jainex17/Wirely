@@ -340,11 +340,16 @@ const filterPagePositions = (
  * This runs only on load: two pages sharing an x (a column, or a snapped edge)
  * is a normal layout, and repairing it live threw pages across the canvas.
  */
-const dropStackedPositions = (pagePositions: PagePositionMap) => {
+// Every tab is laid out from the same origin, so two pages share a spot only
+// when they share a tab too.
+const dropStackedPositions = (
+  pagePositions: PagePositionMap,
+  tabOf: (pageId: string) => string | null,
+) => {
   const taken = new Set<string>();
   return Object.fromEntries(
-    Object.entries(pagePositions).filter(([, { x, y }]) => {
-      const key = `${x},${y}`;
+    Object.entries(pagePositions).filter(([pageId, { x, y }]) => {
+      const key = `${tabOf(pageId)}:${x},${y}`;
       if (taken.has(key)) return false;
       taken.add(key);
       return true;
@@ -566,32 +571,42 @@ const getNewRowPosition = (
 };
 
 /**
- * The positions and groups after the agent's rows lay out the tab of the
- * first listed page that exists. Pages and groups on other tabs keep theirs.
- * `tabId` is null when no listed page exists yet, and nothing moves.
+ * The positions and groups after the agent's rows lay out each tab they name.
+ * The server keeps every arranged tab's rows in one arrangement, so each tab
+ * is laid out from its own origin with its own pages. Tabs the rows do not
+ * name keep their positions and groups.
  */
 const getArrangedPositions = (state: EditorState, rows: ArrangementRows) => {
-  const tabId =
-    rows
-      .flat()
-      .flatMap((group) => group.pageIds)
-      .map((pageId) => tabOfPage(state, pageId))
-      .find((id) => id !== null) ?? null;
-  if (!tabId) return { tabId, pagePositions: state.pagePositions, pageGroups: state.pageGroups };
-
-  const tabPageIds = pagesOnTab(state, tabId).map((page) => page.id);
-  const sizes = new Map(getPageBoundsCollection(state, tabId).map((bounds) => [bounds.pageId, bounds]));
-  const arranged = layoutArrangement(
-    rows,
-    tabPageIds,
-    (pageId) => sizes.get(pageId) ?? { width: 0, height: 0 },
-  );
+  const tabIds = [
+    ...new Set(
+      rows
+        .flat()
+        .flatMap((group) => group.pageIds)
+        .flatMap((pageId) => tabOfPage(state, pageId) ?? []),
+    ),
+  ];
+  let pagePositions = state.pagePositions;
+  const arrangedGroups: PageGroup[] = [];
+  const arrangedPageIds = new Set<string>();
+  for (const tabId of tabIds) {
+    const tabPageIds = pagesOnTab(state, tabId).map((page) => page.id);
+    const sizes = new Map(getPageBoundsCollection(state, tabId).map((bounds) => [bounds.pageId, bounds]));
+    const arranged = layoutArrangement(
+      rows,
+      tabPageIds,
+      (pageId) => sizes.get(pageId) ?? { width: 0, height: 0 },
+    );
+    pagePositions = { ...pagePositions, ...arranged.pagePositions };
+    // Group ids count rows and columns, so each tab's layout repeats them.
+    arrangedGroups.push(...arranged.pageGroups.map((group) => ({ ...group, id: `${tabId}:${group.id}` })));
+    for (const pageId of tabPageIds) arrangedPageIds.add(pageId);
+  }
   return {
-    tabId,
-    pagePositions: { ...state.pagePositions, ...arranged.pagePositions },
+    tabIds,
+    pagePositions,
     pageGroups: [
-      ...state.pageGroups.filter((group) => !group.pageIds.some((id) => tabPageIds.includes(id))),
-      ...arranged.pageGroups,
+      ...state.pageGroups.filter((group) => !group.pageIds.some((id) => arrangedPageIds.has(id))),
+      ...arrangedGroups,
     ],
   };
 };
@@ -817,7 +832,9 @@ export const useEditorStore = create<EditorState>()(
                   : [];
               }),
             ),
-            pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
+            pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds), (pageId) =>
+              tabOfPage(state, pageId),
+            ),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
             arrangement: readSavedArrangement(arrangement),
@@ -830,9 +847,9 @@ export const useEditorStore = create<EditorState>()(
       applyCanvasArrangement: (arrangement) => {
         const state = get();
         if (state.arrangedAt && arrangement.arrangedAt <= state.arrangedAt) return;
-        const { tabId, pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
+        const { tabIds, pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
         set({ arrangement, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
-        if (tabId === state.activeTabId && hasUsableViewport(state.viewportSize)) {
+        if (tabIds.includes(state.activeTabId) && hasUsableViewport(state.viewportSize)) {
           glideCamera(getFittedCamera(get()));
         }
       },
@@ -1375,12 +1392,18 @@ export const useEditorStore = create<EditorState>()(
             movedPageIds.reduce(removeFromGroups, state.pageGroups),
             nextPageIds,
           );
+          // A page moved to another tab elsewhere leaves its rows behind, as
+          // a local move does, so the arrangement stops re-flowing.
+          const isMovedArranged = movedPageIds.some((pageId) =>
+            state.arrangement?.rows.flat().some((group) => group.pageIds.includes(pageId)),
+          );
+          const arrangement = isMovedArranged ? null : state.arrangement;
           // A page the agent added can land a poll after the arrangement that
           // names it, so a live arrangement places it now, group and all.
-          if (state.arrangement) {
+          if (arrangement) {
             const arranged = getArrangedPositions(
               { ...state, pages, pagePositions, pageGroups },
-              state.arrangement.rows,
+              arrangement.rows,
             );
             pagePositions = arranged.pagePositions;
             pageGroups = syncArrangedGroups(pageGroups, arranged.pageGroups);
@@ -1396,6 +1419,7 @@ export const useEditorStore = create<EditorState>()(
           return {
             pages,
             tabs,
+            arrangement,
             agentEdits,
             pagePositions,
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),

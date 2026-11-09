@@ -58,6 +58,30 @@ export const syncArrangedGroups = (current: PageGroup[], arranged: PageGroup[]) 
     name: current.find((candidate) => candidate.id === group.id)?.name ?? group.name,
   }));
 
+const MAX_ARRANGEMENT_ROWS = 20;
+
+/**
+ * The project's stored rows after an agent arranges one tab. A project keeps
+ * one arrangement, so the rows for every other tab stay, and only the pages
+ * on this tab (`isOnTab`) take the new rows. Without this, arranging tab B
+ * before the editor applied tab A's rows would lose tab A's layout. The
+ * oldest rows go first if the total passes the row limit.
+ */
+export const mergeTabArrangement = (
+  previous: ArrangementRows | null,
+  next: ArrangementRows,
+  isOnTab: (pageId: string) => boolean,
+): ArrangementRows => {
+  const kept = (previous ?? [])
+    .map((row) =>
+      row
+        .map((group) => ({ ...group, pageIds: group.pageIds.filter((pageId) => !isOnTab(pageId)) }))
+        .filter((group) => group.pageIds.length > 0),
+    )
+    .filter((row) => row.length > 0);
+  return [...kept, ...next].slice(-MAX_ARRANGEMENT_ROWS);
+};
+
 /**
  * Checks the rows against the project's pages: every id must exist and appear
  * once. An arrangement lays out one tab, so `unlisted` counts only that tab's
