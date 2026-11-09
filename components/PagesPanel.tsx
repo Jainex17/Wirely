@@ -257,7 +257,7 @@ export default function PagesPanel({
                   event.stopPropagation();
                   setSearch(null);
                 }
-                if (event.key === "Enter" && firstMatch) {
+                if (event.key === "Enter" && isSearching && firstMatch) {
                   setSelectedPageIds([firstMatch.id]);
                   focusPage(firstMatch.id);
                 }
@@ -348,6 +348,9 @@ export default function PagesPanel({
                   <button
                     type="button"
                     aria-label={isGroupOpen ? `Hide pages of ${group.name}` : `Show pages of ${group.name}`}
+                    // A search shows every group with a match open, and a
+                    // toggle then would only change what shows after it.
+                    disabled={isSearching}
                     onClick={(event) => {
                       event.stopPropagation();
                       setOpenGroupIds(
@@ -356,7 +359,7 @@ export default function PagesPanel({
                           : [...openGroupIds, group.id],
                       );
                     }}
-                    className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+                    className="-ml-0.5 rounded p-0.5 enabled:hover:bg-foreground/10"
                   >
                     <ChevronRight className={cn("h-3 w-3 transition-transform", isGroupOpen && "rotate-90")} />
                   </button>
