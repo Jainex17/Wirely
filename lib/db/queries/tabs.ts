@@ -17,7 +17,7 @@ import {
 } from "@/lib/projectTabs";
 
 type Db = ReturnType<typeof getDb>;
-type Queryable = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Queryable = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 // Not imported from queries/projects.ts, which imports this module for the
 // tab of a new page. Two small statements beat a module cycle.
@@ -31,11 +31,12 @@ const ownsProject = async (db: Queryable, projectId: string, userId: string) => 
 };
 
 /**
- * Holds the project's tab writes one at a time until the transaction ends.
- * Without it, three parallel add_page calls naming one new tab each find no
- * such tab and make three, and a double-clicked "+" makes two "Tab 2"s.
+ * Holds the project's tab and arrangement writes one at a time until the
+ * transaction ends. Without it, three parallel add_page calls naming one new
+ * tab each find no such tab and make three, a double-clicked "+" makes two
+ * "Tab 2"s, and two parallel arrange_canvas calls each drop the other's rows.
  */
-const lockProjectTabs = (db: Queryable, projectId: string) =>
+export const lockProjectTabs = (db: Queryable, projectId: string) =>
   db.execute(sql`select pg_advisory_xact_lock(hashtext(${projectId}))`);
 
 /**

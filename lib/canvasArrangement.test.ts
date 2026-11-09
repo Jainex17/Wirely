@@ -7,6 +7,7 @@ import {
   checkArrangementPages,
   layoutArrangement,
   mergeTabArrangement,
+  rowsArrangedSince,
 } from "@/lib/canvasArrangement";
 
 const SIZES: Record<string, { width: number; height: number }> = {
@@ -85,29 +86,50 @@ describe("checkArrangementPages", () => {
 describe("mergeTabArrangement", () => {
   const onTabB = (pageId: string) => pageId.startsWith("b");
 
-  it("keeps other tabs' rows and replaces this tab's", () => {
-    const previous = [[{ name: "Onboarding", pageIds: ["a1", "a2"] }], [{ pageIds: ["b1"] }]];
+  const AT = "2026-11-09T15:00:00.000Z";
+
+  it("keeps other tabs' rows and replaces this tab's, stamping the new ones", () => {
+    const previous = [[{ name: "Onboarding", pageIds: ["a1", "a2"], at: "2026-11-09T14:00:00.000Z" }], [{ pageIds: ["b1"] }]];
     const next = [[{ name: "Checkout", pageIds: ["b2", "b1"] }]];
-    expect(mergeTabArrangement(previous, next, onTabB)).toEqual([
-      [{ name: "Onboarding", pageIds: ["a1", "a2"] }],
-      [{ name: "Checkout", pageIds: ["b2", "b1"] }],
+    expect(mergeTabArrangement(previous, next, onTabB, AT)).toEqual([
+      [{ name: "Onboarding", pageIds: ["a1", "a2"], at: "2026-11-09T14:00:00.000Z" }],
+      [{ name: "Checkout", pageIds: ["b2", "b1"], at: AT }],
     ]);
   });
 
   it("drops a page that moved onto this tab from its old group", () => {
     const previous = [[{ name: "Mixed", pageIds: ["a1", "b9"] }]];
-    expect(mergeTabArrangement(previous, [[{ pageIds: ["b1"] }]], onTabB)).toEqual([
+    expect(mergeTabArrangement(previous, [[{ pageIds: ["b1"] }]], onTabB, AT)).toEqual([
       [{ name: "Mixed", pageIds: ["a1"] }],
-      [{ pageIds: ["b1"] }],
+      [{ pageIds: ["b1"], at: AT }],
     ]);
   });
 
   it("starts from nothing and stays within the row limit", () => {
-    expect(mergeTabArrangement(null, [[{ pageIds: ["b1"] }]], onTabB)).toEqual([[{ pageIds: ["b1"] }]]);
+    expect(mergeTabArrangement(null, [[{ pageIds: ["b1"] }]], onTabB, AT)).toEqual([
+      [{ pageIds: ["b1"], at: AT }],
+    ]);
     const previous = Array.from({ length: 20 }, (_, index) => [{ pageIds: [`a${index}`] }]);
-    const merged = mergeTabArrangement(previous, [[{ pageIds: ["b1"] }]], onTabB);
+    const merged = mergeTabArrangement(previous, [[{ pageIds: ["b1"] }]], onTabB, AT);
     expect(merged.length).toBe(20);
     expect(merged[0]).toEqual([{ pageIds: ["a1"] }]);
-    expect(merged[19]).toEqual([{ pageIds: ["b1"] }]);
+    expect(merged[19]).toEqual([{ pageIds: ["b1"], at: AT }]);
+  });
+});
+
+describe("rowsArrangedSince", () => {
+  const rows = [
+    [{ name: "Onboarding", pageIds: ["a1"], at: "2026-11-09T14:00:00.000Z" }],
+    [{ name: "Checkout", pageIds: ["b1"], at: "2026-11-09T15:00:00.000Z" }],
+  ];
+
+  it("keeps only the groups arranged after the editor last applied", () => {
+    expect(rowsArrangedSince(rows, "2026-11-09T14:30:00.000Z")).toEqual([rows[1]]);
+  });
+
+  it("keeps every group for an editor that never applied one, or for rows without times", () => {
+    expect(rowsArrangedSince(rows, null)).toEqual(rows);
+    const legacy = [[{ pageIds: ["a1"] }]];
+    expect(rowsArrangedSince(legacy, "2026-11-09T14:30:00.000Z")).toEqual(legacy);
   });
 });

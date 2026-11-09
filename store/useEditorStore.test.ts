@@ -874,6 +874,51 @@ describe("project tabs", () => {
     });
   });
 
+  it("leaves a tab the user rearranged by hand alone when an agent arranges another tab", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [[{ name: "Web", pageIds: ["page-1", "page-2"], at: "2026-11-09T14:00:00.000Z" }]],
+      arrangedAt: "2026-11-09T14:00:00.000Z",
+    });
+    useEditorStore.getState().setPagePosition("page-1", { x: 777, y: 888 });
+
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [
+        [{ name: "Web", pageIds: ["page-1", "page-2"], at: "2026-11-09T14:00:00.000Z" }],
+        [{ name: "Phone", pageIds: ["page-3"], at: "2026-11-09T15:00:00.000Z" }],
+      ],
+      arrangedAt: "2026-11-09T15:00:00.000Z",
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.pagePositions["page-1"]).toEqual({ x: 777, y: 888 });
+    expect(state.pagePositions["page-3"]).toEqual({ x: 0, y: 0 });
+    expect(state.arrangement?.rows).toEqual([
+      [{ name: "Phone", pageIds: ["page-3"], at: "2026-11-09T15:00:00.000Z" }],
+    ]);
+  });
+
+  it("drops the selection of a page a poll moves off the open tab", () => {
+    seedTabs();
+    useEditorStore.setState({
+      selectedNode: { pageId: "page-2", nodeId: "w-1", tag: "h1", color: null, background: null },
+      selectedPageIds: ["page-1", "page-2"],
+    });
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [],
+      tabs: [
+        { id: "tab-home", name: "Tab 1" },
+        { id: "tab-b", name: "Mobile" },
+      ],
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-b", "page-3": "tab-b" },
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.selectedNode).toBe(null);
+    expect(state.selectedPageIds).toEqual(["page-1"]);
+  });
+
   it("ends a live arrangement when a poll moves one of its pages to another tab", () => {
     seedTabs();
     useEditorStore.getState().applyCanvasArrangement({

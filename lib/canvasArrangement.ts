@@ -15,6 +15,12 @@ const GROUP_NAME_MAX_CHARS = 80;
 export interface ArrangedGroup {
   name?: string;
   pageIds: string[];
+  /**
+   * When an agent arranged this group's tab, set by the server. The stored
+   * rows hold every arranged tab, and the editor lays out again only the
+   * groups arranged since it last applied, see `rowsArrangedSince`.
+   */
+  at?: string;
 }
 
 /** Rows top to bottom, each holding groups left to right. */
@@ -71,6 +77,7 @@ export const mergeTabArrangement = (
   previous: ArrangementRows | null,
   next: ArrangementRows,
   isOnTab: (pageId: string) => boolean,
+  at: string,
 ): ArrangementRows => {
   const kept = (previous ?? [])
     .map((row) =>
@@ -79,7 +86,21 @@ export const mergeTabArrangement = (
         .filter((group) => group.pageIds.length > 0),
     )
     .filter((row) => row.length > 0);
-  return [...kept, ...next].slice(-MAX_ARRANGEMENT_ROWS);
+  const stamped = next.map((row) => row.map((group) => ({ ...group, at })));
+  return [...kept, ...stamped].slice(-MAX_ARRANGEMENT_ROWS);
+};
+
+/**
+ * The groups an editor that last applied an arrangement at `since` has not
+ * laid out yet. A tab the user rearranged by hand after an agent arranged it
+ * keeps that layout when the agent arranges another tab. Rows written before
+ * groups carried a time all count as new.
+ */
+export const rowsArrangedSince = (rows: ArrangementRows, since: string | null): ArrangementRows => {
+  if (since === null || !rows.some((row) => row.some((group) => group.at !== undefined))) return rows;
+  return rows
+    .map((row) => row.filter((group) => group.at !== undefined && group.at > since))
+    .filter((row) => row.length > 0);
 };
 
 /**

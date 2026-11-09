@@ -43,6 +43,7 @@ import {
   type CanvasArrangement,
   layoutArrangement,
   readSavedArrangement,
+  rowsArrangedSince,
   syncArrangedGroups,
 } from "@/lib/canvasArrangement";
 import type { NodeStyleProperty } from "@/lib/pageNodes";
@@ -847,8 +848,13 @@ export const useEditorStore = create<EditorState>()(
       applyCanvasArrangement: (arrangement) => {
         const state = get();
         if (state.arrangedAt && arrangement.arrangedAt <= state.arrangedAt) return;
-        const { tabIds, pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
-        set({ arrangement, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
+        const rows = rowsArrangedSince(arrangement.rows, state.arrangedAt);
+        if (rows.length === 0) {
+          set({ arrangedAt: arrangement.arrangedAt });
+          return;
+        }
+        const { tabIds, pagePositions, pageGroups } = getArrangedPositions(state, rows);
+        set({ arrangement: { ...arrangement, rows }, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
         if (tabIds.includes(state.activeTabId) && hasUsableViewport(state.viewportSize)) {
           glideCamera(getFittedCamera(get()));
         }
@@ -1425,10 +1431,15 @@ export const useEditorStore = create<EditorState>()(
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
             pageGroups,
             pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, nextPageIds),
+            // A page another window moved off the open tab leaves the selection,
+            // or the next prompt or shortcut would act on a page out of sight.
             selectedNode:
-              state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
+              state.selectedNode && tabOfPage(nextState, state.selectedNode.pageId) === activeTabId
                 ? state.selectedNode
                 : null,
+            selectedPageIds: state.selectedPageIds.filter(
+              (pageId) => tabOfPage(nextState, pageId) === activeTabId,
+            ),
             focusedPageId: focusOnTab(nextState, activeTabId),
             ...tabSwitch,
             tabCameras: Object.fromEntries(

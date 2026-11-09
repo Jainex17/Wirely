@@ -31,7 +31,7 @@ import {
   getDesignTokens,
   getProjectMemory,
   setAgentBaseline,
-  setCanvasArrangement,
+  updateCanvasArrangement,
   updateProjectMemory,
   setDesignTokens,
 } from "@/lib/db/queries/agentState";
@@ -249,10 +249,8 @@ const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
 
   try {
     const tabId = listedTabIds[0];
-    const previous = await getCanvasArrangement(project.id);
-    await setCanvasArrangement(
-      project.id,
-      mergeTabArrangement(previous?.rows ?? null, rows, (pageId) => pageTabIds[pageId] === tabId),
+    await updateCanvasArrangement(project.id, (previous, at) =>
+      mergeTabArrangement(previous, rows, (pageId) => pageTabIds[pageId] === tabId, at),
     );
   } catch (error) {
     if (isMissingRelationError(error)) return fail("Canvas arrangement is not set up on this server yet.");

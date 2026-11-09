@@ -306,6 +306,11 @@ export const listProjectPageChangesForUser = async ({
   };
 };
 
+const isForeignKeyViolation = (error: unknown) => {
+  const candidate = error as { code?: string; cause?: { code?: string } } | null;
+  return candidate?.code === "23503" || candidate?.cause?.code === "23503";
+};
+
 export const createProjectPageForUser = async ({
   projectId,
   userId,
@@ -349,8 +354,15 @@ export const createProjectPageForUser = async ({
     .returning();
 
   if (!created) return null;
-  // The tab resolved above only on a database that has the tables.
-  if (resolvedTabId) await writePageTab(db, created.id, resolvedTabId);
+  // The tab resolved above only on a database that has the tables. A tab
+  // deleted since then fails the foreign key; the page is saved, so it stays
+  // on the first tab rather than failing a request whose retry would make a
+  // second copy.
+  if (resolvedTabId) {
+    await writePageTab(db, created.id, resolvedTabId).catch((error: unknown) => {
+      if (!isForeignKeyViolation(error)) throw error;
+    });
+  }
   await touchProjectUpdatedAt(projectId);
   return created;
 };
