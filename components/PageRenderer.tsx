@@ -90,6 +90,7 @@ import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { downloadBlob, fileSlug } from "@/lib/download";
 import type { PageRenderMode } from "@/lib/canvasScene";
+import { settlePage } from "@/lib/pageSnapshot";
 import type { PageDeviceType } from "@/lib/types";
 import { type AgentEdit, type PageStatusRecord, useEditorStore } from "@/store/useEditorStore";
 import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
@@ -1418,16 +1419,35 @@ export default React.memo(function PageRenderer({
 
   // A page drawn as its snapshot has no DOM to pick from. Pressing it builds
   // the DOM, and the press runs once the DOM is there, so one click picks.
-  const pendingPressRef = React.useRef<{ x: number; y: number } | null>(null);
-  React.useEffect(() => {
+  // Another press anywhere, Escape, or a tool change cancels it first, so it
+  // never replaces a selection made after it.
+  const pendingPressRef = React.useRef<{ point: { x: number; y: number }; listeners: AbortController } | null>(
+    null,
+  );
+  const dropPendingPress = React.useCallback(() => {
+    pendingPressRef.current?.listeners.abort();
     pendingPressRef.current = null;
-  }, [insertKind, isCommentMode, isElementMode]);
+  }, []);
+  const savePress = (point: { x: number; y: number }) => {
+    dropPendingPress();
+    const listeners = new AbortController();
+    pendingPressRef.current = { point, listeners };
+    const options = { capture: true, signal: listeners.signal };
+    window.addEventListener("pointerdown", dropPendingPress, options);
+    window.addEventListener("keydown", (event) => event.key === "Escape" && dropPendingPress(), options);
+  };
+  React.useEffect(() => dropPendingPress, [dropPendingPress, insertKind, isCommentMode, isElementMode]);
   React.useEffect(() => {
-    const point = pendingPressRef.current;
-    if (!inertFrame || !point) return;
-    pendingPressRef.current = null;
-    pressFrameAt(point);
-  }, [inertFrame, pressFrameAt]);
+    const pending = pendingPressRef.current;
+    if (!inertFrame || !pending) return;
+    // The new DOM loads its images and fonts, which can move what was under
+    // the press from where the snapshot showed it.
+    void settlePage(inertFrame.root).then(() => {
+      if (pendingPressRef.current !== pending) return;
+      dropPendingPress();
+      pressFrameAt(pending.point);
+    });
+  }, [dropPendingPress, inertFrame, pressFrameAt]);
 
   React.useEffect(() => {
     const handlePreview = (event: Event) => {
@@ -1636,7 +1656,7 @@ export default React.memo(function PageRenderer({
             onPointerDown={(event) => {
               if (event.button !== 0 || !hasHtml || isLive || inertFrame) return;
               if (isElementMode || isCommentMode || insertKind) {
-                pendingPressRef.current = toPagePoint(event.clientX, event.clientY);
+                savePress(toPagePoint(event.clientX, event.clientY));
               }
             }}
             // A project image dragged from the assets folder goes into the
