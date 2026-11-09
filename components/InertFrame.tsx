@@ -2,6 +2,7 @@
 
 import React from "react";
 import { buildInertPage, createIconStylesheet } from "@/lib/inertPage";
+import { isCameraMoving, whenCameraRests } from "@/lib/cameraMotion";
 import { INERT_HTML_ATTRIBUTE } from "@/lib/inertCss";
 import type { InertFrame as InertFrameHandle } from "@/lib/inertPicker";
 import { canCaptureSnapshots, captureSnapshot, enqueueSnapshot, settlePage } from "@/lib/pageSnapshot";
@@ -46,22 +47,37 @@ const measure = (page: HTMLElement | null) => (page ? Math.max(page.offsetHeight
 // the canvas moving while they sharpen one by one. Pages the canvas wants as
 // DOM, on screen or being worked on, go ahead of pages building only to be
 // snapshotted. Urgency is read when the next build is picked, so a queued page
-// the user zooms into or points at goes next.
+// the user zooms into or points at goes next. No build runs while the camera
+// moves, since even one drops a frame of the gesture.
 type Build = { run: () => void; isUrgent: { readonly current: boolean } };
 const builds: Build[] = [];
 let buildFrame = 0;
+let isWaitingForRest = false;
+const requestBuild = () => {
+  if (buildFrame || isWaitingForRest || builds.length === 0) return;
+  buildFrame = window.requestAnimationFrame(runNextBuild);
+};
 const runNextBuild = () => {
+  buildFrame = 0;
+  if (isCameraMoving()) {
+    isWaitingForRest = true;
+    void whenCameraRests().then(() => {
+      isWaitingForRest = false;
+      requestBuild();
+    });
+    return;
+  }
   const [next] = builds.splice(Math.max(0, builds.findIndex(({ isUrgent }) => isUrgent.current)), 1);
   try {
     next?.run();
   } finally {
     // A page that fails to build must not stop the pages queued after it.
-    buildFrame = builds.length > 0 ? window.requestAnimationFrame(runNextBuild) : 0;
+    requestBuild();
   }
 };
 const scheduleBuild = (build: Build) => {
   builds.push(build);
-  if (!buildFrame) buildFrame = window.requestAnimationFrame(runNextBuild);
+  requestBuild();
   return () => {
     const index = builds.indexOf(build);
     if (index !== -1) builds.splice(index, 1);

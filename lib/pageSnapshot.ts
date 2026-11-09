@@ -13,6 +13,7 @@
  * holes in it.
  */
 import { ASSET_PATH_PATTERN } from "@/lib/assetPaths";
+import { whenCameraRests } from "@/lib/cameraMotion";
 import { SNAPSHOT_SCALE } from "@/lib/canvasScene";
 import { INERT_ICON_STYLESHEET } from "@/lib/inertPage";
 import { INERT_FRAME_ATTRIBUTE, isInertImageUrl } from "@/lib/inertCss";
@@ -297,6 +298,9 @@ export const captureSnapshot = async ({
   if (fetched.includes(null)) return null;
   const dataUrls = new Map(urls.map((url, index) => [url, fetched[index] as string]));
 
+  // Serializing the page and laying it out again inside the image both hold
+  // the main thread, so they wait out a pan or zoom that began meanwhile.
+  await whenCameraRests();
   const image = new Image();
   image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
     buildSnapshotSvg({ css, markup: snapshotMarkup(frame, dataUrls), width, height, dataUrls }),
@@ -306,6 +310,7 @@ export const captureSnapshot = async ({
   } catch {
     return null;
   }
+  await whenCameraRests();
   const scale = snapshotScale(height);
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * scale));
@@ -323,8 +328,9 @@ export const captureSnapshot = async ({
   }
 };
 
-// One capture at a time, each when the browser is idle, so snapshotting a
-// canvas of pages never stacks up into a long freeze.
+// One capture at a time, each when the browser is idle and the camera rests,
+// so snapshotting a canvas of pages never stacks up into a long freeze or
+// drops frames from a gesture.
 let queue = Promise.resolve();
 const whenIdle = () =>
   new Promise<void>((resolve) => {
@@ -333,5 +339,5 @@ const whenIdle = () =>
   });
 
 export const enqueueSnapshot = (task: () => Promise<void>) => {
-  queue = queue.then(whenIdle).then(task).catch(() => {});
+  queue = queue.then(whenCameraRests).then(whenIdle).then(whenCameraRests).then(task).catch(() => {});
 };
