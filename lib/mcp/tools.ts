@@ -161,7 +161,7 @@ const createProjectHandler: ToolHandler = async (userId, args, origin) => {
   if (!page) return fail("The project was created without its first page. Call add_page to add one.");
   return succeed(
     `Created project "${project.title}" (id: ${project.id}). It starts with an empty ` +
-      `page "Page 1" (id: ${page.id}).\n` +
+      `page "Frame 1" (id: ${page.id}).\n` +
       `Open it in Wirely: ${origin}/wire/${project.id}\n` +
       "Share this link with the user so they can watch the pages you write.",
   );

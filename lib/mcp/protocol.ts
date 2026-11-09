@@ -34,6 +34,9 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
+  "The editor shows tabs to the user as \"pages\" and pages as \"frames\". When the user names " +
+    "a page in the editor sense, such as a tab name like \"Mobile\", they mean a tab, and a " +
+    "\"frame\" is a page in these tools.",
   "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
     "and skip the search below.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +

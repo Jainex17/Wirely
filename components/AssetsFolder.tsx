@@ -122,7 +122,7 @@ export default function AssetsFolder({ projectId }: { projectId: string }) {
   };
 
   const remove = async (asset: Asset) => {
-    if (!window.confirm(`Delete ${asset.name}? Pages that use it will show a broken image.`))
+    if (!window.confirm(`Delete ${asset.name}? Frames that use it will show a broken image.`))
       return;
     const response = await fetch(`/api/projects/${projectId}/assets/${asset.id}`, {
       method: "DELETE",

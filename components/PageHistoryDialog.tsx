@@ -121,14 +121,14 @@ export default function PageHistoryDialog({
         <DialogHeader>
           <DialogTitle>History of {pageTitle}</DialogTitle>
           <DialogDescription>
-            Wirely saves a page before each rewrite, keeping the last 20 versions.
+            Wirely saves a frame before each rewrite, keeping the last 20 versions.
           </DialogDescription>
         </DialogHeader>
         {versions === null ? (
           <p className="text-sm text-muted-foreground">Loading history…</p>
         ) : versions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No earlier versions yet. One appears here the next time this page is rewritten.
+            No earlier versions yet. One appears here the next time this frame is rewritten.
           </p>
         ) : (
           <div className="flex min-h-0 flex-1 gap-4">

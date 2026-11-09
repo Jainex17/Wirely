@@ -67,7 +67,7 @@ export default function DesignTokensDialog({
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || "Could not save design tokens.");
       toast.success(
-        Object.keys(tokens).length > 0 ? "Tokens saved to every page." : "Tokens removed.",
+        Object.keys(tokens).length > 0 ? "Tokens saved to every frame." : "Tokens removed.",
       );
       onSaved(tokens);
       setOpen(false);
@@ -84,7 +84,7 @@ export default function DesignTokensDialog({
         <DialogHeader>
           <DialogTitle>Design tokens</DialogTitle>
           <DialogDescription>
-            CSS variables written into every page, one per line. Pages use them as
+            CSS variables written into every frame, one per line. Frames use them as
             var(--name). Your agent can set these from your codebase.
           </DialogDescription>
         </DialogHeader>

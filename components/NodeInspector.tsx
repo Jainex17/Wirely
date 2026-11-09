@@ -87,7 +87,7 @@ export default function NodeInspector({ projectId, variant }: NodeInspectorProps
   if (!selectedNode) {
     return variant === "panel" ? (
       <p className="px-3 py-4 text-xs text-muted-foreground">
-        Pick an element on a page with the element tool (E) to see and edit its properties.
+        Pick an element on a frame with the element tool (E) to see and edit its properties.
       </p>
     ) : null;
   }
@@ -262,7 +262,7 @@ function NodeInspectorCard({
 
       {!exists ? (
         <p className="border-t border-border px-2.5 py-2 text-muted-foreground">
-          This element is no longer on the page. Pick another one with the element tool (E).
+          This element is no longer on the frame. Pick another one with the element tool (E).
         </p>
       ) : (
         <>
@@ -414,7 +414,7 @@ function PrototypeSection({
 
   return (
     <Section title="Prototype">
-      <label data-tip="The page a click on this element opens in play" className={FIELD_CLASS}>
+      <label data-tip="The frame a click on this element opens in play" className={FIELD_CLASS}>
         <Link2 className="h-3 w-3 shrink-0 text-muted-foreground" />
         <select
           value={target}
@@ -423,7 +423,7 @@ function PrototypeSection({
           className={SELECT_CLASS}
         >
           <option value="" disabled>
-            Link to a page
+            Link to a frame
           </option>
           {targets.map((page) => (
             <option key={page.id} value={page.id}>
@@ -434,7 +434,7 @@ function PrototypeSection({
           <option value={CLOSE_TARGET}>Close overlay</option>
           {link && !isSpecial && !targets.some((page) => page.id === target) ? (
             <option value={target} disabled>
-              Deleted page
+              Deleted frame
             </option>
           ) : null}
         </select>
@@ -550,8 +550,8 @@ const toCss = (property: NumberStyleProperty, input: number) =>
 
 const fieldTitle = (label: string, isInline: boolean) =>
   isInline
-    ? `${label}, set here. Clear it to use the page's own value.`
-    : `${label}, from the page. Change it to set it here.`;
+    ? `${label}, set here. Clear it to use the frame's own value.`
+    : `${label}, from the frame. Change it to set it here.`;
 
 /**
  * One number style. It shows the value set here, else the computed one, and
@@ -638,7 +638,7 @@ function ShadowField({
         aria-label="Shadow"
         className="min-w-0 flex-1 bg-transparent text-foreground focus:outline-none"
       >
-        <option value="">Page shadow</option>
+        <option value="">Frame shadow</option>
         {inline !== undefined && !Object.values<string>(SHADOW_PRESETS).includes(inline) ? (
           <option value={inline} disabled>
             Custom shadow
@@ -706,7 +706,7 @@ function GradientField({
         aria-label="Gradient"
         className="min-w-0 flex-1 bg-transparent text-foreground focus:outline-none"
       >
-        <option value="">Page gradient</option>
+        <option value="">Frame gradient</option>
         {isCustom ? (
           <option value="custom" disabled>
             Custom background
@@ -760,7 +760,7 @@ function WeightField({
         aria-label="Font weight"
         className="min-w-0 flex-1 bg-transparent font-mono text-foreground focus:outline-none"
       >
-        <option value="">Page</option>
+        <option value="">Frame</option>
         {FONT_WEIGHTS.map((weight) => (
           <option key={weight} value={weight}>
             {weight}

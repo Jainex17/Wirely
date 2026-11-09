@@ -8,7 +8,7 @@ import { getSharedProjectByToken, listProjectComments } from "@/lib/db/queries/r
 
 export const metadata: Metadata = {
   title: "Review | Wirely",
-  description: "Review the pages of a Wirely project and leave comments.",
+  description: "Review the frames of a Wirely project and leave comments.",
   // A review link is a capability. Keep it out of search results and previews.
   robots: { index: false, follow: false },
 };

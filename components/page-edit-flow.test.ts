@@ -25,7 +25,7 @@ describe("page edit flow wiring", () => {
     const source = readFileSync("components/WirePromptSidebar.tsx", "utf8");
 
     expect(source.includes("inferPromptTarget({")).toBe(true);
-    expect(source.includes("createPageOnServer(`Page ${nextPageNumber}`)")).toBe(true);
+    expect(source.includes("createPageOnServer(`Frame ${nextPageNumber}`)")).toBe(true);
     expect(source.includes("Edit: {selectedPageTitle}")).toBe(false);
     expect(source.includes("textarea.focus()")).toBe(true);
     expect(source.includes("textarea.setSelectionRange")).toBe(true);

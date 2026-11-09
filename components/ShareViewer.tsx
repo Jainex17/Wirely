@@ -202,7 +202,7 @@ export default function ShareViewer({
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{projectTitle}</p>
           <p className="text-[11px] text-muted-foreground">
-            Click anywhere on a page to leave a comment.
+            Click anywhere on a frame to leave a comment.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -216,7 +216,7 @@ export default function ShareViewer({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav className="w-56 shrink-0 overflow-y-auto border-r border-border bg-card p-2" aria-label="Pages">
+        <nav className="w-56 shrink-0 overflow-y-auto border-r border-border bg-card p-2" aria-label="Frames">
           {pages.map((candidate) => {
             const Icon =
               candidate.deviceType === "mobile"

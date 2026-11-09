@@ -85,7 +85,7 @@ export const commitPagesEdit = (
   {
     record = true,
     failureMessage = "Could not save the change. Try again.",
-    invalidMessage = "This element changed on the page. Pick it again.",
+    invalidMessage = "This element changed on the frame. Pick it again.",
   }: CommitOptions = {},
 ) => {
   const state = useEditorStore.getState();
@@ -236,7 +236,7 @@ export const dropElement = (
   const markup = frozenMarkup(from.pageId, from.nodeId);
   const sourceHtml = pageHtml(from.pageId);
   if (markup === null || sourceHtml === null) {
-    toast.error("This element changed on the page. Pick it again.");
+    toast.error("This element changed on the frame. Pick it again.");
     return;
   }
   let newId: string | null = null;

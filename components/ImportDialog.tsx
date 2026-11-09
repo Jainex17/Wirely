@@ -38,14 +38,14 @@ const DIRECT_SOURCES: SourceInfo[] = [
     id: "website",
     title: "Website",
     summary: "Any public page, as it looks now.",
-    description: "Wirely loads the page and adds it as an editable page. Scripts are removed.",
+    description: "Wirely loads the page and adds it as an editable frame. Scripts are removed.",
     icon: Globe,
   },
   {
     id: "file",
     title: "HTML or SVG file",
     summary: "A page or artwork from your computer.",
-    description: "An HTML file becomes a page. An SVG becomes artwork you can edit with the pen tool.",
+    description: "An HTML file becomes a frame. An SVG becomes artwork you can edit with the pen tool.",
     icon: FileCode2,
   },
 ];
@@ -69,7 +69,7 @@ const AGENT_SOURCES: SourceInfo[] = [
     id: "figma",
     title: "Figma frame",
     summary: "Needs the Figma MCP in your agent.",
-    description: "Your agent reads the frame through its Figma MCP and rebuilds it as a page.",
+    description: "Your agent reads the frame through its Figma MCP and rebuilds it as a frame.",
     icon: Component,
   },
 ];
@@ -232,7 +232,7 @@ export default function ImportDialog({ projectId }: { projectId: string }) {
                 {selected ? selected.title : "Import into Wirely"}
               </DialogTitle>
               <DialogDescription className="mt-1 text-[13px] leading-relaxed">
-                {selected ? selected.description : "Each import becomes a page on the canvas."}
+                {selected ? selected.description : "Each import becomes a frame on the canvas."}
               </DialogDescription>
             </div>
           </header>

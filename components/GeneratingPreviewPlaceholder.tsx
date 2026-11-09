@@ -15,7 +15,7 @@ export default function GeneratingPreviewPlaceholder({
       )}
       role="status"
       aria-live="polite"
-      aria-label="Generating page preview"
+      aria-label="Generating frame preview"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_42%),linear-gradient(to_bottom,transparent,rgba(0,0,0,0.03))]" />
       <div className="absolute inset-0 opacity-35 [background-size:28px_28px] [background-image:linear-gradient(to_right,color-mix(in_srgb,var(--border)_42%,transparent)_1px,transparent_1px),linear-gradient(to_bottom,color-mix(in_srgb,var(--border)_42%,transparent)_1px,transparent_1px)]" />
@@ -38,7 +38,7 @@ export default function GeneratingPreviewPlaceholder({
             />
           </div>
           <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-            Generating page
+            Generating frame
           </span>
         </div>
         <span className="text-[11px] text-muted-foreground">Composing full layout</span>

@@ -79,20 +79,20 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
 
   const deleteBlocker = (tabId: string) =>
     tabs.length <= 1
-      ? "A project keeps at least one tab."
+      ? "A project keeps at least one page."
       : pageCountOf(tabId) === pages.length
-        ? "A project keeps at least one page. Move a page to another tab first."
+        ? "A project keeps at least one frame. Move a frame to another page first."
         : null;
 
   return (
     <>
       <div className="shrink-0 border-b border-sidebar-border pb-1.5">
         <div className="flex h-9 items-center gap-1 pl-4 pr-1.5">
-          <span className="text-[11px] font-semibold text-foreground">Tabs</span>
+          <span className="text-[11px] font-semibold text-foreground">Pages</span>
           <span className="text-[11px] tabular-nums text-muted-foreground">{tabs.length}</span>
           <button
             type="button"
-            aria-label="Add tab"
+            aria-label="Add page"
             data-tip-detail="A new canvas for another set of explorations"
             onClick={() => void handleAdd()}
             className="ml-auto rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
@@ -102,7 +102,7 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
         </div>
         <div
           role="tablist"
-          aria-label="Canvas tabs"
+          aria-label="Pages"
           aria-orientation="vertical"
           className="flex max-h-40 flex-col overflow-y-auto"
         >
@@ -124,7 +124,7 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                   <input
                     autoFocus
                     value={draft}
-                    aria-label="Tab name"
+                    aria-label="Page name"
                     maxLength={80}
                     onChange={(event) => setDraft(event.target.value)}
                     onFocus={(event) => event.target.select()}
@@ -166,8 +166,8 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                 {isEditing ? null : (
                   <button
                     type="button"
-                    aria-label={`Delete tab ${tab.name}`}
-                    data-tip={blocker ?? "Delete tab and its pages"}
+                    aria-label={`Delete page ${tab.name}`}
+                    data-tip={blocker ?? "Delete page and its frames"}
                     aria-disabled={blocker !== null}
                     onClick={() => {
                       if (!blocker) setDeletingTabId(tab.id);
@@ -191,11 +191,11 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {deletingTab
-                ? `Delete "${deletingTab.name}" and its ${pageCountOf(deletingTab.id)} ${pageCountOf(deletingTab.id) === 1 ? "page" : "pages"}?`
+                ? `Delete "${deletingTab.name}" and its ${pageCountOf(deletingTab.id)} ${pageCountOf(deletingTab.id) === 1 ? "frame" : "frames"}?`
                 : ""}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The pages on this tab are deleted with it. This cannot be undone.
+              The frames on this page are deleted with it. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

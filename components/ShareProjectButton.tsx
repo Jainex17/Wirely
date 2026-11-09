@@ -73,7 +73,7 @@ export default function ShareProjectButton({ projectId }: { projectId: string })
           <DialogHeader>
             <DialogTitle>Share for review</DialogTitle>
             <DialogDescription>
-              Anyone signed in to Wirely with this link can see every page and leave comments.
+              Anyone signed in to Wirely with this link can see every frame and leave comments.
               Comments show as pins on your canvas.
             </DialogDescription>
           </DialogHeader>
