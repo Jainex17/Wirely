@@ -4,12 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpRight,
+  Boxes,
   Check,
   ChevronRight,
   KeyRound,
   Loader2,
   Pencil,
+  Plug,
   Plus,
+  UserRound,
   X,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,8 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import AppHeader from "@/components/AppHeader";
 import GeminiIcon from "@/components/icons/GeminiIcon";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -32,6 +33,7 @@ import ApiKeyDialog, {
   type ApiKeyProvider,
 } from "./ApiKeyDialog";
 import McpPanel, { type AgentTokenSummary } from "./McpPanel";
+import { announceAiSettingsChange } from "@/lib/aiSettingsChanged";
 
 export type SettingsTab = "account" | "providers" | "models" | "mcp";
 export type ProviderKeys = Record<ApiKeyProvider, boolean>;
@@ -42,7 +44,25 @@ interface SettingsClientProps {
   initialEnabledModelIds: WireModelName[];
   initialTab: SettingsTab;
   initialAgentTokens: AgentTokenSummary[];
+  /**
+   * "modal" when a link inside the app opened settings over the page the user
+   * was on, so closing goes back there. "page" for a direct visit or a reload.
+   */
+  variant: "modal" | "page";
 }
+
+/** The left column, grouped the way the product is used: agents first, in-app generation after. */
+const NAV: Array<{ label?: string; tabs: Array<{ id: SettingsTab; label: string; icon: typeof Plug }> }> = [
+  { tabs: [{ id: "account", label: "Account", icon: UserRound }] },
+  { label: "Agents", tabs: [{ id: "mcp", label: "MCP", icon: Plug }] },
+  {
+    label: "In-app generation",
+    tabs: [
+      { id: "providers", label: "Providers", icon: KeyRound },
+      { id: "models", label: "Models", icon: Boxes },
+    ],
+  },
+];
 
 const MODEL_PROVIDERS: WireModelProvider[] = ["google", "openrouter", "zai"];
 
@@ -87,7 +107,9 @@ export default function SettingsClient({
   initialEnabledModelIds,
   initialTab,
   initialAgentTokens,
+  variant,
 }: SettingsClientProps) {
+  const router = useRouter();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [keys, setKeys] = useState(initialKeys);
   const [enabledModelIds, setEnabledModelIds] = useState(initialEnabledModelIds);
@@ -115,6 +137,12 @@ export default function SettingsClient({
 
       setKeys(snapshot.keys);
       setEnabledModelIds(snapshot.enabledModelIds);
+      announceAiSettingsChange({
+        enabledModelIds: snapshot.enabledModelIds,
+        hasGoogleApiKey: snapshot.keys.google,
+        hasOpenRouterApiKey: snapshot.keys.openrouter,
+        hasZaiApiKey: snapshot.keys.zai,
+      });
       return snapshot;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save that change.");
@@ -170,65 +198,89 @@ export default function SettingsClient({
   };
 
   const connectedKeyCount = Object.values(keys).filter(Boolean).length;
+  const meta: Partial<Record<SettingsTab, string>> = {
+    providers: `${connectedKeyCount}/4`,
+    models: `${enabledModelIds.length}/${WIRE_MODEL_OPTIONS.length}`,
+  };
+  const tabLabel = NAV.flatMap((group) => group.tabs).find((item) => item.id === tab)?.label;
+  // A modal goes back to the page it opened over. A direct visit has no such
+  // page, so it goes to the projects list.
+  const close = () => (variant === "modal" ? router.back() : router.push("/projects"));
 
   return (
-    <div className="min-h-[100dvh] bg-background">
-      <div className="mx-auto w-full max-w-5xl px-4 pt-3 sm:px-6">
-        <AppHeader user={user} title="Settings" showBackButton />
-      </div>
+    <div className="flex min-h-0 w-full max-sm:flex-col">
+      <nav
+        aria-label="Settings sections"
+        className="flex shrink-0 flex-col gap-4 overflow-y-auto border-border/70 bg-sidebar p-3 max-sm:flex-row max-sm:gap-1 max-sm:overflow-x-auto max-sm:border-b sm:w-56 sm:border-r"
+      >
+        {NAV.map((group, index) => (
+          <div key={group.label ?? index} className="flex flex-col gap-0.5 max-sm:flex-row">
+            {group.label ? (
+              <p className="px-2.5 pb-1 text-xs text-muted-foreground max-sm:hidden">{group.label}</p>
+            ) : null}
+            {group.tabs.map((item) => {
+              const isActive = item.id === tab;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={isActive ? "page" : undefined}
+                  onClick={() => setTab(item.id)}
+                  className={`flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors ${
+                    isActive
+                      ? "bg-foreground/[0.07] text-foreground"
+                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  }`}
+                >
+                  <item.icon className="size-4 shrink-0" />
+                  {item.label}
+                  {meta[item.id] ? (
+                    <span className="ml-auto pl-2 font-mono text-[11px] text-muted-foreground">
+                      {meta[item.id]}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
 
-      <div className="mx-auto w-full max-w-5xl px-4 pb-28 sm:px-6">
-        <header className="pb-7 pt-10">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Settings
-          </h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Your account, the provider keys Wirely generates with, and the models
-            allowed to run.
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border/70 pl-6 pr-3">
+          <p className="truncate text-sm">
+            <span className="text-muted-foreground">Settings</span>
+            <span className="mx-2 text-muted-foreground/60">/</span>
+            <span className="text-foreground">{tabLabel}</span>
           </p>
+          <button
+            type="button"
+            aria-label="Close settings"
+            onClick={close}
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
         </header>
 
-        <Tabs value={tab} onValueChange={(value) => setTab(value as SettingsTab)}>
-          <TabsList
-            variant="line"
-            className="w-full justify-start gap-6 border-b border-border/60 p-0"
-          >
-            <SettingsTabTrigger value="account" label="Account" />
-            <SettingsTabTrigger
-              value="providers"
-              label="Providers"
-              meta={`${connectedKeyCount}/4`}
-            />
-            <SettingsTabTrigger
-              value="models"
-              label="Models"
-              meta={`${enabledModelIds.length}/${WIRE_MODEL_OPTIONS.length}`}
-            />
-            <SettingsTabTrigger value="mcp" label="MCP" />
-          </TabsList>
-
-          <TabsContent value="account" className="pt-10">
-            <AccountPanel user={user} />
-          </TabsContent>
-
-          <TabsContent value="providers" className="pt-10">
-            <ProvidersPanel keys={keys} onManage={setDialogProvider} />
-          </TabsContent>
-
-          <TabsContent value="models" className="pt-10">
-            <ModelsPanel
-              keys={keys}
-              enabledModelIds={enabledModelIds}
-              onToggleModel={toggleModel}
-              onToggleProvider={setProviderModels}
-              onAddKey={setDialogProvider}
-            />
-          </TabsContent>
-
-          <TabsContent value="mcp" className="pt-10">
-            <McpPanel initialTokens={initialAgentTokens} />
-          </TabsContent>
-        </Tabs>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-2xl px-6 py-8">
+            {tab === "account" ? <AccountPanel user={user} /> : null}
+            {tab === "providers" ? (
+              <ProvidersPanel keys={keys} onManage={setDialogProvider} />
+            ) : null}
+            {tab === "models" ? (
+              <ModelsPanel
+                keys={keys}
+                enabledModelIds={enabledModelIds}
+                onToggleModel={toggleModel}
+                onToggleProvider={setProviderModels}
+                onAddKey={setDialogProvider}
+              />
+            ) : null}
+            {tab === "mcp" ? <McpPanel initialTokens={initialAgentTokens} /> : null}
+          </div>
+        </div>
       </div>
 
       <ApiKeyDialog
@@ -243,28 +295,6 @@ export default function SettingsClient({
   );
 }
 
-function SettingsTabTrigger({
-  value,
-  label,
-  meta,
-}: {
-  value: SettingsTab;
-  label: string;
-  meta?: string;
-}) {
-  return (
-    <TabsTrigger
-      value={value}
-      className="flex-none px-0 pb-3 text-[15px] data-[state=active]:after:bg-primary data-[state=active]:after:opacity-100"
-    >
-      {label}
-      {meta ? (
-        <span className="ml-2 font-mono text-[11px] text-muted-foreground">{meta}</span>
-      ) : null}
-    </TabsTrigger>
-  );
-}
-
 function Panel({
   title,
   description,
@@ -275,10 +305,10 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="max-w-2xl">
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+    <section>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
-      <div className="mt-3 min-w-0">{children}</div>
+      <div className="mt-4 min-w-0">{children}</div>
     </section>
   );
 }

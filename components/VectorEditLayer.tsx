@@ -43,9 +43,10 @@ interface VectorEditLayerProps {
   onCommit: (html: string) => void;
 }
 
+// Keys pressed inside a dialog, such as settings open over the editor, are not for the pen.
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
-  Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+  Boolean(target.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']"));
 
 const toTransform = (matrix: Matrix) => `matrix(${matrix.join(" ")})`;
 

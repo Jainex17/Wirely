@@ -83,9 +83,9 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
   };
 
   return (
-    <div className="max-w-2xl space-y-10">
+    <div className="space-y-10">
       <section>
-        <h2 className="mb-3 text-sm font-medium text-foreground">Connect your coding agent</h2>
+        <h2 className="mb-4 text-base font-semibold text-foreground">Connect your coding agent</h2>
         <McpConnectCard
           key={cardKey}
           onTokenCreated={(token) => {
@@ -99,7 +99,7 @@ export default function McpPanel({ initialTokens }: McpPanelProps) {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-foreground">Connected clients</h2>
+        <h2 className="mb-4 text-base font-semibold text-foreground">Connected clients</h2>
         <div className="rounded-xl border border-border bg-card">
           {tokens.length === 0 ? (
             <p className="px-5 py-6 text-sm text-muted-foreground">
