@@ -1,6 +1,6 @@
 "use client";
 
-import { File, Plus, X } from "lucide-react";
+import { File, Plus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -19,11 +19,12 @@ import { createTab, deleteTab, renameTab } from "@/store/tabActions";
 import { useEditorStore } from "@/store/useEditorStore";
 
 /**
- * The bar across the top of the editor, one tab per canvas of the project. It
- * shows even with one tab, so the "+" is there to find. Double-click renames a
- * tab in place. The open tab carries an x that deletes it after asking, since
- * the tab's pages go with it, and is off while the tab is the last one or
- * holds every page.
+ * The list of the project's canvases at the top of the left panel, the way
+ * Figma lists its pages above the layers. It shows even with one tab, so the
+ * "+" is there to find. Double-click renames a tab in place. Each row has a
+ * delete button on hover that asks first, since the tab's pages go with it,
+ * and is off while the tab is the last one or holds every page. The list
+ * scrolls past a few rows, so many tabs leave room for the page tree.
  */
 export default function CanvasTabs({ projectId }: { projectId: string }) {
   const { tabs, activeTabId, pages, switchTab } = useEditorStore(
@@ -66,9 +67,9 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
     startRename(tabId, name);
   };
 
-  // Left and right move between tabs and keep keyboard focus on the strip.
+  // Up and down move between tabs and keep keyboard focus on the list.
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
     if (step === 0) return;
     event.preventDefault();
     const next = tabs[(index + step + tabs.length) % tabs.length];
@@ -85,24 +86,38 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border bg-background px-2">
+      <div className="shrink-0 border-b border-sidebar-border pb-1.5">
+        <div className="flex h-9 items-center gap-1 pl-4 pr-1.5">
+          <span className="text-[11px] font-semibold text-foreground">Tabs</span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">{tabs.length}</span>
+          <button
+            type="button"
+            aria-label="Add tab"
+            data-tip-detail="A new canvas for another set of explorations"
+            onClick={() => void handleAdd()}
+            className="ml-auto rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <div
           role="tablist"
           aria-label="Canvas tabs"
-          className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+          aria-orientation="vertical"
+          className="flex max-h-40 flex-col overflow-y-auto"
         >
           {tabs.map((tab, index) => {
             const isActive = tab.id === activeTabId;
             const isEditing = tab.id === editingTabId;
-            const blocker = isActive ? deleteBlocker(tab.id) : null;
+            const blocker = deleteBlocker(tab.id);
             return (
               <div
                 key={tab.id}
                 className={cn(
-                  "flex h-9 shrink-0 items-center rounded-lg border transition-colors",
+                  "group ml-1.5 mr-1 flex h-7 shrink-0 items-center rounded-md transition-colors",
                   isActive
-                    ? "border-sidebar-border bg-sidebar text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
                 )}
               >
                 {isEditing ? (
@@ -123,7 +138,7 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                         setEditingTabId(null);
                       }
                     }}
-                    className="h-full w-40 rounded-lg border border-primary/50 bg-background px-3 text-sm text-foreground outline-none"
+                    className="h-full min-w-0 flex-1 rounded-md bg-background px-2.5 text-xs text-foreground outline-none ring-1 ring-inset ring-primary/50"
                   />
                 ) : (
                   <button
@@ -139,13 +154,16 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                     onDoubleClick={() => startRename(tab.id, tab.name)}
                     onKeyDown={(event) => handleTabKeyDown(event, index)}
                     title={`${tab.name} (double-click to rename)`}
-                    className={cn("flex h-full max-w-52 items-center gap-2 pl-3 text-sm", isActive ? "pr-1.5" : "pr-3")}
+                    className="flex h-full min-w-0 flex-1 cursor-default items-center gap-2 pl-2.5 pr-1 text-left text-xs"
                   >
-                    <File className="h-4 w-4 shrink-0" />
+                    <File className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{tab.name}</span>
+                    <span className="ml-auto pl-1 tabular-nums text-muted-foreground group-hover:hidden">
+                      {pageCountOf(tab.id)}
+                    </span>
                   </button>
                 )}
-                {isActive && !isEditing ? (
+                {isEditing ? null : (
                   <button
                     type="button"
                     aria-label={`Delete tab ${tab.name}`}
@@ -155,26 +173,17 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                       if (!blocker) setDeletingTabId(tab.id);
                     }}
                     className={cn(
-                      "mr-1.5 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors",
+                      "mr-1 hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors group-hover:flex focus-visible:flex",
                       blocker ? "cursor-not-allowed opacity-40" : "hover:bg-foreground/10 hover:text-foreground",
                     )}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3" />
                   </button>
-                ) : null}
+                )}
               </div>
             );
           })}
         </div>
-        <button
-          type="button"
-          aria-label="Add tab"
-          data-tip-detail="A new canvas for another set of explorations"
-          onClick={() => void handleAdd()}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
       </div>
 
       <AlertDialog open={deletingTab !== null} onOpenChange={(open) => !open && setDeletingTabId(null)}>
