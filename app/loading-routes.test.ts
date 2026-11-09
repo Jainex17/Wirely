@@ -14,6 +14,10 @@ describe("route loading files", () => {
   it("includes settings loading boundary", () => {
     const source = readFileSync("app/setting/loading.tsx", "utf8");
     expect(source.includes("export default function SettingLoading")).toBe(true);
-    expect(source.includes("animate-pulse")).toBe(true);
+    // The page and the settings modal share one skeleton, built from the
+    // pulsing Skeleton primitive.
+    expect(source.includes("<SettingsSkeleton />")).toBe(true);
+    expect(readFileSync("app/setting/SettingsSkeleton.tsx", "utf8").includes("<Skeleton")).toBe(true);
+    expect(readFileSync("components/ui/skeleton.tsx", "utf8").includes("animate-pulse")).toBe(true);
   });
 });
