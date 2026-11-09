@@ -11,6 +11,7 @@ import {
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
+import { isUuid } from "@/lib/projectComments";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -20,6 +21,7 @@ type CreateProjectPageRequestBody = {
   title?: string | null;
   deviceType?: string | null;
   htmlContent?: string | null;
+  tabId?: string | null;
 };
 
 type UpdateProjectPagesRequestBody = {
@@ -119,12 +121,17 @@ export async function POST(request: Request, context: RouteContext) {
           )
         : undefined;
 
+    // A tab the project does not have falls back to the selected page's tab,
+    // so a stale tab id from another browser still lands the page somewhere.
+    const tabId = typeof body.tabId === "string" && isUuid(body.tabId) ? body.tabId : undefined;
+
     const page = await createProjectPageForUser({
       projectId,
       userId: sessionUser.id,
       title,
       deviceType,
       htmlContent,
+      tabId,
     });
 
     if (!page) {
