@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { File, Plus, X } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -19,11 +19,11 @@ import { createTab, deleteTab, renameTab } from "@/store/tabActions";
 import { useEditorStore } from "@/store/useEditorStore";
 
 /**
- * The strip over the canvas, one tab per canvas of the project. It shows even
- * with one tab, so the "+" is there to find. Double-click renames a tab in
- * place. The open tab carries a delete button that asks first, since the
- * tab's pages go with it, and is off while the tab is the last one or holds
- * every page.
+ * The bar across the top of the editor, one tab per canvas of the project. It
+ * shows even with one tab, so the "+" is there to find. Double-click renames a
+ * tab in place. The open tab carries an x that deletes it after asking, since
+ * the tab's pages go with it, and is off while the tab is the last one or
+ * holds every page.
  */
 export default function CanvasTabs({ projectId }: { projectId: string }) {
   const { tabs, activeTabId, pages, switchTab } = useEditorStore(
@@ -85,18 +85,26 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <div className="absolute left-1/2 top-3 z-30 flex max-w-[min(60vw,640px)] -translate-x-1/2 items-center gap-1 rounded-lg border border-sidebar-border bg-sidebar p-1 shadow-lg">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border bg-background px-2">
         <div
           role="tablist"
           aria-label="Canvas tabs"
-          className="flex min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:thin]"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
         >
           {tabs.map((tab, index) => {
             const isActive = tab.id === activeTabId;
             const isEditing = tab.id === editingTabId;
             const blocker = isActive ? deleteBlocker(tab.id) : null;
             return (
-              <div key={tab.id} className="group flex shrink-0 items-center">
+              <div
+                key={tab.id}
+                className={cn(
+                  "flex h-9 shrink-0 items-center rounded-lg border transition-colors",
+                  isActive
+                    ? "border-sidebar-border bg-sidebar text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+                )}
+              >
                 {isEditing ? (
                   <input
                     autoFocus
@@ -115,7 +123,7 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                         setEditingTabId(null);
                       }
                     }}
-                    className="h-7 w-32 rounded-md border border-primary/50 bg-background px-2 text-[12px] font-semibold text-foreground outline-none"
+                    className="h-full w-40 rounded-lg border border-primary/50 bg-background px-3 text-sm text-foreground outline-none"
                   />
                 ) : (
                   <button
@@ -130,14 +138,10 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                     onClick={() => switchTab(tab.id)}
                     onDoubleClick={() => startRename(tab.id, tab.name)}
                     onKeyDown={(event) => handleTabKeyDown(event, index)}
-                    title={tab.name}
-                    className={cn(
-                      "flex h-7 max-w-40 items-center rounded-md px-2 text-[12px] font-semibold transition-colors",
-                      isActive
-                        ? "bg-foreground/10 text-foreground"
-                        : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
-                    )}
+                    title={`${tab.name} (double-click to rename)`}
+                    className={cn("flex h-full max-w-52 items-center gap-2 pl-3 text-sm", isActive ? "pr-1.5" : "pr-3")}
                   >
+                    <File className="h-4 w-4 shrink-0" />
                     <span className="truncate">{tab.name}</span>
                   </button>
                 )}
@@ -145,17 +149,17 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     aria-label={`Delete tab ${tab.name}`}
-                    data-tip={blocker ?? "Delete tab"}
+                    data-tip={blocker ?? "Delete tab and its pages"}
                     aria-disabled={blocker !== null}
                     onClick={() => {
                       if (!blocker) setDeletingTabId(tab.id);
                     }}
                     className={cn(
-                      "ml-0.5 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
-                      blocker ? "cursor-not-allowed opacity-40 group-hover:opacity-40" : "hover:bg-foreground/10 hover:text-foreground",
+                      "mr-1.5 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors",
+                      blocker ? "cursor-not-allowed opacity-40" : "hover:bg-foreground/10 hover:text-foreground",
                     )}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
               </div>
@@ -167,7 +171,7 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
           aria-label="Add tab"
           data-tip-detail="A new canvas for another set of explorations"
           onClick={() => void handleAdd()}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>

@@ -351,102 +351,104 @@ export default function WireEditor({
         </div>
       </div>
 
-      <div className="h-full w-full flex bg-background text-foreground overflow-hidden max-[755px]:hidden">
-        {isPagesPanelCollapsed ? null : pagesPanel}
-        <EditorErrorBoundary title="Workspace canvas crashed">
-          <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
-            {isPagesPanelCollapsed ? pagesPanel : null}
-            <CanvasTabs projectId={wireId} />
-
-            {!isSidebarVisible ? (
-              <FloatingProjectActions toggle={promptPanelToggle} zoom={<CanvasZoomControls />} />
-            ) : null}
-            {/* Saving indicator hidden for now
-            {isSaving ? (
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/70 text-muted-foreground"
-                aria-live="polite"
-                aria-label="Saving changes"
-                title="Saving changes"
-              >
-                <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
-              </div>
-            ) : null}
-            */}
-            <EditorWorkspace
-              sidebarMode="wire"
-              projectId={wireId}
-              onEditPage={handleEditPage}
-            />
-          </div>
-        </EditorErrorBoundary>
-        <EditorErrorBoundary title="Prompt panel crashed">
-          {/* Kept mounted while collapsed so an in-flight generation stream
-              in the sidebar survives the toggle. */}
-          <div
-            className={
-              !isSidebarVisible
-                ? "hidden"
-                : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
-            }
-          >
-            <ProjectActionsBar toggle={promptPanelToggle} />
-            {isCommentMode ? (
-              <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-3 pr-2">
-                <h2 className="text-[13px] font-semibold text-foreground">Comments</h2>
-                <div className="flex items-center gap-1">
-                  <CanvasZoomControls />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setActiveTool("select")}
-                    aria-label="Close comments (Esc)"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+      {/* The project's tabs run across the top, over both side panels. */}
+      <div className="flex h-full w-full flex-col bg-background text-foreground overflow-hidden max-[755px]:hidden">
+        <CanvasTabs projectId={wireId} />
+        <div className="flex min-h-0 w-full flex-1">
+          {isPagesPanelCollapsed ? null : pagesPanel}
+          <EditorErrorBoundary title="Workspace canvas crashed">
+            <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
+              {isPagesPanelCollapsed ? pagesPanel : null}
+              {!isSidebarVisible ? (
+                <FloatingProjectActions toggle={promptPanelToggle} zoom={<CanvasZoomControls />} />
+              ) : null}
+              {/* Saving indicator hidden for now
+              {isSaving ? (
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/70 text-muted-foreground"
+                  aria-live="polite"
+                  aria-label="Saving changes"
+                  title="Saving changes"
+                >
+                  <Cloud className="h-4 w-4 animate-pulse text-foreground/70" />
                 </div>
-              </div>
-            ) : null}
-            <div className={isCommentMode ? "hidden" : undefined}>
-              <SidePanelTabs
-                tabs={SIDEBAR_TABS}
-                active={sidebarTab}
-                onChange={setSidebarTab}
-                end={<CanvasZoomControls />}
+              ) : null}
+              */}
+              <EditorWorkspace
+                sidebarMode="wire"
+                projectId={wireId}
+                onEditPage={handleEditPage}
               />
             </div>
-            {isCommentMode ? (
-              <div className="min-h-0 flex-1">
-                <CommentsPanel projectId={wireId} />
+          </EditorErrorBoundary>
+          <EditorErrorBoundary title="Prompt panel crashed">
+            {/* Kept mounted while collapsed so an in-flight generation stream
+                in the sidebar survives the toggle. */}
+            <div
+              className={
+                !isSidebarVisible
+                  ? "hidden"
+                  : "flex w-72 shrink-0 flex-col overflow-hidden border-l border-sidebar-border bg-sidebar"
+              }
+            >
+              <ProjectActionsBar toggle={promptPanelToggle} />
+              {isCommentMode ? (
+                <div className="flex h-12 shrink-0 items-center justify-between border-b border-sidebar-border pl-3 pr-2">
+                  <h2 className="text-[13px] font-semibold text-foreground">Comments</h2>
+                  <div className="flex items-center gap-1">
+                    <CanvasZoomControls />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setActiveTool("select")}
+                      aria-label="Close comments (Esc)"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              <div className={isCommentMode ? "hidden" : undefined}>
+                <SidePanelTabs
+                  tabs={SIDEBAR_TABS}
+                  active={sidebarTab}
+                  onChange={setSidebarTab}
+                  end={<CanvasZoomControls />}
+                />
               </div>
-            ) : null}
-            <div className={sidebarTab === "chat" && !isCommentMode ? "min-h-0 flex-1" : "hidden"}>
-              <WirePromptSidebar
-                wireId={wireId}
-                initialModelName={initialModelName}
-                initialMessages={initialMessages}
-                focusRequestKey={promptFocusRequestKey}
-              />
+              {isCommentMode ? (
+                <div className="min-h-0 flex-1">
+                  <CommentsPanel projectId={wireId} />
+                </div>
+              ) : null}
+              <div className={sidebarTab === "chat" && !isCommentMode ? "min-h-0 flex-1" : "hidden"}>
+                <WirePromptSidebar
+                  wireId={wireId}
+                  initialModelName={initialModelName}
+                  initialMessages={initialMessages}
+                  focusRequestKey={promptFocusRequestKey}
+                />
+              </div>
+              {sidebarTab === "design" && !isCommentMode ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <NodeInspector projectId={wireId} variant="panel" />
+                </div>
+              ) : null}
+              {sidebarTab === "memory" && !isCommentMode ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <MemoryPanel projectId={wireId} />
+                </div>
+              ) : null}
+              {sidebarTab === "activity" && !isCommentMode ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <ActivityPanel projectId={wireId} />
+                </div>
+              ) : null}
             </div>
-            {sidebarTab === "design" && !isCommentMode ? (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <NodeInspector projectId={wireId} variant="panel" />
-              </div>
-            ) : null}
-            {sidebarTab === "memory" && !isCommentMode ? (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <MemoryPanel projectId={wireId} />
-              </div>
-            ) : null}
-            {sidebarTab === "activity" && !isCommentMode ? (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <ActivityPanel projectId={wireId} />
-              </div>
-            ) : null}
-          </div>
-        </EditorErrorBoundary>
+          </EditorErrorBoundary>
+        </div>
       </div>
 
       {/* Prototype flow hidden for now
