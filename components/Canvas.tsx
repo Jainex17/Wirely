@@ -48,6 +48,7 @@ import {
   zoomAtViewportPoint,
 } from "@/lib/canvasScene";
 import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
+import { setCameraMoving } from "@/lib/cameraMotion";
 import { createAssetPage } from "@/store/pageEdits";
 
 const DEVICE_LABELS = {
@@ -580,11 +581,16 @@ export default function Canvas({
       if (sceneRef.current) holdLayer(sceneRef.current, state.camera.zoom);
       applyCamera(state.camera, previous.camera);
       scheduleLayoutSave();
+      setCameraMoving(true);
       window.clearTimeout(sharpenTimer);
-      sharpenTimer = window.setTimeout(updateSharpPages, SHARPEN_IDLE_MS);
+      sharpenTimer = window.setTimeout(() => {
+        setCameraMoving(false);
+        updateSharpPages();
+      }, SHARPEN_IDLE_MS);
     });
     return () => {
       unsubscribe();
+      setCameraMoving(false);
       window.clearTimeout(layerTimer);
       window.clearTimeout(sharpenTimer);
       if (releaseFrame !== undefined) window.cancelAnimationFrame(releaseFrame);
