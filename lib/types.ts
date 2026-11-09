@@ -53,6 +53,12 @@ export interface SectionRecord {
 
 export type SectionData = SectionRecord;
 
+/** One canvas inside a project. Every page is on exactly one tab. */
+export interface ProjectTab {
+  id: string;
+  name: string;
+}
+
 /** A named set of pages drawn as one frame on the canvas. A page is in at most one group. */
 export interface PageGroup {
   id: string;
