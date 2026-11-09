@@ -7,8 +7,10 @@ import {
   Frame,
   Monitor,
   PenTool,
+  Search,
   Smartphone,
   Trash2,
+  X,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import AssetsFolder from "@/components/AssetsFolder";
@@ -17,6 +19,7 @@ import { FloatingProjectHeader, ProjectHeader } from "@/components/ProjectChrome
 import LayerTree from "@/components/LayerTree";
 import { cn } from "@/lib/utils";
 import { ASSET_DRAG_TYPE, parseAssetDrag } from "@/lib/assetDrag";
+import { matchesPageSearch } from "@/lib/pageSearch";
 import { insertAsset, runElementAction } from "@/store/pageEdits";
 import { useEditorStore } from "@/store/useEditorStore";
 
@@ -35,8 +38,10 @@ interface PagesPanelProps {
  * The editor's left column: one tree of every page on the canvas with each
  * page's layers nested under it, and the account menu. Clicking a page pans
  * the canvas to it at the current zoom; dragging it onto a group moves it in or
- * out. A page's layers open while an element on it is picked. Collapsed, the column shrinks to
- * its project header, floating over the canvas corner.
+ * out. A page's layers open while an element on it is picked. The search in
+ * its header narrows the tree to matching pages, inside their groups.
+ * Collapsed, the column shrinks to its project header, floating over the
+ * canvas corner.
  */
 export default function PagesPanel({
   projectId,
@@ -102,6 +107,21 @@ export default function PagesPanel({
     }
   }
   const groupedPageIds = new Set(pageGroups.flatMap((group) => group.pageIds));
+  // Null while the search is closed. Open, it filters the tree as you type.
+  const [search, setSearch] = useState<string | null>(null);
+  const query = search?.trim() ?? "";
+  const isSearching = query !== "";
+  const visiblePages = isSearching
+    ? pages.filter((page) =>
+        matchesPageSearch(query, page.title, pageGroups.find((group) => group.pageIds.includes(page.id))?.name),
+      )
+    : pages;
+  const visibleGroups = pageGroups
+    .map((group) => ({ group, groupPages: visiblePages.filter((page) => group.pageIds.includes(page.id)) }))
+    .filter(({ groupPages }) => !isSearching || groupPages.length > 0);
+  const ungroupedPages = visiblePages.filter((page) => !groupedPageIds.has(page.id));
+  // In the order the tree lists them, so Enter goes to the top row.
+  const firstMatch = [...visibleGroups.flatMap(({ groupPages }) => groupPages), ...ungroupedPages][0];
   // Rows drag with native drag and drop: drop a page on a group to move it in,
   // or on the ungrouped list to move it out. `undefined` means no drop target.
   const [dropGroupId, setDropGroupId] = useState<string | null | undefined>(undefined);
@@ -219,27 +239,75 @@ export default function PagesPanel({
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
       <ProjectHeader end={toggle} />
       <div className="flex h-9 shrink-0 items-center gap-1 pl-4 pr-1.5">
-        <span className="text-[11px] font-semibold text-foreground">Pages</span>
-        <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
-        <div className="ml-auto flex items-center">
-          {selectedNode ? (
-            <div className="mr-1 flex items-center border-r border-sidebar-border pr-1">
-              <HeaderButton label="Duplicate element (Cmd+D)" detail="Places a copy right after it" onClick={() => runElementAction(projectId, "duplicate")}>
-                <Copy className="h-3.5 w-3.5" />
-              </HeaderButton>
-              <HeaderButton
-                label="Wrap in frame (Cmd+Alt+G)"
-                detail="Puts the element inside a new div"
-                onClick={() => runElementAction(projectId, "wrap")}
-              >
-                <Frame className="h-3.5 w-3.5" />
-              </HeaderButton>
-              <HeaderButton label="Delete element (Delete)" detail="Cmd+Z brings it back" onClick={() => runElementAction(projectId, "delete")}>
-                <Trash2 className="h-3.5 w-3.5" />
+        {search !== null ? (
+          <div className="-ml-2.5 flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-foreground/5 pl-2 pr-0.5 ring-1 ring-inset ring-primary/50">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              // An empty field closes when focus leaves, so a stray click
+              // does not leave it open.
+              onBlur={() => {
+                if (!query) setSearch(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  // Stops here, or the canvas would also clear the page selection.
+                  event.stopPropagation();
+                  setSearch(null);
+                }
+                if (event.key === "Enter" && isSearching && firstMatch) {
+                  setSelectedPageIds([firstMatch.id]);
+                  focusPage(firstMatch.id);
+                }
+              }}
+              placeholder="Search pages"
+              aria-label="Search pages"
+              className="h-full min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {isSearching ? (
+              <span className="text-[11px] tabular-nums text-muted-foreground">{visiblePages.length}</span>
+            ) : null}
+            <button
+              type="button"
+              aria-label="Close search"
+              // Keeps the field's focus, so its blur does not close it first.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setSearch(null)}
+              className="rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <span className="text-[11px] font-semibold text-foreground">Pages</span>
+            <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
+            <div className="ml-auto flex items-center">
+              {selectedNode ? (
+                <div className="mr-1 flex items-center border-r border-sidebar-border pr-1">
+                  <HeaderButton label="Duplicate element (Cmd+D)" detail="Places a copy right after it" onClick={() => runElementAction(projectId, "duplicate")}>
+                    <Copy className="h-3.5 w-3.5" />
+                  </HeaderButton>
+                  <HeaderButton
+                    label="Wrap in frame (Cmd+Alt+G)"
+                    detail="Puts the element inside a new div"
+                    onClick={() => runElementAction(projectId, "wrap")}
+                  >
+                    <Frame className="h-3.5 w-3.5" />
+                  </HeaderButton>
+                  <HeaderButton label="Delete element (Delete)" detail="Cmd+Z brings it back" onClick={() => runElementAction(projectId, "delete")}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </HeaderButton>
+                </div>
+              ) : null}
+              <HeaderButton label="Search pages" detail="Find a page by its title or its group's name" onClick={() => setSearch("")}>
+                <Search className="h-3.5 w-3.5" />
               </HeaderButton>
             </div>
-          ) : null}
-        </div>
+          </>
+        )}
       </div>
       {/* select-none, or a shift-click would also select the row text. */}
       <nav
@@ -250,12 +318,13 @@ export default function PagesPanel({
       >
         {/* While an element is picked, the list narrows to its page so its layers
             have the room. Deselecting brings every page and group back. */}
-        {selectedPage ? (
+        {selectedPage && !isSearching ? (
           renderPage(selectedPage, 0)
         ) : (
           <>
-          {pageGroups.map((group) => {
-            const isGroupOpen = openGroupIds.includes(group.id);
+          {visibleGroups.map(({ group, groupPages }) => {
+            // A search opens every group with a match, so the matches show.
+            const isGroupOpen = isSearching || openGroupIds.includes(group.id);
             // A closed group takes the highlight of the pages inside it, so the
             // selection stays visible without opening it.
             const isGroupHighlighted =
@@ -279,6 +348,9 @@ export default function PagesPanel({
                   <button
                     type="button"
                     aria-label={isGroupOpen ? `Hide pages of ${group.name}` : `Show pages of ${group.name}`}
+                    // A search shows every group with a match open, and a
+                    // toggle then would only change what shows after it.
+                    disabled={isSearching}
                     onClick={(event) => {
                       event.stopPropagation();
                       setOpenGroupIds(
@@ -287,7 +359,7 @@ export default function PagesPanel({
                           : [...openGroupIds, group.id],
                       );
                     }}
-                    className="-ml-0.5 rounded p-0.5 hover:bg-foreground/10"
+                    className="-ml-0.5 rounded p-0.5 enabled:hover:bg-foreground/10"
                   >
                     <ChevronRight className={cn("h-3 w-3 transition-transform", isGroupOpen && "rotate-90")} />
                   </button>
@@ -308,15 +380,11 @@ export default function PagesPanel({
                     <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", isGroupHighlighted ? "text-primary" : "text-muted-foreground")} />
                     <span className="truncate">{group.name}</span>
                     <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                      {group.pageIds.length}
+                      {groupPages.length}
                     </span>
                   </button>
                 </div>
-                {isGroupOpen
-                  ? pages
-                      .filter((page) => group.pageIds.includes(page.id))
-                      .map((page) => renderPage(page, 1))
-                  : null}
+                {isGroupOpen ? groupPages.map((page) => renderPage(page, 1)) : null}
               </div>
             );
           })}
@@ -324,7 +392,10 @@ export default function PagesPanel({
             {...dropTargetProps(null)}
             className={cn("flex-1", dropGroupId === null && "bg-primary/10")}
           >
-            {pages.filter((page) => !groupedPageIds.has(page.id)).map((page) => renderPage(page, 0))}
+            {ungroupedPages.map((page) => renderPage(page, 0))}
+            {isSearching && visiblePages.length === 0 ? (
+              <p className="px-4 py-3 text-xs text-muted-foreground">{`No pages match "${query}".`}</p>
+            ) : null}
           </div>
           </>
         )}
