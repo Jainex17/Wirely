@@ -266,9 +266,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "list_pages",
     description:
-      "List a project's HTML pages (id, title, device type, HTML size). A page placed in a " +
-      "named group by the last arrange_canvas call also has that group's name; the user may " +
-      "have moved pages by hand since.",
+      "List a project's tabs and HTML pages (id, title, device type, tab, HTML size). Each tab " +
+      "is its own canvas; a page is on exactly one. A page placed in a named group by the last " +
+      "arrange_canvas call also has that group's name; the user may have moved pages by hand since.",
     inputSchema: {
       type: "object",
       properties: { projectId: PROJECT_ID },
@@ -279,14 +279,15 @@ export const MCP_TOOLS: McpToolDefinition[] = [
   {
     name: "arrange_canvas",
     description:
-      "Lay out the whole canvas when the user asks to group, sort, tidy, or spread out pages. " +
+      "Lay out one tab's canvas when the user asks to group, sort, tidy, or spread out pages. " +
       "Send rows from top to bottom. Each row holds groups from left to right, and each group " +
       "holds page ids from left to right. A group with a name gets a titled frame around its " +
       "pages; leave the name out to place pages side by side without a frame. Wirely spaces " +
-      "the pages by their real size, so rows never overlap. This replaces every group on the " +
-      "canvas, and pages you leave out go in a last row at the bottom. Call list_pages first " +
-      "for ids, titles, and device types. For example, put the mobile flows in the first row " +
-      "and the desktop pages in the second.",
+      "the pages by their real size, so rows never overlap. Every listed page must be on the " +
+      "same tab. This replaces every group on that tab, and that tab's pages you leave out go " +
+      "in a last row at the bottom; other tabs are untouched. Call list_pages first for ids, " +
+      "titles, device types, and tabs. For example, put the mobile flows in the first row and " +
+      "the desktop pages in the second.",
     inputSchema: {
       type: "object",
       properties: {
@@ -330,12 +331,19 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Add a screen to a project, from html or as a copy of an existing page. To make a " +
       "variant of a page, copy it with copyFromPageId and change it with patch_page instead " +
-      `of writing the whole document again. ${htmlDescription}`,
+      "of writing the whole document again. A project has tabs, each its own canvas; a new " +
+      "set of explorations can go on its own tab by naming one with tab. Without tab the page " +
+      `goes on the tab of the page the user has selected. ${htmlDescription}`,
     inputSchema: {
       type: "object",
       properties: {
         projectId: PROJECT_ID,
         title: { type: "string", description: "Screen name, shown above the canvas frame." },
+        tab: {
+          type: "string",
+          description:
+            "Tab to put the page on, by name. Matches an existing tab ignoring case, or makes a new one.",
+        },
         html: { type: "string", description: "The page document. Omit when copying." },
         copyFromPageId: {
           type: "string",

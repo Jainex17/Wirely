@@ -40,6 +40,8 @@ import {
   listProjectCommentsWithPages,
   setProjectCommentResolved,
 } from "@/lib/db/queries/reviews";
+import { createProjectTabForUser, getProjectTabState } from "@/lib/db/queries/tabs";
+import { findTabByName, TAB_NAME_MAX_CHARS } from "@/lib/projectTabs";
 import { sanitizeIframeHtml } from "@/lib/iframeSecurity";
 import { logger } from "@/lib/logger";
 import { arrangementRowsSchema, checkArrangementPages } from "@/lib/canvasArrangement";
@@ -176,23 +178,30 @@ const listPages: ToolHandler = async (userId, args) => {
     listProjectPagesForUser({ projectId: project.id, userId }),
     getCanvasArrangement(project.id),
   ]);
+  const { tabs, pageTabIds } = await getProjectTabState(
+    project.id,
+    pages.map((page) => page.id),
+  );
+  const tabNameById = new Map(tabs.map((tab) => [tab.id, tab.name]));
   const groupOf = new Map(
     (arrangement?.rows.flat() ?? []).flatMap((group) =>
       group.name ? group.pageIds.map((pageId) => [pageId, group.name] as const) : [],
     ),
   );
   return succeed(
-    JSON.stringify(
-      pages.map((page) => ({
+    JSON.stringify({
+      tabs: tabs.map((tab) => tab.name),
+      pages: pages.map((page) => ({
         id: page.id,
         title: page.title,
         deviceType: page.deviceType,
+        tab: tabNameById.get(pageTabIds[page.id]),
         ...(groupOf.has(page.id) ? { group: groupOf.get(page.id) } : {}),
         sortOrder: page.sortOrder,
         htmlBytes: Buffer.byteLength(page.htmlContent ?? "", "utf8"),
         updatedAt: page.updatedAt.toISOString(),
       })),
-    ),
+    }),
   );
 };
 
@@ -206,10 +215,22 @@ const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
   const pages = await listProjectPagesForUser({ projectId: project.id, userId });
+  const pageIds = pages.map((page) => page.id);
   const { rows } = parsed.data;
+  // An arrangement lays out one tab's canvas, so every listed page must be on it.
+  const { tabs, pageTabIds } = await getProjectTabState(project.id, pageIds);
+  const listedTabIds = [...new Set(rows.flat().flatMap((group) => group.pageIds).map((pageId) => pageTabIds[pageId]))];
+  if (listedTabIds.length > 1) {
+    const names = listedTabIds.map((tabId) => tabs.find((tab) => tab.id === tabId)?.name ?? "?");
+    return fail(
+      `An arrangement lays out one tab, but these pages are on ${names.length} tabs: ${names.join(", ")}. ` +
+        "Arrange each tab in its own call, or move the pages to one tab first.",
+    );
+  }
   const { unknown, repeated, unlisted } = checkArrangementPages(
     rows,
-    pages.map((page) => page.id),
+    pageIds,
+    pageIds.filter((pageId) => pageTabIds[pageId] === listedTabIds[0]),
   );
   if (unknown.length > 0) {
     return fail(`These page ids are not in the project: ${unknown.join(", ")}. Use list_pages for valid ids.`);
@@ -226,7 +247,9 @@ const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
   }
   const groupCount = rows.flat().filter((group) => group.name?.trim()).length;
   const rest =
-    unlisted.length > 0 ? ` The ${unlisted.length} page(s) left out went in a last row at the bottom.` : "";
+    unlisted.length > 0
+      ? ` The ${unlisted.length} page(s) on that tab left out went in a last row at the bottom.`
+      : "";
   return succeed(
     `Arranged "${project.title}" into ${rows.length} row(s) with ${groupCount} named group(s).${rest} ` +
       `An open editor moves the pages within a few seconds: ${origin}/wire/${project.id}`,
@@ -241,6 +264,7 @@ const addPage: ToolHandler = async (userId, args) => {
       html: z.string().min(1).max(PAGE_HTML_MAX_CHARS).optional(),
       copyFromPageId: z.string().trim().min(1).optional(),
       deviceType: z.enum(DEVICE_TYPES).optional(),
+      tab: z.string().trim().min(1).max(TAB_NAME_MAX_CHARS).optional(),
     })
     .refine((data) => (data.html === undefined) !== (data.copyFromPageId === undefined), {
       message: "Provide exactly one of html or copyFromPageId.",
@@ -250,6 +274,22 @@ const addPage: ToolHandler = async (userId, args) => {
 
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
+
+  // A named tab is matched by name, or made. Without one the page goes on
+  // the tab of the page the user has selected.
+  let tabId: string | undefined;
+  if (parsed.data.tab) {
+    const { tabs } = await getProjectTabState(project.id, []);
+    const existing = findTabByName(tabs, parsed.data.tab);
+    try {
+      tabId =
+        existing?.id ??
+        (await createProjectTabForUser({ projectId: project.id, userId, name: parsed.data.tab }))?.id;
+    } catch (error) {
+      if (isMissingRelationError(error)) return fail("Tabs are not set up on this server yet.");
+      throw error;
+    }
+  }
 
   // A copy reuses HTML that was sanitized when it was stored, so the agent
   // spends a few patches on a variant instead of the whole document.
@@ -282,12 +322,14 @@ const addPage: ToolHandler = async (userId, args) => {
     title: parsed.data.title,
     deviceType,
     htmlContent: html,
+    tabId,
   });
   if (!page) return fail("Project not found. Use list_projects for valid ids.");
   await setAgentBaseline(page.id, page.htmlContent);
 
   return withWriteNotes(
-    `Added page "${page.title}" (id: ${page.id}) to "${project.title}".`,
+    `Added page "${page.title}" (id: ${page.id}) to "${project.title}"` +
+      `${parsed.data.tab ? ` on tab "${parsed.data.tab}"` : ""}.`,
     sentHtml,
     html,
   );

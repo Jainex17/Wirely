@@ -58,8 +58,16 @@ export const syncArrangedGroups = (current: PageGroup[], arranged: PageGroup[]) 
     name: current.find((candidate) => candidate.id === group.id)?.name ?? group.name,
   }));
 
-/** Checks the rows against the project's pages: every id must exist and appear once. */
-export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: string[]) => {
+/**
+ * Checks the rows against the project's pages: every id must exist and appear
+ * once. An arrangement lays out one tab, so `unlisted` counts only that tab's
+ * pages, which is where the left-out ones go.
+ */
+export const checkArrangementPages = (
+  rows: ArrangementRows,
+  projectPageIds: string[],
+  tabPageIds: string[] = projectPageIds,
+) => {
   const known = new Set(projectPageIds);
   const seen = new Set<string>();
   const unknown: string[] = [];
@@ -69,7 +77,7 @@ export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: str
     else if (seen.has(pageId)) repeated.push(pageId);
     seen.add(pageId);
   }
-  return { unknown, repeated, unlisted: projectPageIds.filter((pageId) => !seen.has(pageId)) };
+  return { unknown, repeated, unlisted: tabPageIds.filter((pageId) => !seen.has(pageId)) };
 };
 
 // Scene pixels between the pages of neighbouring groups, and between rows.

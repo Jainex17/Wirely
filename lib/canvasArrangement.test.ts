@@ -73,4 +73,10 @@ describe("checkArrangementPages", () => {
       checkArrangementPages([[{ pageIds: ["a", "x"] }, { pageIds: ["a"] }]], ["a", "b"]),
     ).toEqual({ unknown: ["x"], repeated: ["a"], unlisted: ["b"] });
   });
+
+  it("counts only the arranged tab's pages as left out", () => {
+    expect(
+      checkArrangementPages([[{ pageIds: ["a"] }]], ["a", "b", "c"], ["a", "b"]),
+    ).toEqual({ unknown: [], repeated: [], unlisted: ["b"] });
+  });
 });

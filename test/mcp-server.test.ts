@@ -204,6 +204,21 @@ describe("tool dispatch", () => {
     });
   });
 
+  it("rejects a tab name over the limit before reaching the database", async () => {
+    const result = await callTool("user", "add_page", {
+      projectId: "p",
+      title: "Mobile home",
+      html: "<p>hi</p>",
+      tab: "x".repeat(81),
+    }, "https://wirely.test");
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("tab"),
+    });
+  });
+
   it("rejects oversized html before reaching the database", async () => {
     const result = await callTool("user", "add_page", {
       projectId: "p",
