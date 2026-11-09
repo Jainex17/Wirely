@@ -35,9 +35,15 @@ interface EditorWorkspaceProps {
   onEditPage?: (pageId: string) => void;
 }
 
+// Keys typed into a field, or pressed inside a dialog such as settings open
+// over the editor, belong to that field or dialog, not to the canvas.
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
-  Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+  Boolean(
+    target.closest(
+      "input, textarea, select, button, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
+    ),
+  );
 
 export default function EditorWorkspace({
   sidebarMode = "default",

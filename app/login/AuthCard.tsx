@@ -54,7 +54,11 @@ const APPEARANCE = {
  */
 export default function AuthCard({ mode, nextPath }: { mode: "sign-in" | "sign-up"; nextPath: string }) {
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center bg-background px-6 py-12 text-foreground">
+    // The settings modal looks for this, see app/@modal/(.)setting/SettingsModalFrame.tsx.
+    <main
+      data-wirely-auth-page
+      className="flex min-h-[100dvh] items-center justify-center bg-background px-6 py-12 text-foreground"
+    >
       <div className="w-full max-w-[420px] rounded-2xl border border-border bg-card p-8">
         <Link href="/" className="mb-7 inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight">
           <WirelyMark className="size-7" />

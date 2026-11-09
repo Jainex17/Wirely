@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseProjectTitle, PROJECT_TITLE_MAX_CHARS } from "@/lib/projectTitle";
 import {
   getProjectDetailForUser,
   updateProjectForUser,
@@ -53,13 +54,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     const body = parsed.data;
 
+    const title = body.title === undefined || body.title === null ? undefined : parseProjectTitle(body.title);
+    if (title === null) {
+      return NextResponse.json(
+        { error: `A project name is 1 to ${PROJECT_TITLE_MAX_CHARS} characters.` },
+        { status: 400 },
+      );
+    }
+
     const updated = await updateProjectForUser({
       projectId,
       userId: sessionUser.id,
-      title:
-        typeof body.title === "string" && body.title.trim().length > 0
-          ? body.title.trim()
-          : undefined,
+      title,
       status: body.status === "active" || body.status === "archived" ? body.status : undefined,
     });
 

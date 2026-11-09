@@ -67,8 +67,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
+  modal,
 }: Readonly<{
   children: React.ReactNode;
+  /** Routes opened over the current page, such as settings, from app/@modal. */
+  modal: React.ReactNode;
 }>) {
   const shouldRenderAnalytics = process.env.VERCEL === "1";
 
@@ -83,6 +86,7 @@ export default function RootLayout({
           localization={AUTH_COPY}
         >
           {children}
+          {modal}
           <Toaster />
           {shouldRenderAnalytics ? <Analytics /> : null}
         </ClerkProvider>

@@ -9,7 +9,7 @@ describe("settings page", () => {
 
     expect(client.includes("useEffect")).toBe(false);
     expect(client.includes('method: "PATCH"')).toBe(true);
-    expect(read("app/setting/page.tsx").includes("getServerSessionUserWithAiSettings")).toBe(true);
+    expect(read("app/setting/loadSettingsProps.ts").includes("getServerSessionUserWithAiSettings")).toBe(true);
   });
 
   it("never persists API keys to browser storage", () => {

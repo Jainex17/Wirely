@@ -9,13 +9,17 @@
 
 import { ArrowLeft, Play } from "lucide-react";
 import Link from "next/link";
-import { createContext, type ReactNode, use } from "react";
+import { createContext, type ReactNode, use, useRef, useState } from "react";
 import ImportDialog from "@/components/ImportDialog";
 import ShareProjectButton from "@/components/ShareProjectButton";
+import { toast } from "@/components/ui/sonner";
+import { cn } from "@/lib/utils";
+import { parseProjectTitle, PROJECT_TITLE_MAX_CHARS, saveProjectTitle } from "@/lib/projectTitle";
 
 export const ProjectChromeContext = createContext<{
   projectId: string;
   projectTitle: string;
+  setProjectTitle: (title: string) => void;
 } | null>(null);
 
 function useProjectChrome() {
@@ -36,13 +40,79 @@ function BackLink() {
   );
 }
 
+/**
+ * The project name, renamed in place by a double-click. The name is what the
+ * user says to an agent, which finds the project by it with list_projects.
+ */
+function ProjectTitle({ className }: { className: string }) {
+  const { projectId, projectTitle, setProjectTitle } = useProjectChrome();
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape closes the field, and a browser that fires blur on the removed
+  // field must not save the name the user just cancelled.
+  const isCancellingRef = useRef(false);
+
+  const commit = async () => {
+    if (draft === null || isCancellingRef.current) return;
+    const title = parseProjectTitle(draft);
+    setDraft(null);
+    if (!title || title === projectTitle) return;
+    const previous = projectTitle;
+    setProjectTitle(title);
+    try {
+      setProjectTitle(await saveProjectTitle(projectId, title));
+    } catch (error) {
+      setProjectTitle(previous);
+      toast.error(error instanceof Error ? error.message : "Could not rename the project.");
+    }
+  };
+
+  if (draft !== null) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        aria-label="Project name"
+        maxLength={PROJECT_TITLE_MAX_CHARS}
+        onChange={(event) => setDraft(event.target.value)}
+        onFocus={(event) => event.target.select()}
+        onBlur={() => void commit()}
+        onKeyDown={(event) => {
+          // The canvas also listens for keys; the field keeps its own.
+          event.stopPropagation();
+          if (event.key === "Enter") void commit();
+          if (event.key === "Escape") {
+            isCancellingRef.current = true;
+            setDraft(null);
+          }
+        }}
+        className={cn(
+          className,
+          "h-7 rounded-md border border-primary/50 bg-background px-1.5 outline-none",
+        )}
+      />
+    );
+  }
+
+  return (
+    <h1
+      title="Double-click to rename"
+      onDoubleClick={() => {
+        isCancellingRef.current = false;
+        setDraft(projectTitle);
+      }}
+      className={cn(className, "cursor-default truncate px-1.5")}
+    >
+      {projectTitle}
+    </h1>
+  );
+}
+
 /** The top of the left panel. `end` holds the panel's collapse toggle. */
 export function ProjectHeader({ end }: { end: ReactNode }) {
-  const { projectTitle } = useProjectChrome();
   return (
     <div className="flex h-12 shrink-0 items-center gap-1 border-b border-sidebar-border px-1.5">
       <BackLink />
-      <h1 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{projectTitle}</h1>
+      <ProjectTitle className="min-w-0 flex-1 text-[13px] font-semibold text-foreground" />
       {end}
     </div>
   );
@@ -50,11 +120,10 @@ export function ProjectHeader({ end }: { end: ReactNode }) {
 
 /** The collapsed left panel: the same header, floating over the canvas corner. */
 export function FloatingProjectHeader({ end }: { end: ReactNode }) {
-  const { projectTitle } = useProjectChrome();
   return (
     <div className="absolute left-3 top-3 z-30 flex items-center gap-1 rounded-lg border border-sidebar-border bg-sidebar p-1 shadow-lg">
       <BackLink />
-      <h1 className="max-w-40 truncate pr-1 text-xs font-semibold text-foreground">{projectTitle}</h1>
+      <ProjectTitle className="max-w-40 text-xs font-semibold text-foreground" />
       {end}
     </div>
   );
