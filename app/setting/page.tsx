@@ -23,7 +23,7 @@ export default async function SettingPage({
   if (!props) redirect("/login?next=/setting");
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-background p-4 sm:p-8">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-background p-4">
       <div className={SETTINGS_FRAME_CLASS}>
         <SettingsClient {...props} variant="page" />
       </div>
