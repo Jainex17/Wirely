@@ -1239,6 +1239,7 @@ export default function WirePromptSidebar({
 
   useEffect(() => {
     let isCancelled = false;
+    let hasSavedChange = false;
 
     const loadAiSettings = async () => {
       try {
@@ -1246,7 +1247,7 @@ export default function WirePromptSidebar({
           cache: "no-store",
         });
         if (!response.ok) {
-          if (!isCancelled) {
+          if (!isCancelled && !hasSavedChange) {
             setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
             setIsAiSettingsLoaded(true);
           }
@@ -1254,12 +1255,13 @@ export default function WirePromptSidebar({
         }
 
         const payload = (await response.json()) as AiSettingsResponse;
-        if (!isCancelled) {
+        // A change saved in the settings modal meanwhile is newer than this read.
+        if (!isCancelled && !hasSavedChange) {
           setEnabledModelIds(normalizeEnabledWireModels(payload.enabledModelIds));
           setIsAiSettingsLoaded(true);
         }
       } catch {
-        if (!isCancelled) {
+        if (!isCancelled && !hasSavedChange) {
           setEnabledModelIds([...DEFAULT_ENABLED_WIRE_MODELS]);
           setIsAiSettingsLoaded(true);
         }
@@ -1268,9 +1270,11 @@ export default function WirePromptSidebar({
 
     void loadAiSettings();
     // A model turned on in the settings modal over the editor applies at once.
-    const unsubscribe = onAiSettingsChange((change) =>
-      setEnabledModelIds(normalizeEnabledWireModels(change.enabledModelIds)),
-    );
+    const unsubscribe = onAiSettingsChange((change) => {
+      hasSavedChange = true;
+      setEnabledModelIds(normalizeEnabledWireModels(change.enabledModelIds));
+      setIsAiSettingsLoaded(true);
+    });
     return () => {
       isCancelled = true;
       unsubscribe();
