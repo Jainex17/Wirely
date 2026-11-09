@@ -57,6 +57,17 @@ describe("snapshotMarkup", () => {
     expect(frame.querySelector("img")?.getAttribute("src")).toBe(PHOTO);
   });
 
+  it("draws the srcset or <picture> candidate the page shows, not the fallback src", () => {
+    const frame = frameOf(
+      `<picture><source media="(min-width: 600px)" srcset="https://a.example/wide.jpg"><img src="https://a.example/narrow.jpg"></picture>`,
+    );
+    Object.defineProperty(frame.querySelector("img"), "currentSrc", { value: "https://a.example/wide.jpg" });
+    expect(collectImageUrls(frame, "")).toEqual(["https://a.example/wide.jpg"]);
+    const markup = snapshotMarkup(frame, new Map([["https://a.example/wide.jpg", PHOTO_DATA]]));
+    expect(markup).toContain(`<img src="${PHOTO_DATA}"`);
+    expect(markup).not.toContain("narrow");
+  });
+
   it("keeps a URL that holds markup inside its attribute", () => {
     const frame = frameOf(`<img src="https://a.example/x.png"><p>after</p>`);
     const markup = snapshotMarkup(frame, new Map([["https://a.example/x.png", `data:image/png;base64,"><b>x</b>`]]));

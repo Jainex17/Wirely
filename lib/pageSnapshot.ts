@@ -23,8 +23,9 @@ const MAX_SNAPSHOT_SIDE = 16_000;
 const MAX_INLINED_BYTES = 8 * 1024 * 1024;
 const JPEG_QUALITY = 0.9;
 // An image that never loads, such as a lazy one off screen, must not hold the
-// capture queue forever.
+// capture queue forever. Neither may a server that never finishes a response.
 const IMAGE_WAIT_MS = 3_000;
+const FETCH_TIMEOUT_MS = 10_000;
 
 export const snapshotScale = (height: number) =>
   Math.min(SNAPSHOT_SCALE, MAX_SNAPSHOT_SIDE / Math.max(1, height));
@@ -59,12 +60,28 @@ export const drawsDifferentlyAsImage = (css: string, markup: string) =>
 
 const elementsOf = (root: Element) => [root, ...Array.from(root.querySelectorAll("*"))];
 
+/**
+ * The URL an image shows. With a srcset or a <picture>, that is the candidate
+ * the browser picked, which can be a different picture from the src.
+ */
+const shownSource = (element: Element) => {
+  const src = element.getAttribute("src")?.trim() ?? "";
+  const hasCandidates = element.hasAttribute("srcset") || element.parentElement?.localName === "picture";
+  const current = element.localName === "img" && hasCandidates ? (element as HTMLImageElement).currentSrc : "";
+  if (!current) return src;
+  const url = new URL(current);
+  // A project asset picked from a srcset comes back absolute.
+  return url.origin === element.ownerDocument.defaultView?.location.origin ? url.pathname : current;
+};
+
 /** Every image URL the page's CSS and elements load. */
 export const collectImageUrls = (frame: Element, css: string) => {
   const urls = new Set(cssUrls(css));
   for (const element of elementsOf(frame)) {
     for (const attribute of Array.from(element.attributes)) {
-      if (URL_ATTRIBUTES.has(attribute.name)) urls.add(attribute.value.trim());
+      if (URL_ATTRIBUTES.has(attribute.name)) {
+        urls.add(attribute.name === "src" ? shownSource(element) : attribute.value.trim());
+      }
       if (attribute.name === "style") cssUrls(attribute.value).forEach((url) => urls.add(url));
     }
   }
@@ -75,14 +92,16 @@ export const collectImageUrls = (frame: Element, css: string) => {
  * The page's markup with each URL in `dataUrls` swapped in, serialized as
  * XHTML. It works on a copy, so the swap goes through the DOM and the
  * serializer escapes whatever a URL holds. It also drops what an SVG image
- * would try to load on its own and fail: srcset and <source> candidates, which
- * the browser prefers over the inlined src, and lazy loading, which never
- * fires in an image.
+ * would try to load on its own and fail: srcset and <source> candidates, so
+ * each image's src becomes the candidate the page shows, and lazy loading,
+ * which never fires in an image.
  */
 export const snapshotMarkup = (frame: Element, dataUrls: ReadonlyMap<string, string>) => {
   const copy = frame.cloneNode(true) as Element;
-  copy.querySelectorAll("source").forEach((source) => source.remove());
-  for (const element of elementsOf(copy)) {
+  const originals = elementsOf(frame);
+  for (const [index, element] of elementsOf(copy).entries()) {
+    const shown = element.localName === "img" ? shownSource(originals[index]) : "";
+    if (shown) element.setAttribute("src", shown);
     for (const name of ["srcset", "sizes", "loading"]) element.removeAttribute(name);
     for (const attribute of Array.from(element.attributes)) {
       const dataUrl = URL_ATTRIBUTES.has(attribute.name) ? dataUrls.get(attribute.value.trim()) : undefined;
@@ -90,6 +109,7 @@ export const snapshotMarkup = (frame: Element, dataUrls: ReadonlyMap<string, str
       if (attribute.name === "style") attribute.value = swapCssUrls(attribute.value, dataUrls);
     }
   }
+  copy.querySelectorAll("source").forEach((source) => source.remove());
   const view = frame.ownerDocument.defaultView ?? window;
   return new view.XMLSerializer().serializeToString(copy);
 };
@@ -132,10 +152,10 @@ const readAsDataUrl = (blob: Blob) =>
 // a budget, oldest out first. A failure is not kept, so the next capture
 // tries that image again.
 const MAX_CACHED_CHARS = 32 * 1024 * 1024;
-const inlined = new Map<string, Promise<string | null | undefined>>();
+const inlined = new Map<string, Promise<string | null>>();
 let cachedChars = 0;
 const sizes = new Map<string, number>();
-const keep = (url: string, dataUrl: string | null | undefined) => {
+const keep = (url: string, dataUrl: string | null) => {
   if (!dataUrl) {
     inlined.delete(url);
     return;
@@ -151,9 +171,9 @@ const keep = (url: string, dataUrl: string | null | undefined) => {
 };
 
 /**
- * The file at `url` as a data URL: undefined when it is not of a type
- * `accept` allows, which the page could not have drawn either; null when it
- * cannot be fetched, which the page's DOM may still have shown.
+ * The file at `url` as a data URL, or null when it cannot be fetched or is not
+ * of a type `accept` allows. A browser still draws an image served with the
+ * wrong type, so either way the page keeps drawing as DOM.
  */
 const fetchDataUrl = (url: string, accept: RegExp) => {
   const cached = inlined.get(url);
@@ -166,13 +186,14 @@ const fetchDataUrl = (url: string, accept: RegExp) => {
         // Project assets are the user's own and need their session.
         credentials: isAsset ? "same-origin" : "omit",
         referrerPolicy: "no-referrer",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok || Number(response.headers.get("content-length")) > MAX_INLINED_BYTES) return null;
       const blob = await response.blob();
       // Rebuilt from a checked type, so the server's Content-Type cannot put
       // anything else into the data URL.
       const type = blob.type.split(";")[0].trim().toLowerCase();
-      if (!accept.test(type)) return undefined;
+      if (!accept.test(type)) return null;
       return blob.size > MAX_INLINED_BYTES ? null : await readAsDataUrl(new Blob([blob], { type }));
     } catch {
       return null;
@@ -199,6 +220,7 @@ const loadIconFontCss = () =>
         integrity: INERT_ICON_STYLESHEET.integrity,
         mode: "cors",
         credentials: "omit",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok) return null;
       const css = await response.text();
@@ -273,12 +295,7 @@ export const captureSnapshot = async ({
   const urls = collectImageUrls(frame, css);
   const fetched = await Promise.all(urls.map((url) => fetchDataUrl(url, IMAGE_TYPE)));
   if (fetched.includes(null)) return null;
-  const dataUrls = new Map(
-    urls.flatMap((url, index) => {
-      const dataUrl = fetched[index];
-      return dataUrl ? [[url, dataUrl] as const] : [];
-    }),
-  );
+  const dataUrls = new Map(urls.map((url, index) => [url, fetched[index] as string]));
 
   const image = new Image();
   image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
