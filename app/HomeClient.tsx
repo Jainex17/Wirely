@@ -1,6 +1,7 @@
 "use client";
 
-import { useReducer, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useReducer, useState, type FormEvent, type MouseEvent } from "react";
+import { onAiSettingsChange } from "@/lib/aiSettingsChanged";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -211,6 +212,23 @@ const modelRequiresMissingKey = ({
 export default function HomeClient({ initialData }: HomeClientProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(homeReducer, initialData, createHomeInitialState);
+
+  // A key or model changed in the settings modal over this page applies at once.
+  useEffect(
+    () =>
+      onAiSettingsChange((change) =>
+        dispatch({
+          type: "patch",
+          payload: {
+            enabledModelIds: change.enabledModelIds,
+            hasGoogleApiKey: change.hasGoogleApiKey,
+            hasOpenRouterApiKey: change.hasOpenRouterApiKey,
+            hasZaiApiKey: change.hasZaiApiKey,
+          },
+        }),
+      ),
+    [],
+  );
   const { ref: promptTextareaRef, resize: resizePromptTextarea } =
     useAutoGrowTextarea({ value: state.prompt, minRows: 4 });
 

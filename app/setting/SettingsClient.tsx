@@ -33,6 +33,7 @@ import ApiKeyDialog, {
   type ApiKeyProvider,
 } from "./ApiKeyDialog";
 import McpPanel, { type AgentTokenSummary } from "./McpPanel";
+import { announceAiSettingsChange } from "@/lib/aiSettingsChanged";
 
 export type SettingsTab = "account" | "providers" | "models" | "mcp";
 export type ProviderKeys = Record<ApiKeyProvider, boolean>;
@@ -136,6 +137,12 @@ export default function SettingsClient({
 
       setKeys(snapshot.keys);
       setEnabledModelIds(snapshot.enabledModelIds);
+      announceAiSettingsChange({
+        enabledModelIds: snapshot.enabledModelIds,
+        hasGoogleApiKey: snapshot.keys.google,
+        hasOpenRouterApiKey: snapshot.keys.openrouter,
+        hasZaiApiKey: snapshot.keys.zai,
+      });
       return snapshot;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save that change.");

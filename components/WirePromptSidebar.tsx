@@ -1,5 +1,6 @@
 "use client";
 
+import { onAiSettingsChange } from "@/lib/aiSettingsChanged";
 import {
   useCallback,
   useEffect,
@@ -1266,8 +1267,13 @@ export default function WirePromptSidebar({
     };
 
     void loadAiSettings();
+    // A model turned on in the settings modal over the editor applies at once.
+    const unsubscribe = onAiSettingsChange((change) =>
+      setEnabledModelIds(normalizeEnabledWireModels(change.enabledModelIds)),
+    );
     return () => {
       isCancelled = true;
+      unsubscribe();
     };
   }, []);
 
