@@ -190,9 +190,15 @@ const getDragDelta = (
 const isFromPortal = (event: React.PointerEvent<HTMLElement>) =>
   !event.currentTarget.contains(event.target as Node);
 
+// Keys typed into a field, or pressed inside a dialog such as settings open
+// over the editor, belong to that field or dialog, not to the canvas.
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof Element &&
-  Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+  Boolean(
+    target.closest(
+      "input, textarea, select, button, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
+    ),
+  );
 
 const INVERSE_ZOOM = "--canvas-inverse-zoom";
 // Group names keep their screen size down to 10% zoom, further than page
