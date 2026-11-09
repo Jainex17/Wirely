@@ -13,7 +13,7 @@ import {
 } from "@/lib/canvasScene";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
-import { isPageDeviceType } from "@/lib/types";
+import { isPageDeviceType, type ProjectTab } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
 import { readCompareLink, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertAtNode } from "@/lib/pageTree";
@@ -209,16 +209,20 @@ export default function EditorWorkspace({
           }
           const payload = (await reloadResponse.json()) as {
             pages?: Array<{ id: string; title: string; htmlContent: string; deviceType: string }>;
+            tabs?: ProjectTab[];
+            pageTabIds?: Record<string, string>;
           };
+          const firstTabId = payload.tabs?.[0]?.id ?? useEditorStore.getState().activeTabId;
           const reloadedPages =
             payload.pages?.map((item) => ({
               id: item.id,
               title: item.title,
               iframeHtml: item.htmlContent,
               deviceType: isPageDeviceType(item.deviceType) ? item.deviceType : ("desktop" as const),
+              tabId: payload.pageTabIds?.[item.id] ?? firstTabId,
               sections: [] as string[],
             })) ?? [];
-          hydrateProject(reloadedPages);
+          hydrateProject(reloadedPages, { tabs: payload.tabs });
         } catch (reloadError) {
           logger.error("pages_reload_after_delete_failure", {
             pageId,

@@ -26,7 +26,7 @@ import type { WireModelName } from "@/lib/wireModels";
 import EditorErrorBoundary from "@/components/EditorErrorBoundary";
 import { warmTailwindFrame } from "@/lib/tailwindFrameBrowser";
 import type { CanvasArrangement } from "@/lib/canvasArrangement";
-import type { PersistedWireLayout } from "@/lib/types";
+import type { PersistedWireLayout, ProjectTab } from "@/lib/types";
 import type { WireConversationModelUsage } from "@/lib/wireConversationModels";
 
 interface WireEditorProps {
@@ -39,7 +39,9 @@ interface WireEditorProps {
       title: string;
       pageHtml: string;
       deviceType: PageDeviceType;
+      tabId: string;
     }>;
+    tabs: ProjectTab[];
   };
   /** Server time the initial pages were read, the first change cursor. */
   pagesLoadedAt: string;
@@ -117,10 +119,12 @@ export default function WireEditor({
         title: page.title,
         iframeHtml: page.pageHtml,
         deviceType: page.deviceType,
+        tabId: page.tabId,
         sections: [],
       })),
+      { tabs: initialProject.tabs },
     );
-  }, [hydrateProject, initialProject.pages]);
+  }, [hydrateProject, initialProject.pages, initialProject.tabs]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

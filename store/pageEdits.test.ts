@@ -20,7 +20,7 @@ const fakeServer = (status: number) => {
 const resetStore = () =>
   useEditorStore.setState({
     ...useEditorStore.getInitialState(),
-    pages: [{ id: "page-1", title: "Page 1", sections: [] }],
+    pages: [{ id: "page-1", title: "Page 1", sections: [], tabId: "tab-home" }],
     pageStackOrder: ["page-1"],
   });
 
@@ -66,8 +66,8 @@ describe("commitPagesEdit", () => {
     useEditorStore.setState({
       ...useEditorStore.getInitialState(),
       pages: [
-        { id: "source", title: "Source", sections: [], iframeHtml: "<p>moved</p>" },
-        { id: "target", title: "Target", sections: [], iframeHtml: "<div></div>" },
+        { id: "source", title: "Source", sections: [], tabId: "tab-home", iframeHtml: "<p>moved</p>" },
+        { id: "target", title: "Target", sections: [], tabId: "tab-home", iframeHtml: "<div></div>" },
       ],
       pageStackOrder: ["source", "target"],
     });

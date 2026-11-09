@@ -8,6 +8,7 @@ import {
   type PageRecord,
   type PersistedWireLayout,
   type Point2D,
+  type ProjectTab,
   type SectionRecord,
 } from "@/lib/types";
 import {
@@ -96,6 +97,10 @@ export interface SelectedNode {
 
 export interface CanvasState {
   camera: CameraState;
+  /** The tab whose pages the canvas shows. Every geometry helper defaults to it. */
+  activeTabId: string;
+  /** Where each other tab's camera was when the user left it. */
+  tabCameras: Record<string, CameraState>;
   canvasBackground: CanvasBackground;
   activeDevice: DeviceType;
   pendingSaveCount: number;
@@ -136,6 +141,8 @@ export interface CanvasState {
 }
 
 export interface ProjectState {
+  /** In display order. Never empty: a project with no tab rows has one implicit tab. */
+  tabs: ProjectTab[];
   pages: PageRecord[];
   sections: Record<string, SectionRecord>;
   selectedSectionId: string | null;
@@ -211,9 +218,22 @@ export interface EditorState extends CanvasState, ProjectState {
   setPageDeviceType: (pageId: string, deviceType: PageDeviceType) => void;
   setPageStatus: (pageId: string, status: PageGenerationStatus, detail?: string) => void;
   clearPageStatuses: () => void;
-  hydrateProject: (pages: PageRecord[], agentLabel?: string) => void;
+  /** Pass `agentLabel` only when an agent, not the user, wrote the pages. */
+  hydrateProject: (pages: PageRecord[], options?: { tabs?: ProjectTab[]; agentLabel?: string }) => void;
   applyServerPageChanges: (changes: ServerPageChanges) => void;
   deletePage: (pageId: string) => void;
+  /**
+   * Shows another tab's canvas: stashes this tab's camera, clears the
+   * selection, and lands on the camera the user left there, or a fit of its pages.
+   */
+  switchTab: (tabId: string) => void;
+  /** Puts a page on another tab, out of its group, at the next free spot there. */
+  movePageToTab: (pageId: string, tabId: string) => void;
+  /** Adds a tab the server created and switches to it. */
+  addTab: (tab: ProjectTab) => void;
+  renameTab: (tabId: string, name: string) => void;
+  /** Drops a tab and every page on it. Never drops the last tab. */
+  removeTab: (tabId: string) => void;
   resetProject: () => void;
 }
 
@@ -227,6 +247,9 @@ export interface ServerPageChanges {
     deviceType: string;
   }>;
   arrangement?: CanvasArrangement | null;
+  /** Every tab and every page's tab, sent whole each poll since a move leaves no page timestamp. */
+  tabs?: ProjectTab[];
+  pageTabIds?: Record<string, string>;
 }
 
 const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
@@ -235,8 +258,19 @@ const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
   "repairing",
 ]);
 
+/** The tab the store holds before a project loads, and the one its placeholder page is on. */
+const PLACEHOLDER_TAB: ProjectTab = { id: "tab-home", name: "Tab 1" };
+
+const placeholderPage = (tabId: string): PageRecord => ({
+  id: "page-home",
+  title: "Page 1",
+  tabId,
+  sections: [],
+});
+
 const generateEmptyState = (): Pick<
   ProjectState,
+  | "tabs"
   | "pages"
   | "sections"
   | "selectedSectionId"
@@ -245,7 +279,8 @@ const generateEmptyState = (): Pick<
   | "agentEdits"
   | "comments"
 > => ({
-  pages: [{ id: "page-home", title: "Page 1", sections: [] }],
+  tabs: [PLACEHOLDER_TAB],
+  pages: [placeholderPage(PLACEHOLDER_TAB.id)],
   sections: {},
   selectedSectionId: null,
   draggingSectionId: null,
@@ -256,6 +291,8 @@ const generateEmptyState = (): Pick<
 
 const DEFAULT_CANVAS_STATE: CanvasState = {
   camera: createDefaultCamera(),
+  activeTabId: PLACEHOLDER_TAB.id,
+  tabCameras: {},
   canvasBackground: "dark",
   activeDevice: "desktop",
   pendingSaveCount: 0,
@@ -345,10 +382,33 @@ const getDeviceDimensions = (device: DeviceType) => ({
   height: getPageFrameHeight(device),
 });
 
-const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
-  const totalPages = state.pages.length;
+const pagesOnTab = (state: EditorState, tabId: string) =>
+  state.pages.filter((page) => page.tabId === tabId);
 
-  return state.pages.map((page, index) => {
+const tabOfPage = (state: EditorState, pageId: string) =>
+  state.pages.find((page) => page.id === pageId)?.tabId ?? null;
+
+const firstPageIdOnTab = (state: EditorState, tabId: string) =>
+  state.pages.find((page) => page.tabId === tabId)?.id ?? null;
+
+/** The focused page if it is on the tab, else the tab's first page. */
+const focusOnTab = (state: EditorState, tabId: string) =>
+  state.focusedPageId && tabOfPage(state, state.focusedPageId) === tabId
+    ? state.focusedPageId
+    : firstPageIdOnTab(state, tabId);
+
+/**
+ * Each tab is its own canvas, so every geometry helper below sees one tab's
+ * pages. A page without a saved position sits at its index within the tab.
+ */
+const getPageBoundsCollection = (
+  state: EditorState,
+  tabId: string = state.activeTabId,
+): PageBounds[] => {
+  const pages = pagesOnTab(state, tabId);
+  const totalPages = pages.length;
+
+  return pages.map((page, index) => {
     const { width: deviceWidth, height: deviceHeight } = getPageFrameSize(page, state.activeDevice);
     const position = state.pagePositions[page.id] ?? {
       x: getDefaultPageX(index, totalPages, deviceWidth),
@@ -368,16 +428,18 @@ const getPageBoundsCollection = (state: EditorState): PageBounds[] => {
   });
 };
 
-const getFitBoundsCollection = (state: EditorState) =>
-  getPageBoundsCollection(state).map((bounds, index) =>
-    clipToFirstScreen(
-      bounds,
-      getPageFrameSize(state.pages[index], state.activeDevice).height,
-    ),
+const getFitBoundsCollection = (state: EditorState, tabId: string = state.activeTabId) => {
+  const pages = pagesOnTab(state, tabId);
+  return getPageBoundsCollection(state, tabId).map((bounds, index) =>
+    clipToFirstScreen(bounds, getPageFrameSize(pages[index], state.activeDevice).height),
   );
+};
 
-const getFitBoundsById = (state: EditorState, pageId: string) =>
-  getFitBoundsCollection(state).find((page) => page.pageId === pageId) ?? null;
+const getFitBoundsById = (state: EditorState, pageId: string) => {
+  const tabId = tabOfPage(state, pageId);
+  if (!tabId) return null;
+  return getFitBoundsCollection(state, tabId).find((page) => page.pageId === pageId) ?? null;
+};
 
 const hasUsableViewport = (viewportSize: ViewportSize) =>
   viewportSize.width > 0 && viewportSize.height > 0;
@@ -433,15 +495,16 @@ const glideCamera = (target: CameraState) => {
   cameraGlideFrame = window.requestAnimationFrame(step);
 };
 
-const getFittedCamera = (state: EditorState) => {
-  return getFittedCameraForPageIds(
+const getFittedCamera = (state: EditorState, tabId: string = state.activeTabId) =>
+  getFittedCameraForPageIds(
     state,
-    state.pages.map((page) => page.id),
+    pagesOnTab(state, tabId).map((page) => page.id),
   );
-};
 
+/** Fits the listed pages that share the first one's tab. */
 const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
-  const boundsList = getFitBoundsCollection(state).filter((bounds) =>
+  const tabId = pageIds.map((pageId) => tabOfPage(state, pageId)).find((id) => id !== null);
+  const boundsList = getFitBoundsCollection(state, tabId ?? state.activeTabId).filter((bounds) =>
     pageIds.includes(bounds.pageId),
   );
   if (boundsList.length === 0 || !hasUsableViewport(state.viewportSize)) {
@@ -463,10 +526,11 @@ const getFittedCameraForPageIds = (state: EditorState, pageIds: string[]) => {
 const getNextCreatedPagePosition = (
   state: EditorState,
   deviceType?: PageDeviceType,
+  tabId: string = state.activeTabId,
 ) => {
   const device = resolvePageFrameDevice(deviceType, state.activeDevice);
   const { width: deviceWidth } = getDeviceDimensions(device);
-  const existingBounds = getPageBoundsCollection(state);
+  const existingBounds = getPageBoundsCollection(state, tabId);
 
   if (existingBounds.length === 0) {
     return {
@@ -485,10 +549,14 @@ const getNextCreatedPagePosition = (
   };
 };
 
-const getNewRowPosition = (state: EditorState, deviceType?: PageDeviceType) => {
-  const existingBounds = getPageBoundsCollection(state);
+const getNewRowPosition = (
+  state: EditorState,
+  deviceType?: PageDeviceType,
+  tabId: string = state.activeTabId,
+) => {
+  const existingBounds = getPageBoundsCollection(state, tabId);
   if (existingBounds.length === 0) {
-    return getNextCreatedPagePosition(state, deviceType);
+    return getNextCreatedPagePosition(state, deviceType, tabId);
   }
 
   return {
@@ -497,15 +565,66 @@ const getNewRowPosition = (state: EditorState, deviceType?: PageDeviceType) => {
   };
 };
 
-/** Every page's position under the agent's rows, sized as the canvas draws it now. */
+/**
+ * The positions and groups after the agent's rows lay out the tab of the
+ * first listed page that exists. Pages and groups on other tabs keep theirs.
+ * `tabId` is null when no listed page exists yet, and nothing moves.
+ */
 const getArrangedPositions = (state: EditorState, rows: ArrangementRows) => {
-  const sizes = new Map(getPageBoundsCollection(state).map((bounds) => [bounds.pageId, bounds]));
-  return layoutArrangement(
+  const tabId =
+    rows
+      .flat()
+      .flatMap((group) => group.pageIds)
+      .map((pageId) => tabOfPage(state, pageId))
+      .find((id) => id !== null) ?? null;
+  if (!tabId) return { tabId, pagePositions: state.pagePositions, pageGroups: state.pageGroups };
+
+  const tabPageIds = pagesOnTab(state, tabId).map((page) => page.id);
+  const sizes = new Map(getPageBoundsCollection(state, tabId).map((bounds) => [bounds.pageId, bounds]));
+  const arranged = layoutArrangement(
     rows,
-    state.pages.map((page) => page.id),
+    tabPageIds,
     (pageId) => sizes.get(pageId) ?? { width: 0, height: 0 },
   );
+  return {
+    tabId,
+    pagePositions: { ...state.pagePositions, ...arranged.pagePositions },
+    pageGroups: [
+      ...state.pageGroups.filter((group) => !group.pageIds.some((id) => tabPageIds.includes(id))),
+      ...arranged.pageGroups,
+    ],
+  };
 };
+
+/** The state change for showing `tabId`: its stashed camera, or a fit of its pages. */
+const switchTabState = (state: EditorState, tabId: string) => {
+  const tabCameras = { ...state.tabCameras, [state.activeTabId]: state.camera };
+  const tabPages = pagesOnTab(state, tabId);
+  return {
+    activeTabId: tabId,
+    tabCameras,
+    camera:
+      tabCameras[tabId] ??
+      (tabPages.length > 0 && hasUsableViewport(state.viewportSize)
+        ? getFittedCamera(state, tabId)
+        : createDefaultCamera()),
+    selectedPageIds: [],
+    selectedNode: null,
+    comparePageIds: null,
+    focusedPageId: tabPages[0]?.id ?? null,
+  };
+};
+
+/** Drops the page from every group, then any group left empty. */
+const removeFromGroups = (pageGroups: PageGroup[], pageId: string) =>
+  pageGroups
+    .map((group) => ({ ...group, pageIds: group.pageIds.filter((id) => id !== pageId) }))
+    .filter((group) => group.pageIds.length > 0);
+
+const readCamera = (value: Partial<CameraState> | undefined): CameraState | null =>
+  value && typeof value.x === "number" && typeof value.y === "number" && typeof value.zoom === "number"
+    ? { x: value.x, y: value.y, zoom: clampZoom(value.zoom) }
+    : null;
 
 const getPositionRightOf = (bounds: PageBounds[]) => ({
   x: Math.max(...bounds.map((item) => item.right)) + PAGE_GAP,
@@ -620,9 +739,10 @@ export const useEditorStore = create<EditorState>()(
           const anchorGroupId = groupId ?? currentGroup?.id;
           const anchorIds =
             pageGroups.find((group) => group.id === anchorGroupId)?.pageIds ?? [];
-          const anchorBounds = getPageBoundsCollection(state).filter(
-            (bounds) => bounds.pageId !== pageId && anchorIds.includes(bounds.pageId),
-          );
+          const anchorBounds = getPageBoundsCollection(
+            state,
+            tabOfPage(state, pageId) ?? state.activeTabId,
+          ).filter((bounds) => bounds.pageId !== pageId && anchorIds.includes(bounds.pageId));
 
           return {
             pageGroups,
@@ -660,6 +780,8 @@ export const useEditorStore = create<EditorState>()(
             pageFrameHeights = {},
             arrangedAt = null,
             arrangement = null,
+            activeTabId,
+            tabCameras = {},
           } = layout ?? {};
           const pageIds = state.pages.map((page) => page.id);
           const storedHeights = Object.fromEntries(
@@ -667,15 +789,34 @@ export const useEditorStore = create<EditorState>()(
               ([, height]) => typeof height === "number" && height >= 1 && height <= 20_000,
             ),
           );
-
-          return {
-            camera: camera
+          const tabIds = state.tabs.map((tab) => tab.id);
+          const nextActiveTabId =
+            typeof activeTabId === "string" && tabIds.includes(activeTabId) ? activeTabId : tabIds[0];
+          // The saved camera belongs to the saved tab. When that tab is gone,
+          // the first tab's own stashed camera is the right one, if it has one.
+          const isSavedTab = activeTabId === undefined || activeTabId === nextActiveTabId;
+          const nextCamera = isSavedTab
+            ? camera
               ? {
                   x: camera.x ?? 0,
                   y: camera.y ?? 0,
                   zoom: clampZoom(camera.zoom ?? DEFAULT_CANVAS_STATE.camera.zoom),
                 }
-              : createDefaultCamera(),
+              : createDefaultCamera()
+            : readCamera(tabCameras[nextActiveTabId]) ?? createDefaultCamera();
+          const nextState = { ...state, activeTabId: nextActiveTabId };
+
+          return {
+            camera: nextCamera,
+            activeTabId: nextActiveTabId,
+            tabCameras: Object.fromEntries(
+              Object.entries(tabCameras).flatMap(([tabId, value]) => {
+                const stashed = readCamera(value);
+                return stashed && tabIds.includes(tabId) && tabId !== nextActiveTabId
+                  ? [[tabId, stashed]]
+                  : [];
+              }),
+            ),
             pagePositions: dropStackedPositions(filterPagePositions(pagePositions, pageIds)),
             pageStackOrder: mergePageStackOrder(pageIds, pageStackOrder),
             pageGroups: filterPageGroups(pageGroups, pageIds),
@@ -683,18 +824,17 @@ export const useEditorStore = create<EditorState>()(
             arrangedAt: typeof arrangedAt === "string" ? arrangedAt : null,
             // A height a frame already reported this session is newer.
             pageFrameHeights: { ...storedHeights, ...state.pageFrameHeights },
-            focusedPageId:
-              state.focusedPageId && pageIds.includes(state.focusedPageId)
-                ? state.focusedPageId
-                : pageIds[0] ?? null,
+            focusedPageId: focusOnTab(nextState, nextActiveTabId),
           };
         }),
       applyCanvasArrangement: (arrangement) => {
         const state = get();
         if (state.arrangedAt && arrangement.arrangedAt <= state.arrangedAt) return;
-        const { pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
+        const { tabId, pagePositions, pageGroups } = getArrangedPositions(state, arrangement.rows);
         set({ arrangement, arrangedAt: arrangement.arrangedAt, pagePositions, pageGroups });
-        if (hasUsableViewport(state.viewportSize)) glideCamera(getFittedCamera(get()));
+        if (tabId === state.activeTabId && hasUsableViewport(state.viewportSize)) {
+          glideCamera(getFittedCamera(get()));
+        }
       },
       setFocusedPage: (focusedPageId) =>
         set((state) => ({ focusedPageId, focusRequestCount: state.focusRequestCount + 1 })),
@@ -711,16 +851,18 @@ export const useEditorStore = create<EditorState>()(
       setActiveTool: (activeTool) => set({ activeTool }),
       setActiveCommentId: (activeCommentId) => set({ activeCommentId }),
       focusComment: (commentId) => {
-        const state = get();
-        const comment = state.comments.find((candidate) => candidate.id === commentId);
+        const comment = get().comments.find((candidate) => candidate.id === commentId);
         if (!comment) return;
+        const tabId = tabOfPage(get(), comment.pageId);
+        if (tabId && tabId !== get().activeTabId) get().switchTab(tabId);
+        const state = get();
         // Resolved comments have no pin on the canvas, so only their page is shown.
         set({
           activeCommentId: comment.resolvedAt === null ? comment.id : null,
           focusedPageId: comment.pageId,
           focusRequestCount: state.focusRequestCount + 1,
         });
-        const page = getPageBoundsCollection(state).find(
+        const page = getPageBoundsCollection(state, tabId ?? state.activeTabId).find(
           (bounds) => bounds.pageId === comment.pageId,
         );
         if (!page || !hasUsableViewport(state.viewportSize)) return;
@@ -752,19 +894,25 @@ export const useEditorStore = create<EditorState>()(
             : { pageFrameHeights };
         }),
       // Zooms to fit the page's first screen, so the page lands filling the
-      // view whatever zoom the canvas was at.
+      // view whatever zoom the canvas was at. A page on another tab shows
+      // that tab first, which is how the comments and activity lists, which
+      // list every page, cross tabs.
       focusPage: (pageId) => {
+        const tabId = tabOfPage(get(), pageId);
+        if (tabId && tabId !== get().activeTabId) get().switchTab(tabId);
         const state = get();
         set({ focusedPageId: pageId, focusRequestCount: state.focusRequestCount + 1 });
         if (!getFitBoundsById(state, pageId) || !hasUsableViewport(state.viewportSize)) return;
         glideCamera(getFittedCameraForPageIds(state, [pageId]));
       },
       focusPages: (pageIds) => {
+        const tabId = pageIds.map((pageId) => tabOfPage(get(), pageId)).find((id) => id !== null);
+        if (!tabId) return;
+        if (tabId !== get().activeTabId) get().switchTab(tabId);
         const state = get();
-        const uniquePageIds = [...new Set(pageIds)].filter((pageId) =>
-          state.pages.some((page) => page.id === pageId),
+        const uniquePageIds = [...new Set(pageIds)].filter(
+          (pageId) => tabOfPage(state, pageId) === tabId,
         );
-        if (uniquePageIds.length === 0) return;
         if (uniquePageIds.length === 1) {
           state.focusPage(uniquePageIds[0]);
           return;
@@ -785,7 +933,9 @@ export const useEditorStore = create<EditorState>()(
             camera: getFittedCamera(state),
           };
         }),
-      fitPage: (pageId) =>
+      fitPage: (pageId) => {
+        const tabId = tabOfPage(get(), pageId);
+        if (tabId && tabId !== get().activeTabId) get().switchTab(tabId);
         set((state) => {
           if (!hasUsableViewport(state.viewportSize)) {
             return state;
@@ -796,7 +946,8 @@ export const useEditorStore = create<EditorState>()(
             focusedPageId: pageId,
             focusRequestCount: state.focusRequestCount + 1,
           };
-        }),
+        });
+      },
       requestGeneratedPageFocusCheck: (pageIds) =>
         set({
           requestedGeneratedPageFocusIds:
@@ -913,18 +1064,21 @@ export const useEditorStore = create<EditorState>()(
         const newPageId = pageId ?? createPageId();
 
         set((state) => {
-          const afterBounds = getPageBoundsCollection(state).filter(
+          // The page shares the tab of the page it follows, else the open one.
+          const tabId = (afterPageId && tabOfPage(state, afterPageId)) || state.activeTabId;
+          const afterBounds = getPageBoundsCollection(state, tabId).filter(
             (bounds) => bounds.pageId === afterPageId,
           );
           const nextPosition =
             afterBounds.length > 0
               ? getPositionRightOf(afterBounds)
-              : getNewRowPosition(state, deviceType);
+              : getNewRowPosition(state, deviceType, tabId);
           const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
           const newPage: PageRecord = {
             id: newPageId,
             title: resolvedTitle,
             iframeHtml: "",
+            tabId,
             sections: [],
             ...(deviceType ? { deviceType } : {}),
           };
@@ -948,7 +1102,8 @@ export const useEditorStore = create<EditorState>()(
               pages.map((page) => page.id),
               [...state.pageStackOrder, newPageId],
             ),
-            focusedPageId: newPageId,
+            // Focus stays on the open tab when the page went to another one.
+            focusedPageId: tabId === state.activeTabId ? newPageId : state.focusedPageId,
           };
         });
 
@@ -1031,12 +1186,17 @@ export const useEditorStore = create<EditorState>()(
 
       clearPageStatuses: () => set({ pageStatuses: {} }),
 
-      hydrateProject: (pages, agentLabel) =>
+      hydrateProject: (pages, { tabs: nextTabs, agentLabel } = {}) =>
         set((state) => {
+          const tabs = nextTabs && nextTabs.length > 0 ? nextTabs : state.tabs;
+          const tabIds = tabs.map((tab) => tab.id);
+          const activeTabId = tabIds.includes(state.activeTabId) ? state.activeTabId : tabIds[0];
           const nextPages =
             pages.length > 0
-              ? pages
-              : [{ id: "page-home", title: "Page 1", sections: [] }];
+              ? pages.map((page) =>
+                  tabIds.includes(page.tabId) ? page : { ...page, tabId: tabIds[0] },
+                )
+              : [placeholderPage(tabIds[0])];
           const nextPageIds = nextPages.map((page) => page.id);
           const previousHtmlById = new Map(
             state.pages.map((page) => [page.id, page.iframeHtml ?? ""]),
@@ -1052,10 +1212,16 @@ export const useEditorStore = create<EditorState>()(
             }
           }
 
+          const nextState = { ...state, pages: nextPages, activeTabId };
           return {
             ...generateEmptyState(),
             agentEdits,
             comments: state.comments,
+            tabs,
+            activeTabId,
+            tabCameras: Object.fromEntries(
+              Object.entries(state.tabCameras).filter(([tabId]) => tabIds.includes(tabId)),
+            ),
             pages: nextPages,
             pagePositions: filterPagePositions(state.pagePositions, nextPageIds),
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
@@ -1069,14 +1235,11 @@ export const useEditorStore = create<EditorState>()(
                 ? state.selectedNode
                 : null,
             selectedPageIds: state.selectedPageIds.filter((id) => nextPageIds.includes(id)),
-            focusedPageId:
-              state.focusedPageId && nextPageIds.includes(state.focusedPageId)
-                ? state.focusedPageId
-                : nextPageIds[0] ?? null,
+            focusedPageId: focusOnTab(nextState, activeTabId),
           };
         }),
 
-      applyServerPageChanges: ({ pageIds, changed }) =>
+      applyServerPageChanges: ({ pageIds, changed, tabs: serverTabs, pageTabIds }) =>
         set((state) => {
           // An in-flight save means the store is ahead of the server, and a
           // poll that read the old row would roll the user's edit back. The
@@ -1090,6 +1253,19 @@ export const useEditorStore = create<EditorState>()(
             return status !== undefined && ACTIVE_GENERATION_STATUSES.has(status);
           };
 
+          const tabs = serverTabs && serverTabs.length > 0 ? serverTabs : state.tabs;
+          const tabIds = tabs.map((tab) => tab.id);
+          const activeTabId = tabIds.includes(state.activeTabId) ? state.activeTabId : tabIds[0];
+          const tabsChanged =
+            tabs.length !== state.tabs.length ||
+            tabs.some((tab, index) => tab.id !== state.tabs[index].id || tab.name !== state.tabs[index].name);
+          // A page the server does not place, or places on a tab that is gone,
+          // keeps its tab when it has one and otherwise joins the open tab.
+          const resolveTab = (pageId: string, current?: string) => {
+            const tabId = pageTabIds?.[pageId] ?? current ?? activeTabId;
+            return tabIds.includes(tabId) ? tabId : tabIds[0];
+          };
+
           const serverIds = new Set(pageIds);
           // An empty list means the project has no rows yet and the store holds
           // its placeholder page, which must not be removed.
@@ -1097,9 +1273,34 @@ export const useEditorStore = create<EditorState>()(
             serverIds.size > 0
               ? state.pages.filter((page) => serverIds.has(page.id) || isBusy(page.id))
               : state.pages;
-          let didChange = pages.length !== state.pages.length;
+          let didChange = pages.length !== state.pages.length || tabsChanged;
           const addedPositions: PagePositionMap = {};
           let agentEdits = state.agentEdits;
+          const withPending = (currentPages: PageRecord[]) => ({
+            ...state,
+            pages: currentPages,
+            pagePositions: { ...state.pagePositions, ...addedPositions },
+          });
+
+          // A page moved to another tab elsewhere lands at the next free spot
+          // there and leaves its group, since a group's pages share one tab.
+          const movedPageIds: string[] = [];
+          pages = pages.map((page) => {
+            const tabId = resolveTab(page.id, page.tabId);
+            if (tabId === page.tabId) return page;
+            movedPageIds.push(page.id);
+            didChange = true;
+            return { ...page, tabId };
+          });
+          for (const pageId of movedPageIds) {
+            const page = pages.find((candidate) => candidate.id === pageId);
+            if (!page) continue;
+            addedPositions[pageId] = getNextCreatedPagePosition(
+              withPending(pages.filter((candidate) => candidate.id !== pageId)),
+              page.deviceType,
+              page.tabId,
+            );
+          }
           // The poll cannot tell which tool wrote a page, only that it was not
           // this tab, so the cursor carries a generic label.
           const recordAgentEdit = (pageId: string, previousHtml: string, html: string) => {
@@ -1118,13 +1319,11 @@ export const useEditorStore = create<EditorState>()(
             const index = pages.findIndex((page) => page.id === incoming.id);
 
             if (index === -1) {
+              const tabId = resolveTab(incoming.id);
               addedPositions[incoming.id] = getNextCreatedPagePosition(
-                {
-                  ...state,
-                  pages,
-                  pagePositions: { ...state.pagePositions, ...addedPositions },
-                },
+                withPending(pages),
                 deviceType,
+                tabId,
               );
               recordAgentEdit(incoming.id, "", incoming.htmlContent);
               pages = [
@@ -1134,6 +1333,7 @@ export const useEditorStore = create<EditorState>()(
                   title: incoming.title,
                   iframeHtml: incoming.htmlContent,
                   deviceType,
+                  tabId,
                   sections: [],
                 },
               ];
@@ -1171,19 +1371,31 @@ export const useEditorStore = create<EditorState>()(
             { ...state.pagePositions, ...addedPositions },
             nextPageIds,
           );
-          let pageGroups = filterPageGroups(state.pageGroups, nextPageIds);
+          let pageGroups = filterPageGroups(
+            movedPageIds.reduce(removeFromGroups, state.pageGroups),
+            nextPageIds,
+          );
           // A page the agent added can land a poll after the arrangement that
           // names it, so a live arrangement places it now, group and all.
           if (state.arrangement) {
             const arranged = getArrangedPositions(
-              { ...state, pages, pagePositions },
+              { ...state, pages, pagePositions, pageGroups },
               state.arrangement.rows,
             );
             pagePositions = arranged.pagePositions;
             pageGroups = syncArrangedGroups(pageGroups, arranged.pageGroups);
           }
+          // A tab rename alone leaves every page as it was, so frames keep their props.
+          if (pages.length === state.pages.length && pages.every((page, index) => page === state.pages[index])) {
+            pages = state.pages;
+          }
+          const nextState = { ...state, pages, pagePositions, tabs };
+          // The open tab was deleted elsewhere, so the first tab shows instead.
+          const tabSwitch: Partial<ReturnType<typeof switchTabState>> =
+            activeTabId !== state.activeTabId ? switchTabState(nextState, activeTabId) : {};
           return {
             pages,
+            tabs,
             agentEdits,
             pagePositions,
             pageStackOrder: mergePageStackOrder(nextPageIds, state.pageStackOrder),
@@ -1193,10 +1405,13 @@ export const useEditorStore = create<EditorState>()(
               state.selectedNode && nextPageIds.includes(state.selectedNode.pageId)
                 ? state.selectedNode
                 : null,
-            focusedPageId:
-              state.focusedPageId && nextPageIds.includes(state.focusedPageId)
-                ? state.focusedPageId
-                : nextPageIds[0] ?? null,
+            focusedPageId: focusOnTab(nextState, activeTabId),
+            ...tabSwitch,
+            tabCameras: Object.fromEntries(
+              Object.entries(tabSwitch.tabCameras ?? state.tabCameras).filter(([tabId]) =>
+                tabIds.includes(tabId),
+              ),
+            ),
           };
         }),
 
@@ -1216,7 +1431,7 @@ export const useEditorStore = create<EditorState>()(
           const nextPageIds = nextPages.map((page) => page.id);
           const nextFocusedPageId =
             state.focusedPageId === pageId
-              ? nextPageIds[0] ?? null
+              ? firstPageIdOnTab({ ...state, pages: nextPages }, state.activeTabId)
               : state.focusedPageId;
           const nextPageFrameHeights = { ...state.pageFrameHeights };
           delete nextPageFrameHeights[pageId];
@@ -1240,10 +1455,96 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
 
+      switchTab: (tabId) =>
+        set((state) => {
+          if (tabId === state.activeTabId || !state.tabs.some((tab) => tab.id === tabId)) {
+            return state;
+          }
+          return switchTabState(state, tabId);
+        }),
+
+      movePageToTab: (pageId, tabId) =>
+        set((state) => {
+          const page = state.pages.find((candidate) => candidate.id === pageId);
+          if (!page || page.tabId === tabId || !state.tabs.some((tab) => tab.id === tabId)) {
+            return state;
+          }
+          const pages = state.pages.map((candidate) =>
+            candidate.id === pageId ? { ...candidate, tabId } : candidate,
+          );
+          const position = getNextCreatedPagePosition(
+            { ...state, pages: pages.filter((candidate) => candidate.id !== pageId) },
+            page.deviceType,
+            tabId,
+          );
+          const wasArranged =
+            state.arrangement?.rows.flat().some((group) => group.pageIds.includes(pageId)) ?? false;
+          const leftOpenTab = page.tabId === state.activeTabId;
+          const nextState = { ...state, pages };
+          return {
+            pages,
+            pagePositions: { ...state.pagePositions, [pageId]: position },
+            pageGroups: removeFromGroups(state.pageGroups, pageId),
+            ...(wasArranged ? { arrangement: null } : {}),
+            ...(leftOpenTab
+              ? {
+                  selectedPageIds: state.selectedPageIds.filter((id) => id !== pageId),
+                  selectedNode: state.selectedNode?.pageId === pageId ? null : state.selectedNode,
+                  comparePageIds: state.comparePageIds?.includes(pageId) ? null : state.comparePageIds,
+                  focusedPageId: focusOnTab(nextState, state.activeTabId),
+                }
+              : {}),
+          };
+        }),
+
+      addTab: (tab) =>
+        set((state) => {
+          const tabs = state.tabs.some((existing) => existing.id === tab.id)
+            ? state.tabs
+            : [...state.tabs, tab];
+          return { tabs, ...switchTabState({ ...state, tabs }, tab.id) };
+        }),
+
+      renameTab: (tabId, name) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === tabId ? { ...tab, name } : tab)),
+        })),
+
+      removeTab: (tabId) =>
+        set((state) => {
+          if (state.tabs.length <= 1 || !state.tabs.some((tab) => tab.id === tabId)) return state;
+          const tabs = state.tabs.filter((tab) => tab.id !== tabId);
+          const pages = state.pages.filter((page) => page.tabId !== tabId);
+          const pageIds = pages.map((page) => page.id);
+          const tabCameras = { ...state.tabCameras };
+          delete tabCameras[tabId];
+          const nextState = { ...state, tabs, pages, tabCameras };
+          const tabSwitch = state.activeTabId === tabId ? switchTabState(nextState, tabs[0].id) : {};
+          return {
+            tabs,
+            pages,
+            tabCameras,
+            pagePositions: filterPagePositions(state.pagePositions, pageIds),
+            pageStackOrder: state.pageStackOrder.filter((id) => pageIds.includes(id)),
+            pageGroups: filterPageGroups(state.pageGroups, pageIds),
+            pageFrameHeights: filterPageFrameHeights(state.pageFrameHeights, pageIds),
+            pageStatuses: Object.fromEntries(
+              Object.entries(state.pageStatuses).filter(([id]) => pageIds.includes(id)),
+            ),
+            selectedPageIds: state.selectedPageIds.filter((id) => pageIds.includes(id)),
+            selectedNode:
+              state.selectedNode && pageIds.includes(state.selectedNode.pageId) ? state.selectedNode : null,
+            focusedPageId: focusOnTab(nextState, state.activeTabId),
+            ...tabSwitch,
+          };
+        }),
+
       resetProject: () =>
         set(() => ({
           ...generateEmptyState(),
           camera: createDefaultCamera(),
+          activeTabId: PLACEHOLDER_TAB.id,
+          tabCameras: {},
           pagePositions: {},
           pageStackOrder: [],
           pageGroups: [],

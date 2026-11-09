@@ -39,6 +39,8 @@ export interface PageRecord extends PageTitle {
   iframeUrl?: string;
   iframeHtml?: string;
   deviceType?: PageDeviceType;
+  /** The tab whose canvas this page is on. */
+  tabId: string;
   sections: string[];
 }
 
@@ -78,4 +80,7 @@ export interface PersistedWireLayout {
   arrangedAt?: string | null;
   /** That arrangement while it still re-flows the rows, null once the user dragged a page. */
   arrangement?: unknown;
+  /** The tab the user had open. `camera` is that tab's camera; the others are here. */
+  activeTabId?: string;
+  tabCameras?: Record<string, Partial<CameraState>>;
 }
