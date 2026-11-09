@@ -90,6 +90,7 @@ import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { downloadBlob, fileSlug } from "@/lib/download";
 import type { PageRenderMode } from "@/lib/canvasScene";
+import { settlePage } from "@/lib/pageSnapshot";
 import type { PageDeviceType } from "@/lib/types";
 import { type AgentEdit, type PageStatusRecord, useEditorStore } from "@/store/useEditorStore";
 import { MAX_COMMENT_CHARS, type ProjectComment } from "@/lib/projectComments";
@@ -1395,6 +1396,67 @@ export default React.memo(function PageRenderer({
     });
   };
 
+  /**
+   * Runs a press of the element, comment, or insert tool at a point in page
+   * px, and says whether one of them took it.
+   */
+  const pressFrameAt = React.useCallback(
+    (point: { x: number; y: number }) => {
+      if (isCommentMode) {
+        commentPointRef.current = point;
+      } else if (insertKind) {
+        isInsertPendingRef.current = true;
+      } else if (isElementMode) {
+        isPickPendingRef.current = true;
+      } else {
+        return false;
+      }
+      postToFrame({ type: "wirely-node-at", intent: "pick", ...point });
+      return true;
+    },
+    [insertKind, isCommentMode, isElementMode, postToFrame],
+  );
+
+  // A page drawn as its snapshot has no DOM to pick from. Pressing it builds
+  // the DOM, and the press runs once the DOM is there, so one click picks.
+  // Another press anywhere, Escape, a tool change, or new HTML cancels it
+  // first, so it never replaces a selection made after it or lands on a
+  // different design.
+  const pendingPressRef = React.useRef<{ point: { x: number; y: number }; listeners: AbortController } | null>(
+    null,
+  );
+  const dropPendingPress = React.useCallback(() => {
+    pendingPressRef.current?.listeners.abort();
+    pendingPressRef.current = null;
+  }, []);
+  const savePress = (point: { x: number; y: number }) => {
+    dropPendingPress();
+    // On a page with DOM the element tool's press replaces the selection at
+    // once. Clearing it here keeps Delete or Duplicate from acting on the old
+    // element while the press waits.
+    if (isElementMode) useEditorStore.getState().setSelectedNode(null);
+    const listeners = new AbortController();
+    pendingPressRef.current = { point, listeners };
+    const options = { capture: true, signal: listeners.signal };
+    window.addEventListener("pointerdown", dropPendingPress, options);
+    window.addEventListener("keydown", (event) => event.key === "Escape" && dropPendingPress(), options);
+  };
+  React.useEffect(
+    () => dropPendingPress,
+    [dropPendingPress, insertKind, isCommentMode, isElementMode, sanitizedHtml],
+  );
+  React.useEffect(() => {
+    const pending = pendingPressRef.current;
+    if (!inertFrame || !pending) return;
+    // The new DOM loads its images and fonts, which can move what was under
+    // the press from where the snapshot showed it.
+    void settlePage(inertFrame.root).then(() => {
+      if (pendingPressRef.current !== pending) return;
+      dropPendingPress();
+      pressFrameAt(pending.point);
+    });
+  }, [dropPendingPress, inertFrame, pressFrameAt]);
+
   React.useEffect(() => {
     const handlePreview = (event: Event) => {
       const { detail } = event as CustomEvent<NodePreview>;
@@ -1599,6 +1661,12 @@ export default React.memo(function PageRenderer({
         <div className="relative">
           <div
             ref={frameRef}
+            onPointerDown={(event) => {
+              if (event.button !== 0 || !hasHtml || isLive || inertFrame) return;
+              if (isElementMode || isCommentMode || insertKind) {
+                savePress(toPagePoint(event.clientX, event.clientY));
+              }
+            }}
             // A project image dragged from the assets folder goes into the
             // element under the drop. A vector page takes no <img>, so it
             // refuses the drop rather than letting the canvas take it.
@@ -1764,22 +1832,8 @@ export default React.memo(function PageRenderer({
                 onPointerLeave={() => setHoverBox(null)}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
-                  if (isCommentMode) {
+                  if (pressFrameAt(toFramePoint(event))) {
                     event.stopPropagation();
-                    const point = toFramePoint(event);
-                    commentPointRef.current = point;
-                    postToFrame({ type: "wirely-node-at", intent: "pick", ...point });
-                    return;
-                  }
-                  if (insertKind) {
-                    event.stopPropagation();
-                    isInsertPendingRef.current = true;
-                    postToFrame({ type: "wirely-node-at", intent: "pick", ...toFramePoint(event) });
-                    return;
-                  }
-                  if (isElementMode) {
-                    event.stopPropagation();
-                    sendPointToFrame(event, "pick");
                     return;
                   }
                   // The canvas captures the pointer to drag the page, so the
