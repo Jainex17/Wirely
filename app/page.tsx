@@ -1,10 +1,10 @@
-import { redirect } from "next/navigation";
-import { getServerSessionUser } from "@/lib/auth/session";
 import Landing from "./Landing";
 
-/** The marketing page. A signed-in visitor is sent on to their projects. */
-export default async function Home() {
-  const user = await getServerSessionUser();
-  if (user) redirect("/projects");
+/**
+ * The marketing page. It reads no session so Next builds it as a static file
+ * and a first visit never waits on a cold function. A signed-in visitor gets
+ * to their projects through any sign-in link, because /login redirects them.
+ */
+export default function Home() {
   return <Landing />;
 }
