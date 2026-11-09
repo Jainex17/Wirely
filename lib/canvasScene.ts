@@ -537,6 +537,41 @@ export const getSnappedPagePosition = ({
   };
 };
 
+/**
+ * Device pixels per page pixel a page snapshot holds (see `lib/pageSnapshot.ts`).
+ * Drawn larger than this on screen it looks soft, so the page draws as DOM.
+ */
+export const SNAPSHOT_SCALE = 0.5;
+
+/**
+ * The pages to draw as DOM rather than as a snapshot: those on or near the
+ * screen while the zoom shows them larger than their snapshot holds. Below
+ * that zoom none are, which keeps a zoomed out canvas of many pages as cheap
+ * as a few pictures. The quarter screen of margin keeps a short pan from
+ * showing a soft page at its edge.
+ */
+export const getSharpPageIds = ({
+  camera,
+  viewport,
+  pageBounds,
+  pixelRatio,
+}: {
+  camera: CameraState;
+  viewport: ViewportSize;
+  pageBounds: Iterable<PageBounds>;
+  pixelRatio: number;
+}) => {
+  if (scaleFromZoom(camera.zoom) * pixelRatio <= SNAPSHOT_SCALE) return [];
+  const screen = getViewportBounds(camera, viewport);
+  const near = createBounds(
+    screen.left - screen.width / 4,
+    screen.top - screen.height / 4,
+    screen.right + screen.width / 4,
+    screen.bottom + screen.height / 4,
+  );
+  return Array.from(pageBounds).flatMap((bounds) => (isBoundsIntersecting(bounds, near) ? [bounds.pageId] : []));
+};
+
 const EDGE_PAN_ZONE_PX = 48;
 const EDGE_PAN_MAX_SPEED_PX = 20;
 

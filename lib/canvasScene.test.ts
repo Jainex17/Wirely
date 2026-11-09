@@ -7,6 +7,7 @@ import {
   fitBounds,
   getEdgePanVelocity,
   getPageBounds,
+  getSharpPageIds,
   getSnappedPagePosition,
   getViewportBounds,
   interpolateCamera,
@@ -212,5 +213,27 @@ describe("interpolateCamera", () => {
     expect(half.zoom).toBeCloseTo(100);
     expect(halfPoint.x).toBeCloseTo((fromPoint.x + toPoint.x) / 2);
     expect(halfPoint.y).toBeCloseTo((fromPoint.y + toPoint.y) / 2);
+  });
+});
+
+describe("getSharpPageIds", () => {
+  const viewport = { width: 1000, height: 800 };
+  // At the default camera the viewport's top left sits at scene (-500, -100).
+  const onScreen = getPageBounds({ pageId: "on", position: { x: 0, y: 0 }, width: 1440, height: 900 });
+  const farAway = getPageBounds({ pageId: "far", position: { x: 40_000, y: 0 }, width: 1440, height: 900 });
+
+  it("draws every page as its snapshot while the zoom shows less detail than a snapshot holds", () => {
+    const camera = { x: 0, y: 0, zoom: 25 };
+    expect(getSharpPageIds({ camera, viewport, pageBounds: [onScreen, farAway], pixelRatio: 2 })).toEqual([]);
+    // A 1x screen needs twice the zoom before a snapshot looks soft.
+    expect(getSharpPageIds({ camera: { ...camera, zoom: 50 }, viewport, pageBounds: [onScreen], pixelRatio: 1 })).toEqual([]);
+  });
+
+  it("draws only on-screen pages as DOM once the zoom shows more", () => {
+    const camera = { x: 0, y: 0, zoom: 30 };
+    expect(getSharpPageIds({ camera, viewport, pageBounds: [onScreen, farAway], pixelRatio: 2 })).toEqual(["on"]);
+    expect(
+      getSharpPageIds({ camera: { ...camera, zoom: 100 }, viewport, pageBounds: [onScreen, farAway], pixelRatio: 1 }),
+    ).toEqual(["on"]);
   });
 });

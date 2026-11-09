@@ -162,6 +162,8 @@ interface PageRendererProps {
   isSelected: boolean;
   frameHeight: number;
   renderMode: PageRenderMode;
+  /** The page is small on screen, so it may draw as its snapshot instead of its DOM. */
+  preferSnapshot: boolean;
   /**
    * Swaps this page to its live frame, the one page on the canvas that runs
    * scripts, or with null sends it back to inert.
@@ -287,6 +289,7 @@ export default React.memo(function PageRenderer({
   isSelected,
   frameHeight,
   renderMode,
+  preferSnapshot,
   onLiveChange,
   isElementMode,
   isPenMode,
@@ -1639,10 +1642,13 @@ export default React.memo(function PageRenderer({
                 through the hand-off to live and back. */}
             {inertHtml ? (
               <InertFrame
+                pageId={page.id}
                 html={inertHtml}
                 width={currentDevice.width}
                 viewportHeight={currentDevice.height}
                 isHidden={isLiveReady}
+                preferSnapshot={preferSnapshot}
+                canSnapshot={!isFocused && !isLive && selectedNodeId === null}
                 onMount={setInertFrame}
                 onHeightChange={handleInertHeight}
               />
