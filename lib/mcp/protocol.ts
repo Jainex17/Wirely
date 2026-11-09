@@ -36,6 +36,12 @@ export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
   "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
     "and skip the search below.",
+  "When the user names a project, such as \"in my Checkout project\" or \"@checkout\", call " +
+    "list_projects with query set to that name, without the @. The user renames projects in " +
+    "Wirely so the name they say is the title. When exactly one project is titled that name, " +
+    "ignoring case, use it; it comes first. When several are, or none is and several titles " +
+    "contain the name, ask which one, listing their editor URLs. Never create a project the " +
+    "user named as existing.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +
     "or codebase you are working on, add the new pages to it with add_page, even when this is " +
     "a new chat. If none of the listed projects fits, call list_projects again with query set " +
@@ -236,7 +242,9 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       properties: {
         query: {
           type: "string",
-          description: "Only list projects whose title contains this text, ignoring case.",
+          description:
+            "Only list projects whose title contains this text, ignoring case. A project titled " +
+            "exactly this comes first.",
         },
       },
       additionalProperties: false,

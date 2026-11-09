@@ -22,7 +22,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import ProjectThumbnail from "@/components/ProjectThumbnail";
@@ -49,6 +49,7 @@ const ModelPicker = dynamic(() => import("./ModelPicker"), {
 });
 
 const DeleteProjectDialog = dynamic(() => import("./DeleteProjectDialog"));
+const RenameProjectDialog = dynamic(() => import("./RenameProjectDialog"));
 
 // Shown once an agent is connected, so the first thing to paste is obvious.
 const AGENT_EXAMPLE_PROMPT =
@@ -394,6 +395,7 @@ export default function HomeClient({ initialData }: HomeClientProps) {
   const showComposer = !hasNoRunnableModels;
   const hasConnectedAgent = initialData.agents.length > 0;
   const [sort, setSort] = useState<ProjectSort>("edited");
+  const [projectToRename, setProjectToRename] = useState<{ id: string; title: string } | null>(null);
   const projects = sortProjects(state.historyItems, sort);
 
   const [isCreatingBlank, setIsCreatingBlank] = useState(false);
@@ -624,6 +626,12 @@ export default function HomeClient({ initialData }: HomeClientProps) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
+                      onClick={() => setProjectToRename({ id: project.id, title: project.title })}
+                    >
+                      <Pencil size={16} />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       onClick={(event) =>
                         handleDeleteProject(
                           project.id,
@@ -662,6 +670,23 @@ export default function HomeClient({ initialData }: HomeClientProps) {
           <div className="pt-14">{setup}</div>
         </main>
       </div>
+
+      {projectToRename ? (
+        <RenameProjectDialog
+          project={projectToRename}
+          onClose={() => setProjectToRename(null)}
+          onRenamed={(title) =>
+            dispatch({
+              type: "patch",
+              payload: {
+                historyItems: state.historyItems.map((project) =>
+                  project.id === projectToRename.id ? { ...project, title } : project,
+                ),
+              },
+            })
+          }
+        />
+      ) : null}
 
       {state.projectToDelete ? (
         <DeleteProjectDialog
