@@ -45,16 +45,22 @@ const measure = (page: HTMLElement | null) => (page ? Math.max(page.offsetHeight
 // zoom in can ask a dozen pages for theirs at once. One build per frame keeps
 // the canvas moving while they sharpen one by one. Pages the canvas wants as
 // DOM, on screen or being worked on, go ahead of pages building only to be
-// snapshotted.
-const builds: Array<() => void> = [];
+// snapshotted. Urgency is read when the next build is picked, so a queued page
+// the user zooms into or points at goes next.
+type Build = { run: () => void; isUrgent: { readonly current: boolean } };
+const builds: Build[] = [];
 let buildFrame = 0;
 const runNextBuild = () => {
-  builds.shift()?.();
-  buildFrame = builds.length > 0 ? window.requestAnimationFrame(runNextBuild) : 0;
+  const [next] = builds.splice(Math.max(0, builds.findIndex(({ isUrgent }) => isUrgent.current)), 1);
+  try {
+    next?.run();
+  } finally {
+    // A page that fails to build must not stop the pages queued after it.
+    buildFrame = builds.length > 0 ? window.requestAnimationFrame(runNextBuild) : 0;
+  }
 };
-const scheduleBuild = (build: () => void, isUrgent: boolean) => {
-  if (isUrgent) builds.unshift(build);
-  else builds.push(build);
+const scheduleBuild = (build: Build) => {
+  builds.push(build);
   if (!buildFrame) buildFrame = window.requestAnimationFrame(runNextBuild);
   return () => {
     const index = builds.indexOf(build);
@@ -147,7 +153,7 @@ export default React.memo(function InertFrame({
   // was built, its last snapshot if not.
   const showDom = !preferSnapshot || (current ? current.snapshot === null : builtHtml !== null);
   if (!showDom && builtHtml !== null) setBuiltHtml(null);
-  // Read by a build when it is queued, so a change of urgency alone never rebuilds.
+  // Read by the build queue, so a change of urgency alone never rebuilds.
   const isUrgentRef = React.useRef(!preferSnapshot);
   React.useLayoutEffect(() => {
     isUrgentRef.current = !preferSnapshot;
@@ -197,7 +203,7 @@ export default React.memo(function InertFrame({
     // its frame handle and the agent cursor on it never drop for a frame.
     const cancelBuild = hostRef.current?.shadowRoot?.hasChildNodes()
       ? (build(), () => {})
-      : scheduleBuild(build, isUrgentRef.current);
+      : scheduleBuild({ run: build, isUrgent: isUrgentRef });
     return () => {
       cancelBuild();
       teardown?.();

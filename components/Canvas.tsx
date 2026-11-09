@@ -332,11 +332,17 @@ export default function Canvas({
   // The element, pen, comment, and insert tools act on a page's DOM, and so
   // does dropping a project image into it, so the page under the pointer
   // builds its DOM at any zoom then. The move tool does not, or sweeping the
-  // pointer across a zoomed out canvas would build every page it crosses.
+  // pointer across a zoomed out canvas would build every page it crosses,
+  // except for the page an element is carried over, which takes the drop.
   const [hoveredPageId, setHoveredPageId] = React.useState<string | null>(null);
+  // The page a tool was last pressed on keeps its DOM while the pointer
+  // wanders, so a pen path left open there is not dropped with it.
+  const [pressedPageId, setPressedPageId] = React.useState<string | null>(null);
   const isDomTool = activeTool !== "select" && activeTool !== "grab";
   React.useEffect(() => {
-    if (!isDomTool) setHoveredPageId(null);
+    if (isDomTool) return;
+    setHoveredPageId(null);
+    setPressedPageId(null);
   }, [isDomTool]);
   const pendingWheelRef = React.useRef<{
     panX: number;
@@ -1198,6 +1204,7 @@ export default function Canvas({
             return (
               <div
                 key={pageLayout.page.id}
+                data-canvas-page-id={pageLayout.page.id}
                 ref={(element) => {
                   if (!element) return;
                   pageElementsRef.current.set(pageLayout.page.id, element);
@@ -1217,12 +1224,27 @@ export default function Canvas({
                   top: `${pageLayout.position.y}px`,
                   zIndex: pageLayout.zIndex,
                 }}
-                onPointerDownCapture={handlePagePointerDownCapture(pageLayout.page.id)}
+                onPointerDownCapture={(event) => {
+                  if (isDomTool && pressedPageId !== pageLayout.page.id) setPressedPageId(pageLayout.page.id);
+                  handlePagePointerDownCapture(pageLayout.page.id)(event);
+                }}
                 onPointerDown={handlePagePointerDown(pageLayout.page.id)}
                 onPointerMove={(event) => {
                   // A move rather than an enter, so a tool picked from the
                   // keyboard with the pointer already over a page counts too.
-                  if (isDomTool && hoveredPageId !== pageLayout.page.id) setHoveredPageId(pageLayout.page.id);
+                  // An element being carried holds the pointer, so its moves
+                  // come from its own page and the page under it is looked up.
+                  const target = event.target as Element;
+                  const isCarrying = target !== event.currentTarget && target.hasPointerCapture?.(event.pointerId);
+                  const pageId = isCarrying
+                    ? document
+                        .elementsFromPoint(event.clientX, event.clientY)
+                        .map((element) => element.closest("[data-canvas-page-id]")?.getAttribute("data-canvas-page-id"))
+                        .find((id) => id && id !== pageLayout.page.id)
+                    : isDomTool
+                      ? pageLayout.page.id
+                      : undefined;
+                  if (pageId && hoveredPageId !== pageId) setHoveredPageId(pageId);
                   handlePagePointerMove(pageLayout.page.id)(event);
                 }}
                 onDragEnter={(event) => {
@@ -1254,6 +1276,7 @@ export default function Canvas({
                     !sharpPageIds.has(pageLayout.page.id) &&
                     focusedPageId !== pageLayout.page.id &&
                     hoveredPageId !== pageLayout.page.id &&
+                    pressedPageId !== pageLayout.page.id &&
                     renderMode !== "live" &&
                     selectedNode?.pageId !== pageLayout.page.id
                   }
