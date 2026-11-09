@@ -84,7 +84,7 @@ export async function POST(request: Request, context: RouteContext) {
       input: parsed.input,
     });
     if (!comment) {
-      return NextResponse.json({ error: "That page is no longer in the project." }, { status: 404 });
+      return NextResponse.json({ error: "That frame is no longer in the project." }, { status: 404 });
     }
     return NextResponse.json({ comment }, { status: 201 });
   } catch (error) {

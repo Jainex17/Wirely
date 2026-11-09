@@ -73,7 +73,7 @@ export async function POST(request: Request, context: RouteContext) {
       input: parsed.input,
     });
     if (!comment) {
-      return NextResponse.json({ error: "Page not found." }, { status: 404 });
+      return NextResponse.json({ error: "Frame not found." }, { status: 404 });
     }
     return NextResponse.json({ comment }, { status: 201 });
   } catch (error) {
