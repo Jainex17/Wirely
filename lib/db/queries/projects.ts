@@ -2,7 +2,9 @@ import { and, asc, desc, eq, getTableColumns, gt, ilike, inArray, sql, Transacti
 import { getDb } from "@/lib/db/client";
 import { getCanvasArrangement, getDesignTokens } from "@/lib/db/queries/agentState";
 import { snapshotPageBeforeWrite } from "@/lib/db/queries/pageVersions";
+import { readProjectTabRows, resolveNewPageTab, writePageTab } from "@/lib/db/queries/tabs";
 import { applyDesignTokens } from "@/lib/designTokens";
+import { resolvePageTabs } from "@/lib/projectTabs";
 import {
   conversationMessages,
   conversations,
@@ -118,10 +120,10 @@ export const getProjectForUser = async (projectId: string, userId: string) => {
 export const getProjectDetailForUser = async (projectId: string, userId: string) => {
   const db = getDb();
 
-  // The editor waits on this before it can paint, so all three reads go out in
+  // The editor waits on this before it can paint, so all four reads go out in
   // one round trip. Pages and messages of a project the user does not own are
   // read but dropped by the ownership check before anything is returned.
-  const [project, pages, messages] = await Promise.all([
+  const [project, pages, messages, tabRows] = await Promise.all([
     getProjectForUser(projectId, userId),
     db
       .select()
@@ -135,6 +137,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
       .where(eq(conversations.projectId, projectId))
       .orderBy(desc(conversationMessages.createdAt))
       .limit(80),
+    readProjectTabRows(db, projectId),
   ]);
   if (!project) return null;
 
@@ -142,6 +145,7 @@ export const getProjectDetailForUser = async (projectId: string, userId: string)
     project,
     pages,
     messages: [...messages].reverse(),
+    ...resolvePageTabs({ projectId, ...tabRows, pageIds: pages.map((page) => page.id) }),
   };
 };
 
@@ -255,7 +259,9 @@ export const listProjectPagesForUser = async ({
  * What the open editor polls to pick up page writes it did not make, such as an
  * MCP agent editing the canvas. Only pages written after `since` carry their
  * HTML; every id comes back so the client can drop pages deleted elsewhere,
- * since a deleted row leaves nothing to find by timestamp.
+ * since a deleted row leaves nothing to find by timestamp. The tabs and every
+ * page's tab come back whole each time, since moving a page to another tab
+ * does not touch the page row's timestamp.
  */
 export const listProjectPageChangesForUser = async ({
   projectId,
@@ -269,7 +275,7 @@ export const listProjectPageChangesForUser = async ({
   const db = getDb();
   // The editor polls this every few seconds, so the ownership check shares the
   // round trip with the reads and a failed check drops what they returned.
-  const [project, idRows, changed, arrangement] = await Promise.all([
+  const [project, idRows, changed, arrangement, tabRows] = await Promise.all([
     getProjectForUser(projectId, userId),
     db
       .select({ id: projectPages.id })
@@ -287,10 +293,17 @@ export const listProjectPageChangesForUser = async ({
       .where(and(eq(projectPages.projectId, projectId), gt(projectPages.updatedAt, since)))
       .orderBy(asc(projectPages.sortOrder)),
     getCanvasArrangement(projectId, since),
+    readProjectTabRows(db, projectId),
   ]);
   if (!project) return null;
 
-  return { pageIds: idRows.map((row) => row.id), changed, arrangement };
+  const pageIds = idRows.map((row) => row.id);
+  return {
+    pageIds,
+    changed,
+    arrangement,
+    ...resolvePageTabs({ projectId, ...tabRows, pageIds }),
+  };
 };
 
 export const createProjectPageForUser = async ({
@@ -299,6 +312,7 @@ export const createProjectPageForUser = async ({
   title,
   deviceType,
   htmlContent,
+  tabId,
 }: {
   projectId: string;
   userId: string;
@@ -306,17 +320,22 @@ export const createProjectPageForUser = async ({
   deviceType?: PageDeviceType;
   /** Pre-sanitized HTML. Callers must run `sanitizeIframeHtml` first. */
   htmlContent?: string;
+  /** The tab to put the page on. Without it, or when it is not the project's, the selected page's tab. */
+  tabId?: string;
 }) => {
   const db = getDb();
   const project = await getProjectForUser(projectId, userId);
   if (!project) return null;
 
-  const [lastPage] = await db
-    .select({ sortOrder: projectPages.sortOrder })
-    .from(projectPages)
-    .where(eq(projectPages.projectId, projectId))
-    .orderBy(desc(projectPages.sortOrder))
-    .limit(1);
+  const [[lastPage], resolvedTabId] = await Promise.all([
+    db
+      .select({ sortOrder: projectPages.sortOrder })
+      .from(projectPages)
+      .where(eq(projectPages.projectId, projectId))
+      .orderBy(desc(projectPages.sortOrder))
+      .limit(1),
+    resolveNewPageTab(projectId, tabId),
+  ]);
 
   const [created] = await db
     .insert(projectPages)
@@ -330,6 +349,8 @@ export const createProjectPageForUser = async ({
     .returning();
 
   if (!created) return null;
+  // The tab resolved above only on a database that has the tables.
+  if (resolvedTabId) await writePageTab(db, created.id, resolvedTabId);
   await touchProjectUpdatedAt(projectId);
   return created;
 };
