@@ -7,6 +7,7 @@ import type { Message } from "ai";
 // The screen order dialog is hidden for now. Re-enable it together with the
 // <PrototypeFlowDialog> block and the isPrototypeDialogOpen state below.
 import { Brain, History, MessageSquare, SlidersHorizontal, X } from "lucide-react";
+import CanvasTabs from "@/components/CanvasTabs";
 import EditorWorkspace from "@/components/EditorWorkspace";
 import PagesPanel from "@/components/PagesPanel";
 // import PrototypeFlowDialog from "@/components/PrototypeFlowDialog";
@@ -337,6 +338,8 @@ export default function WireEditor({
         <EditorErrorBoundary title="Workspace canvas crashed">
           <div className="relative flex-1 min-w-0 bg-background overflow-hidden">
             {isPagesPanelCollapsed ? pagesPanel : null}
+            <CanvasTabs projectId={wireId} />
+
             {!isSidebarVisible ? (
               <FloatingProjectActions toggle={promptPanelToggle} zoom={<CanvasZoomControls />} />
             ) : null}

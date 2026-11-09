@@ -392,10 +392,15 @@ export default function WirePromptSidebar({
     async (title: string, deviceType?: PageDeviceType) => {
       beginSaving();
       try {
+        // On the tab the user is looking at, where the canvas will draw it.
         const response = await fetch(`/api/projects/${wireId}/pages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, ...(deviceType ? { deviceType } : {}) }),
+          body: JSON.stringify({
+            title,
+            tabId: useEditorStore.getState().activeTabId,
+            ...(deviceType ? { deviceType } : {}),
+          }),
         });
         if (!response.ok) {
           throw new Error(`Page creation failed with status ${response.status}`);

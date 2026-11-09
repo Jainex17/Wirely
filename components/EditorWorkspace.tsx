@@ -52,6 +52,7 @@ export default function EditorWorkspace({
   // Subscribing to it would re-render the whole editor on every pan and zoom frame.
   const {
     activeDevice,
+    activeTabId,
     pagePositions,
     pageFrameHeights,
     pages,
@@ -78,6 +79,7 @@ export default function EditorWorkspace({
   } = useEditorStore(
     useShallow((state) => ({
       activeDevice: state.activeDevice,
+      activeTabId: state.activeTabId,
       pagePositions: state.pagePositions,
       pageFrameHeights: state.pageFrameHeights,
       pages: state.pages,
@@ -104,12 +106,15 @@ export default function EditorWorkspace({
     })),
   );
 
+  // The open tab's frames, for the first-paint check below. A page without a
+  // saved position sits at its index within the tab, as the canvas draws it.
   const pageBoundsById = useMemo(() => {
     const result = new Map<string, ReturnType<typeof getPageBounds>>();
-    for (const [index, page] of pages.entries()) {
+    const tabPages = pages.filter((page) => page.tabId === activeTabId);
+    for (const [index, page] of tabPages.entries()) {
       const { width: deviceWidth, height: deviceHeight } = getPageFrameSize(page, activeDevice);
       const position = pagePositions[page.id] ?? {
-        x: getDefaultPageX(index, pages.length, deviceWidth),
+        x: getDefaultPageX(index, tabPages.length, deviceWidth),
         y: 0,
       };
       const height = Math.max(
@@ -130,6 +135,7 @@ export default function EditorWorkspace({
     return result;
   }, [
     activeDevice,
+    activeTabId,
     pageFrameHeights,
     pagePositions,
     pages,

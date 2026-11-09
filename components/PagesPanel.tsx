@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, type ReactNode, useState } from "react";
+import { type DragEvent, type ReactNode, useMemo, useState } from "react";
 import {
   ChevronRight,
   Copy,
@@ -50,8 +50,9 @@ export default function PagesPanel({
   footer,
 }: PagesPanelProps) {
   const {
-    pages,
-    pageGroups,
+    allPages,
+    allPageGroups,
+    activeTabId,
     focusedPageId,
     focusRequestCount,
     selectedNode,
@@ -64,8 +65,9 @@ export default function PagesPanel({
     movePageToGroup,
   } = useEditorStore(
     useShallow((state) => ({
-      pages: state.pages,
-      pageGroups: state.pageGroups,
+      allPages: state.pages,
+      allPageGroups: state.pageGroups,
+      activeTabId: state.activeTabId,
       focusedPageId: state.focusedPageId,
       focusRequestCount: state.focusRequestCount,
       selectedNode: state.selectedNode,
@@ -77,6 +79,16 @@ export default function PagesPanel({
       toggleSelectedPages: state.toggleSelectedPages,
       movePageToGroup: state.movePageToGroup,
     })),
+  );
+  // The panel lists the open tab, as the canvas shows it. A group's pages
+  // share one tab, so a group is on the tab its first page is on.
+  const pages = useMemo(
+    () => allPages.filter((page) => page.tabId === activeTabId),
+    [activeTabId, allPages],
+  );
+  const pageGroups = useMemo(
+    () => allPageGroups.filter((group) => pages.some((page) => group.pageIds.includes(page.id))),
+    [allPageGroups, pages],
   );
   // Pages the user opened or closed with the chevron. The rest are open only
   // while an element on them is picked.
