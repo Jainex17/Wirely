@@ -38,17 +38,21 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState("");
   const [deletingTabId, setDeletingTabId] = useState<string | null>(null);
   const buttonsRef = useRef(new Map<string, HTMLButtonElement>());
+  // Escape closes the field, and a browser that fires blur on the removed
+  // field must not commit the draft the user just cancelled.
+  const isCancellingRef = useRef(false);
 
   const pageCountOf = (tabId: string) => pages.filter((page) => page.tabId === tabId).length;
   const deletingTab = tabs.find((tab) => tab.id === deletingTabId) ?? null;
 
   const startRename = (tabId: string, name: string) => {
+    isCancellingRef.current = false;
     setEditingTabId(tabId);
     setDraft(name);
   };
 
   const commitRename = () => {
-    if (!editingTabId) return;
+    if (!editingTabId || isCancellingRef.current) return;
     const name = parseTabName(draft);
     // An empty or overlong name leaves the old one, as a cancel would.
     if (name) void renameTab(projectId, editingTabId, name);
@@ -106,7 +110,10 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                       // The canvas also listens for keys; the field keeps its own.
                       event.stopPropagation();
                       if (event.key === "Enter") commitRename();
-                      if (event.key === "Escape") setEditingTabId(null);
+                      if (event.key === "Escape") {
+                        isCancellingRef.current = true;
+                        setEditingTabId(null);
+                      }
                     }}
                     className="h-7 w-32 rounded-md border border-primary/50 bg-background px-2 text-[12px] font-semibold text-foreground outline-none"
                   />

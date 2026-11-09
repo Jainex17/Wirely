@@ -219,7 +219,15 @@ const arrangeCanvas: ToolHandler = async (userId, args, origin) => {
   const { rows } = parsed.data;
   // An arrangement lays out one tab's canvas, so every listed page must be on it.
   const { tabs, pageTabIds } = await getProjectTabState(project.id, pageIds);
-  const listedTabIds = [...new Set(rows.flat().flatMap((group) => group.pageIds).map((pageId) => pageTabIds[pageId]))];
+  // Unknown ids have no tab and are reported by the check below.
+  const listedTabIds = [
+    ...new Set(
+      rows
+        .flat()
+        .flatMap((group) => group.pageIds)
+        .flatMap((pageId) => (pageTabIds[pageId] ? [pageTabIds[pageId]] : [])),
+    ),
+  ];
   if (listedTabIds.length > 1) {
     const names = listedTabIds.map((tabId) => tabs.find((tab) => tab.id === tabId)?.name ?? "?");
     return fail(
@@ -275,8 +283,21 @@ const addPage: ToolHandler = async (userId, args) => {
   const project = await getProjectForUser(parsed.data.projectId, userId);
   if (!project) return fail("Project not found. Use list_projects for valid ids.");
 
+  // A copy reuses HTML that was sanitized when it was stored, so the agent
+  // spends a few patches on a variant instead of the whole document.
+  const source = parsed.data.copyFromPageId
+    ? await getProjectPageForUser({
+        projectId: project.id,
+        pageId: parsed.data.copyFromPageId,
+        userId,
+      })
+    : null;
+  if (parsed.data.copyFromPageId && !source) {
+    return fail("copyFromPageId not found in this project. Use list_pages for valid ids.");
+  }
+
   // A named tab is matched by name, or made. Without one the page goes on
-  // the tab of the page the user has selected.
+  // the tab the user last opened in the editor.
   let tabId: string | undefined;
   if (parsed.data.tab) {
     const { tabs } = await getProjectTabState(project.id, []);
@@ -289,19 +310,6 @@ const addPage: ToolHandler = async (userId, args) => {
       if (isMissingRelationError(error)) return fail("Tabs are not set up on this server yet.");
       throw error;
     }
-  }
-
-  // A copy reuses HTML that was sanitized when it was stored, so the agent
-  // spends a few patches on a variant instead of the whole document.
-  const source = parsed.data.copyFromPageId
-    ? await getProjectPageForUser({
-        projectId: project.id,
-        pageId: parsed.data.copyFromPageId,
-        userId,
-      })
-    : null;
-  if (parsed.data.copyFromPageId && !source) {
-    return fail("copyFromPageId not found in this project. Use list_pages for valid ids.");
   }
 
   const sentHtml = parsed.data.html ?? source?.htmlContent ?? "";
