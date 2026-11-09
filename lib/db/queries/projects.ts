@@ -320,7 +320,7 @@ export const createProjectPageForUser = async ({
   deviceType?: PageDeviceType;
   /** Pre-sanitized HTML. Callers must run `sanitizeIframeHtml` first. */
   htmlContent?: string;
-  /** The tab to put the page on. Without it, or when it is not the project's, the selected page's tab. */
+  /** The tab to put the page on. Without it, or when it is not the project's, the tab an editor showed last. */
   tabId?: string;
 }) => {
   const db = getDb();

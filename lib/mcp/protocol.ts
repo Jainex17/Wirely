@@ -333,7 +333,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
       "variant of a page, copy it with copyFromPageId and change it with patch_page instead " +
       "of writing the whole document again. A project has tabs, each its own canvas; a new " +
       "set of explorations can go on its own tab by naming one with tab. Without tab the page " +
-      `goes on the tab of the page the user has selected. ${htmlDescription}`,
+      `goes on the tab the user has open in the editor. ${htmlDescription}`,
     inputSchema: {
       type: "object",
       properties: {

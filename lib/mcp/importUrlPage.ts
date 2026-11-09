@@ -17,12 +17,14 @@ export const importUrlAsPage = async ({
   url,
   deviceType,
   title,
+  tabId,
 }: {
   projectId: string;
   userId: string;
   url: string;
   deviceType: "desktop" | "mobile";
   title?: string;
+  tabId?: string;
 }) => {
   let imported: Awaited<ReturnType<typeof importUrlHtml>>;
   try {
@@ -51,6 +53,7 @@ export const importUrlAsPage = async ({
     title: (title ?? imported.title.trim()).slice(0, TITLE_MAX_CHARS) || "Imported page",
     deviceType,
     htmlContent: html,
+    tabId,
   });
   if (!page) return { ok: false as const, error: "Project not found." };
   return { ok: true as const, page };

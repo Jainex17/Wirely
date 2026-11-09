@@ -151,7 +151,7 @@ export default function ImportDialog({ projectId }: { projectId: string }) {
     setIsBusy(true);
     setError(null);
     try {
-      finish(await postJson(`/api/projects/${projectId}/import`, { url: link, deviceType }, "Could not import the page."));
+      finish(await postJson(`/api/projects/${projectId}/import`, { url: link, deviceType, tabId: useEditorStore.getState().activeTabId }, "Could not import the page."));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not import the page.");
     } finally {
@@ -180,6 +180,7 @@ export default function ImportDialog({ projectId }: { projectId: string }) {
         title: documentTitle || file.name.replace(/\.[^.]+$/, ""),
         deviceType: isSvg ? "vector" : deviceType,
         htmlContent: html,
+        tabId: useEditorStore.getState().activeTabId,
       };
       if (new Blob([JSON.stringify(body)]).size > MAX_REQUEST_BYTES) {
         throw new Error("That file is too large to import once encoded. Pick a smaller one.");

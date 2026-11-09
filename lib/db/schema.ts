@@ -152,6 +152,8 @@ export const projectTabs = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
+    /** When an editor last showed this tab. A new page with no tab named goes on the latest one. */
+    openedAt: timestamp("opened_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

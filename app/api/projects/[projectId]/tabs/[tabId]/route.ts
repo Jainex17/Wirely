@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
-import { deleteProjectTabForUser, renameProjectTabForUser } from "@/lib/db/queries/tabs";
+import {
+  deleteProjectTabForUser,
+  markTabOpenedForUser,
+  renameProjectTabForUser,
+} from "@/lib/db/queries/tabs";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { isUuid } from "@/lib/projectComments";
@@ -17,7 +21,11 @@ interface RouteContext {
 const tabsUnavailable = () =>
   NextResponse.json({ error: "Tabs are not set up on this server yet." }, { status: 503 });
 
-/** Renames a tab. The implicit first tab gets its row on its first rename. */
+/**
+ * Renames a tab, or with `{ opened: true }` records that the editor is showing
+ * it, so an agent's next page lands there. The implicit first tab gets its
+ * row on the first write.
+ */
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const sessionUser = await getRequestSessionUser();
@@ -29,8 +37,16 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!isUuid(projectId) || !isUuid(tabId)) {
       return NextResponse.json({ error: "Tab not found." }, { status: 404 });
     }
-    const parsed = await readJsonBodyWithLimit<{ name?: unknown }>(request);
+    const parsed = await readJsonBodyWithLimit<{ name?: unknown; opened?: unknown }>(request);
     if (!parsed.ok) return parsed.response;
+
+    if (parsed.data.opened === true) {
+      const tab = await markTabOpenedForUser({ projectId, userId: sessionUser.id, tabId });
+      if (!tab) {
+        return NextResponse.json({ error: "Tab not found." }, { status: 404 });
+      }
+      return new Response(null, { status: 204 });
+    }
 
     const name = parseTabName(parsed.data.name);
     if (name === null) {

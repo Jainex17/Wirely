@@ -121,7 +121,7 @@ export async function POST(request: Request, context: RouteContext) {
           )
         : undefined;
 
-    // A tab the project does not have falls back to the selected page's tab,
+    // A tab the project does not have falls back to the tab an editor showed last,
     // so a stale tab id from another browser still lands the page somewhere.
     const tabId = typeof body.tabId === "string" && isUuid(body.tabId) ? body.tabId : undefined;
 

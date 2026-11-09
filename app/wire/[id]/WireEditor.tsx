@@ -20,7 +20,7 @@ import NodeInspector from "@/components/NodeInspector";
 import { CanvasZoomControls } from "@/components/CanvasToolbar";
 import { FloatingProjectActions, ProjectActionsBar } from "@/components/ProjectChrome";
 import { AccountFooter, PanelToggle, SidePanelTabs } from "@/components/EditorChrome";
-import type { ProjectComment } from "@/lib/projectComments";
+import { isUuid, type ProjectComment } from "@/lib/projectComments";
 import { Button } from "@/components/ui/button";
 import { type ServerPageChanges, useEditorStore } from "@/store/useEditorStore";
 import type { WireModelName } from "@/lib/wireModels";
@@ -264,6 +264,24 @@ export default function WireEditor({
       unsubscribe();
       window.clearTimeout(timeoutId);
     };
+  }, [wireId]);
+
+  // Tells the server which tab this editor shows, so a page an agent adds
+  // without naming a tab lands on the canvas the user is watching. Runs after
+  // the layout effect above has restored the saved tab.
+  useEffect(() => {
+    let lastSent = "";
+    const send = (tabId: string) => {
+      if (tabId === lastSent || !isUuid(tabId)) return;
+      lastSent = tabId;
+      void fetch(`/api/projects/${wireId}/tabs/${tabId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opened: true }),
+      }).catch(() => undefined);
+    };
+    send(useEditorStore.getState().activeTabId);
+    return useEditorStore.subscribe((state) => send(state.activeTabId));
   }, [wireId]);
 
   // Picking a new element opens its properties, as selecting a layer does in

@@ -1,8 +1,7 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
 import {
-  projectAgentState,
   projectPages,
   projectPageTabs,
   projectTabs,
@@ -50,24 +49,24 @@ export const readProjectTabRows = async (
   db: Queryable,
   projectId: string,
 ): Promise<{ tabs: ProjectTabRow[]; assignments: PageTabAssignment[] }> => {
+  // One after the other: a transaction holds a single connection, and pg
+  // deprecates sending it a query while another is running.
   try {
-    const [tabs, assignments] = await Promise.all([
-      db
-        .select({
-          id: projectTabs.id,
-          name: projectTabs.name,
-          sortOrder: projectTabs.sortOrder,
-          createdAt: projectTabs.createdAt,
-        })
-        .from(projectTabs)
-        .where(eq(projectTabs.projectId, projectId))
-        .orderBy(asc(projectTabs.sortOrder), asc(projectTabs.createdAt)),
-      db
-        .select({ pageId: projectPageTabs.pageId, tabId: projectPageTabs.tabId })
-        .from(projectPageTabs)
-        .innerJoin(projectPages, eq(projectPages.id, projectPageTabs.pageId))
-        .where(eq(projectPages.projectId, projectId)),
-    ]);
+    const tabs = await db
+      .select({
+        id: projectTabs.id,
+        name: projectTabs.name,
+        sortOrder: projectTabs.sortOrder,
+        createdAt: projectTabs.createdAt,
+      })
+      .from(projectTabs)
+      .where(eq(projectTabs.projectId, projectId))
+      .orderBy(asc(projectTabs.sortOrder), asc(projectTabs.createdAt));
+    const assignments = await db
+      .select({ pageId: projectPageTabs.pageId, tabId: projectPageTabs.tabId })
+      .from(projectPageTabs)
+      .innerJoin(projectPages, eq(projectPages.id, projectPageTabs.pageId))
+      .where(eq(projectPages.projectId, projectId));
     return { tabs, assignments };
   } catch (error) {
     if (isMissingRelationError(error)) return { tabs: [], assignments: [] };
@@ -81,9 +80,10 @@ export const getProjectTabState = async (projectId: string, pageIds: string[]) =
 
 /**
  * The tab a new page goes on: the requested tab when it is the project's,
- * otherwise the tab of the page the user has selected. Null means write no
- * assignment, which puts the page on the first tab, and is also the answer on
- * a database without the tables yet.
+ * otherwise the tab an editor showed last, which is the canvas the user is
+ * watching while an agent writes. Null means write no assignment, which puts
+ * the page on the first tab, and is also the answer on a database without
+ * the tables yet.
  */
 export const resolveNewPageTab = async (projectId: string, requestedTabId?: string) => {
   const db = getDb();
@@ -97,17 +97,41 @@ export const resolveNewPageTab = async (projectId: string, requestedTabId?: stri
         .limit(1);
       if (tab) return tab.id;
     }
-    const [selected] = await db
-      .select({ tabId: projectPageTabs.tabId })
-      .from(projectAgentState)
-      .innerJoin(projectPageTabs, eq(projectPageTabs.pageId, projectAgentState.selectedPageId))
-      .where(eq(projectAgentState.projectId, projectId))
+    const [opened] = await db
+      .select({ id: projectTabs.id })
+      .from(projectTabs)
+      .where(and(eq(projectTabs.projectId, projectId), isNotNull(projectTabs.openedAt)))
+      .orderBy(desc(projectTabs.openedAt))
       .limit(1);
-    return selected?.tabId ?? null;
+    return opened?.id ?? null;
   } catch (error) {
     if (isMissingRelationError(error)) return null;
     throw error;
   }
+};
+
+/** Records that an editor is showing the tab, so agent pages land on it. */
+export const markTabOpenedForUser = async ({
+  projectId,
+  userId,
+  tabId,
+}: {
+  projectId: string;
+  userId: string;
+  tabId: string;
+}) => {
+  const db = getDb();
+  if (!(await ownsProject(db, projectId, userId))) return null;
+
+  return db.transaction(async (tx) => {
+    await ensureDefaultTab(tx, projectId);
+    const [tab] = await tx
+      .update(projectTabs)
+      .set({ openedAt: new Date() })
+      .where(and(eq(projectTabs.id, tabId), eq(projectTabs.projectId, projectId)))
+      .returning({ id: projectTabs.id });
+    return tab ?? null;
+  });
 };
 
 /** Writes a page's assignment. The tab must be known to belong to the project. */
@@ -247,18 +271,16 @@ export const movePageToTabForUser = async ({
 
   return db.transaction(async (tx) => {
     await ensureDefaultTab(tx, projectId);
-    const [[page], [tab]] = await Promise.all([
-      tx
-        .select({ id: projectPages.id })
-        .from(projectPages)
-        .where(and(eq(projectPages.id, pageId), eq(projectPages.projectId, projectId)))
-        .limit(1),
-      tx
-        .select({ id: projectTabs.id })
-        .from(projectTabs)
-        .where(and(eq(projectTabs.id, tabId), eq(projectTabs.projectId, projectId)))
-        .limit(1),
-    ]);
+    const [page] = await tx
+      .select({ id: projectPages.id })
+      .from(projectPages)
+      .where(and(eq(projectPages.id, pageId), eq(projectPages.projectId, projectId)))
+      .limit(1);
+    const [tab] = await tx
+      .select({ id: projectTabs.id })
+      .from(projectTabs)
+      .where(and(eq(projectTabs.id, tabId), eq(projectTabs.projectId, projectId)))
+      .limit(1);
     if (!page || !tab) return "not_found" as const;
     await writePageTab(tx, pageId, tabId);
     await tx.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));

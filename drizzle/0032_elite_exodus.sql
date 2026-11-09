@@ -8,6 +8,7 @@ CREATE TABLE "project_tabs" (
 	"project_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"sort_order" integer DEFAULT 0 NOT NULL,
+	"opened_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
