@@ -72,7 +72,11 @@ export const listProjectsForUser = async (
         titleQuery ? ilike(projects.title, `%${titleQuery.replace(/[\\%_]/g, "\\$&")}%`) : undefined,
       ),
     )
-    .orderBy(desc(projects.updatedAt))
+    // A search for a name the user gave puts the project called exactly that first.
+    .orderBy(
+      ...(titleQuery ? [desc(sql`lower(${projects.title}) = lower(${titleQuery})`)] : []),
+      desc(projects.updatedAt),
+    )
     .limit(limit);
 };
 
