@@ -52,6 +52,20 @@ describe("inferPromptTarget", () => {
       inferPromptTarget({ prompt: "hi", mentionedPageIds: [], pages: [], focusedPageId: null }),
     ).toEqual({ kind: "none" });
   });
+
+  it("picks only from the open tab, while a mention can still name a page on another tab", () => {
+    const onTab = (prompt: string, canvasPageIds: string[], mentioned: string[] = []) =>
+      inferPromptTarget({ prompt, mentionedPageIds: mentioned, pages, canvasPageIds, focusedPageId: "p1" });
+
+    expect(onTab("make the hero darker", [])).toEqual({ kind: "new" });
+    expect(onTab("make the hero darker", ["p3", "p4"])).toEqual({ kind: "page", pageId: "p3" });
+    expect(onTab("darker on every page", ["p3", "p4"])).toEqual({
+      kind: "pages",
+      pageIds: ["p3", "p4"],
+      droppedCount: 0,
+    });
+    expect(onTab("@Home darker", [], ["p1"])).toEqual({ kind: "page", pageId: "p1" });
+  });
 });
 
 describe("hasNewScreenIntent", () => {

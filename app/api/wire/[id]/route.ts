@@ -25,6 +25,7 @@ import {
   listProjectPagesForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import { getProjectTabState } from "@/lib/db/queries/tabs";
 import { getUserAiSettingsForGeneration } from "@/lib/db/queries/users";
 import {
   buildAssistantContent,
@@ -1179,6 +1180,12 @@ export async function POST(request: Request, context: RouteContext) {
     // asked for may not exist yet. Create the shortfall here rather than making
     // the client guess a count before planning.
     const generationTargetPages = [...plannerTargetPages];
+    // The run's new pages join its first page's tab, so its variants stay side
+    // by side even when the user switches tabs while it plans.
+    const firstTargetPageId = plannerTargetPages[0]?.id;
+    const runTabId = firstTargetPageId
+      ? (await getProjectTabState(id, [firstTargetPageId])).pageTabIds[firstTargetPageId]
+      : undefined;
     for (
       let index = generationTargetPages.length;
       index < plan.outputs.length;
@@ -1189,6 +1196,7 @@ export async function POST(request: Request, context: RouteContext) {
         userId: sessionUser.id,
         title: plan.outputs[index].title,
         deviceType: deviceIntent,
+        tabId: runTabId,
       });
       if (!createdPage) break;
       generationTargetPages.push({

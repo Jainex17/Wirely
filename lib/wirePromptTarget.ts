@@ -52,24 +52,31 @@ export const inferPromptTarget = ({
   prompt,
   mentionedPageIds,
   pages,
+  canvasPageIds,
   focusedPageId,
 }: {
   prompt: string;
   mentionedPageIds: readonly string[];
+  /** Every page of the project, so an @mention can name a page on another tab. */
   pages: readonly PageIdentity[];
+  /** The pages on the tab the user is looking at. The other rules only pick from these. */
+  canvasPageIds?: readonly string[];
   focusedPageId: string | null;
 }): PromptTarget => {
   const pageIds = pages.map((page) => page.id);
   const mentioned = [...new Set(mentionedPageIds)].filter((id) => pageIds.includes(id));
   if (mentioned.length > 0) return toTarget(mentioned);
 
+  const canvas = canvasPageIds ? pageIds.filter((id) => canvasPageIds.includes(id)) : pageIds;
   if (hasNewScreenIntent(prompt)) return { kind: "new" };
-  if (hasAllPagesIntent(prompt)) return toTarget(pageIds);
+  // An empty tab has nothing to edit, and a page on another tab is out of sight.
+  if (canvas.length === 0) return pageIds.length > 0 ? { kind: "new" } : { kind: "none" };
+  if (hasAllPagesIntent(prompt)) return toTarget(canvas);
 
-  if (focusedPageId && pageIds.includes(focusedPageId)) {
+  if (focusedPageId && canvas.includes(focusedPageId)) {
     return { kind: "page", pageId: focusedPageId };
   }
-  return toTarget(pageIds.slice(0, 1));
+  return toTarget(canvas.slice(0, 1));
 };
 
 /** A page picked from the @ popover, tracked by id so renames and duplicate titles work. */
