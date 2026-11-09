@@ -1419,8 +1419,9 @@ export default React.memo(function PageRenderer({
 
   // A page drawn as its snapshot has no DOM to pick from. Pressing it builds
   // the DOM, and the press runs once the DOM is there, so one click picks.
-  // Another press anywhere, Escape, or a tool change cancels it first, so it
-  // never replaces a selection made after it.
+  // Another press anywhere, Escape, a tool change, or new HTML cancels it
+  // first, so it never replaces a selection made after it or lands on a
+  // different design.
   const pendingPressRef = React.useRef<{ point: { x: number; y: number }; listeners: AbortController } | null>(
     null,
   );
@@ -1430,13 +1431,20 @@ export default React.memo(function PageRenderer({
   }, []);
   const savePress = (point: { x: number; y: number }) => {
     dropPendingPress();
+    // On a page with DOM the element tool's press replaces the selection at
+    // once. Clearing it here keeps Delete or Duplicate from acting on the old
+    // element while the press waits.
+    if (isElementMode) useEditorStore.getState().setSelectedNode(null);
     const listeners = new AbortController();
     pendingPressRef.current = { point, listeners };
     const options = { capture: true, signal: listeners.signal };
     window.addEventListener("pointerdown", dropPendingPress, options);
     window.addEventListener("keydown", (event) => event.key === "Escape" && dropPendingPress(), options);
   };
-  React.useEffect(() => dropPendingPress, [dropPendingPress, insertKind, isCommentMode, isElementMode]);
+  React.useEffect(
+    () => dropPendingPress,
+    [dropPendingPress, insertKind, isCommentMode, isElementMode, sanitizedHtml],
+  );
   React.useEffect(() => {
     const pending = pendingPressRef.current;
     if (!inertFrame || !pending) return;
