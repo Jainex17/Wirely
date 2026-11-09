@@ -392,10 +392,15 @@ export default function WirePromptSidebar({
     async (title: string, deviceType?: PageDeviceType) => {
       beginSaving();
       try {
+        // On the tab the user is looking at, where the canvas will draw it.
         const response = await fetch(`/api/projects/${wireId}/pages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, ...(deviceType ? { deviceType } : {}) }),
+          body: JSON.stringify({
+            title,
+            tabId: useEditorStore.getState().activeTabId,
+            ...(deviceType ? { deviceType } : {}),
+          }),
         });
         if (!response.ok) {
           throw new Error(`Page creation failed with status ${response.status}`);
@@ -536,11 +541,12 @@ export default function WirePromptSidebar({
         typeof variationCount === "number" &&
         variationCount > 1 &&
         body.variationIndex === undefined;
-      const { pages: storePages, focusedPageId, selectedNode } = useEditorStore.getState();
+      const { pages: storePages, activeTabId, focusedPageId, selectedNode } = useEditorStore.getState();
       const fallbackTarget = inferPromptTarget({
         prompt: "",
         mentionedPageIds: [],
         pages: storePages,
+        canvasPageIds: storePages.filter((page) => page.tabId === activeTabId).map((page) => page.id),
         focusedPageId,
       });
       const targetPageId = isBatchRequest
@@ -1134,7 +1140,7 @@ export default function WirePromptSidebar({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      const { pages: storePages, focusedPageId, selectedNode } = useEditorStore.getState();
+      const { pages: storePages, activeTabId, focusedPageId, selectedNode } = useEditorStore.getState();
       // A picked element pins the prompt to its page unless pages are @-mentioned.
       const target: PromptTarget =
         selectedNode && mentions.length === 0
@@ -1143,6 +1149,9 @@ export default function WirePromptSidebar({
               prompt,
               mentionedPageIds: mentions.map((mention) => mention.pageId),
               pages: storePages,
+              canvasPageIds: storePages
+                .filter((page) => page.tabId === activeTabId)
+                .map((page) => page.id),
               focusedPageId,
             });
       if (target.kind === "none") return;

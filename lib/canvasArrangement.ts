@@ -15,6 +15,12 @@ const GROUP_NAME_MAX_CHARS = 80;
 export interface ArrangedGroup {
   name?: string;
   pageIds: string[];
+  /**
+   * When an agent arranged this group's tab, set by the server. The stored
+   * rows hold every arranged tab, and the editor lays out again only the
+   * groups arranged since it last applied, see `rowsArrangedSince`.
+   */
+  at?: string;
 }
 
 /** Rows top to bottom, each holding groups left to right. */
@@ -58,8 +64,55 @@ export const syncArrangedGroups = (current: PageGroup[], arranged: PageGroup[]) 
     name: current.find((candidate) => candidate.id === group.id)?.name ?? group.name,
   }));
 
-/** Checks the rows against the project's pages: every id must exist and appear once. */
-export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: string[]) => {
+const MAX_ARRANGEMENT_ROWS = 20;
+
+/**
+ * The project's stored rows after an agent arranges one tab. A project keeps
+ * one arrangement, so the rows for every other tab stay, and only the pages
+ * on this tab (`isOnTab`) take the new rows. Without this, arranging tab B
+ * before the editor applied tab A's rows would lose tab A's layout. The
+ * oldest rows go first if the total passes the row limit.
+ */
+export const mergeTabArrangement = (
+  previous: ArrangementRows | null,
+  next: ArrangementRows,
+  isOnTab: (pageId: string) => boolean,
+  at: string,
+): ArrangementRows => {
+  const kept = (previous ?? [])
+    .map((row) =>
+      row
+        .map((group) => ({ ...group, pageIds: group.pageIds.filter((pageId) => !isOnTab(pageId)) }))
+        .filter((group) => group.pageIds.length > 0),
+    )
+    .filter((row) => row.length > 0);
+  const stamped = next.map((row) => row.map((group) => ({ ...group, at })));
+  return [...kept, ...stamped].slice(-MAX_ARRANGEMENT_ROWS);
+};
+
+/**
+ * The groups an editor that last applied an arrangement at `since` has not
+ * laid out yet. A tab the user rearranged by hand after an agent arranged it
+ * keeps that layout when the agent arranges another tab. Rows written before
+ * groups carried a time all count as new.
+ */
+export const rowsArrangedSince = (rows: ArrangementRows, since: string | null): ArrangementRows => {
+  if (since === null || !rows.some((row) => row.some((group) => group.at !== undefined))) return rows;
+  return rows
+    .map((row) => row.filter((group) => group.at !== undefined && group.at > since))
+    .filter((row) => row.length > 0);
+};
+
+/**
+ * Checks the rows against the project's pages: every id must exist and appear
+ * once. An arrangement lays out one tab, so `unlisted` counts only that tab's
+ * pages, which is where the left-out ones go.
+ */
+export const checkArrangementPages = (
+  rows: ArrangementRows,
+  projectPageIds: string[],
+  tabPageIds: string[] = projectPageIds,
+) => {
   const known = new Set(projectPageIds);
   const seen = new Set<string>();
   const unknown: string[] = [];
@@ -69,7 +122,7 @@ export const checkArrangementPages = (rows: ArrangementRows, projectPageIds: str
     else if (seen.has(pageId)) repeated.push(pageId);
     seen.add(pageId);
   }
-  return { unknown, repeated, unlisted: projectPageIds.filter((pageId) => !seen.has(pageId)) };
+  return { unknown, repeated, unlisted: tabPageIds.filter((pageId) => !seen.has(pageId)) };
 };
 
 // Scene pixels between the pages of neighbouring groups, and between rows.

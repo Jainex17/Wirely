@@ -2,6 +2,7 @@ import { and, desc, eq, gt, isNotNull, or } from "drizzle-orm";
 import type { ArrangementRows, CanvasArrangement } from "@/lib/canvasArrangement";
 import { getDb } from "@/lib/db/client";
 import { isMissingRelationError } from "@/lib/db/missingRelation";
+import { lockProjectTabs } from "@/lib/db/queries/tabs";
 import {
   projectAgentState,
   projectMemory,
@@ -113,13 +114,29 @@ export const updateProjectMemory = async (projectId: string, update: unknown): P
 };
 
 /** Stores an agent's arrangement for open editors to apply. Callers check ownership. */
-export const setCanvasArrangement = async (projectId: string, rows: ArrangementRows) => {
-  const arrangement = { canvasArrangement: rows, canvasArrangedAt: new Date() };
-  await getDb()
-    .insert(projectAgentState)
-    .values({ projectId, ...arrangement })
-    .onConflictDoUpdate({ target: projectAgentState.projectId, set: arrangement });
-};
+/**
+ * Replaces the stored rows with `update(previous, at)`, read and written under
+ * the project lock so two parallel arrange_canvas calls cannot each drop the
+ * other's rows. `at` is the write's time, stamped on the rows it adds.
+ */
+export const updateCanvasArrangement = (
+  projectId: string,
+  update: (previous: ArrangementRows | null, at: string) => ArrangementRows,
+) =>
+  getDb().transaction(async (tx) => {
+    await lockProjectTabs(tx, projectId);
+    const [row] = await tx
+      .select({ rows: projectAgentState.canvasArrangement })
+      .from(projectAgentState)
+      .where(eq(projectAgentState.projectId, projectId))
+      .limit(1);
+    const at = new Date();
+    const arrangement = { canvasArrangement: update(row?.rows ?? null, at.toISOString()), canvasArrangedAt: at };
+    await tx
+      .insert(projectAgentState)
+      .values({ projectId, ...arrangement })
+      .onConflictDoUpdate({ target: projectAgentState.projectId, set: arrangement });
+  });
 
 /**
  * The project's last arrangement, or null when it has none or none newer than

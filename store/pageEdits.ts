@@ -362,7 +362,12 @@ export const createAssetPage = async (projectId: string, asset: DraggedAsset, ce
     const response = await fetch(`/api/projects/${projectId}/pages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: asset.name, deviceType: "vector", htmlContent: assetArtboardHtml(asset) }),
+      body: JSON.stringify({
+        title: asset.name,
+        deviceType: "vector",
+        htmlContent: assetArtboardHtml(asset),
+        tabId: useEditorStore.getState().activeTabId,
+      }),
     });
     const payload = (await response.json().catch(() => null)) as {
       page?: { id: string; htmlContent: string };

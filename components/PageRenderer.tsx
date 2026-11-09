@@ -1,6 +1,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowRightLeft,
   ArrowUp,
   Bot,
   Check,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/pageNodes";
 import type { InsertKind } from "@/lib/pageTree";
 import { commitPageEdit, dropElement, insertAsset } from "@/store/pageEdits";
+import { movePageToTab } from "@/store/tabActions";
 import { registerCanvasFrame, useDropIndicator } from "@/store/canvasDrop";
 import { ASSET_DRAG_TYPE, type DraggedAsset, parseAssetDrag } from "@/lib/assetDrag";
 import { measureBetween } from "@/lib/elementMeasure";
@@ -142,6 +144,7 @@ interface PageRendererProps {
     iframeUrl?: string;
     iframeHtml?: string;
     deviceType?: PageDeviceType;
+    tabId: string;
   };
   onRenamePage: (pageId: string, newTitle: string) => void;
   onDeletePage: (pageId: string) => void;
@@ -319,6 +322,8 @@ export default React.memo(function PageRenderer({
   const frameRef = React.useRef<HTMLDivElement | null>(null);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  // Only for the "Move to <tab>" entries of the context menu; tabs rarely change.
+  const tabs = useEditorStore((state) => state.tabs);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   // A comment pins where the user clicked or right-clicked, and to the
@@ -1150,6 +1155,13 @@ export default React.memo(function PageRenderer({
                 setCommentDraft({ x: point.x, y: point.y, nodeId: null, body: "" });
               },
             },
+            ...tabs
+              .filter((tab) => tab.id !== page.tabId)
+              .map((tab) => ({
+                label: `Move to ${tab.name}`,
+                icon: ArrowRightLeft,
+                onClick: () => void movePageToTab(projectId, page.id, tab.id),
+              })),
           ]
         : []),
       {
@@ -1173,7 +1185,9 @@ export default React.memo(function PageRenderer({
       page.deviceType,
       page.id,
       page.iframeHtml,
+      page.tabId,
       page.title,
+      tabs,
       projectId,
       slugifiedTitle,
     ],

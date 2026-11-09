@@ -7,8 +7,8 @@ const resetStore = () => {
     ...useEditorStore.getInitialState(),
     ...{
       pages: [
-        { id: "page-1", title: "Page 1", sections: [] },
-        { id: "page-2", title: "Page 2", sections: [] },
+        { id: "page-1", title: "Page 1", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", sections: [], tabId: "tab-home" },
       ],
       pageStackOrder: ["page-1", "page-2"],
       focusedPageId: "page-1",
@@ -44,7 +44,7 @@ describe("useEditorStore canvas state", () => {
 
   it("drops a stacked saved position on load but keeps a shared column", () => {
     useEditorStore.setState({
-      pages: ["page-1", "page-2", "page-3"].map((id) => ({ id, title: id, sections: [] })),
+      pages: ["page-1", "page-2", "page-3"].map((id) => ({ id, title: id, sections: [], tabId: "tab-home" })),
     });
     useEditorStore.getState().hydratePageLayout({
       pagePositions: {
@@ -62,7 +62,7 @@ describe("useEditorStore canvas state", () => {
 
   it("restores saved frame heights for current pages, but not over a fresh measurement", () => {
     useEditorStore.setState({
-      pages: ["page-1", "page-2"].map((id) => ({ id, title: id, sections: [] })),
+      pages: ["page-1", "page-2"].map((id) => ({ id, title: id, sections: [], tabId: "tab-home" })),
       pageFrameHeights: { "page-2": 1800 },
     });
     useEditorStore.getState().hydratePageLayout({
@@ -226,8 +226,8 @@ describe("applyServerPageChanges", () => {
   const seedPages = () =>
     useEditorStore.setState({
       pages: [
-        { id: "page-1", title: "Page 1", iframeHtml: "<p>one</p>", sections: [] },
-        { id: "page-2", title: "Page 2", iframeHtml: "<p>two</p>", sections: [] },
+        { id: "page-1", title: "Page 1", iframeHtml: "<p>one</p>", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", iframeHtml: "<p>two</p>", sections: [], tabId: "tab-home" },
       ],
       pagePositions: { "page-1": { x: 0, y: 0 }, "page-2": { x: 1500, y: 0 } },
       pageStackOrder: ["page-1", "page-2"],
@@ -333,10 +333,10 @@ describe("agent edits", () => {
     useEditorStore.getState().setPageHtml("page-1", "<p>same</p>");
     useEditorStore.getState().hydrateProject(
       [
-        { id: "page-1", title: "Page 1", iframeHtml: "<p>same</p>", sections: [] },
-        { id: "page-2", title: "Page 2", iframeHtml: "<p>concept</p>", sections: [] },
+        { id: "page-1", title: "Page 1", iframeHtml: "<p>same</p>", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", iframeHtml: "<p>concept</p>", sections: [], tabId: "tab-home" },
       ],
-      "MiMo v2.5 (local)",
+      { agentLabel: "MiMo v2.5 (local)" },
     );
 
     const { agentEdits } = useEditorStore.getState();
@@ -370,9 +370,9 @@ describe("useEditorStore page groups", () => {
   it("moves a page into a group beside its members and back out beside the rest", () => {
     useEditorStore.setState({
       pages: [
-        { id: "page-1", title: "Page 1", sections: [] },
-        { id: "page-2", title: "Page 2", sections: [] },
-        { id: "page-3", title: "Page 3", sections: [] },
+        { id: "page-1", title: "Page 1", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", sections: [], tabId: "tab-home" },
+        { id: "page-3", title: "Page 3", sections: [], tabId: "tab-home" },
       ],
       pagePositions: {
         "page-1": { x: 0, y: 0 },
@@ -407,8 +407,8 @@ describe("applyCanvasArrangement", () => {
   beforeEach(() => {
     useEditorStore.setState({
       pages: [
-        { id: "page-1", title: "Home", sections: [], deviceType: "desktop" },
-        { id: "page-2", title: "App", sections: [], deviceType: "mobile" },
+        { id: "page-1", title: "Home", sections: [], tabId: "tab-home", deviceType: "desktop" },
+        { id: "page-2", title: "App", sections: [], tabId: "tab-home", deviceType: "mobile" },
       ],
       viewportSize: { width: 0, height: 0 },
     });
@@ -671,5 +671,275 @@ describe("page selection", () => {
     useEditorStore.getState().setSelectedPageIds(["page-1", "page-2"]);
     useEditorStore.getState().deletePage("page-1");
     expect(useEditorStore.getState().selectedPageIds).toEqual(["page-2"]);
+  });
+});
+
+describe("project tabs", () => {
+  const seedTabs = () =>
+    useEditorStore.setState({
+      tabs: [
+        { id: "tab-home", name: "Tab 1" },
+        { id: "tab-b", name: "Mobile" },
+      ],
+      pages: [
+        { id: "page-1", title: "Page 1", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", sections: [], tabId: "tab-home" },
+        { id: "page-3", title: "Page 3", sections: [], tabId: "tab-b" },
+      ],
+      pagePositions: {
+        "page-1": { x: 0, y: 0 },
+        "page-2": { x: 5000, y: 0 },
+        "page-3": { x: 0, y: 0 },
+      },
+      pageStackOrder: ["page-1", "page-2", "page-3"],
+      pageGroups: [{ id: "g1", name: "Web", pageIds: ["page-1", "page-2"] }],
+      activeTabId: "tab-home",
+      focusedPageId: "page-1",
+      selectedPageIds: ["page-2"],
+    });
+
+  it("scopes fitting and placement to the open tab, and stashes the camera it leaves", () => {
+    seedTabs();
+    useEditorStore.getState().setCamera({ x: 10, y: 20, zoom: 50 });
+
+    const onHome = useEditorStore.getState().createPage("Home row");
+    expect(useEditorStore.getState().pagePositions[onHome]).toEqual({ x: 0, y: 1020 });
+
+    useEditorStore.getState().switchTab("tab-b");
+    const state = useEditorStore.getState();
+    expect(state.activeTabId).toBe("tab-b");
+    expect(state.tabCameras["tab-home"]).toEqual({ x: 10, y: 20, zoom: 50 });
+    expect(state.focusedPageId).toBe("page-3");
+    expect(state.selectedPageIds).toEqual([]);
+    // One desktop page fits the 1400 by 900 viewport by its height: (900 - 96 - 100) / 900.
+    expect(state.camera.zoom).toBeCloseTo(78.222, 3);
+
+    const onMobile = useEditorStore.getState().createPage("Mobile row");
+    expect(useEditorStore.getState().pages.find((page) => page.id === onMobile)?.tabId).toBe("tab-b");
+    expect(useEditorStore.getState().pagePositions[onMobile]).toEqual({ x: 0, y: 1020 });
+
+    useEditorStore.getState().switchTab("tab-home");
+    expect(useEditorStore.getState().camera).toEqual({ x: 10, y: 20, zoom: 50 });
+  });
+
+  it("focusing a page on another tab shows that tab first", () => {
+    seedTabs();
+    useEditorStore.getState().focusPage("page-3");
+
+    const state = useEditorStore.getState();
+    expect(state.activeTabId).toBe("tab-b");
+    expect(state.focusedPageId).toBe("page-3");
+    expect(state.selectedPageIds).toEqual([]);
+    expect(state.tabCameras["tab-home"]).toEqual(createDefaultCamera());
+  });
+
+  it("moves a page to another tab, out of its group and beside the pages there", () => {
+    seedTabs();
+    useEditorStore.getState().movePageToTab("page-2", "tab-b");
+
+    const state = useEditorStore.getState();
+    expect(state.pages.find((page) => page.id === "page-2")?.tabId).toBe("tab-b");
+    expect(state.pagePositions["page-2"]).toEqual({ x: 1560, y: 0 });
+    expect(state.pageGroups).toEqual([{ id: "g1", name: "Web", pageIds: ["page-1"] }]);
+    expect(state.activeTabId).toBe("tab-home");
+    expect(state.selectedPageIds).toEqual([]);
+    expect(state.focusedPageId).toBe("page-1");
+  });
+
+  it("takes tabs and page tabs from a poll, placing new and moved pages on their own tab", () => {
+    useEditorStore.setState({
+      pages: [
+        { id: "page-1", title: "Page 1", sections: [], tabId: "tab-home" },
+        { id: "page-2", title: "Page 2", sections: [], tabId: "tab-home" },
+      ],
+      pagePositions: { "page-1": { x: 0, y: 0 }, "page-2": { x: 1560, y: 0 } },
+      pageGroups: [{ id: "g1", name: "Web", pageIds: ["page-1", "page-2"] }],
+    });
+    const tabs = [
+      { id: "tab-home", name: "Tab 1" },
+      { id: "tab-b", name: "Mobile" },
+    ];
+
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [{ id: "page-3", title: "App", htmlContent: "<p>app</p>", deviceType: "desktop" }],
+      tabs,
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-home", "page-3": "tab-b" },
+    });
+    let state = useEditorStore.getState();
+    expect(state.tabs).toEqual(tabs);
+    expect(state.pages.map((page) => [page.id, page.tabId])).toEqual([
+      ["page-1", "tab-home"],
+      ["page-2", "tab-home"],
+      ["page-3", "tab-b"],
+    ]);
+    expect(state.pagePositions["page-3"]).toEqual({ x: -720, y: 0 });
+    expect(state.activeTabId).toBe("tab-home");
+
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [],
+      tabs,
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-b", "page-3": "tab-b" },
+    });
+    state = useEditorStore.getState();
+    expect(state.pages.find((page) => page.id === "page-2")?.tabId).toBe("tab-b");
+    expect(state.pagePositions["page-2"]).toEqual({ x: 840, y: 0 });
+    expect(state.pageGroups).toEqual([{ id: "g1", name: "Web", pageIds: ["page-1"] }]);
+  });
+
+  it("switches to the first tab when a poll says the open one is gone", () => {
+    seedTabs();
+    useEditorStore.getState().switchTab("tab-b");
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2"],
+      changed: [],
+      tabs: [{ id: "tab-home", name: "Tab 1" }],
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-home" },
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.activeTabId).toBe("tab-home");
+    expect(state.tabs).toEqual([{ id: "tab-home", name: "Tab 1" }]);
+    expect(state.pages.map((page) => page.id)).toEqual(["page-1", "page-2"]);
+    expect(state.focusedPageId).toBe("page-1");
+    expect(state.camera).toEqual(createDefaultCamera());
+  });
+
+  it("arranges one tab without moving or ungrouping pages on another", () => {
+    seedTabs();
+    useEditorStore.setState({
+      pagePositions: {
+        "page-1": { x: 900, y: 900 },
+        "page-2": { x: 5000, y: 0 },
+        "page-3": { x: 123, y: 456 },
+      },
+      pageGroups: [{ id: "gb", name: "Keep", pageIds: ["page-3"] }],
+    });
+
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [[{ name: "Web", pageIds: ["page-1", "page-2"] }]],
+      arrangedAt: "2026-11-09T10:00:00.000Z",
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.pagePositions).toEqual({
+      "page-1": { x: 0, y: 0 },
+      "page-2": { x: 1560, y: 0 },
+      "page-3": { x: 123, y: 456 },
+    });
+    expect(state.pageGroups).toEqual([
+      { id: "gb", name: "Keep", pageIds: ["page-3"] },
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1", "page-2"] },
+    ]);
+  });
+
+  it("lays out each arranged tab from its own origin with its own group ids", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [
+        [{ name: "Web", pageIds: ["page-1", "page-2"] }],
+        [{ name: "Phone", pageIds: ["page-3"] }],
+      ],
+      arrangedAt: "2026-11-09T11:00:00.000Z",
+    });
+
+    let state = useEditorStore.getState();
+    expect(state.pagePositions["page-3"]).toEqual({ x: 0, y: 0 });
+    expect(state.pageGroups.map((group) => group.id)).toEqual([
+      "tab-home:arranged-0-0",
+      "tab-b:arranged-1-0",
+    ]);
+
+    useEditorStore.getState().ungroupPages("tab-b:arranged-1-0");
+    state = useEditorStore.getState();
+    expect(state.pageGroups).toEqual([
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1", "page-2"] },
+    ]);
+  });
+
+  it("keeps a saved position that another tab's page shares on reload", () => {
+    seedTabs();
+    useEditorStore.getState().hydratePageLayout({
+      pagePositions: {
+        "page-1": { x: 0, y: 0 },
+        "page-2": { x: 5000, y: 0 },
+        "page-3": { x: 0, y: 0 },
+      },
+    });
+    expect(useEditorStore.getState().pagePositions).toEqual({
+      "page-1": { x: 0, y: 0 },
+      "page-2": { x: 5000, y: 0 },
+      "page-3": { x: 0, y: 0 },
+    });
+  });
+
+  it("leaves a tab the user rearranged by hand alone when an agent arranges another tab", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [[{ name: "Web", pageIds: ["page-1", "page-2"], at: "2026-11-09T14:00:00.000Z" }]],
+      arrangedAt: "2026-11-09T14:00:00.000Z",
+    });
+    useEditorStore.getState().setPagePosition("page-1", { x: 777, y: 888 });
+
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [
+        [{ name: "Web", pageIds: ["page-1", "page-2"], at: "2026-11-09T14:00:00.000Z" }],
+        [{ name: "Phone", pageIds: ["page-3"], at: "2026-11-09T15:00:00.000Z" }],
+      ],
+      arrangedAt: "2026-11-09T15:00:00.000Z",
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.pagePositions["page-1"]).toEqual({ x: 777, y: 888 });
+    expect(state.pagePositions["page-3"]).toEqual({ x: 0, y: 0 });
+    expect(state.arrangement?.rows).toEqual([
+      [{ name: "Phone", pageIds: ["page-3"], at: "2026-11-09T15:00:00.000Z" }],
+    ]);
+  });
+
+  it("drops the selection of a page a poll moves off the open tab", () => {
+    seedTabs();
+    useEditorStore.setState({
+      selectedNode: { pageId: "page-2", nodeId: "w-1", tag: "h1", color: null, background: null },
+      selectedPageIds: ["page-1", "page-2"],
+    });
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [],
+      tabs: [
+        { id: "tab-home", name: "Tab 1" },
+        { id: "tab-b", name: "Mobile" },
+      ],
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-b", "page-3": "tab-b" },
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.selectedNode).toBe(null);
+    expect(state.selectedPageIds).toEqual(["page-1"]);
+  });
+
+  it("ends a live arrangement when a poll moves one of its pages to another tab", () => {
+    seedTabs();
+    useEditorStore.getState().applyCanvasArrangement({
+      rows: [[{ name: "Web", pageIds: ["page-1", "page-2"] }]],
+      arrangedAt: "2026-11-09T12:00:00.000Z",
+    });
+    useEditorStore.getState().applyServerPageChanges({
+      pageIds: ["page-1", "page-2", "page-3"],
+      changed: [],
+      tabs: [
+        { id: "tab-home", name: "Tab 1" },
+        { id: "tab-b", name: "Mobile" },
+      ],
+      pageTabIds: { "page-1": "tab-home", "page-2": "tab-b", "page-3": "tab-b" },
+    });
+
+    const state = useEditorStore.getState();
+    expect(state.arrangement).toBe(null);
+    expect(state.pages.find((page) => page.id === "page-2")?.tabId).toBe("tab-b");
+    expect(state.pageGroups).toEqual([
+      { id: "tab-home:arranged-0-0", name: "Web", pageIds: ["page-1"] },
+    ]);
   });
 });

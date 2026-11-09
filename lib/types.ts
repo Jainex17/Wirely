@@ -39,6 +39,8 @@ export interface PageRecord extends PageTitle {
   iframeUrl?: string;
   iframeHtml?: string;
   deviceType?: PageDeviceType;
+  /** The tab whose canvas this page is on. */
+  tabId: string;
   sections: string[];
 }
 
@@ -52,6 +54,12 @@ export interface SectionRecord {
 }
 
 export type SectionData = SectionRecord;
+
+/** One canvas inside a project. Every page is on exactly one tab. */
+export interface ProjectTab {
+  id: string;
+  name: string;
+}
 
 /** A named set of pages drawn as one frame on the canvas. A page is in at most one group. */
 export interface PageGroup {
@@ -72,4 +80,7 @@ export interface PersistedWireLayout {
   arrangedAt?: string | null;
   /** That arrangement while it still re-flows the rows, null once the user dragged a page. */
   arrangement?: unknown;
+  /** The tab the user had open. `camera` is that tab's camera; the others are here. */
+  activeTabId?: string;
+  tabCameras?: Record<string, Partial<CameraState>>;
 }

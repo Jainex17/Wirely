@@ -225,6 +225,13 @@
       "when": 1794124621633,
       "tag": "0031_grey_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794233045619,
+      "tag": "0032_elite_exodus",
+      "breakpoints": true
     }
   ]
 }

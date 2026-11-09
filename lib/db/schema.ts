@@ -136,6 +136,47 @@ export const projectPages = pgTable(
   }),
 );
 
+/**
+ * A project's tabs, each its own canvas of pages. A project with no rows has
+ * one implicit tab whose id is the project id, so existing projects need no
+ * backfill; `ensureDefaultTab` in `lib/db/queries/tabs.ts` writes that row
+ * the first time a tab or assignment is written. Its own table so project and
+ * page queries keep working on a database that has not run this migration yet.
+ */
+export const projectTabs = pgTable(
+  "project_tabs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    /** When an editor last showed this tab. A new page with no tab named goes on the latest one. */
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdx: index("project_tabs_project_id_idx").on(table.projectId),
+  }),
+);
+
+/** Which tab a page is on. A page without a row is on the project's first tab. */
+export const projectPageTabs = pgTable(
+  "project_page_tabs",
+  {
+    pageId: uuid("page_id")
+      .primaryKey()
+      .references(() => projectPages.id, { onDelete: "cascade" }),
+    tabId: uuid("tab_id")
+      .notNull()
+      .references(() => projectTabs.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    tabIdx: index("project_page_tabs_tab_id_idx").on(table.tabId),
+  }),
+);
+
 export const projectPrototypeFlows = pgTable(
   "project_prototype_flows",
   {

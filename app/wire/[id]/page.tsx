@@ -52,6 +52,7 @@ export default async function WirePage({ params }: WirePageProps) {
           title: page.title,
           pageHtml: page.htmlContent,
           deviceType: isPageDeviceType(page.deviceType) ? page.deviceType : ("desktop" as const),
+          tabId: projectDetail.pageTabIds[page.id],
         }))
       : [
           {
@@ -59,6 +60,7 @@ export default async function WirePage({ params }: WirePageProps) {
             title: "Page 1",
             pageHtml: "",
             deviceType: "desktop" as const,
+            tabId: projectDetail.tabs[0].id,
           },
         ];
   const projectTitle = projectDetail.project.title;
@@ -87,7 +89,7 @@ export default async function WirePage({ params }: WirePageProps) {
       wire={{
         wireId: resolvedParams.id,
         sessionUser: accountUser,
-        initialProject: { projectTitle, pages: initialPages },
+        initialProject: { projectTitle, pages: initialPages, tabs: projectDetail.tabs },
         pagesLoadedAt,
         initialArrangement,
         initialModelName,

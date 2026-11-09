@@ -248,7 +248,8 @@ export default function Canvas({
     canvasBackground,
     activeDevice,
     viewportSize,
-    pages,
+    allPages,
+    activeTabId,
     pagePositions,
     pageStackOrder,
     pageGroups,
@@ -275,7 +276,8 @@ export default function Canvas({
       canvasBackground: state.canvasBackground,
       activeDevice: state.activeDevice,
       viewportSize: state.viewportSize,
-      pages: state.pages,
+      allPages: state.pages,
+      activeTabId: state.activeTabId,
       pagePositions: state.pagePositions,
       pageStackOrder: state.pageStackOrder,
       pageGroups: state.pageGroups,
@@ -298,6 +300,12 @@ export default function Canvas({
       setFocusedPage: state.setFocusedPage,
       setPageFrameHeight: state.setPageFrameHeight,
     })),
+  );
+  // The canvas is one tab's pages. Memoized so the frames below keep their
+  // props while another tab's pages change.
+  const pages = React.useMemo(
+    () => allPages.filter((page) => page.tabId === activeTabId),
+    [activeTabId, allPages],
   );
   const isPanModeActive = activeTool === "grab" || isSpacePanning;
   const layoutStorageKey = React.useMemo(
@@ -462,9 +470,12 @@ export default function Canvas({
   const scheduleLayoutSave = React.useCallback(() => {
     if (!layoutStorageKey) return;
 
-    const { pages, pagePositions, pageStackOrder } = useEditorStore.getState();
-    const hasAllPositions = pages.every((page) => pagePositions[page.id]);
-    const hasAllStackEntries = pages.every((page) => pageStackOrder.includes(page.id));
+    const { pages, activeTabId, pagePositions, pageStackOrder } = useEditorStore.getState();
+    // Only the open tab's pages get placed by the effects above, so only they
+    // can hold the save back.
+    const tabPages = pages.filter((page) => page.tabId === activeTabId);
+    const hasAllPositions = tabPages.every((page) => pagePositions[page.id]);
+    const hasAllStackEntries = tabPages.every((page) => pageStackOrder.includes(page.id));
     if (!hasAllPositions || !hasAllStackEntries) return;
 
     if (!hasCompletedInitialLayoutRef.current) {
@@ -479,6 +490,8 @@ export default function Canvas({
       layoutSaveTimeoutRef.current = null;
       const {
         camera,
+        activeTabId,
+        tabCameras,
         pagePositions,
         pageStackOrder,
         pageGroups,
@@ -492,6 +505,8 @@ export default function Canvas({
           JSON.stringify({
             version: 2,
             camera,
+            activeTabId,
+            tabCameras,
             pagePositions,
             pageStackOrder,
             pageGroups,
@@ -508,7 +523,7 @@ export default function Canvas({
 
   React.useEffect(() => {
     scheduleLayoutSave();
-  }, [scheduleLayoutSave, pageFrameHeights, pageGroups, pagePositions, pageStackOrder, pages]);
+  }, [activeTabId, scheduleLayoutSave, pageFrameHeights, pageGroups, pagePositions, pageStackOrder, pages]);
 
   // Pan and zoom write the camera straight onto the scene element. Rendering
   // the canvas for it would walk every page on every frame of a gesture.
@@ -1170,6 +1185,12 @@ export default function Canvas({
       style={CANVAS_BACKGROUND_STYLES[canvasBackground]}
     >
       <div className="pointer-events-none absolute inset-0 canvas-dots" />
+      {pages.length === 0 ? (
+        <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 px-8 text-center text-sm text-muted-foreground">
+          No pages on this tab yet. Ask your agent to add one here, or move a page here from its
+          right-click menu.
+        </p>
+      ) : null}
       <div
         ref={sceneRef}
         className="absolute"
@@ -1271,7 +1292,7 @@ export default function Canvas({
                   projectId={projectId}
                   status={pageStatuses[pageLayout.page.id] ?? null}
                   agentEdit={agentEdits[pageLayout.page.id] ?? null}
-                  isOnlyPage={pages.length <= 1}
+                  isOnlyPage={allPages.length <= 1}
                   isFocused={focusedPageId === pageLayout.page.id}
                   isSelected={selectedPageIds.includes(pageLayout.page.id)}
                   frameHeight={pageLayout.frameHeight}

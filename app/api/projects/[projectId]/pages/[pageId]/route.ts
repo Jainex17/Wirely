@@ -4,9 +4,11 @@ import {
   deleteProjectPageForUser,
   updateProjectPageForUser,
 } from "@/lib/db/queries/projects";
+import { movePageToTabForUser } from "@/lib/db/queries/tabs";
 import { getRequestSessionUser } from "@/lib/auth/session";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
+import { isUuid } from "@/lib/projectComments";
 
 interface RouteContext {
   params: Promise<{ projectId: string; pageId: string }>;
@@ -16,6 +18,8 @@ type UpdateProjectPageRequestBody = {
   title?: string | null;
   htmlContent?: string | null;
   deviceType?: string | null;
+  /** Moves the page to this tab of the same project. */
+  tabId?: string | null;
 };
 
 // A page save carries the whole document, element ids included, which passes
@@ -46,9 +50,27 @@ export async function PATCH(request: Request, context: RouteContext) {
         : undefined;
     const htmlContent = typeof body.htmlContent === "string" ? body.htmlContent : undefined;
     const deviceType = isPageDeviceType(body.deviceType) ? body.deviceType : undefined;
+    const tabId = typeof body.tabId === "string" && isUuid(body.tabId) ? body.tabId : undefined;
 
-    if (title === undefined && htmlContent === undefined && deviceType === undefined) {
+    if (
+      title === undefined &&
+      htmlContent === undefined &&
+      deviceType === undefined &&
+      tabId === undefined
+    ) {
       return NextResponse.json({ error: "No updates provided." }, { status: 400 });
+    }
+
+    if (tabId !== undefined) {
+      const moved = await movePageToTabForUser({ projectId, pageId, userId: sessionUser.id, tabId });
+      if (moved === "not_found") {
+        return NextResponse.json({ error: "Page or tab not found." }, { status: 404 });
+      }
+    }
+
+    // A move alone has nothing left to write on the page row.
+    if (title === undefined && htmlContent === undefined && deviceType === undefined) {
+      return NextResponse.json({ success: true });
     }
 
     const page = await updateProjectPageForUser({

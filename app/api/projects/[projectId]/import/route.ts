@@ -4,6 +4,7 @@ import { getProjectForUser } from "@/lib/db/queries/projects";
 import { readJsonBodyWithLimit } from "@/lib/http/readJsonBodyWithLimit";
 import { logger } from "@/lib/logger";
 import { importUrlAsPage } from "@/lib/mcp/importUrlPage";
+import { isUuid } from "@/lib/projectComments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const parsed = await readJsonBodyWithLimit(request);
     if (!parsed.ok) return parsed.response;
-    const { url, deviceType } = parsed.data;
+    const { url, deviceType, tabId } = parsed.data;
     if (typeof url !== "string" || url.trim().length === 0 || url.length > 2_000) {
       return NextResponse.json({ error: "Enter a URL to import." }, { status: 400 });
     }
@@ -40,6 +41,7 @@ export async function POST(request: Request, context: RouteContext) {
       userId: sessionUser.id,
       url,
       deviceType: deviceType === "mobile" ? "mobile" : "desktop",
+      tabId: typeof tabId === "string" && isUuid(tabId) ? tabId : undefined,
     });
     if (!imported.ok) {
       return NextResponse.json({ error: imported.error }, { status: 422 });

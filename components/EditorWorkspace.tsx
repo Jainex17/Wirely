@@ -13,7 +13,7 @@ import {
 } from "@/lib/canvasScene";
 import { htmlHistory } from "@/lib/htmlHistory";
 import { logger } from "@/lib/logger";
-import { isPageDeviceType } from "@/lib/types";
+import { isPageDeviceType, type ProjectTab } from "@/lib/types";
 import { type ReportedNode, requestTextEdit } from "@/lib/nodePicker";
 import { readCompareLink, readNodeLink, stampNodeIds } from "@/lib/pageNodes";
 import { buildLayerTree, findLayer, findLayerParent, INSERT_MARKUP, insertAtNode } from "@/lib/pageTree";
@@ -52,6 +52,7 @@ export default function EditorWorkspace({
   // Subscribing to it would re-render the whole editor on every pan and zoom frame.
   const {
     activeDevice,
+    activeTabId,
     pagePositions,
     pageFrameHeights,
     pages,
@@ -78,6 +79,7 @@ export default function EditorWorkspace({
   } = useEditorStore(
     useShallow((state) => ({
       activeDevice: state.activeDevice,
+      activeTabId: state.activeTabId,
       pagePositions: state.pagePositions,
       pageFrameHeights: state.pageFrameHeights,
       pages: state.pages,
@@ -104,12 +106,15 @@ export default function EditorWorkspace({
     })),
   );
 
+  // The open tab's frames, for the first-paint check below. A page without a
+  // saved position sits at its index within the tab, as the canvas draws it.
   const pageBoundsById = useMemo(() => {
     const result = new Map<string, ReturnType<typeof getPageBounds>>();
-    for (const [index, page] of pages.entries()) {
+    const tabPages = pages.filter((page) => page.tabId === activeTabId);
+    for (const [index, page] of tabPages.entries()) {
       const { width: deviceWidth, height: deviceHeight } = getPageFrameSize(page, activeDevice);
       const position = pagePositions[page.id] ?? {
-        x: getDefaultPageX(index, pages.length, deviceWidth),
+        x: getDefaultPageX(index, tabPages.length, deviceWidth),
         y: 0,
       };
       const height = Math.max(
@@ -130,6 +135,7 @@ export default function EditorWorkspace({
     return result;
   }, [
     activeDevice,
+    activeTabId,
     pageFrameHeights,
     pagePositions,
     pages,
@@ -209,16 +215,20 @@ export default function EditorWorkspace({
           }
           const payload = (await reloadResponse.json()) as {
             pages?: Array<{ id: string; title: string; htmlContent: string; deviceType: string }>;
+            tabs?: ProjectTab[];
+            pageTabIds?: Record<string, string>;
           };
+          const firstTabId = payload.tabs?.[0]?.id ?? useEditorStore.getState().activeTabId;
           const reloadedPages =
             payload.pages?.map((item) => ({
               id: item.id,
               title: item.title,
               iframeHtml: item.htmlContent,
               deviceType: isPageDeviceType(item.deviceType) ? item.deviceType : ("desktop" as const),
+              tabId: payload.pageTabIds?.[item.id] ?? firstTabId,
               sections: [] as string[],
             })) ?? [];
-          hydrateProject(reloadedPages);
+          hydrateProject(reloadedPages, { tabs: payload.tabs });
         } catch (reloadError) {
           logger.error("pages_reload_after_delete_failure", {
             pageId,

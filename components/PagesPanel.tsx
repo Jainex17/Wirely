@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, type ReactNode, useState } from "react";
+import { type DragEvent, type ReactNode, useMemo, useState } from "react";
 import {
   ChevronRight,
   Copy,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import AssetsFolder from "@/components/AssetsFolder";
+import CanvasTabs from "@/components/CanvasTabs";
 import { PanelToggle } from "@/components/EditorChrome";
 import { FloatingProjectHeader, ProjectHeader } from "@/components/ProjectChrome";
 import LayerTree from "@/components/LayerTree";
@@ -35,8 +36,9 @@ interface PagesPanelProps {
 }
 
 /**
- * The editor's left column: one tree of every page on the canvas with each
- * page's layers nested under it, and the account menu. Clicking a page pans
+ * The editor's left column: the project's tabs, then one tree of every page
+ * on the open tab with each page's layers nested under it, and the account
+ * menu. Clicking a page pans
  * the canvas to it at the current zoom; dragging it onto a group moves it in or
  * out. A page's layers open while an element on it is picked. The search in
  * its header narrows the tree to matching pages, inside their groups.
@@ -50,8 +52,9 @@ export default function PagesPanel({
   footer,
 }: PagesPanelProps) {
   const {
-    pages,
-    pageGroups,
+    allPages,
+    allPageGroups,
+    activeTabId,
     focusedPageId,
     focusRequestCount,
     selectedNode,
@@ -64,8 +67,9 @@ export default function PagesPanel({
     movePageToGroup,
   } = useEditorStore(
     useShallow((state) => ({
-      pages: state.pages,
-      pageGroups: state.pageGroups,
+      allPages: state.pages,
+      allPageGroups: state.pageGroups,
+      activeTabId: state.activeTabId,
       focusedPageId: state.focusedPageId,
       focusRequestCount: state.focusRequestCount,
       selectedNode: state.selectedNode,
@@ -77,6 +81,16 @@ export default function PagesPanel({
       toggleSelectedPages: state.toggleSelectedPages,
       movePageToGroup: state.movePageToGroup,
     })),
+  );
+  // The panel lists the open tab, as the canvas shows it. A group's pages
+  // share one tab, so a group is on the tab its first page is on.
+  const pages = useMemo(
+    () => allPages.filter((page) => page.tabId === activeTabId),
+    [activeTabId, allPages],
+  );
+  const pageGroups = useMemo(
+    () => allPageGroups.filter((group) => pages.some((page) => group.pageIds.includes(page.id))),
+    [allPageGroups, pages],
   );
   // Pages the user opened or closed with the chevron. The rest are open only
   // while an element on them is picked.
@@ -238,6 +252,7 @@ export default function PagesPanel({
   return (
     <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
       <ProjectHeader end={toggle} />
+      <CanvasTabs projectId={projectId} />
       <div className="flex h-9 shrink-0 items-center gap-1 pl-4 pr-1.5">
         {search !== null ? (
           <div className="-ml-2.5 flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-foreground/5 pl-2 pr-0.5 ring-1 ring-inset ring-primary/50">
