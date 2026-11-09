@@ -38,9 +38,10 @@ export const MCP_INSTRUCTIONS = [
     "and skip the search below.",
   "When the user names a project, such as \"in my Checkout project\" or \"@checkout\", call " +
     "list_projects with query set to that name, without the @. The user renames projects in " +
-    "Wirely so the name they say is the title. Use the project titled exactly that name, ignoring " +
-    "case; it comes first. Ask which one only when no title matches exactly and several contain " +
-    "the name. Never create a project the user named as existing.",
+    "Wirely so the name they say is the title. When exactly one project is titled that name, " +
+    "ignoring case, use it; it comes first. When several are, or none is and several titles " +
+    "contain the name, ask which one, listing their editor URLs. Never create a project the " +
+    "user named as existing.",
   "Before create_project, call list_projects. If a project there is for the same product, app, " +
     "or codebase you are working on, add the new pages to it with add_page, even when this is " +
     "a new chat. If none of the listed projects fits, call list_projects again with query set " +
