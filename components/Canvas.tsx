@@ -28,6 +28,7 @@ import {
   clampZoom,
   getDefaultPageX,
   getEdgePanVelocity,
+  getSharpPageIds,
   createBounds,
   getPageBounds,
   getPageFrameHeight,
@@ -101,6 +102,9 @@ const CANVAS_BACKGROUND_STYLES: Record<CanvasBackground, React.CSSProperties> = 
 const DRAG_START_THRESHOLD_PX = 4;
 const LAYOUT_SAVE_IDLE_MS = 700;
 const CAMERA_LAYER_IDLE_MS = 150;
+// How long the camera rests before on-screen pages swap their snapshots for
+// sharp DOM. Mid-gesture every page stays a picture.
+const SHARPEN_IDLE_MS = 200;
 // How far the zoom may move from the scale the scene layer was rastered at
 // before it rasters again. Zoomed out by this factor, the layer holds about its
 // square, 2.25 times, the tiles the screen shows.
@@ -321,6 +325,19 @@ export default function Canvas({
   // The one page running as a live iframe. It goes live on a double click, a
   // text edit, or Replay, and back to inert on Escape or a click on another page.
   const [livePageId, setLivePageId] = React.useState<string | null>(null);
+  // Pages large enough on screen to draw as DOM. Every other page draws as its
+  // snapshot, which is what keeps a zoomed out canvas of hundreds of pages
+  // smooth. Read once the camera rests, so a gesture never renders the canvas.
+  const [sharpPageIds, setSharpPageIds] = React.useState<ReadonlySet<string>>(() => new Set());
+  // The element, pen, comment, and insert tools act on a page's DOM, and so
+  // does dropping a project image into it, so the page under the pointer
+  // builds its DOM at any zoom then. The move tool does not, or sweeping the
+  // pointer across a zoomed out canvas would build every page it crosses.
+  const [hoveredPageId, setHoveredPageId] = React.useState<string | null>(null);
+  const isDomTool = activeTool !== "select" && activeTool !== "grab";
+  React.useEffect(() => {
+    if (!isDomTool) setHoveredPageId(null);
+  }, [isDomTool]);
   const pendingWheelRef = React.useRef<{
     panX: number;
     panY: number;
@@ -376,6 +393,20 @@ export default function Canvas({
     [pageLayouts],
   );
   const pageBoundsRef = React.useRef(pageBoundsById);
+
+  const updateSharpPages = React.useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ids = getSharpPageIds({
+      camera: useEditorStore.getState().camera,
+      viewport: { width: canvas.clientWidth, height: canvas.clientHeight },
+      pageBounds: Object.values(pageBoundsRef.current),
+      pixelRatio: window.devicePixelRatio || 1,
+    });
+    setSharpPageIds((previous) =>
+      ids.length === previous.size && ids.every((id) => previous.has(id)) ? previous : new Set(ids),
+    );
+  }, [canvasRef]);
 
   const groupFrames = React.useMemo(
     () =>
@@ -485,6 +516,7 @@ export default function Canvas({
   // MAX_LAYER_SCALE_DRIFT, which rasters the scene again at its real scale.
   React.useLayoutEffect(() => {
     let layerTimer: number | undefined;
+    let sharpenTimer: number | undefined;
     // The zoom the layer was rastered at, or null while the scene has no layer.
     let layerZoom: number | null = null;
     // Set from a release until a frame has rendered without the layer. Adding
@@ -536,31 +568,36 @@ export default function Canvas({
       if (sceneRef.current) holdLayer(sceneRef.current, state.camera.zoom);
       applyCamera(state.camera, previous.camera);
       scheduleLayoutSave();
+      window.clearTimeout(sharpenTimer);
+      sharpenTimer = window.setTimeout(updateSharpPages, SHARPEN_IDLE_MS);
     });
     return () => {
       unsubscribe();
       window.clearTimeout(layerTimer);
+      window.clearTimeout(sharpenTimer);
       if (releaseFrame !== undefined) window.cancelAnimationFrame(releaseFrame);
     };
-  }, [canvasRef, scheduleLayoutSave]);
+  }, [canvasRef, scheduleLayoutSave, updateSharpPages]);
 
   // A page that moves, appears, or comes into view as the canvas resizes needs
-  // the same check the camera runs.
+  // the same checks the camera runs.
   React.useLayoutEffect(() => {
     pageBoundsRef.current = pageBoundsById;
     const canvas = canvasRef.current;
     if (canvas) pinOffscreenPages(useEditorStore.getState().camera, canvas, pageElementsRef.current, pageBoundsById);
-  }, [canvasRef, pageBoundsById]);
+    updateSharpPages();
+  }, [canvasRef, pageBoundsById, updateSharpPages]);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(() =>
-      pinOffscreenPages(useEditorStore.getState().camera, canvas, pageElementsRef.current, pageBoundsRef.current),
-    );
+    const observer = new ResizeObserver(() => {
+      pinOffscreenPages(useEditorStore.getState().camera, canvas, pageElementsRef.current, pageBoundsRef.current);
+      updateSharpPages();
+    });
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [canvasRef]);
+  }, [canvasRef, updateSharpPages]);
 
   const handleWheel = React.useCallback(
     (event: WheelEvent) => {
@@ -1182,7 +1219,15 @@ export default function Canvas({
                 }}
                 onPointerDownCapture={handlePagePointerDownCapture(pageLayout.page.id)}
                 onPointerDown={handlePagePointerDown(pageLayout.page.id)}
-                onPointerMove={handlePagePointerMove(pageLayout.page.id)}
+                onPointerMove={(event) => {
+                  // A move rather than an enter, so a tool picked from the
+                  // keyboard with the pointer already over a page counts too.
+                  if (isDomTool && hoveredPageId !== pageLayout.page.id) setHoveredPageId(pageLayout.page.id);
+                  handlePagePointerMove(pageLayout.page.id)(event);
+                }}
+                onDragEnter={(event) => {
+                  if (event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) setHoveredPageId(pageLayout.page.id);
+                }}
                 onPointerUp={stopPageDrag(pageLayout.page.id)}
                 onPointerCancel={stopPageDrag(pageLayout.page.id)}
                 onDoubleClick={handlePageDoubleClick(pageLayout.page.id)}
@@ -1203,6 +1248,15 @@ export default function Canvas({
                   isSelected={selectedPageIds.includes(pageLayout.page.id)}
                   frameHeight={pageLayout.frameHeight}
                   renderMode={renderMode}
+                  // The page being worked on keeps its DOM at any zoom, since
+                  // picking, selection boxes, and the agent cursor read it.
+                  preferSnapshot={
+                    !sharpPageIds.has(pageLayout.page.id) &&
+                    focusedPageId !== pageLayout.page.id &&
+                    hoveredPageId !== pageLayout.page.id &&
+                    renderMode !== "live" &&
+                    selectedNode?.pageId !== pageLayout.page.id
+                  }
                   onLiveChange={setLivePageId}
                   isElementMode={activeTool === "element" && !isSpacePanning}
                   isPenMode={activeTool === "pen" && !isSpacePanning}
