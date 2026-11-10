@@ -394,9 +394,6 @@ export default function PagesPanel({
                   >
                     <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", isGroupHighlighted ? "text-primary" : "text-muted-foreground")} />
                     <span className="truncate">{group.name}</span>
-                    <span className="ml-auto font-normal tabular-nums text-muted-foreground">
-                      {groupPages.length}
-                    </span>
                   </button>
                 </div>
                 {isGroupOpen ? groupPages.map((page) => renderPage(page, 1)) : null}

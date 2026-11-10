@@ -161,9 +161,6 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                       {index + 1}
                     </span>
                     <span className="truncate">{tab.name}</span>
-                    <span className="ml-auto pl-1 tabular-nums text-muted-foreground group-hover:hidden">
-                      {pageCountOf(tab.id)}
-                    </span>
                   </button>
                 )}
                 {isEditing ? null : (
