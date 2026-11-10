@@ -355,7 +355,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
           type: "string",
           description:
             "Tab to put the page on, by name. Matches an existing tab ignoring case, or makes a new one. " +
-            "Name a new tab for what is on it, such as \"Checkout\". Leave out a number, since the editor numbers tabs.",
+            "When the user says \"page 2\", pass the name of the second tab in list_pages. Name a new " +
+            "tab for what is on it, such as \"Checkout\". Leave out a number, since the editor numbers tabs.",
         },
         html: { type: "string", description: "The page document. Omit when copying." },
         copyFromPageId: {
