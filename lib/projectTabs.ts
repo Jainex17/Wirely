@@ -8,7 +8,7 @@
 import type { ProjectTab } from "@/lib/types";
 
 export const TAB_NAME_MAX_CHARS = 80;
-export const DEFAULT_TAB_NAME = "Tab 1";
+export const DEFAULT_TAB_NAME = "Page 1";
 
 export interface ProjectTabRow {
   id: string;
@@ -34,12 +34,12 @@ export const parseTabName = (value: unknown): string | null => {
   return name.length >= 1 && name.length <= TAB_NAME_MAX_CHARS ? name : null;
 };
 
-/** "Tab N" for one more tab, skipping a number a tab already uses. */
+/** "Page N" for one more tab, skipping a number a tab already uses. The editor calls tabs pages. */
 export const nextTabName = (existingNames: string[]) => {
   const taken = new Set(existingNames.map((name) => name.trim().toLowerCase()));
   let number = existingNames.length + 1;
-  while (taken.has(`tab ${number}`)) number += 1;
-  return `Tab ${number}`;
+  while (taken.has(`page ${number}`)) number += 1;
+  return `Page ${number}`;
 };
 
 /** The tab whose name matches after trimming, ignoring case, or null. */

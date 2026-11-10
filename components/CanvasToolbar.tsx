@@ -41,7 +41,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
     >
       <ToolButton
         label="Move (V)"
-        detail="Select pages and drag them around"
+        detail="Select frames and drag them around"
         isActive={activeTool === "select"}
         onClick={() => onToolChange("select")}
       >
@@ -57,7 +57,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       </ToolButton>
       <ToolButton
         label="Element (E)"
-        detail="Pick an element inside a page to edit or prompt on it"
+        detail="Pick an element inside a frame to edit or prompt on it"
         isActive={activeTool === "element"}
         onClick={() => onToolChange("element")}
       >
@@ -65,7 +65,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       </ToolButton>
       <ToolButton
         label="Pen (P)"
-        detail="Draw a vector path on a page"
+        detail="Draw a vector path on a frame"
         isActive={activeTool === "pen"}
         onClick={() => onToolChange("pen")}
       >
@@ -82,7 +82,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       <ToolbarDivider />
       <ToolButton
         label="Frame (F)"
-        detail="Click in a page to add a frame"
+        detail="Click in a frame to add a frame"
         isActive={activeTool === "frame"}
         onClick={() => onToolChange("frame")}
       >
@@ -90,7 +90,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       </ToolButton>
       <ToolButton
         label="Square (R)"
-        detail="Click in a page to add a square"
+        detail="Click in a frame to add a square"
         isActive={activeTool === "square"}
         onClick={() => onToolChange("square")}
       >
@@ -98,7 +98,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       </ToolButton>
       <ToolButton
         label="Circle (O)"
-        detail="Click in a page to add a circle"
+        detail="Click in a frame to add a circle"
         isActive={activeTool === "circle"}
         onClick={() => onToolChange("circle")}
       >
@@ -106,7 +106,7 @@ export default memo(function CanvasToolbar({ activeTool, onToolChange }: CanvasT
       </ToolButton>
       <ToolButton
         label="Text (T)"
-        detail="Click in a page to add text"
+        detail="Click in a frame to add text"
         isActive={activeTool === "text"}
         onClick={() => onToolChange("text")}
       >

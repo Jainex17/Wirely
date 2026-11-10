@@ -34,7 +34,7 @@ export default function DeleteProjectDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this project?</AlertDialogTitle>
           <AlertDialogDescription>
-            The generated pages and their history are removed for good. This cannot be
+            The generated frames and their history are removed for good. This cannot be
             undone.
           </AlertDialogDescription>
         </AlertDialogHeader>

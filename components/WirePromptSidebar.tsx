@@ -138,7 +138,7 @@ const GENERATION_FAILURE_PREVIEW_HTML = [
   "<body>",
   "<main>",
   "<h1>Generation could not be completed</h1>",
-  "<p>The latest response could not be rendered for this page.</p>",
+  "<p>The latest response could not be rendered for this frame.</p>",
   "<p>Try regenerating with a more specific prompt.</p>",
   "</main>",
   "</body>",
@@ -404,13 +404,13 @@ export default function WirePromptSidebar({
           }),
         });
         if (!response.ok) {
-          throw new Error(`Page creation failed with status ${response.status}`);
+          throw new Error(`Frame creation failed with status ${response.status}`);
         }
         const payload = (await response.json()) as {
           page?: { id: string; title: string };
         };
         if (!payload.page) {
-          throw new Error("Page creation response missing page payload.");
+          throw new Error("Frame creation response missing frame payload.");
         }
         return payload.page;
       } finally {
@@ -1158,8 +1158,8 @@ export default function WirePromptSidebar({
       if (target.kind === "none") return;
       if (target.kind === "pages" && target.droppedCount > 0) {
         toast.message(
-          `A run can edit up to ${MAX_PROMPT_TARGET_PAGES} pages, so ${target.droppedCount} ` +
-            `${target.droppedCount === 1 ? "page was" : "pages were"} left out.`,
+          `A run can edit up to ${MAX_PROMPT_TARGET_PAGES} frames, so ${target.droppedCount} ` +
+            `${target.droppedCount === 1 ? "frame was" : "frames were"} left out.`,
         );
       }
 
@@ -1181,7 +1181,7 @@ export default function WirePromptSidebar({
       if (target.kind === "new") {
         try {
           const nextPageNumber = storePages.length + 1;
-          const createdPage = await createPageOnServer(`Page ${nextPageNumber}`);
+          const createdPage = await createPageOnServer(`Frame ${nextPageNumber}`);
           createPageLocal(
             createdPage.title,
             undefined,
@@ -1202,7 +1202,7 @@ export default function WirePromptSidebar({
           const message =
             error instanceof Error
               ? error.message
-              : "Could not create a new page. Please try again.";
+              : "Could not create a new frame. Please try again.";
           reportError(message);
         }
         return;
@@ -1337,7 +1337,7 @@ export default function WirePromptSidebar({
         try {
           let firstPageId = useEditorStore.getState().pages[0]?.id;
           if (!firstPageId) {
-            const createdFirstPage = await createPageOnServer("Page 1");
+            const createdFirstPage = await createPageOnServer("Frame 1");
             createPageLocal(
               createdFirstPage.title,
               undefined,
@@ -1654,7 +1654,7 @@ export default function WirePromptSidebar({
           <ul
             id="prompt-mention-list"
             role="listbox"
-            aria-label="Pages"
+            aria-label="Frames"
             className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-64 overflow-y-auto rounded-md border border-border bg-card p-1 text-sm shadow-lg"
           >
             {mentionOptions.map((page) => (
@@ -1696,7 +1696,7 @@ export default function WirePromptSidebar({
             placeholder={
               hasSelectedNode
                 ? "Describe a change to the selected element"
-                : "Describe a change, @ to pick a page"
+                : "Describe a change, @ to pick a frame"
             }
             rows={4}
             role="combobox"

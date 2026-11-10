@@ -9,7 +9,7 @@ import ProjectEditor from "./ProjectEditor";
 
 export const metadata: Metadata = {
   title: "Editor | Wirely",
-  description: "Edit and iterate on your Wirely project pages.",
+  description: "Edit and iterate on your Wirely project frames.",
 };
 
 interface WirePageProps {
@@ -57,7 +57,7 @@ export default async function WirePage({ params }: WirePageProps) {
       : [
           {
             id: "page-home",
-            title: "Page 1",
+            title: "Frame 1",
             pageHtml: "",
             deviceType: "desktop" as const,
             tabId: projectDetail.tabs[0].id,

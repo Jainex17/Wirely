@@ -26,7 +26,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 
 const PAGE_DRAG_TYPE = "application/x-wirely-page";
 
-const DEVICE_LABELS = { desktop: "Desktop page", mobile: "Mobile page", vector: "Vector page" } as const;
+const DEVICE_LABELS = { desktop: "Desktop frame", mobile: "Mobile frame", vector: "Vector frame" } as const;
 
 interface PagesPanelProps {
   projectId: string;
@@ -245,7 +245,7 @@ export default function PagesPanel({
     );
   };
 
-  const toggle = <PanelToggle side="left" name="pages panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
+  const toggle = <PanelToggle side="left" name="layers panel" isCollapsed={isCollapsed} onToggle={onToggle} />;
 
   if (isCollapsed) return <FloatingProjectHeader end={toggle} />;
 
@@ -277,8 +277,8 @@ export default function PagesPanel({
                   focusPage(firstMatch.id);
                 }
               }}
-              placeholder="Search pages"
-              aria-label="Search pages"
+              placeholder="Search layers"
+              aria-label="Search layers"
               className="h-full min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
             />
             {isSearching ? (
@@ -297,7 +297,7 @@ export default function PagesPanel({
           </div>
         ) : (
           <>
-            <span className="text-[11px] font-semibold text-foreground">Pages</span>
+            <span className="text-[11px] font-semibold text-foreground">Layers</span>
             <span className="text-[11px] tabular-nums text-muted-foreground">{pages.length}</span>
             <div className="ml-auto flex items-center">
               {selectedNode ? (
@@ -317,7 +317,7 @@ export default function PagesPanel({
                   </HeaderButton>
                 </div>
               ) : null}
-              <HeaderButton label="Search pages" detail="Find a page by its title or its group's name" onClick={() => setSearch("")}>
+              <HeaderButton label="Search layers" detail="Find a frame by its title or its group's name" onClick={() => setSearch("")}>
                 <Search className="h-3.5 w-3.5" />
               </HeaderButton>
             </div>
@@ -327,7 +327,7 @@ export default function PagesPanel({
       {/* select-none, or a shift-click would also select the row text. */}
       <nav
         role="tree"
-        aria-label="Pages and layers"
+        aria-label="Layers"
         aria-multiselectable
         className="flex min-h-0 flex-1 select-none flex-col overflow-y-auto pb-2"
       >
@@ -362,7 +362,7 @@ export default function PagesPanel({
                 >
                   <button
                     type="button"
-                    aria-label={isGroupOpen ? `Hide pages of ${group.name}` : `Show pages of ${group.name}`}
+                    aria-label={isGroupOpen ? `Hide frames of ${group.name}` : `Show frames of ${group.name}`}
                     // A search shows every group with a match open, and a
                     // toggle then would only change what shows after it.
                     disabled={isSearching}
@@ -389,7 +389,7 @@ export default function PagesPanel({
                       focusPages(group.pageIds);
                     }}
                     data-tip={group.name}
-                    data-tip-detail={`${group.pageIds.length} pages. Click to fit them in view, Shift-click to add them to the selection.`}
+                    data-tip-detail={`${group.pageIds.length} frames. Click to fit them in view, Shift-click to add them to the selection.`}
                     className="flex h-full min-w-0 flex-1 cursor-default items-center gap-1.5 pr-2 text-left"
                   >
                     <SectionIcon className={cn("h-3.5 w-3.5 shrink-0", isGroupHighlighted ? "text-primary" : "text-muted-foreground")} />
@@ -409,7 +409,7 @@ export default function PagesPanel({
           >
             {ungroupedPages.map((page) => renderPage(page, 0))}
             {isSearching && visiblePages.length === 0 ? (
-              <p className="px-4 py-3 text-xs text-muted-foreground">{`No pages match "${query}".`}</p>
+              <p className="px-4 py-3 text-xs text-muted-foreground">{`No frames match "${query}".`}</p>
             ) : null}
           </div>
           </>

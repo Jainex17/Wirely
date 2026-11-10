@@ -141,7 +141,7 @@ export default function MemoryPanel({ projectId }: { projectId: string }) {
       <Section title="Design tokens" onEdit={() => setIsTokensOpen(true)}>
         {tokenEntries.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            CSS variables written into every page. Your agent can set them from your codebase.
+            CSS variables written into every frame. Your agent can set them from your codebase.
           </p>
         ) : (
           <ul className="space-y-1">

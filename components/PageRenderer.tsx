@@ -741,7 +741,7 @@ export default React.memo(function PageRenderer({
       );
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Could not render the page image.");
+        throw new Error(payload?.error || "Could not render the frame image.");
       }
       return response.blob();
     },
@@ -781,7 +781,7 @@ export default React.memo(function PageRenderer({
         downloadBlob(blob, isPdf ? `${slugifiedTitle}.pdf` : `${slugifiedTitle}@${kind}.png`);
         toast.success(isPdf ? "PDF downloaded." : "PNG downloaded.", { id: pending });
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not render the page.", {
+        toast.error(error instanceof Error ? error.message : "Could not render the frame.", {
           id: pending,
         });
       }
@@ -1085,7 +1085,7 @@ export default React.memo(function PageRenderer({
         label: "Copy HTML",
         icon: Copy,
         onClick: () => {
-          void copyToClipboard("Page HTML", stripWirelyArtifacts(page.iframeHtml ?? ""));
+          void copyToClipboard("Frame HTML", stripWirelyArtifacts(page.iframeHtml ?? ""));
         },
       },
       ...(page.deviceType === "vector"
@@ -1105,7 +1105,7 @@ export default React.memo(function PageRenderer({
         onClick: () => {
           const html = stripWirelyArtifacts(page.iframeHtml ?? "");
           if (!html.trim()) {
-            toast.error("This page has no design yet.");
+            toast.error("This frame has no design yet.");
             return;
           }
           downloadBlob(new Blob([html], { type: "text/html" }), `${slugifiedTitle}.html`);
@@ -1143,7 +1143,7 @@ export default React.memo(function PageRenderer({
                       const { pages, setComparePageIds } = useEditorStore.getState();
                       const partner = pickComparePartner(pages, page.id);
                       if (partner) setComparePageIds([page.id, partner]);
-                      else toast.error("Add another page to compare this one with.");
+                      else toast.error("Add another frame to compare this one with.");
                     },
                   },
                 ]),
@@ -1568,7 +1568,7 @@ export default React.memo(function PageRenderer({
         const current = useEditorStore.getState().pages.find((entry) => entry.id === page.id);
         if (typeof text !== "string" || !projectId) return;
         if (current?.iframeHtml !== editStartHtmlRef.current) {
-          toast.error("The page changed while you were typing, so the text was not saved.");
+          toast.error("The frame changed while you were typing, so the text was not saved.");
           return;
         }
         commitPageEdit(projectId, page.id, (html) => setNodeText(html, nodeId, text.slice(0, 20_000)));
@@ -1697,7 +1697,7 @@ export default React.memo(function PageRenderer({
               event.preventDefault();
               event.stopPropagation();
               if (page.deviceType === "vector") {
-                toast.error("Images go on screen pages. Drop it on a page or on empty canvas.");
+                toast.error("Images go on screen frames. Drop it on a frame or on empty canvas.");
                 return;
               }
               if (!hasHtml || (!isLiveReady && !inertFrame)) {
@@ -2105,13 +2105,13 @@ export default React.memo(function PageRenderer({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename Page</DialogTitle>
-            <DialogDescription>Enter a new name for this page.</DialogDescription>
+            <DialogTitle>Rename Frame</DialogTitle>
+            <DialogDescription>Enter a new name for this frame.</DialogDescription>
           </DialogHeader>
           <Input
             value={nextPageTitle}
             onChange={(event) => setNextPageTitle(event.target.value)}
-            placeholder="Page title"
+            placeholder="Frame title"
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 submitRename();
@@ -2292,7 +2292,7 @@ export default React.memo(function PageRenderer({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Page</AlertDialogTitle>
+            <AlertDialogTitle>Delete Frame</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete &quot;{page.title}&quot;? This action
               cannot be undone.

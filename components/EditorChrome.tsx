@@ -82,7 +82,7 @@ export function CanvasBackgroundMenu() {
       <DropdownMenuTrigger
         className={menuTriggerClass}
         aria-label="Canvas background"
-        data-tip-detail={`${BACKGROUND_LABELS[canvasBackground]} now. Shared by both tabs.`}
+        data-tip-detail={`${BACKGROUND_LABELS[canvasBackground]} now. Shared by every page.`}
       >
         <Contrast className="h-4 w-4" />
         <ChevronUp className="h-3 w-3" />

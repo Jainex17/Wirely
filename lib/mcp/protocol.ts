@@ -34,6 +34,10 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
+  "The editor shows tabs to the user as \"pages\" and pages as \"frames\". When the user names " +
+    "a page listed in the editor's Pages panel, such as \"Page 2\", they mean a tab, and a " +
+    "\"frame\" is a page in these tools. When you talk to the user, say page for a tab and " +
+    "frame for a page.",
   "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
     "and skip the search below.",
   "When the user names a project, such as \"in my Checkout project\" or \"@checkout\", call " +
@@ -255,7 +259,7 @@ export const MCP_TOOLS: McpToolDefinition[] = [
     description:
       "Create a Wirely project. Call list_projects first and only create one when no existing " +
       "project is for the same product or codebase, or when the user asks for a new project. " +
-      "It starts with one empty HTML page named \"Page 1\" that you write with update_page. " +
+      "It starts with one empty HTML page named \"Frame 1\" that you write with update_page. " +
       "Returns the id and the editor URL; give that URL to the user so they can watch the project.",
     inputSchema: {
       type: "object",

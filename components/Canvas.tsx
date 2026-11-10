@@ -1193,7 +1193,7 @@ export default function Canvas({
       <div className="pointer-events-none absolute inset-0 canvas-dots" />
       {pages.length === 0 ? (
         <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 px-8 text-center text-sm text-muted-foreground">
-          No pages on this tab yet. Ask your agent to add one here, or move a page here from its
+          No frames on this page yet. Ask your agent to add one here, or move a frame here from its
           right-click menu.
         </p>
       ) : null}

@@ -57,10 +57,10 @@ export async function GET(request: Request, context: RouteContext) {
       userId: sessionUser.id,
     });
     if (!page) {
-      return NextResponse.json({ error: "Page not found." }, { status: 404 });
+      return NextResponse.json({ error: "Frame not found." }, { status: 404 });
     }
     if (!page.htmlContent.trim()) {
-      return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
+      return NextResponse.json({ error: "This frame has no design yet." }, { status: 409 });
     }
 
     // The headless render has no origin to load project images from.
@@ -84,7 +84,7 @@ export async function GET(request: Request, context: RouteContext) {
     // fails with a reason rather than saving a cropped or missing file.
     if (scale > 1 && (!png.fullPage || bytes.byteLength > MAX_DOWNLOAD_BYTES)) {
       return NextResponse.json(
-        { error: `This page is too long to export at ${scale}x. Try a lower scale.` },
+        { error: `This frame is too long to export at ${scale}x. Try a lower scale.` },
         { status: 413 },
       );
     }
@@ -97,6 +97,6 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({ error: error.message }, { status: 503 });
     }
     logger.error("projects_page_png_failed", { error });
-    return NextResponse.json({ error: "Failed to render the page image." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to render the frame image." }, { status: 500 });
   }
 }

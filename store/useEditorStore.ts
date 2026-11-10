@@ -260,11 +260,11 @@ const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
 ]);
 
 /** The tab the store holds before a project loads, and the one its placeholder page is on. */
-const PLACEHOLDER_TAB: ProjectTab = { id: "tab-home", name: "Tab 1" };
+const PLACEHOLDER_TAB: ProjectTab = { id: "tab-home", name: "Page 1" };
 
 const placeholderPage = (tabId: string): PageRecord => ({
   id: "page-home",
-  title: "Page 1",
+  title: "Frame 1",
   tabId,
   sections: [],
 });
@@ -1096,7 +1096,7 @@ export const useEditorStore = create<EditorState>()(
             afterBounds.length > 0
               ? getPositionRightOf(afterBounds)
               : getNewRowPosition(state, deviceType, tabId);
-          const resolvedTitle = title ?? `Page ${state.pages.length + 1}`;
+          const resolvedTitle = title ?? `Frame ${state.pages.length + 1}`;
           const newPage: PageRecord = {
             id: newPageId,
             title: resolvedTitle,

@@ -256,14 +256,14 @@ export const deleteProjectTabForUser = async ({
 
     if (!tabs.some((tab) => tab.id === tabId)) return { ok: false, reason: "not_found" };
     if (tabs.length === 1) {
-      return { ok: false, reason: "refused", message: "A project keeps at least one tab." };
+      return { ok: false, reason: "refused", message: "A project keeps at least one page." };
     }
     const deletedPageIds = pageIds.filter((pageId) => pageTabIds[pageId] === tabId);
     if (pageIds.length > 0 && deletedPageIds.length === pageIds.length) {
       return {
         ok: false,
         reason: "refused",
-        message: "A project keeps at least one page. Move a page to another tab first.",
+        message: "A project keeps at least one frame. Move a frame to another page first.",
       };
     }
 

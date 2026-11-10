@@ -199,7 +199,7 @@ export default function PageCompareDialog() {
       value={comparePageIds[side]}
       onChange={(event) => pickPage(side, event.target.value)}
       className="h-8 min-w-0 max-w-56 truncate rounded-md border border-border bg-background px-2 text-xs"
-      aria-label={side === 0 ? "First page" : "Second page"}
+      aria-label={side === 0 ? "First frame" : "Second frame"}
     >
       {comparable.map((page) => (
         <option key={page.id} value={page.id} disabled={page.id === comparePageIds[side === 0 ? 1 : 0]}>
@@ -213,7 +213,7 @@ export default function PageCompareDialog() {
     <Dialog open onOpenChange={(next) => (next ? undefined : close())}>
       <DialogContent className="flex h-[calc(100vh-4rem)] w-[calc(100vw-4rem)] flex-col gap-3 sm:max-w-none">
         <DialogHeader>
-          <DialogTitle>Compare pages</DialogTitle>
+          <DialogTitle>Compare frames</DialogTitle>
           <DialogDescription>
             Check a build against its design. In Difference, matching areas turn black.
           </DialogDescription>
@@ -225,8 +225,8 @@ export default function PageCompareDialog() {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            aria-label="Swap pages"
-            title="Swap pages"
+            aria-label="Swap frames"
+            title="Swap frames"
             onClick={() => {
               setComparePageIds([comparePageIds[1], comparePageIds[0]]);
               resetHeights();
@@ -252,14 +252,14 @@ export default function PageCompareDialog() {
           </div>
           {mode === "overlay" ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              Second page
+              Second frame
               <input
                 type="range"
                 min={0}
                 max={100}
                 value={opacity}
                 onChange={(event) => setOpacity(Number(event.target.value))}
-                aria-label="Second page opacity"
+                aria-label="Second frame opacity"
               />
             </label>
           ) : null}

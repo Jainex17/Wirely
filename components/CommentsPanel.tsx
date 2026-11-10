@@ -90,7 +90,7 @@ export default function CommentsPanel({ projectId }: { projectId: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {groups.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
-            No comments yet. Click a page to leave one.
+            No comments yet. Click a frame to leave one.
           </p>
         ) : (
           groups.map(({ page, comments: pageComments }) => (

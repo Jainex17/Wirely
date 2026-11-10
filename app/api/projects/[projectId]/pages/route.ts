@@ -108,7 +108,7 @@ export async function POST(request: Request, context: RouteContext) {
     const title =
       typeof body.title === "string" && body.title.trim().length > 0
         ? body.title.trim()
-        : "Untitled Page";
+        : "Untitled Frame";
     const deviceType = isPageDeviceType(body.deviceType)
       ? body.deviceType
       : undefined;
@@ -141,7 +141,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ page }, { status: 201 });
   } catch (error) {
     logger.error("projects_pages_create_failed", { error });
-    return NextResponse.json({ error: "Failed to create page." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create frame." }, { status: 500 });
   }
 }
 

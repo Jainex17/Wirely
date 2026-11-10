@@ -57,7 +57,7 @@ interface WireEditorProps {
 }
 
 const SIDEBAR_TABS = [
-  { id: "chat", label: "Chat", detail: "Ask a model on your key to write or change pages", icon: MessageSquare },
+  { id: "chat", label: "Chat", detail: "Ask a model on your key to write or change frames", icon: MessageSquare },
   {
     id: "design",
     label: "Design",
@@ -65,7 +65,7 @@ const SIDEBAR_TABS = [
     icon: SlidersHorizontal,
   },
   { id: "memory", label: "Memory", detail: "Context, rules, and tokens every agent reads", icon: Brain },
-  { id: "activity", label: "Activity", detail: "Pages added and edited, and comments", icon: History },
+  { id: "activity", label: "Activity", detail: "Frames added and edited, and comments", icon: History },
 ] as const;
 
 const getWireLayoutStorageKey = (wireId: string) => `wirely-wire-layout:${wireId}`;

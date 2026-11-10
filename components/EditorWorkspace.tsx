@@ -179,7 +179,7 @@ export default function EditorWorkspace({
       } catch (error) {
         logger.error("pages_rename_failed", { pageId, projectId, error });
         renamePage(pageId, existingPage.title);
-        toast.error("Could not rename page. Please try again.");
+        toast.error("Could not rename frame. Please try again.");
       } finally {
         endSaving();
       }
@@ -207,10 +207,10 @@ export default function EditorWorkspace({
         if (!response.ok) {
           throw new Error(`Delete failed with status ${response.status}`);
         }
-        toast.success("Page deleted.");
+        toast.success("Frame deleted.");
       } catch (error) {
         logger.error("pages_delete_failed", { pageId, projectId, error });
-        toast.error("Could not delete page. Restoring latest server data.");
+        toast.error("Could not delete frame. Restoring latest server data.");
 
         try {
           const reloadResponse = await fetch(`/api/projects/${projectId}`, {
@@ -331,7 +331,7 @@ export default function EditorWorkspace({
         (pageId) => useEditorStore.getState().pages.find((page) => page.id === pageId)?.iframeHtml,
       );
       if (result === "stale") {
-        toast.error("The page changed since that edit. Open the page's History to go further back.");
+        toast.error("The frame changed since that edit. Open the frame's History to go further back.");
       } else if (result && projectId) {
         commitPagesEdit(
           projectId,
@@ -419,7 +419,7 @@ export default function EditorWorkspace({
 
       commitPageEdit(projectId, pageId, (html) => html, {
         record: false,
-        failureMessage: "Could not save the page, so element links to it may not work yet.",
+        failureMessage: "Could not save the frame, so element links to it may not work yet.",
       });
     },
     [projectId],

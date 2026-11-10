@@ -139,7 +139,7 @@ export function ProjectActions() {
         href={`/wire/${projectId}/prototype`}
         aria-label="Play"
         data-tip="Play"
-        data-tip-detail="Click through the pages"
+        data-tip-detail="Click through the frames"
         className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
       >
         <Play className="h-4 w-4" />

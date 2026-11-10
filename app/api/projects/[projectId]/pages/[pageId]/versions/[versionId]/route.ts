@@ -59,7 +59,7 @@ export async function POST(_request: Request, context: RouteContext) {
       forceSnapshot: true,
     });
     if (!page) {
-      return NextResponse.json({ error: "Page not found." }, { status: 404 });
+      return NextResponse.json({ error: "Frame not found." }, { status: 404 });
     }
     return NextResponse.json({ html: page.htmlContent });
   } catch (error) {

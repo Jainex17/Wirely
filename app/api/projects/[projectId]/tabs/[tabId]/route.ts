@@ -19,7 +19,7 @@ interface RouteContext {
 }
 
 const tabsUnavailable = () =>
-  NextResponse.json({ error: "Tabs are not set up on this server yet." }, { status: 503 });
+  NextResponse.json({ error: "Pages are not set up on this server yet." }, { status: 503 });
 
 /**
  * Renames a tab, or with `{ opened: true }` records that the editor is showing
@@ -35,7 +35,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { projectId, tabId } = await context.params;
     if (!isUuid(projectId) || !isUuid(tabId)) {
-      return NextResponse.json({ error: "Tab not found." }, { status: 404 });
+      return NextResponse.json({ error: "Page not found." }, { status: 404 });
     }
     const parsed = await readJsonBodyWithLimit<{ name?: unknown; opened?: unknown }>(request);
     if (!parsed.ok) return parsed.response;
@@ -43,7 +43,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (parsed.data.opened === true) {
       const tab = await markTabOpenedForUser({ projectId, userId: sessionUser.id, tabId });
       if (!tab) {
-        return NextResponse.json({ error: "Tab not found." }, { status: 404 });
+        return NextResponse.json({ error: "Page not found." }, { status: 404 });
       }
       return new Response(null, { status: 204 });
     }
@@ -58,7 +58,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const tab = await renameProjectTabForUser({ projectId, userId: sessionUser.id, tabId, name });
     if (!tab) {
-      return NextResponse.json({ error: "Tab not found." }, { status: 404 });
+      return NextResponse.json({ error: "Page not found." }, { status: 404 });
     }
     return NextResponse.json({ tab });
   } catch (error) {
@@ -81,19 +81,19 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     const { projectId, tabId } = await context.params;
     if (!isUuid(projectId) || !isUuid(tabId)) {
-      return NextResponse.json({ error: "Tab not found." }, { status: 404 });
+      return NextResponse.json({ error: "Page not found." }, { status: 404 });
     }
 
     const result = await deleteProjectTabForUser({ projectId, userId: sessionUser.id, tabId });
     if (!result.ok) {
       return result.reason === "not_found"
-        ? NextResponse.json({ error: "Tab not found." }, { status: 404 })
+        ? NextResponse.json({ error: "Page not found." }, { status: 404 })
         : NextResponse.json({ error: result.message }, { status: 409 });
     }
     return NextResponse.json({ success: true, deletedPageIds: result.deletedPageIds });
   } catch (error) {
     if (isMissingRelationError(error)) return tabsUnavailable();
     logger.error("projects_tabs_delete_failed", { error });
-    return NextResponse.json({ error: "Failed to delete tab." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete page." }, { status: 500 });
   }
 }

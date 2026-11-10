@@ -36,7 +36,7 @@ export const createTab = async (projectId: string) => {
     return tab.id;
   } catch (error) {
     logger.error("tabs_create_failed", { projectId, error });
-    toast.error("Could not add a tab. Please try again.");
+    toast.error("Could not add a page. Please try again.");
     return null;
   }
 };
@@ -53,7 +53,7 @@ export const renameTab = async (projectId: string, tabId: string, name: string) 
   } catch (error) {
     logger.error("tabs_rename_failed", { projectId, tabId, error });
     useEditorStore.getState().renameTab(tabId, previous.name);
-    toast.error("Could not rename tab. Please try again.");
+    toast.error("Could not rename page. Please try again.");
   }
 };
 
@@ -61,10 +61,10 @@ export const deleteTab = async (projectId: string, tabId: string) => {
   try {
     await request(`/api/projects/${projectId}/tabs/${tabId}`, { method: "DELETE" });
     useEditorStore.getState().removeTab(tabId);
-    toast.success("Tab deleted.");
+    toast.success("Page deleted.");
   } catch (error) {
     logger.error("tabs_delete_failed", { projectId, tabId, error });
-    toast.error(error instanceof Error ? error.message : "Could not delete tab.");
+    toast.error(error instanceof Error ? error.message : "Could not delete page.");
   }
 };
 
@@ -81,6 +81,6 @@ export const movePageToTab = async (projectId: string, pageId: string, tabId: st
   } catch (error) {
     logger.error("pages_move_to_tab_failed", { projectId, pageId, tabId, error });
     useEditorStore.getState().movePageToTab(pageId, from);
-    toast.error("Could not move the page. Please try again.");
+    toast.error("Could not move the frame. Please try again.");
   }
 };

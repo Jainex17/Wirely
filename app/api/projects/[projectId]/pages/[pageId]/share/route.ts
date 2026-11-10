@@ -22,10 +22,10 @@ export async function POST(request: Request, context: RouteContext) {
     const { projectId, pageId } = await context.params;
     const page = await getProjectPageForUser({ projectId, pageId, userId: sessionUser.id });
     if (!page) {
-      return NextResponse.json({ error: "Page not found." }, { status: 404 });
+      return NextResponse.json({ error: "Frame not found." }, { status: 404 });
     }
     if (!page.htmlContent.trim()) {
-      return NextResponse.json({ error: "This page has no design yet." }, { status: 409 });
+      return NextResponse.json({ error: "This frame has no design yet." }, { status: 409 });
     }
 
     const { path, expiresAt } = createPageSharePath(page.id);
