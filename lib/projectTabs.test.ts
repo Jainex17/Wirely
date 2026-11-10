@@ -6,7 +6,7 @@ describe("resolvePageTabs", () => {
     expect(
       resolvePageTabs({ projectId: "proj", tabs: [], assignments: [], pageIds: ["a", "b"] }),
     ).toEqual({
-      tabs: [{ id: "proj", name: "Page 1" }],
+      tabs: [{ id: "proj", name: "Untitled" }],
       pageTabIds: { a: "proj", b: "proj" },
     });
   });
@@ -46,10 +46,10 @@ describe("tab names", () => {
   });
 
   it("numbers the next tab past the count, skipping a number already in use", () => {
-    expect(nextTabName([])).toBe("Page 1");
-    expect(nextTabName(["Page 1", "Mobile"])).toBe("Page 3");
-    expect(nextTabName(["Page 1", "page 2 "])).toBe("Page 3");
-    expect(nextTabName(["Page 2"])).toBe("Page 3");
+    expect(nextTabName([])).toBe("Untitled");
+    expect(nextTabName(["Fintech app", "Mobile"])).toBe("Untitled");
+    expect(nextTabName(["Fintech app", " untitled "])).toBe("Untitled 2");
+    expect(nextTabName(["Untitled", "Untitled 2", "Untitled 4"])).toBe("Untitled 3");
   });
 
   it("finds a tab by name ignoring case and surrounding spaces", () => {

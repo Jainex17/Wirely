@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { createSafeLocalStorage } from "@/lib/storage/safeLocalStorage";
+import { DEFAULT_TAB_NAME } from "@/lib/projectTabs";
 import {
   type DeviceType,
   type PageGroup,
@@ -260,7 +261,7 @@ const ACTIVE_GENERATION_STATUSES: ReadonlySet<PageGenerationStatus> = new Set([
 ]);
 
 /** The tab the store holds before a project loads, and the one its placeholder page is on. */
-const PLACEHOLDER_TAB: ProjectTab = { id: "tab-home", name: "Page 1" };
+const PLACEHOLDER_TAB: ProjectTab = { id: "tab-home", name: DEFAULT_TAB_NAME };
 
 const placeholderPage = (tabId: string): PageRecord => ({
   id: "page-home",
