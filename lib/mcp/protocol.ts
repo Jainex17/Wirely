@@ -34,10 +34,10 @@ export const LATEST_PROTOCOL_VERSION = "2025-06-18";
  */
 export const MCP_INSTRUCTIONS = [
   "Wirely is a canvas the user watches live while you write pages.",
-  "The editor shows tabs to the user as \"pages\" and pages as \"frames\". When the user names " +
-    "a page listed in the editor's Pages panel, such as \"Page 2\", they mean a tab, and a " +
-    "\"frame\" is a page in these tools. When you talk to the user, say page for a tab and " +
-    "frame for a page.",
+  "The editor shows tabs to the user as \"pages\" and pages as \"frames\". The Pages panel " +
+    "numbers tabs from 1 in list_pages order, so when the user says \"page 2\" they mean the " +
+    "second tab in list_pages, and a \"frame\" is a page in these tools. When you talk to the " +
+    "user, say page for a tab and frame for a page.",
   "When the user gives a project link like /wire/<projectId>, add the pages to that project " +
     "and skip the search below.",
   "When the user names a project, such as \"in my Checkout project\" or \"@checkout\", call " +
@@ -354,7 +354,8 @@ export const MCP_TOOLS: McpToolDefinition[] = [
         tab: {
           type: "string",
           description:
-            "Tab to put the page on, by name. Matches an existing tab ignoring case, or makes a new one.",
+            "Tab to put the page on, by name. Matches an existing tab ignoring case, or makes a new one. " +
+            "Name a new tab for what is on it, such as \"Checkout\". Leave out a number, since the editor numbers tabs.",
         },
         html: { type: "string", description: "The page document. Omit when copying." },
         copyFromPageId: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { File, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -20,7 +20,8 @@ import { useEditorStore } from "@/store/useEditorStore";
 
 /**
  * The list of the project's canvases at the top of the left panel, the way
- * Figma lists its pages above the layers. It shows even with one tab, so the
+ * Figma lists its pages above the layers. Each row shows its position, so the
+ * user can say "page 2" and an agent finds the second tab in list_pages. It shows even with one tab, so the
  * "+" is there to find. Double-click renames a tab in place. Each row has a
  * delete button on hover that asks first, since the tab's pages go with it,
  * and is off while the tab is the last one or holds every page. The list
@@ -156,7 +157,9 @@ export default function CanvasTabs({ projectId }: { projectId: string }) {
                     title={`${tab.name} (double-click to rename)`}
                     className="flex h-full min-w-0 flex-1 cursor-default items-center gap-2 pl-2.5 pr-1 text-left text-xs"
                   >
-                    <File className="h-3.5 w-3.5 shrink-0" />
+                    <span className="w-4 shrink-0 text-center tabular-nums text-muted-foreground">
+                      {index + 1}
+                    </span>
                     <span className="truncate">{tab.name}</span>
                     <span className="ml-auto pl-1 tabular-nums text-muted-foreground group-hover:hidden">
                       {pageCountOf(tab.id)}
